@@ -1,6 +1,6 @@
-import React, { useContext } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { RoleContext } from '../../App';
+import logo from '../../assets/logo.png';
 import './MainLayout.css';
 
 const MainLayout = () => {
@@ -33,7 +33,8 @@ const MainLayout = () => {
     <div className="layout-container">
       {/* 側邊欄 */}
       <aside className="sidebar">
-        <div className="sidebar-header">
+        <div className="sidebar-header" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <img src={logo} alt="Logo" style={{ width: '32px', height: '32px' }} />
           ERP 系統
         </div>
         <ul className="sidebar-nav">

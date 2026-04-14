@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PackageOpen, LockKeyhole } from 'lucide-react';
+import { LockKeyhole } from 'lucide-react';
+import logo from '../assets/logo.png';
 import './Login.css';
 
 const MOCK_ACCOUNTS = {
@@ -36,8 +36,8 @@ const Login = ({ setAuthUser }) => {
       <div className="login-card">
         
         <div className="login-header">
-          <div className="login-logo">
-            <PackageOpen size={48} />
+          <div className="login-logo" style={{ background: 'none' }}>
+            <img src={logo} alt="Logo" style={{ width: '80px', height: '80px' }} />
           </div>
           <h1 className="login-title">ERP 資產進銷存系統</h1>
           <p className="login-subtitle">Asset Management Portal</p>
