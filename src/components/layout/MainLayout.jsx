@@ -36,7 +36,7 @@ const MainLayout = () => {
       <aside className="sidebar">
         <div className="sidebar-header" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <img src={logo} alt="Logo" style={{ width: '32px', height: '32px' }} />
-          ERP 系統
+          METECH ERP 系統
         </div>
         <ul className="sidebar-nav">
           {menuItems.map(item => (

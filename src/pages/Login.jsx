@@ -40,7 +40,7 @@ const Login = ({ setAuthUser }) => {
           <div className="login-logo" style={{ background: 'none' }}>
             <img src={logo} alt="Logo" style={{ width: '80px', height: '80px' }} />
           </div>
-          <h1 className="login-title">ERP 資產進銷存系統</h1>
+          <h1 className="login-title">METECH ERP 資產進銷存系統</h1>
           <p className="login-subtitle">Asset Management Portal</p>
         </div>
 
