@@ -1,0 +1,122 @@
+/* 主應用基礎設定 */
+:root {
+  --primary-color: #1B365D; /* 深藍色 */
+  --accent-color: #2F4F4F; /* 墨綠色 */
+  --bg-color: #F8F9FA;
+  --surface-color: #FFFFFF;
+  --text-main: #333333;
+  --text-muted: #666666;
+  --border-radius-lg: 12px;
+  --border-radius-md: 8px;
+  --shadow-sm: 0 2px 8px rgba(0,0,0,0.05);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+body {
+  background-color: var(--bg-color);
+  color: var(--text-main);
+  margin: 0;
+}
+
+.layout-container {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+/* 側邊導覽列 (深藍基調) */
+.sidebar {
+  width: 260px;
+  background-color: var(--primary-color);
+  color: white;
+  display: flex;
+  flex-direction: column;
+  padding: 24px 0;
+  box-shadow: 2px 0 8px rgba(0,0,0,0.1);
+  z-index: 10;
+}
+
+.sidebar-header {
+  padding: 0 24px 32px 24px;
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+  margin-bottom: 16px;
+}
+
+.sidebar-nav {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 16px;
+}
+
+.nav-item {
+  padding: 12px 16px;
+  border-radius: var(--border-radius-md);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 1rem;
+  text-decoration: none;
+  color: white;
+  display: block;
+}
+
+.nav-item:hover {
+  background-color: rgba(255,255,255,0.1);
+}
+
+.nav-item.active {
+  background-color: var(--accent-color);
+  font-weight: 500;
+}
+
+/* 主內容區域 */
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--bg-color);
+}
+
+.topbar {
+  height: 64px;
+  background-color: var(--surface-color);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 24px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+  z-index: 5;
+}
+
+.content-area {
+  flex: 1;
+  padding: 32px;
+  overflow-y: auto;
+}
+
+/* 圓角卡片組件樣式，供子頁面使用 */
+.card-surface {
+  background-color: var(--surface-color);
+  border-radius: var(--border-radius-lg);
+  padding: 24px;
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 24px;
+}
+
+.page-title {
+  font-size: 1.75rem;
+  color: var(--text-main);
+  margin-bottom: 24px;
+  font-weight: 600;
+}
