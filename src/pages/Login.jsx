@@ -33,7 +33,7 @@ const Login = ({ setAuthUser }) => {
 
       // 2. 查詢資料庫
       const res = await window.electronAPI.dbQuery(
-        'SELECT username, role, full_name, password_hash FROM users WHERE username = $1 AND is_active = TRUE',
+        'SELECT id, username, role, full_name, password_hash, menu_access FROM users WHERE username = $1 AND is_active = TRUE',
         [username]
       );
 

@@ -72,8 +72,8 @@ const AssetList = () => {
     if (!editItem.sn || !editItem.specification) return alert('請填寫必填欄位');
     
     const res = await window.electronAPI.dbQuery(
-      'UPDATE items SET sn = $1, specification = $2, custodian = $3, purchase_price = $4, currency = $5 WHERE id = $6',
-      [editItem.sn, editItem.specification, editItem.custodian, editItem.purchase_price, editItem.currency, editItem.id]
+      'UPDATE items SET sn = $1, specification = $2, custodian = $3 WHERE id = $4',
+      [editItem.sn, editItem.specification, editItem.custodian, editItem.id]
     );
 
     if (res.success) {
@@ -333,7 +333,6 @@ const AssetList = () => {
                 />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>保管人</label>
                   <input 
@@ -343,16 +342,6 @@ const AssetList = () => {
                     style={{ padding: '12px', borderRadius: '8px', border: '1px solid #ddd' }}
                   />
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>採購價格 ({editItem.currency})</label>
-                  <input 
-                    type="number" 
-                    value={editItem.purchase_price || 0} 
-                    onChange={(e) => setEditItem({...editItem, purchase_price: e.target.value})}
-                    style={{ padding: '12px', borderRadius: '8px', border: '1px solid #ddd' }}
-                  />
-                </div>
-              </div>
 
               <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
                 <button 

@@ -7,28 +7,22 @@ import './MainLayout.css';
 const MainLayout = () => {
   const { role, authUser, setAuthUser } = useContext(RoleContext);
 
-  const itMenu = [
+  const allMenuItems = [
     { id: 'inventory', path: '/inventory', label: '庫存查閱 (Inventory)' },
-    { id: 'outbound', path: '/outbound', label: '出貨申請 (Cart)' },
-    { id: 'reports', path: '/reports', label: '報表匯出 (Reports)' },
-  ];
-
-  const warehouseMenu = [
-    { id: 'inventory', path: '/inventory', label: '庫存總表 (Inventory)' },
-    { id: 'review', path: '/review', label: '出貨審核 (Review)' },
     { id: 'inbound', path: '/inbound', label: '進貨入庫 (Inbound)' },
+    { id: 'outbound', path: '/outbound', label: '出貨進銷 (Cart)' },
+    { id: 'review', path: '/review', label: '出貨審核 (Review)' },
     { id: 'assets', path: '/assets', label: '資產建檔 (Asset)' },
     { id: 'assetList', path: '/asset-list', label: '資產列表 (Asset List)' },
     { id: 'consumables', path: '/consumables', label: '耗材建檔 (Items)' },
+    { id: 'purchasing', path: '/purchasing', label: '採購建檔 (Procurement)' },
+    { id: 'procurementList', path: '/procurement-list', label: '採購列表 (Procurement list)' },
     { id: 'partners', path: '/partners', label: '客戶/廠商管理 (Partners)' },
     { id: 'reports', path: '/reports', label: '報表匯出 (Reports)' },
+    { id: 'settings', path: '/settings', label: '系統管理 (Accounts)' },
   ];
 
-  const adminMenu = [
-    { id: 'settings', path: '/settings', label: '系統與帳號管理 (Accounts)' },
-  ];
-
-  const menuItems = role === 'IT' ? itMenu : (role === 'ADMIN' ? adminMenu : warehouseMenu);
+  const menuItems = allMenuItems.filter(item => authUser?.menu_access?.[item.id]);
 
   // (Removed unused pageTitle derivation)
 

@@ -1,5 +1,21 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { hashPassword } from '../utils/auth';
+import { Shield, User, Settings as SettingsIcon, CheckSquare, Square, X, Save, Key } from 'lucide-react';
+
+const MENU_OPTIONS = [
+  { id: 'inventory', label: '庫存查閱 (Inventory)' },
+  { id: 'inbound', label: '進貨入庫 (Inbound)' },
+  { id: 'outbound', label: '出貨進銷 (Cart)' },
+  { id: 'review', label: '出貨審核 (Review)' },
+  { id: 'assets', label: '資產建檔 (Asset)' },
+  { id: 'assetList', label: '資產列表 (Asset List)' },
+  { id: 'consumables', label: '耗材建檔 (Items)' },
+  { id: 'purchasing', label: '採購建檔 (Procurement)' },
+  { id: 'procurementList', label: '採購列表 (Procurement list)' },
+  { id: 'partners', label: '客戶/廠商管理 (Partners)' },
+  { id: 'reports', label: '報表匯出 (Reports)' },
+  { id: 'settings', label: '系統管理 (Accounts)' },
+];
 
 const Settings = () => {
   // DB Config State
@@ -17,9 +33,13 @@ const Settings = () => {
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [newUser, setNewUser] = useState({ username: '', password: '', role: 'IT', full_name: '' });
 
+  // Permission Modal State
+  const [editingUser, setEditingUser] = useState(null);
+  const [showPermissionModal, setShowPermissionModal] = useState(false);
+
   const fetchUsers = useCallback(async () => {
     setLoadingUsers(true);
-    const res = await window.electronAPI.dbQuery('SELECT id, username, role, full_name, is_active FROM users ORDER BY id ASC');
+    const res = await window.electronAPI.dbQuery('SELECT id, username, role, full_name, is_active, menu_access FROM users ORDER BY id ASC');
     if (res.success) {
       setUsers(res.rows);
     }
@@ -30,10 +50,6 @@ const Settings = () => {
     fetchUsers();
   }, [fetchUsers]);
 
-  const handleChange = (e) => {
-    setDbConfig({ ...dbConfig, [e.target.name]: e.target.value });
-  };
-
   const handleUserChange = (e) => {
     setNewUser({ ...newUser, [e.target.name]: e.target.value });
   };
@@ -43,9 +59,17 @@ const Settings = () => {
     
     try {
       const hashedPassword = await hashPassword(newUser.password);
+      
+      // 根據角色給予預設權限
+      const defaultAccess = 
+        newUser.role === 'IT' ? { inventory: true, outbound: true, reports: true } :
+        (newUser.role === 'WAREHOUSE' ? { inventory: true, review: true, inbound: true, assets: true, assetList: true, consumables: true, partners: true, reports: true } :
+        (newUser.role === 'PURCHASING' ? { inventory: true, purchasing: true, reports: true } : 
+        { settings: true }));
+
       const res = await window.electronAPI.dbQuery(
-        'INSERT INTO users (username, password_hash, role, full_name) VALUES ($1, $2, $3, $4)',
-        [newUser.username, hashedPassword, newUser.role, newUser.full_name]
+        'INSERT INTO users (username, password_hash, role, full_name, menu_access) VALUES ($1, $2, $3, $4, $5)',
+        [newUser.username, hashedPassword, newUser.role, newUser.full_name, JSON.stringify(defaultAccess)]
       );
 
       if (res.success) {
@@ -77,202 +101,203 @@ const Settings = () => {
     }
   };
 
-  const handleConnect = async () => {
-    setStatus('testing');
-    // 目前固定使用 db.js 的設定，此處僅模擬測試
-    setTimeout(() => {
-      setStatus('success');
-    }, 1000);
+  const handleOpenPermissions = (user) => {
+    setEditingUser({
+      ...user,
+      menu_access: user.menu_access || {}
+    });
+    setShowPermissionModal(true);
+  };
+
+  const handleTogglePermission = (menuId) => {
+    setEditingUser(prev => ({
+      ...prev,
+      menu_access: {
+        ...prev.menu_access,
+        [menuId]: !prev.menu_access[menuId]
+      }
+    }));
+  };
+
+  const handleSavePermissions = async () => {
+    const res = await window.electronAPI.dbQuery(
+      'UPDATE users SET menu_access = $1 WHERE id = $2',
+      [JSON.stringify(editingUser.menu_access), editingUser.id]
+    );
+
+    if (res.success) {
+      alert('權限更新成功');
+      setShowPermissionModal(false);
+      await fetchUsers();
+    } else {
+      alert('更新失敗：' + res.error);
+    }
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', paddingBottom: '40px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '32px', paddingBottom: '60px' }}>
       
-      {/* 區塊 1: 帳號管理 */}
-      <div className="card-surface">
-        <h1 className="page-title">帳號權限管理 (User Management)</h1>
-        <p style={{ color: 'var(--text-muted)', marginBottom: '24px' }}>新增與維護系統操作人員帳號，並指派適當的存取權限角色。</p>
+      {/* 帳號權限管理 */}
+      <div className="card-surface" style={{ padding: '32px' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', marginBottom: '8px' }}>
+          <h1 className="page-title" style={{ margin: 0 }}>帳號權限管理</h1>
+          <span style={{ fontSize: '0.9rem', color: '#888' }}>(User Access Control)</span>
+        </div>
+        <p style={{ color: 'var(--text-muted)', marginBottom: '32px' }}>管理人員可在此新增帳號，並透過「權限設定」針對每個使用者單獨開啟或關閉選單功能。</p>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 1fr) 2fr', gap: '24px' }}>
-          {/* 左方 新增帳號 */}
-          <div style={{ backgroundColor: '#f8f9fa', padding: '20px', borderRadius: '8px', border: '1px solid #eee' }}>
-            <h3 style={{ marginBottom: '16px', color: 'var(--primary-color)' }}>新增系統帳號</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '32px' }}>
+          {/* 新增帳號表單 */}
+          <div style={{ backgroundColor: '#fcfcfc', padding: '24px', borderRadius: '12px', border: '1px solid #eee', alignSelf: 'start' }}>
+            <h3 style={{ marginBottom: '20px', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <User size={18} color="var(--primary-color)" /> 新增系統帳號
+            </h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '4px' }}>員工姓名</label>
-                <input type="text" name="full_name" value={newUser.full_name} onChange={handleUserChange} style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }} />
+                <label className="input-label">員工姓名</label>
+                <input type="text" name="full_name" value={newUser.full_name} onChange={handleUserChange} className="settings-input" placeholder="例如：王小明" />
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '4px' }}>登入帳號 *</label>
-                <input type="text" name="username" value={newUser.username} onChange={handleUserChange} style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }} />
+                <label className="input-label">登入帳號 *</label>
+                <input type="text" name="username" value={newUser.username} onChange={handleUserChange} className="settings-input" />
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '4px' }}>登入密碼 *</label>
-                <input type="password" name="password" value={newUser.password} onChange={handleUserChange} style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }} />
+                <label className="input-label">預設密碼 *</label>
+                <input type="password" name="password" value={newUser.password} onChange={handleUserChange} className="settings-input" />
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '4px' }}>指派角色 (Role) *</label>
-                <select name="role" value={newUser.role} onChange={handleUserChange} style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>
-                  <option value="IT">IT 系統端 (僅查詢庫存與申請出庫)</option>
-                  <option value="WAREHOUSE">WAREHOUSE 倉儲端 (全功能含金額管理)</option>
-                  <option value="ADMIN">ADMIN 管理端 (僅帳號與連線設定)</option>
+                <label className="input-label">類別角色 (Role) *</label>
+                <select name="role" value={newUser.role} onChange={handleUserChange} className="settings-input">
+                  <option value="IT">IT 系統端</option>
+                  <option value="WAREHOUSE">WAREHOUSE 倉儲端</option>
+                  <option value="PURCHASING">PURCHASING 採購端</option>
+                  <option value="ADMIN">ADMIN 管理端</option>
                 </select>
+                <p style={{ fontSize: '0.75rem', color: '#999', marginTop: '4px' }}>角色僅決定預設權限，後續可微調。</p>
               </div>
-              <button onClick={handleAddUser} style={{ padding: '10px', marginTop: '8px', backgroundColor: 'var(--accent-color)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}>
+              <button onClick={handleAddUser} className="btn-primary" style={{ marginTop: '8px', padding: '12px' }}>
                 建立帳號
               </button>
             </div>
           </div>
 
-          {/* 右方 帳號列表 */}
+          {/* 帳號列表 */}
           <div>
-            <h3 style={{ marginBottom: '16px', color: 'var(--text-main)' }}>現有帳號列表</h3>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ backgroundColor: '#f1f3f4', textAlign: 'left' }}>
-                  <th style={{ padding: '12px', borderBottom: '2px solid #ddd' }}>帳號 / 姓名</th>
-                  <th style={{ padding: '12px', borderBottom: '2px solid #ddd' }}>系統角色</th>
-                  <th style={{ padding: '12px', borderBottom: '2px solid #ddd', textAlign: 'center' }}>狀態</th>
-                  <th style={{ padding: '12px', borderBottom: '2px solid #ddd', textAlign: 'center' }}>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loadingUsers ? (
-                  <tr>
-                    <td colSpan="4" style={{ textAlign: 'center', padding: '24px', color: '#999' }}>帳號資料載入中...</td>
+            <h3 style={{ marginBottom: '16px', fontSize: '1.1rem' }}>人員清單</h3>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ backgroundColor: '#f8f9fa', textAlign: 'left' }}>
+                    <th className="th-cell">人員資訊</th>
+                    <th className="th-cell">角色</th>
+                    <th className="th-cell" style={{ textAlign: 'center' }}>目前權限</th>
+                    <th className="th-cell" style={{ textAlign: 'center' }}>狀態</th>
+                    <th className="th-cell" style={{ textAlign: 'center' }}>管理</th>
                   </tr>
-                ) : users.map(u => (
-                  <tr key={u.id} style={{ borderBottom: '1px solid #eee', opacity: u.is_active ? 1 : 0.6 }}>
-                    <td style={{ padding: '12px' }}>
-                      <div style={{ fontWeight: 600 }}>{u.username}</div>
-                      <div style={{ fontSize: '0.85rem', color: '#666' }}>{u.full_name}</div>
-                    </td>
-                    <td style={{ padding: '12px' }}>
-                      <span style={{ 
-                        padding: '4px 8px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 600,
-                        backgroundColor: u.role === 'IT' ? '#e3f2fd' : (u.role === 'ADMIN' ? '#fff3e0' : '#e8f5e9'),
-                        color: u.role === 'IT' ? '#1976d2' : (u.role === 'ADMIN' ? '#e65100' : '#2e7d32')
-                      }}>
-                        {u.role}
-                      </span>
-                    </td>
-                    <td style={{ padding: '12px', textAlign: 'center' }}>
-                      {u.is_active ? <span style={{ color: '#2e7d32' }}>啟用中</span> : <span style={{ color: '#d32f2f' }}>已停用</span>}
-                    </td>
-                    <td style={{ padding: '12px', textAlign: 'center' }}>
-                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                </thead>
+                <tbody>
+                  {loadingUsers ? (
+                    <tr><td colSpan="5" style={{ textAlign: 'center', padding: '40px' }}>載入中...</td></tr>
+                  ) : users.map(u => (
+                    <tr key={u.id} style={{ borderBottom: '1px solid #f0f0f0', opacity: u.is_active ? 1 : 0.6 }} className="row-hover">
+                      <td style={{ padding: '16px 12px' }}>
+                        <div style={{ fontWeight: 700 }}>{u.full_name || u.username}</div>
+                        <div style={{ fontSize: '0.8rem', color: '#888' }}>ID: {u.username}</div>
+                      </td>
+                      <td style={{ padding: '16px 12px' }}>
+                        <span style={{ 
+                          padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 700,
+                          backgroundColor: '#f0f0f0', color: '#555'
+                        }}>
+                          {u.role}
+                        </span>
+                      </td>
+                      <td style={{ padding: '16px 12px', textAlign: 'center' }}>
                         <button 
-                          onClick={() => handleToggleActive(u.id, u.is_active)} 
-                          style={{ 
-                            padding: '6px 12px', backgroundColor: '#fff', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer',
-                            fontSize: '0.85rem'
-                          }}
+                          onClick={() => handleOpenPermissions(u)}
+                          className="btn-secondary"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 12px', fontSize: '0.85rem' }}
                         >
-                          {u.is_active ? '停用' : '啟用'}
+                          <Shield size={14} /> 設定權限
                         </button>
-                        <button 
-                          onClick={() => handleDeleteUser(u.id, u.username)} 
-                          style={{ 
-                            padding: '6px 12px', backgroundColor: '#fff0f0', border: '1px solid #ffcccc', borderRadius: '4px', cursor: 'pointer',
-                            color: '#d32f2f', fontSize: '0.85rem'
-                          }}
-                        >
-                          刪除
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      </td>
+                      <td style={{ padding: '16px 12px', textAlign: 'center' }}>
+                        <span style={{ color: u.is_active ? '#2e7d32' : '#d32f2f', fontWeight: 600, fontSize: '0.9rem' }}>
+                          {u.is_active ? '啟用' : '停用'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '16px 12px', textAlign: 'center' }}>
+                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                          <button onClick={() => handleToggleActive(u.id, u.is_active)} className="btn-icon">
+                            {u.is_active ? '停用' : '啟用'}
+                          </button>
+                          <button onClick={() => handleDeleteUser(u.id, u.username)} className="btn-icon-danger">
+                            刪除
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* 區塊 2: 資料庫連線 */}
-      <div className="card-surface">
-        <h1 className="page-title">連線與底層設定 (System Config)</h1>
-        <p style={{ color: 'var(--text-muted)', marginBottom: '24px' }}>設定 PostgreSQL 伺服器主機連線，需擁有超級管理員權限。</p>
+      {/* 權限設定 Modal */}
+      {showPermissionModal && editingUser && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
+          <div className="card-surface" style={{ width: '500px', padding: '32px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+              <div>
+                <h2 style={{ fontSize: '1.25rem', color: 'var(--primary-color)', margin: 0 }}>權限設定</h2>
+                <div style={{ fontSize: '0.9rem', color: '#666', marginTop: '4px' }}>使用者：<span style={{ fontWeight: 600 }}>{editingUser.full_name} ({editingUser.username})</span></div>
+              </div>
+              <X size={24} style={{ cursor: 'pointer', color: '#999' }} onClick={() => setShowPermissionModal(false)} />
+            </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', maxWidth: '600px' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <label style={{ fontWeight: 500 }}>Host (主機位址)</label>
-          <input 
-            type="text" 
-            name="host" 
-            value={dbConfig.host} 
-            onChange={handleChange}
-            style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}
-          />
-        </div>
-        
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <label style={{ fontWeight: 500 }}>Port (連接埠)</label>
-          <input 
-            type="text" 
-            name="port" 
-            value={dbConfig.port} 
-            onChange={handleChange}
-            style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}
-          />
-        </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '32px' }}>
+              {MENU_OPTIONS.map(opt => (
+                <div 
+                  key={opt.id} 
+                  onClick={() => handleTogglePermission(opt.id)}
+                  style={{ 
+                    display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', 
+                    borderRadius: '8px', border: '1px solid #eee', cursor: 'pointer',
+                    backgroundColor: editingUser.menu_access[opt.id] ? '#f0f7ff' : '#fff',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  {editingUser.menu_access[opt.id] ? <CheckSquare size={18} color="var(--primary-color)" /> : <Square size={18} color="#ccc" />}
+                  <span style={{ fontSize: '0.9rem', fontWeight: editingUser.menu_access[opt.id] ? 600 : 400 }}>{opt.label}</span>
+                </div>
+              ))}
+            </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <label style={{ fontWeight: 500 }}>Database (資料庫名稱)</label>
-          <input 
-            type="text" 
-            name="database" 
-            value={dbConfig.database} 
-            onChange={handleChange}
-            style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}
-          />
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <label style={{ fontWeight: 500 }}>User (使用者帳號)</label>
-          <input 
-            type="text" 
-            name="user" 
-            value={dbConfig.user} 
-            onChange={handleChange}
-            style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}
-          />
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <label style={{ fontWeight: 500 }}>Password (密碼)</label>
-          <input 
-            type="password" 
-            name="password" 
-            value={dbConfig.password} 
-            onChange={handleChange}
-            style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}
-          />
-        </div>
-
-        <button 
-          onClick={handleConnect}
-          style={{ 
-            marginTop: '16px', 
-            padding: '12px', 
-            backgroundColor: 'var(--primary-color)', 
-            color: 'white', 
-            border: 'none', 
-            borderRadius: '4px', 
-            cursor: 'pointer',
-            fontWeight: 600
-          }}
-        >
-          {status === 'testing' ? '測試連線中...' : '測試連線並儲存'}
-        </button>
-
-        {status === 'success' && (
-          <div style={{ padding: '12px', backgroundColor: '#e6f4ea', color: '#137333', borderRadius: '4px', marginTop: '16px', gridColumn: '1 / -1' }}>
-            連線成功！設定已儲存。
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button onClick={handleSavePermissions} className="btn-primary" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                <Save size={18} /> 儲存權限設定
+              </button>
+              <button onClick={() => setShowPermissionModal(false)} className="btn-secondary" style={{ padding: '12px 24px' }}>
+                取消
+              </button>
+            </div>
           </div>
-        )}
-      </div>
-      </div>
+        </div>
+      )}
+
+      {/* 樣式 */}
+      <style>{`
+        .input-label { display: block; fontSize: 0.85rem; fontWeight: 600; color: #555; marginBottom: 6px; }
+        .settings-input { width: 100%; padding: 10px; border: 1px solid #ddd; borderRadius: 8px; outline: none; }
+        .settings-input:focus { border-color: var(--primary-color); }
+        .th-cell { padding: 14px 12px; border-bottom: 2px solid #eee; font-weight: 600; color: #666; font-size: 0.85rem; }
+        .row-hover:hover { background-color: #fcfdfe; }
+        .btn-icon { padding: 6px 12px; border: 1px solid #ddd; background: #fff; borderRadius: 6px; cursor: pointer; font-size: 0.85rem; }
+        .btn-icon:hover { border-color: var(--primary-color); color: var(--primary-color); }
+        .btn-icon-danger { padding: 6px 12px; border: 1px solid #ffcccc; background: #fff5f5; borderRadius: 6px; cursor: pointer; color: #d32f2f; font-size: 0.85rem; }
+        .btn-icon-danger:hover { background: #fee2e2; }
+      `}</style>
     </div>
   );
 };

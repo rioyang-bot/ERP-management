@@ -13,6 +13,8 @@ import WarehouseReview from './pages/WarehouseReview';
 import Reports from './pages/Reports';
 import Login from './pages/Login';
 import Consumables from './pages/Consumables';
+import Purchasing from './pages/Purchasing';
+import ProcurementList from './pages/ProcurementList';
 import './index.css';
 
 // 全域角色 Context
@@ -40,6 +42,8 @@ function App() {
             <Route path="consumables" element={<Consumables />} />
             <Route path="partners" element={<Partners />} />
             <Route path="reports" element={<Reports />} />
+            <Route path="purchasing" element={<Purchasing />} />
+            <Route path="procurement-list" element={<ProcurementList />} />
             <Route path="settings" element={<Settings />} />
           </Route>
         </Routes>

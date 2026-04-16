@@ -12,7 +12,8 @@ const Assets = () => {
   const [showManageBrand, setShowManageBrand] = useState(false);
   const [newTypeName, setNewTypeName] = useState('');
   const [newBrandName, setNewBrandName] = useState('');
-  const [formData, setFormData] = useState({ type: '', brand: '', sn: '', specification: '', custodian: '', purchase_price: '', currency: 'TWD', image: null, previewUrl: '' });
+  const [formData, setFormData] = useState({ type: '', brand: '', sn: '', specification: '', custodian: '', unit: '個', image: null, previewUrl: '' });
+  const UNIFIED_UNITS = ['個', '台', '盒', '包', '支', '組', '瓶', '卷', '張', '份'];
   const [modalOpen, setModalOpen] = useState(false);
   const [previewImage, setPreviewImage] = useState('');
   const [formKey, setFormKey] = useState(0); // 用於強制重整表單區域
@@ -197,14 +198,14 @@ const Assets = () => {
     }
 
     const res = await window.electronAPI.dbQuery(
-      'INSERT INTO items (sn, specification, type, brand, custodian, purchase_price, currency, category_id, image_path) VALUES ($1, $2, $3, $4, $5, $6, $7, (SELECT id FROM categories WHERE name = $8), $9)',
-      [formData.sn, formData.specification, formData.type, formData.brand, formData.custodian, formData.purchase_price || 0, formData.currency, '資訊設備', image_path]
+      'INSERT INTO items (sn, specification, type, brand, unit, custodian, category_id, image_path) VALUES ($1, $2, $3, $4, $5, $6, (SELECT id FROM categories WHERE name = $7), $8)',
+      [formData.sn, formData.specification, formData.type, formData.brand, formData.unit, formData.custodian, '資訊設備', image_path]
     );
 
     if (res.success) {
       alert('資產建檔成功！');
       await fetchAssets();
-      setFormData({ sn: '', specification: '', type: types[0] || '', brand: brands[0] || '', custodian: '', purchase_price: '', currency: 'TWD', image: null, previewUrl: '' });
+      setFormData({ sn: '', specification: '', type: types[0] || '', brand: brands[0] || '', custodian: '', unit: '個', image: null, previewUrl: '' });
       if (fileInputRef.current) fileInputRef.current.value = ''; // 徹底清除檔案選擇器
       setFormKey(prev => prev + 1); // 強制重置整個表單區塊元件
     } else {
@@ -351,34 +352,19 @@ const Assets = () => {
               <input type="text" name="specification" value={formData.specification} onChange={handleChange} style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }} placeholder="請輸入詳細規格" />
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <label style={{ fontWeight: 500 }}>保管人 (Custodian)</label>
-              <input type="text" name="custodian" value={formData.custodian} onChange={handleChange} style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }} placeholder="請輸入保管人姓名" />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <label style={{ fontWeight: 500 }}>保管人 (Custodian)</label>
+                <input type="text" name="custodian" value={formData.custodian} onChange={handleChange} style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }} placeholder="請輸入保管人姓名" />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <label style={{ fontWeight: 500 }}>單位 (Unit)</label>
+                <select name="unit" value={formData.unit} onChange={handleChange} style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
+                  {UNIFIED_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                </select>
+              </div>
             </div>
 
-            {/* 採購財務資訊區塊 */}
-            <div style={{ backgroundColor: '#f0f4f8', padding: '16px', borderRadius: '8px', border: '1px solid #d0e0ed' }}>
-              <h4 style={{ marginBottom: '12px', color: 'var(--primary-color)' }}>採購/財務資訊</h4>
-              <div style={{ display: 'flex', gap: '12px' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
-                  <label style={{ fontWeight: 500, fontSize: '0.9rem' }}>幣別</label>
-                  <select name="currency" value={formData.currency} onChange={handleChange} style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
-                    <option value="TWD">TWD (新台幣)</option>
-                    <option value="USD">USD (美金)</option>
-                    <option value="EUR">EUR (歐元)</option>
-                    <option value="JPY">JPY (日幣)</option>
-                  </select>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 2 }}>
-                  <label style={{ fontWeight: 500, fontSize: '0.9rem' }}>採購單價</label>
-                  <input type="number" name="purchase_price" value={formData.purchase_price} onChange={handleChange} style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }} placeholder="0.00" />
-                </div>
-              </div>
-              <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                <input type="checkbox" id="export_price" defaultChecked />
-                <label htmlFor="export_price">匯出報表時包含此採購單價資訊</label>
-              </div>
-            </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <label style={{ fontWeight: 500 }}>資產圖片上傳</label>
