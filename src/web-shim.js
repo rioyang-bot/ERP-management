@@ -1,5 +1,6 @@
 // Web 模擬層：讓原本呼叫 electronAPI 的程式碼能在瀏覽器運行
-const API_BASE = `http://${window.location.hostname}:3000`;
+// 透過 Vite Proxy，我們只需使用相對路徑
+const API_BASE = ''; 
 
 window.electronAPI = {
   dbQuery: async (sql, params = []) => {
@@ -9,9 +10,12 @@ window.electronAPI = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sql, params }),
       });
-      return await response.json();
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      return data;
     } catch (error) {
-      return { success: false, error: error.message };
+      console.error('[WebShim Error]', error);
+      return { success: false, error: error.message === 'Failed to fetch' ? '無法連線至後端 API (Vite Proxy)' : error.message };
     }
   },
 
@@ -36,9 +40,9 @@ window.electronAPI = {
 window.getMediaUrl = (path) => {
   if (!path) return null;
   if (path.startsWith('erp-media:///')) {
-    return `${API_BASE}/uploads/${path.replace('erp-media:///', '')}`;
+    return `/uploads/${path.replace('erp-media:///', '')}`;
   }
   return path;
 };
 
-console.log('[WebShim] Loaded: window.electronAPI is now pointing to ' + API_BASE);
+console.log('[WebShim] Loaded: window.electronAPI is using relative path (via Vite Proxy)');
