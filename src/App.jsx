@@ -1,19 +1,22 @@
-import React, { createContext, useState, useContext } from 'react';
+import React, { useState } from 'react';
+import { RoleContext } from './context/RoleContext';
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import MainLayout from './components/layout/MainLayout';
 import Inventory from './pages/Inventory';
 import Inbound from './pages/Inbound';
 import Assets from './pages/Assets';
+import AssetList from './pages/AssetList';
 import Partners from './pages/Partners';
 import Settings from './pages/Settings';
 import ITOutbound from './pages/ITOutbound';
 import WarehouseReview from './pages/WarehouseReview';
 import Reports from './pages/Reports';
 import Login from './pages/Login';
+import Consumables from './pages/Consumables';
 import './index.css';
 
 // 全域角色 Context
-export const RoleContext = createContext();
+// RoleContext moved to ./context/RoleContext.jsx
 
 function App() {
   const [authUser, setAuthUser] = useState(null); 
@@ -33,6 +36,8 @@ function App() {
             <Route path="outbound" element={<ITOutbound />} />
             <Route path="review" element={<WarehouseReview />} />
             <Route path="assets" element={<Assets />} />
+            <Route path="asset-list" element={<AssetList />} />
+            <Route path="consumables" element={<Consumables />} />
             <Route path="partners" element={<Partners />} />
             <Route path="reports" element={<Reports />} />
             <Route path="settings" element={<Settings />} />

@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { hashPassword } from '../utils/auth';
 
 const Settings = () => {
   // DB Config State
@@ -12,12 +13,22 @@ const Settings = () => {
   const [status, setStatus] = useState('');
 
   // User Management State
-  const [users, setUsers] = useState([
-    { id: 1, username: 'admin', role: 'ADMIN', full_name: '系統管理員', is_active: true },
-    { id: 2, username: 'wang_sh', role: 'WAREHOUSE', full_name: '王小華 (總倉管)', is_active: true },
-    { id: 3, username: 'chen_it', role: 'IT', full_name: '陳大文 (IT專員)', is_active: true }
-  ]);
+  const [users, setUsers] = useState([]);
+  const [loadingUsers, setLoadingUsers] = useState(true);
   const [newUser, setNewUser] = useState({ username: '', password: '', role: 'IT', full_name: '' });
+
+  const fetchUsers = useCallback(async () => {
+    setLoadingUsers(true);
+    const res = await window.electronAPI.dbQuery('SELECT id, username, role, full_name, is_active FROM users ORDER BY id ASC');
+    if (res.success) {
+      setUsers(res.rows);
+    }
+    setLoadingUsers(false);
+  }, []);
+
+  useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
 
   const handleChange = (e) => {
     setDbConfig({ ...dbConfig, [e.target.name]: e.target.value });
@@ -27,27 +38,48 @@ const Settings = () => {
     setNewUser({ ...newUser, [e.target.name]: e.target.value });
   };
 
-  const handleAddUser = () => {
+  const handleAddUser = async () => {
     if (!newUser.username || !newUser.password) return alert('帳號密碼為必填');
-    setUsers([...users, { id: Date.now(), ...newUser, is_active: true }]);
-    setNewUser({ username: '', password: '', role: 'IT', full_name: '' });
-    alert('帳號已新增 (同步寫入 users 資料表)');
+    
+    try {
+      const hashedPassword = await hashPassword(newUser.password);
+      const res = await window.electronAPI.dbQuery(
+        'INSERT INTO users (username, password_hash, role, full_name) VALUES ($1, $2, $3, $4)',
+        [newUser.username, hashedPassword, newUser.role, newUser.full_name]
+      );
+
+      if (res.success) {
+        alert('控制台：帳號已成功寫入資料庫');
+        await fetchUsers();
+        setNewUser({ username: '', password: '', role: 'IT', full_name: '' });
+      } else {
+        alert('新增失敗：' + res.error);
+      }
+    } catch (err) {
+      alert('處理失敗：' + err.message);
+    }
   };
 
-  const handleToggleActive = (id) => {
-    setUsers(users.map(u => u.id === id ? { ...u, is_active: !u.is_active } : u));
+  const handleToggleActive = async (id, currentStatus) => {
+    const res = await window.electronAPI.dbQuery('UPDATE users SET is_active = $1 WHERE id = $2', [!currentStatus, id]);
+    if (res.success) {
+      await fetchUsers();
+    }
   };
 
-  const handleDeleteUser = (id) => {
-    if (id === 1) return alert('系統管理員帳號不可刪除'); // 保護 Admin
-    if (window.confirm('確定要永久刪除此帳號嗎？此動作無法復原。')) {
-      setUsers(users.filter(u => u.id !== id));
+  const handleDeleteUser = async (id, username) => {
+    if (username === 'admin') return alert('系統管理員帳號不可刪除'); 
+    if (window.confirm(`確定要永久刪除帳號 [${username}] 嗎？此動作無法復原。`)) {
+      const res = await window.electronAPI.dbQuery('DELETE FROM users WHERE id = $1', [id]);
+      if (res.success) {
+        await fetchUsers();
+      }
     }
   };
 
   const handleConnect = async () => {
     setStatus('testing');
-    // Simulate connection delay
+    // 目前固定使用 db.js 的設定，此處僅模擬測試
     setTimeout(() => {
       setStatus('success');
     }, 1000);
@@ -105,7 +137,11 @@ const Settings = () => {
                 </tr>
               </thead>
               <tbody>
-                {users.map(u => (
+                {loadingUsers ? (
+                  <tr>
+                    <td colSpan="4" style={{ textAlign: 'center', padding: '24px', color: '#999' }}>帳號資料載入中...</td>
+                  </tr>
+                ) : users.map(u => (
                   <tr key={u.id} style={{ borderBottom: '1px solid #eee', opacity: u.is_active ? 1 : 0.6 }}>
                     <td style={{ padding: '12px' }}>
                       <div style={{ fontWeight: 600 }}>{u.username}</div>
@@ -126,7 +162,7 @@ const Settings = () => {
                     <td style={{ padding: '12px', textAlign: 'center' }}>
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
                         <button 
-                          onClick={() => handleToggleActive(u.id)} 
+                          onClick={() => handleToggleActive(u.id, u.is_active)} 
                           style={{ 
                             padding: '6px 12px', backgroundColor: '#fff', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer',
                             fontSize: '0.85rem'
@@ -135,7 +171,7 @@ const Settings = () => {
                           {u.is_active ? '停用' : '啟用'}
                         </button>
                         <button 
-                          onClick={() => handleDeleteUser(u.id)} 
+                          onClick={() => handleDeleteUser(u.id, u.username)} 
                           style={{ 
                             padding: '6px 12px', backgroundColor: '#fff0f0', border: '1px solid #ffcccc', borderRadius: '4px', cursor: 'pointer',
                             color: '#d32f2f', fontSize: '0.85rem'

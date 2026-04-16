@@ -1,6 +1,6 @@
 import React, { useContext, useState } from 'react';
 import { Download, FileText, Filter, FileSpreadsheet, Lock } from 'lucide-react';
-import { RoleContext } from '../App';
+import { RoleContext } from '../context/RoleContext';
 
 const Reports = () => {
   const { role } = useContext(RoleContext);

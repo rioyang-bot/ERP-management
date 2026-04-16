@@ -3,32 +3,58 @@ import { useNavigate } from 'react-router-dom';
 import { LockKeyhole } from 'lucide-react';
 import logo from '../assets/logo.png';
 import './Login.css';
-
-const MOCK_ACCOUNTS = {
-  'admin': { username: 'admin', role: 'ADMIN', full_name: '系統管理員' },
-  'wang_sh': { username: 'wang_sh', role: 'WAREHOUSE', full_name: '王小華 (總倉管)' },
-  'chen_it': { username: 'chen_it', role: 'IT', full_name: '陳大文 (IT專員)' }
-};
+import { hashPassword } from '../utils/auth';
 
 const Login = ({ setAuthUser }) => {
   const navigate = useNavigate();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    if (!username) {
-      setError('請輸入帳號');
+    if (!username || !password) {
+      setError('請輸入帳號與密碼');
       return;
     }
 
-    const matchedUser = MOCK_ACCOUNTS[username];
-    if (matchedUser) {
-      setAuthUser(matchedUser);
-      navigate('/inventory'); // 成功登入後跳轉至預設首頁
-    } else {
-      setError('帳號或密碼錯誤。提示：請嘗試輸入 admin, wang_sh 或 chen_it');
+    setLoading(true);
+    setError('');
+
+    try {
+      // 0. 環境檢查
+      if (!window.electronAPI) {
+        throw new Error('請使用 Electron 桌面程式運行此應用（不可使用一般瀏覽器登入）');
+      }
+
+      // 1. 將輸入的密碼進行 SHA-256 雜湊
+      const hashedContent = await hashPassword(password);
+
+      // 2. 查詢資料庫
+      const res = await window.electronAPI.dbQuery(
+        'SELECT username, role, full_name, password_hash FROM users WHERE username = $1 AND is_active = TRUE',
+        [username]
+      );
+
+      if (res.success && res.rows.length > 0) {
+        const user = res.rows[0];
+        // 3. 比對雜湊值
+        if (user.password_hash === hashedContent) {
+          const { password_hash: _password_hash, ...sessionUser } = user;
+          setAuthUser(sessionUser);
+          navigate('/inventory');
+        } else {
+          setError('帳號或密碼錯誤');
+        }
+      } else {
+        setError(res.error || '帳號或密碼錯誤');
+      }
+    } catch (err) {
+      console.error('Login error:', err);
+      setError(`系統連線異常: ${err.message}`);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -63,15 +89,16 @@ const Login = ({ setAuthUser }) => {
             <input 
               type="password" 
               className="login-input" 
-              placeholder="請隨意輸入密碼"
+              placeholder="請輸入密碼"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              disabled={loading}
             />
           </div>
 
-          <button type="submit" className="login-button">
+          <button type="submit" className="login-button" disabled={loading}>
             <LockKeyhole size={20} />
-            系統登入
+            {loading ? '驗證中...' : '系統登入'}
           </button>
         </form>
 

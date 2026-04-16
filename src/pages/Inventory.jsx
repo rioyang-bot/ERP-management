@@ -1,19 +1,30 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useEffect } from 'react';
 import { PackageOpen, AlertTriangle, CheckCircle2, Package, Image as ImageIcon } from 'lucide-react';
 import ImageModal from '../components/ImageModal';
-import { RoleContext } from '../App';
+import { RoleContext } from '../context/RoleContext';
 
 const Inventory = () => {
   const { role } = useContext(RoleContext);
   const [modalOpen, setModalOpen] = useState(false);
   const [previewImage, setPreviewImage] = useState('');
+  const [inventory, setInventory] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  // Mock Data mimicking v_inventory_summary SQL View
-  const [inventory] = useState([
-    { id: 1, sn: 'SN-001', name: 'MacBook Pro 16"', safety_stock: 5, purchase_price: 60000, currency: 'TWD', image: null, physical_qty: 10, locked_qty: 2, available_qty: 8 },
-    { id: 2, sn: 'SN-002', name: 'Dell XPS 15', safety_stock: 4, purchase_price: 55000, currency: 'TWD', image: null, physical_qty: 3, locked_qty: 1, available_qty: 2 }, // Low stock
-    { id: 3, sn: 'SN-003', name: 'Logitech Mouse MX Master 3', safety_stock: 10, purchase_price: 3500, currency: 'TWD', image: null, physical_qty: 8, locked_qty: 0, available_qty: 8 }, // Low stock
-  ]);
+  useEffect(() => {
+    let ignore = false;
+    const load = async () => {
+      setLoading(true);
+      const res = await window.electronAPI.dbQuery(
+        'SELECT item_id as id, master_sn as sn, item_name as name, safety_stock, purchase_price, currency, image_path as image, physical_qty, locked_qty, available_qty FROM v_inventory_summary'
+      );
+      if (!ignore && res.success) {
+        setInventory(res.rows);
+      }
+      if (!ignore) setLoading(false);
+    };
+    load();
+    return () => { ignore = true; };
+  }, []);
 
   const openPreview = (url) => {
     if (!url) return;
@@ -28,6 +39,12 @@ const Inventory = () => {
   return (
     <div>
       <h1 className="page-title" style={{ marginBottom: '24px' }}>庫存總表 (Inventory Dashboard)</h1>
+ 
+      {loading && (
+        <div style={{ textAlign: 'center', padding: '40px', color: 'var(--primary-color)' }}>
+          載入中...
+        </div>
+      )}
 
       {/* 頂部三個大型數字卡片 */}
       <div style={{ display: 'grid', gridTemplateColumns: role === 'WAREHOUSE' ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)', gap: '24px', marginBottom: '24px' }}>
@@ -94,7 +111,7 @@ const Inventory = () => {
                 <tr key={item.id} style={{ borderBottom: '1px solid #eee', backgroundColor: isLowStock ? '#fffaf8' : 'transparent' }}>
                   <td style={{ padding: '12px' }}>
                     <div 
-                      onClick={() => openPreview(item.image)}
+                      onClick={() => openPreview(item.image ? window.getMediaUrl(`erp-media:///${item.image}`) : null)}
                       style={{ 
                         width: '40px', height: '40px', borderRadius: '6px', backgroundColor: '#e0e0e0',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -102,7 +119,7 @@ const Inventory = () => {
                       }}
                     >
                       {item.image ? (
-                        <img src={item.image} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        <img src={window.getMediaUrl(`erp-media:///${item.image}`)} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                       ) : (
                         <ImageIcon size={20} color="#aaa" />
                       )}
@@ -128,6 +145,13 @@ const Inventory = () => {
                 </tr>
               );
             })}
+            {!loading && inventory.length === 0 && (
+              <tr>
+                <td colSpan="6" style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
+                  目前尚無庫存資料
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

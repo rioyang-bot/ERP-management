@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import ImageModal from '../components/ImageModal';
 import { Upload, Plus, Save, Image as ImageIcon, Settings2, Trash2, X } from 'lucide-react';
 
-const Assets = () => {
+const Consumables = () => {
   const [items, setItems] = useState([]);
   const [types, setTypes] = useState([]);
   const [brands, setBrands] = useState([]);
@@ -12,19 +12,18 @@ const Assets = () => {
   const [showManageBrand, setShowManageBrand] = useState(false);
   const [newTypeName, setNewTypeName] = useState('');
   const [newBrandName, setNewBrandName] = useState('');
-  const [formData, setFormData] = useState({ type: '', brand: '', sn: '', specification: '', custodian: '', purchase_price: '', currency: 'TWD', image: null, previewUrl: '' });
+  const [formData, setFormData] = useState({ type: '', brand: '', spec: '', unit: '個', safety_stock: 0, purchase_price: '', currency: 'TWD', image: null, previewUrl: '' });
   const [modalOpen, setModalOpen] = useState(false);
   const [previewImage, setPreviewImage] = useState('');
   const [formKey, setFormKey] = useState(0); // 用於強制重整表單區域
   const fileInputRef = React.useRef(null);
 
-  const fetchAssets = useCallback(async () => {
+  const fetchConsumables = useCallback(async () => {
     const res = await window.electronAPI.dbQuery(`
       SELECT i.* FROM items i 
       LEFT JOIN categories c ON i.category_id = c.id 
-      WHERE c.name = '資訊設備' 
+      WHERE c.name = '辦公耗材' 
       ORDER BY i.id DESC
-      LIMIT 5
     `);
     if (res.success) {
       setItems(res.rows);
@@ -34,7 +33,7 @@ const Assets = () => {
   const fetchTypes = useCallback(async () => {
     const res = await window.electronAPI.dbQuery(`
       SELECT name FROM item_types 
-      WHERE category_id = (SELECT id FROM categories WHERE name = '資訊設備')
+      WHERE category_id = (SELECT id FROM categories WHERE name = '辦公耗材')
       ORDER BY name ASC
     `);
     if (res.success) {
@@ -52,7 +51,7 @@ const Assets = () => {
   const fetchBrands = useCallback(async () => {
     const res = await window.electronAPI.dbQuery(`
       SELECT name FROM item_brands 
-      WHERE category_id = (SELECT id FROM categories WHERE name = '資訊設備')
+      WHERE category_id = (SELECT id FROM categories WHERE name = '辦公耗材')
       ORDER BY name ASC
     `);
     if (res.success) {
@@ -69,11 +68,11 @@ const Assets = () => {
 
   useEffect(() => {
     Promise.resolve().then(() => {
-      fetchAssets();
+      fetchConsumables();
       fetchTypes();
       fetchBrands();
     });
-  }, [fetchAssets, fetchTypes, fetchBrands]);
+  }, [fetchConsumables, fetchTypes, fetchBrands]);
 
   const handleAddType = async () => {
     const trimmedName = newTypeName.trim();
@@ -88,7 +87,7 @@ const Assets = () => {
 
     const res = await window.electronAPI.dbQuery(
       'INSERT INTO item_types (category_id, name) VALUES ((SELECT id FROM categories WHERE name = $1), $2)',
-      ['資訊設備', trimmedName]
+      ['辦公耗材', trimmedName]
     );
     if (res.success) {
       setFormData({ ...formData, type: trimmedName });
@@ -105,10 +104,10 @@ const Assets = () => {
   };
 
   const handleDeleteType = async (typeName) => {
-    if (!confirm(`確定要刪除「${typeName}」嗎？這不會影響現有資產資料，但選單中將不再出現此選項。`)) return;
+    if (!confirm(`確定要刪除「${typeName}」嗎？這不會影響現有耗材資料，但選單中將不再出現此選項。`)) return;
     const res = await window.electronAPI.dbQuery(
       'DELETE FROM item_types WHERE name = $1 AND category_id = (SELECT id FROM categories WHERE name = $2)',
-      [typeName, '資訊設備']
+      [typeName, '辦公耗材']
     );
     if (res.success) {
       await fetchTypes();
@@ -133,7 +132,7 @@ const Assets = () => {
 
     const res = await window.electronAPI.dbQuery(
       'INSERT INTO item_brands (category_id, name) VALUES ((SELECT id FROM categories WHERE name = $1), $2)',
-      ['資訊設備', trimmedName]
+      ['辦公耗材', trimmedName]
     );
     if (res.success) {
       setFormData({ ...formData, brand: trimmedName });
@@ -150,10 +149,10 @@ const Assets = () => {
   };
 
   const handleDeleteBrand = async (brandName) => {
-    if (!confirm(`確定要刪除「${brandName}」嗎？這不會影響現有資產資料，但選單中將不再出現此選項。`)) return;
+    if (!confirm(`確定要刪除「${brandName}」嗎？這不會影響現有耗材資料，但選單中將不再出現此選項。`)) return;
     const res = await window.electronAPI.dbQuery(
       'DELETE FROM item_brands WHERE name = $1 AND category_id = (SELECT id FROM categories WHERE name = $2)',
-      [brandName, '資訊設備']
+      [brandName, '辦公耗材']
     );
     if (res.success) {
       await fetchBrands();
@@ -180,9 +179,9 @@ const Assets = () => {
     }
   };
 
-  const handleAddAsset = async () => {
-    if (!formData.sn || !formData.specification || !formData.type) return alert('請填寫必填欄位');
-    
+  const handleAddConsumable = async () => {
+    if (!formData.type || !formData.brand) return alert('請填寫必填欄位');
+
     let image_path = null;
     if (formData.image) {
       try {
@@ -196,15 +195,19 @@ const Assets = () => {
       }
     }
 
+    const generatedSN = `CONS-${Date.now()}`;
+    // 將「類型 廠牌 (規格)」結合成一個規格描述存入資料庫
+    const fullSpec = `${formData.type} ${formData.brand} ${formData.spec ? `(${formData.spec})` : ''}`.trim();
+
     const res = await window.electronAPI.dbQuery(
-      'INSERT INTO items (sn, specification, type, brand, custodian, purchase_price, currency, category_id, image_path) VALUES ($1, $2, $3, $4, $5, $6, $7, (SELECT id FROM categories WHERE name = $8), $9)',
-      [formData.sn, formData.specification, formData.type, formData.brand, formData.custodian, formData.purchase_price || 0, formData.currency, '資訊設備', image_path]
+      'INSERT INTO items (sn, specification, type, brand, unit, safety_stock, purchase_price, currency, category_id, image_path) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, (SELECT id FROM categories WHERE name = $9), $10)',
+      [generatedSN, fullSpec, formData.type, formData.brand, formData.unit, formData.safety_stock || 0, formData.purchase_price || 0, formData.currency, '辦公耗材', image_path]
     );
 
     if (res.success) {
-      alert('資產建檔成功！');
-      await fetchAssets();
-      setFormData({ sn: '', specification: '', type: types[0] || '', brand: brands[0] || '', custodian: '', purchase_price: '', currency: 'TWD', image: null, previewUrl: '' });
+      alert('耗材建檔成功！');
+      await fetchConsumables();
+      setFormData({ type: types[0] || '', brand: brands[0] || '', spec: '', unit: '個', safety_stock: 0, purchase_price: '', currency: 'TWD', image: null, previewUrl: '' });
       if (fileInputRef.current) fileInputRef.current.value = ''; // 徹底清除檔案選擇器
       setFormKey(prev => prev + 1); // 強制重置整個表單區塊元件
     } else {
@@ -221,139 +224,144 @@ const Assets = () => {
   return (
     <div className="assets-container">
       <div className="card-surface">
-        <h1 className="page-title">資產建檔 (Asset Registration)</h1>
-        
+        <h1 className="page-title">耗材建檔 (Consumables Registration)</h1>
+
         <div key={formKey} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
           {/* 左側：表單 */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <label style={{ fontWeight: 500 }}>類型 (Type) *</label>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <select name="type" value={formData.type} onChange={handleChange} style={{ flex: 1, padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
-                    {types.map(t => (
-                      <option key={t} value={t}>{t}</option>
-                    ))}
-                  </select>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <label style={{ fontWeight: 500 }}>類型 (Type) *</label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <select name="type" value={formData.type} onChange={handleChange} style={{ flex: 1, padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
+                  {types.map(t => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+                <button 
+                  onClick={() => { setShowAddType(!showAddType); setShowManageType(false); }}
+                  style={{ padding: '0 12px', backgroundColor: '#f0f0f0', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer' }}
+                  title="新增類型"
+                >
+                  <Plus size={18} />
+                </button>
+                <button 
+                  onClick={() => { setShowManageType(!showManageType); setShowAddType(false); }}
+                  style={{ padding: '0 12px', backgroundColor: '#f0f0f0', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer' }}
+                  title="管理類型"
+                >
+                  <Settings2 size={18} />
+                </button>
+              </div>
+              
+              {showAddType && (
+                <div style={{ display: 'flex', gap: '8px', marginTop: '4px', backgroundColor: '#fffbe6', padding: '8px', borderRadius: '4px', border: '1px solid #ffe58f' }}>
+                  <input 
+                    type="text" 
+                    placeholder="輸入新類型名稱" 
+                    value={newTypeName} 
+                    onChange={(e) => setNewTypeName(e.target.value)}
+                    style={{ flex: 1, padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                  />
                   <button 
-                    onClick={() => { setShowAddType(!showAddType); setShowManageType(false); }}
-                    style={{ padding: '0 10px', backgroundColor: '#f0f0f0', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer' }}
-                    title="新增類型"
+                    onClick={handleAddType}
+                    style={{ padding: '4px 12px', backgroundColor: '#faad14', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.85rem' }}
                   >
-                    <Plus size={18} />
-                  </button>
-                  <button 
-                    onClick={() => { setShowManageType(!showManageType); setShowAddType(false); }}
-                    style={{ padding: '0 10px', backgroundColor: '#f0f0f0', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer' }}
-                    title="管理類型"
-                  >
-                    <Settings2 size={18} />
+                    新增
                   </button>
                 </div>
-                {showAddType && (
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '4px', backgroundColor: '#fffbe6', padding: '8px', borderRadius: '4px', border: '1px solid #ffe58f' }}>
-                    <input 
-                      type="text" 
-                      placeholder="輸入新類型名稱" 
-                      value={newTypeName} 
-                      onChange={(e) => setNewTypeName(e.target.value)}
-                      style={{ flex: 1, padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
-                    />
-                    <button 
-                      onClick={handleAddType}
-                      style={{ padding: '4px 12px', backgroundColor: '#faad14', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.85rem' }}
-                    >
-                      新增
-                    </button>
+              )}
+              {showManageType && (
+                <div style={{ marginTop: '4px', backgroundColor: '#f9f9f9', padding: '8px', borderRadius: '4px', border: '1px solid #eee', maxHeight: '150px', overflowY: 'auto' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', borderBottom: '1px solid #eee', paddingBottom: '4px' }}>
+                    <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>管理類型清單</span>
+                    <X size={14} style={{ cursor: 'pointer' }} onClick={() => setShowManageType(false)} />
                   </div>
-                )}
-                {showManageType && (
-                  <div style={{ marginTop: '4px', backgroundColor: '#f9f9f9', padding: '8px', borderRadius: '4px', border: '1px solid #eee', maxHeight: '150px', overflowY: 'auto' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', borderBottom: '1px solid #eee', paddingBottom: '4px' }}>
-                      <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>管理類型清單</span>
-                      <X size={14} style={{ cursor: 'pointer' }} onClick={() => setShowManageType(false)} />
+                  {types.map(t => (
+                    <div key={t} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', fontSize: '0.85rem' }}>
+                      <span>{t}</span>
+                      <Trash2 size={14} color="#ff4d4f" style={{ cursor: 'pointer' }} onClick={() => handleDeleteType(t)} />
                     </div>
-                    {types.map(t => (
-                      <div key={t} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', fontSize: '0.85rem' }}>
-                        <span>{t}</span>
-                        <Trash2 size={14} color="#ff4d4f" style={{ cursor: 'pointer' }} onClick={() => handleDeleteType(t)} />
-                      </div>
-                    ))}
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <label style={{ fontWeight: 500 }}>廠牌 (Brand) *</label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <select name="brand" value={formData.brand} onChange={handleChange} style={{ flex: 1, padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
+                  {brands.map(b => (
+                    <option key={b} value={b}>{b}</option>
+                  ))}
+                </select>
+                <button 
+                  onClick={() => { setShowAddBrand(!showAddBrand); setShowManageBrand(false); }}
+                  style={{ padding: '0 12px', backgroundColor: '#f0f0f0', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer' }}
+                  title="新增廠牌"
+                >
+                  <Plus size={18} />
+                </button>
+                <button 
+                  onClick={() => { setShowManageBrand(!showManageBrand); setShowAddBrand(false); }}
+                  style={{ padding: '0 12px', backgroundColor: '#f0f0f0', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer' }}
+                  title="管理廠牌"
+                >
+                  <Settings2 size={18} />
+                </button>
+              </div>
+              {showAddBrand && (
+                <div style={{ display: 'flex', gap: '8px', marginTop: '4px', backgroundColor: '#e6f7ff', padding: '8px', borderRadius: '4px', border: '1px solid #91d5ff' }}>
+                  <input 
+                    type="text" 
+                    placeholder="輸入新廠牌名稱" 
+                    value={newBrandName} 
+                    onChange={(e) => setNewBrandName(e.target.value)}
+                    style={{ flex: 1, padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                  />
+                  <button 
+                    onClick={handleAddBrand}
+                    style={{ padding: '4px 12px', backgroundColor: '#1890ff', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.85rem' }}
+                  >
+                    新增
+                  </button>
+                </div>
+              )}
+              {showManageBrand && (
+                <div style={{ marginTop: '4px', backgroundColor: '#f9f9f9', padding: '8px', borderRadius: '4px', border: '1px solid #eee', maxHeight: '150px', overflowY: 'auto' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', borderBottom: '1px solid #eee', paddingBottom: '4px' }}>
+                    <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>管理廠牌清單</span>
+                    <X size={14} style={{ cursor: 'pointer' }} onClick={() => setShowManageBrand(false)} />
                   </div>
-                )}
+                  {brands.map(b => (
+                    <div key={b} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', fontSize: '0.85rem' }}>
+                      <span>{b}</span>
+                      <Trash2 size={14} color="#ff4d4f" style={{ cursor: 'pointer' }} onClick={() => handleDeleteBrand(b)} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <label style={{ fontWeight: 500 }}>規格 (Specification)</label>
+              <textarea name="spec" value={formData.spec} onChange={handleChange} style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc', minHeight: '80px', resize: 'vertical' }} placeholder="請輸入詳細規格，例如：藍色、大容量、5% 覆蓋率等" />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <label style={{ fontWeight: 500 }}>單位 (Unit)</label>
+                <select name="unit" value={formData.unit} onChange={handleChange} style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
+                  <option value="個">個</option>
+                  <option value="條">條</option>
+                  <option value="片">片</option>
+                  <option value="台">台</option>
+                </select>
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <label style={{ fontWeight: 500 }}>廠牌 (Brand) *</label>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <select name="brand" value={formData.brand} onChange={handleChange} style={{ flex: 1, padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
-                    {brands.map(b => (
-                      <option key={b} value={b}>{b}</option>
-                    ))}
-                  </select>
-                  <button 
-                    onClick={() => { setShowAddBrand(!showAddBrand); setShowManageBrand(false); }}
-                    style={{ padding: '0 10px', backgroundColor: '#f0f0f0', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer' }}
-                    title="新增廠牌"
-                  >
-                    <Plus size={18} />
-                  </button>
-                  <button 
-                    onClick={() => { setShowManageBrand(!showManageBrand); setShowAddBrand(false); }}
-                    style={{ padding: '0 10px', backgroundColor: '#f0f0f0', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer' }}
-                    title="管理廠牌"
-                  >
-                    <Settings2 size={18} />
-                  </button>
-                </div>
-                {showAddBrand && (
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '4px', backgroundColor: '#e6f7ff', padding: '8px', borderRadius: '4px', border: '1px solid #91d5ff' }}>
-                    <input 
-                      type="text" 
-                      placeholder="輸入新廠牌名稱" 
-                      value={newBrandName} 
-                      onChange={(e) => setNewBrandName(e.target.value)}
-                      style={{ flex: 1, padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
-                    />
-                    <button 
-                      onClick={handleAddBrand}
-                      style={{ padding: '4px 12px', backgroundColor: '#1890ff', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.85rem' }}
-                    >
-                      新增
-                    </button>
-                  </div>
-                )}
-                {showManageBrand && (
-                  <div style={{ marginTop: '4px', backgroundColor: '#f9f9f9', padding: '8px', borderRadius: '4px', border: '1px solid #eee', maxHeight: '150px', overflowY: 'auto' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', borderBottom: '1px solid #eee', paddingBottom: '4px' }}>
-                      <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>管理廠牌清單</span>
-                      <X size={14} style={{ cursor: 'pointer' }} onClick={() => setShowManageBrand(false)} />
-                    </div>
-                    {brands.map(b => (
-                      <div key={b} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', fontSize: '0.85rem' }}>
-                        <span>{b}</span>
-                        <Trash2 size={14} color="#ff4d4f" style={{ cursor: 'pointer' }} onClick={() => handleDeleteBrand(b)} />
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <label style={{ fontWeight: 500 }}>安全庫存水位</label>
+                <input type="number" name="safety_stock" value={formData.safety_stock} onChange={handleChange} style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }} />
               </div>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <label style={{ fontWeight: 500 }}>序號 / SN *</label>
-              <input type="text" name="sn" value={formData.sn} onChange={handleChange} style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }} placeholder="請輸入裝備唯一序號" />
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <label style={{ fontWeight: 500 }}>規格 (Specification) *</label>
-              <input type="text" name="specification" value={formData.specification} onChange={handleChange} style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }} placeholder="請輸入詳細規格" />
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <label style={{ fontWeight: 500 }}>保管人 (Custodian)</label>
-              <input type="text" name="custodian" value={formData.custodian} onChange={handleChange} style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }} placeholder="請輸入保管人姓名" />
             </div>
 
             {/* 採購財務資訊區塊 */}
@@ -374,14 +382,10 @@ const Assets = () => {
                   <input type="number" name="purchase_price" value={formData.purchase_price} onChange={handleChange} style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }} placeholder="0.00" />
                 </div>
               </div>
-              <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                <input type="checkbox" id="export_price" defaultChecked />
-                <label htmlFor="export_price">匯出報表時包含此採購單價資訊</label>
-              </div>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <label style={{ fontWeight: 500 }}>資產圖片上傳</label>
+              <label style={{ fontWeight: 500 }}>耗材圖片上傳</label>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <label style={{
                   padding: '10px 16px',
@@ -409,8 +413,8 @@ const Assets = () => {
               </div>
             </div>
 
-            <button 
-              onClick={handleAddAsset}
+            <button
+              onClick={handleAddConsumable}
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                 padding: '12px', marginTop: '16px', backgroundColor: 'var(--primary-color)',
@@ -418,26 +422,26 @@ const Assets = () => {
               }}
             >
               <Save size={18} />
-              儲存資產
+              儲存耗材
             </button>
           </div>
 
           {/* 右側：列表 */}
           <div>
-            <h3 style={{ marginBottom: '16px', color: 'var(--text-main)' }}>最近已建檔資產 (最新5筆)</h3>
+            <h3 style={{ marginBottom: '16px', color: 'var(--text-main)' }}>已建檔耗材列表</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {items.map(item => (
                 <div key={item.id} style={{ display: 'flex', alignItems: 'center', padding: '12px', border: '1px solid #eee', borderRadius: '8px', backgroundColor: '#fafafa' }}>
-                  <div 
+                  <div
                     onClick={() => openPreview(item.image_path ? window.getMediaUrl(`erp-media:///${item.image_path}`) : null)}
-                    style={{ 
+                    style={{
                       width: '48px', height: '48px', borderRadius: '6px', backgroundColor: '#e0e0e0',
                       display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: '16px',
                       cursor: item.image_path ? 'pointer' : 'default', overflow: 'hidden'
                     }}
                   >
                     {item.image_path ? (
-                      <img src={window.getMediaUrl(`erp-media:///${item.image_path}`)} alt={item.specification} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      <img src={window.getMediaUrl(`erp-media:///${item.image_path}`)} alt={item.brand} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     ) : (
                       <ImageIcon color="#aaa" />
                     )}
@@ -445,15 +449,15 @@ const Assets = () => {
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 600, color: 'var(--primary-color)' }}>{item.brand || '未指定廠牌'}</div>
                     <div style={{ color: 'var(--text-main)', fontSize: '0.94rem', fontWeight: 500 }}>
-                      <span style={{ color: '#555', marginRight: '4px' }}>[{item.sn}]</span>
-                      {item.specification}
+                      {item.specification.replace(`${item.type} ${item.brand}`, '').trim().replace(/^\(|\)$/g, '') || '無詳細規格'}
                     </div>
-                    <div style={{ color: '#666', fontSize: '0.8rem', marginTop: '2px' }}>
+                    <div style={{ color: '#666', fontSize: '0.8rem', marginTop: '4px' }}>
                       <span style={{ backgroundColor: '#f0f0f0', padding: '2px 6px', borderRadius: '4px' }}>{item.type}</span>
                     </div>
                   </div>
                   <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', textAlign: 'right' }}>
-                    <div>保管人: {item.custodian || '未設定'}</div>
+                    <div>單位: {item.unit}</div>
+                    <div>預警: {item.safety_stock}</div>
                     {item.purchase_price && (
                       <div style={{ fontWeight: 600, color: '#2e7d32', marginTop: '4px' }}>
                         {item.currency} {Number(item.purchase_price).toLocaleString()}
@@ -462,16 +466,15 @@ const Assets = () => {
                   </div>
                 </div>
               ))}
-              {items.length === 0 && <p style={{ color: '#aaa', textAlign: 'center', marginTop: '20px' }}>尚無資產</p>}
+              {items.length === 0 && <p style={{ color: '#aaa', textAlign: 'center', marginTop: '20px' }}>尚無耗材</p>}
             </div>
           </div>
         </div>
       </div>
 
-      {/* 圖片彈出預覽 Modal */}
       <ImageModal isOpen={modalOpen} imageUrl={previewImage} onClose={() => setModalOpen(false)} />
     </div>
   );
 };
 
-export default Assets;
+export default Consumables;

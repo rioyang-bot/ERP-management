@@ -1,6 +1,6 @@
 import React, { useContext } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-import { RoleContext } from '../../App';
+import { RoleContext } from '../../context/RoleContext';
 import logo from '../../assets/logo.png';
 import './MainLayout.css';
 
@@ -17,7 +17,9 @@ const MainLayout = () => {
     { id: 'inventory', path: '/inventory', label: '庫存總表 (Inventory)' },
     { id: 'review', path: '/review', label: '出貨審核 (Review)' },
     { id: 'inbound', path: '/inbound', label: '進貨入庫 (Inbound)' },
-    { id: 'assets', path: '/assets', label: '資產建檔 (Items)' },
+    { id: 'assets', path: '/assets', label: '資產建檔 (Asset)' },
+    { id: 'assetList', path: '/asset-list', label: '資產列表 (Asset List)' },
+    { id: 'consumables', path: '/consumables', label: '耗材建檔 (Items)' },
     { id: 'partners', path: '/partners', label: '客戶/廠商管理 (Partners)' },
     { id: 'reports', path: '/reports', label: '報表匯出 (Reports)' },
   ];

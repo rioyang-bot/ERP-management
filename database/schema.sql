@@ -20,6 +20,24 @@ CREATE TABLE IF NOT EXISTS categories (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 品項類型 (Item Types - 例如：筆電, 伺服器, 文具)
+CREATE TABLE IF NOT EXISTS item_types (
+    id SERIAL PRIMARY KEY,
+    category_id INTEGER REFERENCES categories(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(category_id, name)
+);
+
+-- 品項廠牌 (Item Brands - 例如：Apple, Dell, Double A)
+CREATE TABLE IF NOT EXISTS item_brands (
+    id SERIAL PRIMARY KEY,
+    category_id INTEGER REFERENCES categories(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(category_id, name)
+);
+
 -- 客戶與供應商主檔
 CREATE TABLE IF NOT EXISTS partners (
     id SERIAL PRIMARY KEY,
@@ -37,9 +55,13 @@ CREATE TABLE IF NOT EXISTS partners (
 CREATE TABLE IF NOT EXISTS items (
     id SERIAL PRIMARY KEY,
     category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
-    sn VARCHAR(100) UNIQUE NOT NULL, -- 產品序號/編號
-    name VARCHAR(200) NOT NULL,
-    safety_stock INTEGER DEFAULT 0,  -- 安全水位
+    sn VARCHAR(100) UNIQUE NOT NULL, -- 序號 (資產類必填)
+    specification TEXT NOT NULL,     -- 規格 (原資產名稱)
+    type VARCHAR(100),               -- 類型
+    brand VARCHAR(100),              -- 廠牌
+    custodian VARCHAR(100),          -- 保管人 (新加入)
+    unit VARCHAR(20) DEFAULT '個',    -- 單位 (新加入，如：個, 支, 包)
+    safety_stock INTEGER DEFAULT 0,  -- 安全水位 (耗材類仍可使用)
     purchase_price DECIMAL(15, 2),   -- 採購單價
     currency VARCHAR(10) DEFAULT 'TWD', -- 幣別
     image_path TEXT,                 -- 圖片路徑
@@ -54,6 +76,7 @@ CREATE TABLE IF NOT EXISTS inbound_orders (
     partner_id INTEGER REFERENCES partners(id), -- 供應商
     order_date DATE NOT NULL DEFAULT CURRENT_DATE,
     total_amount DECIMAL(15, 2) DEFAULT 0,
+    invoice_image_path TEXT,              -- 發票圖檔路徑 (新加入)
     status VARCHAR(20) DEFAULT 'DRAFT', -- DRAFT, COMPLETED
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -90,7 +113,12 @@ CREATE OR REPLACE VIEW v_inventory_summary AS
 SELECT 
     i.id AS item_id,
     i.sn AS master_sn,
-    i.name AS item_name,
+    i.specification AS item_name, -- 舊的 item_name 現在對應到新的規格欄位
+    i.type,
+    i.brand,
+    i.specification,
+    i.custodian,
+    i.unit,
     i.safety_stock,
     i.purchase_price,
     i.currency,
@@ -147,3 +175,64 @@ VALUES ('admin', 'admin_hash_placeholder', 'ADMIN', '系統與帳號管理員')
 ON CONFLICT (username) DO NOTHING;
 
 
+-- 初始化常用資產類型
+INSERT INTO item_types (category_id, name)
+SELECT c.id, t.name FROM categories c
+CROSS JOIN (
+    SELECT '筆記型電腦' as name UNION ALL
+    SELECT '桌上型電腦' UNION ALL
+    SELECT '伺服器' UNION ALL
+    SELECT '螢幕/顯示器' UNION ALL
+    SELECT '網路設備' UNION ALL
+    SELECT '周邊設備' UNION ALL
+    SELECT '其他'
+) t
+WHERE c.name = '資訊設備'
+ON CONFLICT DO NOTHING;
+
+-- 初始化常用耗材類型
+INSERT INTO item_types (category_id, name)
+SELECT c.id, t.name FROM categories c
+CROSS JOIN (
+    SELECT '紙張' as name UNION ALL
+    SELECT '文具' UNION ALL
+    SELECT '墨水/碳粉' UNION ALL
+    SELECT '清潔用品' UNION ALL
+    SELECT '其他'
+) t
+WHERE c.name = '辦公耗材'
+ON CONFLICT DO NOTHING;
+
+-- 初始化常用資產廠牌
+INSERT INTO item_brands (category_id, name)
+SELECT c.id, t.name FROM categories c
+CROSS JOIN (
+    SELECT 'Apple' as name UNION ALL
+    SELECT 'Dell' UNION ALL
+    SELECT 'HP' UNION ALL
+    SELECT 'Lenovo' UNION ALL
+    SELECT 'ASUS' UNION ALL
+    SELECT 'Acer' UNION ALL
+    SELECT 'MSI' UNION ALL
+    SELECT 'Cisco' UNION ALL
+    SELECT 'Logi' UNION ALL
+    SELECT '其他'
+) t
+WHERE c.name = '資訊設備'
+ON CONFLICT DO NOTHING;
+
+-- 初始化常用耗材廠牌
+INSERT INTO item_brands (category_id, name)
+SELECT c.id, t.name FROM categories c
+CROSS JOIN (
+    SELECT 'Double A' as name UNION ALL
+    SELECT '3M' UNION ALL
+    SELECT 'HP' UNION ALL
+    SELECT 'Epson' UNION ALL
+    SELECT 'Brother' UNION ALL
+    SELECT 'Pilot' UNION ALL
+    SELECT 'Pentel' UNION ALL
+    SELECT '其他'
+) t
+WHERE c.name = '辦公耗材'
+ON CONFLICT DO NOTHING;

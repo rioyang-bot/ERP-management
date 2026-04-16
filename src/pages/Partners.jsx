@@ -1,25 +1,55 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { UserPlus, Trash2, Edit2, Search } from 'lucide-react';
 
 const Partners = () => {
-  const [partners, setPartners] = useState([
-    { id: 1, type: 'CUSTOMER', name: '王大明企業', contact: '王大明', phone: '0912-345-678' },
-    { id: 2, type: 'SUPPLIER', name: '零件王供應商', contact: '陳先生', phone: '02-2345-6789' },
-  ]);
-
+  const [partners, setPartners] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [formData, setFormData] = useState({ type: 'CUSTOMER', name: '', contact: '', phone: '' });
+
+  useEffect(() => {
+    let ignore = false;
+    const load = async () => {
+      setLoading(true);
+      const res = await window.electronAPI.dbQuery('SELECT id, partner_type as type, name, contact_person as contact, phone FROM partners ORDER BY id DESC');
+      if (!ignore && res.success) {
+        setPartners(res.rows);
+      }
+      if (!ignore) setLoading(false);
+    };
+    load();
+    return () => { ignore = true; };
+  }, []);
 
   const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!formData.name) return;
-    setPartners([...partners, { id: Date.now(), ...formData }]);
-    setFormData({ type: 'CUSTOMER', name: '', contact: '', phone: '' });
+    const res = await window.electronAPI.dbQuery(
+      'INSERT INTO partners (partner_type, name, contact_person, phone) VALUES ($1, $2, $3, $4)',
+      [formData.type, formData.name, formData.contact, formData.phone]
+    );
+
+    if (res.success) {
+      // 重新整理列表
+      const refresh = await window.electronAPI.dbQuery('SELECT id, partner_type as type, name, contact_person as contact, phone FROM partners ORDER BY id DESC');
+      if (refresh.success) setPartners(refresh.rows);
+      
+      setFormData({ type: 'CUSTOMER', name: '', contact: '', phone: '' });
+    } else {
+      alert('新增失敗：' + res.error);
+    }
   };
 
-  const handleDelete = (id) => {
+  const handleDelete = async (id) => {
     if(window.confirm('確定要刪除這筆資料嗎？')) {
-      setPartners(partners.filter(p => p.id !== id));
+      const res = await window.electronAPI.dbQuery('DELETE FROM partners WHERE id = $1', [id]);
+      if (res.success) {
+        // 重新整理列表
+        const refresh = await window.electronAPI.dbQuery('SELECT id, partner_type as type, name, contact_person as contact, phone FROM partners ORDER BY id DESC');
+        if (refresh.success) setPartners(refresh.rows);
+      } else {
+        alert('刪除失敗：' + res.error);
+      }
     }
   };
 
@@ -85,7 +115,7 @@ const Partners = () => {
               </tr>
             </thead>
             <tbody>
-              {partners.map(p => (
+              {!loading && partners.map(p => (
                 <tr key={p.id} style={{ borderBottom: '1px solid #eee' }}>
                   <td style={{ padding: '12px' }}>
                     <span style={{ 
@@ -105,7 +135,12 @@ const Partners = () => {
                   </td>
                 </tr>
               ))}
-              {partners.length === 0 && (
+              {loading && (
+                <tr>
+                   <td colSpan="4" style={{ textAlign: 'center', padding: '24px', color: '#999' }}>資料載入中...</td>
+                </tr>
+              )}
+              {!loading && partners.length === 0 && (
                 <tr>
                   <td colSpan="4" style={{ textAlign: 'center', padding: '24px', color: '#999' }}>尚無資料</td>
                 </tr>

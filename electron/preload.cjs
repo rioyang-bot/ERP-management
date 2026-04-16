@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  // We will add DB connection and query methods here later
   ping: () => ipcRenderer.invoke('ping'),
+  dbQuery: (sql, params) => ipcRenderer.invoke('db:query', sql, params),
+  saveFile: (fileName, arrayBuffer) => ipcRenderer.invoke('file:save', { fileName, arrayBuffer }),
 });
