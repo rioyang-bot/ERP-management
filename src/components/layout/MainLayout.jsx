@@ -1,11 +1,31 @@
-import React, { useContext } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import React, { useContext, useState, useEffect } from 'react';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { RoleContext } from '../../context/RoleContext';
 import logo from '../../assets/logo.png';
+import { ChevronDown, ChevronRight, Speaker } from 'lucide-react';
 import './MainLayout.css';
 
 const MainLayout = () => {
   const { role, authUser, setAuthUser } = useContext(RoleContext);
+  const [brands, setBrands] = useState([]);
+  const [isAssetListExpanded, setIsAssetListExpanded] = useState(true);
+  const location = useLocation();
+
+  useEffect(() => {
+    const fetchBrands = async () => {
+      const res = await window.electronAPI.dbQuery(`
+        SELECT DISTINCT brand 
+        FROM items i 
+        JOIN categories c ON i.category_id = c.id 
+        WHERE c.name = '資訊設備' AND i.brand IS NOT NULL AND i.brand != ''
+        ORDER BY brand ASC
+      `);
+      if (res.success) {
+        setBrands(res.rows.map(r => r.brand));
+      }
+    };
+    fetchBrands();
+  }, []);
 
   const allMenuItems = [
     { id: 'inventory', path: '/inventory', label: '庫存查閱 (Inventory)' },
@@ -13,7 +33,7 @@ const MainLayout = () => {
     { id: 'outbound', path: '/outbound', label: '出貨進銷 (Cart)' },
     { id: 'review', path: '/review', label: '出貨審核 (Review)' },
     { id: 'assets', path: '/assets', label: '資產建檔 (Asset)' },
-    { id: 'assetList', path: '/asset-list', label: '資產列表 (Asset List)' },
+    { id: 'assetList', path: '/asset-list', label: '設備列表 (Equipments)', hasSub: true },
     { id: 'consumables', path: '/consumables', label: '耗材建檔 (Items)' },
     { id: 'purchasing', path: '/purchasing', label: '採購建檔 (Procurement)' },
     { id: 'procurementList', path: '/procurement-list', label: '採購列表 (Procurement list)' },
@@ -24,11 +44,8 @@ const MainLayout = () => {
 
   const menuItems = allMenuItems.filter(item => authUser?.menu_access?.[item.id]);
 
-  // (Removed unused pageTitle derivation)
-
   return (
     <div className="layout-container">
-      {/* 側邊欄 */}
       <aside className="sidebar">
         <div className="sidebar-header" style={{ display: 'flex', alignItems: 'center', gap: '12px', paddingBottom: '24px' }}>
           <img src={logo} alt="Logo" style={{ width: '36px', height: '36px' }} />
@@ -40,18 +57,47 @@ const MainLayout = () => {
         <ul className="sidebar-nav">
           {menuItems.map(item => (
             <li key={item.id}>
-              <NavLink
-                to={item.path}
-                className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-              >
-                {item.label}
-              </NavLink>
+              {item.id === 'assetList' ? (
+                <>
+                  <div 
+                    onClick={() => setIsAssetListExpanded(!isAssetListExpanded)}
+                    className={`nav-item ${location.pathname === '/asset-list' ? 'active' : ''}`}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}
+                  >
+                    <NavLink to="/asset-list" onClick={(e) => e.stopPropagation()} style={{ flex: 1, color: 'inherit', textDecoration: 'none' }}>
+                      {item.label}
+                    </NavLink>
+                    {isAssetListExpanded ? <ChevronDown size={16} opacity={0.5} /> : <ChevronRight size={16} opacity={0.5} />}
+                  </div>
+                  
+                  {isAssetListExpanded && (
+                    <ul style={{ listStyle: 'none', paddingLeft: '12px', marginTop: '4px' }}>
+                      {brands.map(brand => (
+                        <li key={brand}>
+                          <NavLink 
+                            to={`/asset-list?brand=${encodeURIComponent(brand)}`}
+                            className={({ isActive }) => `nav-sub-item ${isActive && location.search.includes(brand) ? 'active' : ''}`}
+                          >
+                            • {brand}
+                          </NavLink>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              ) : (
+                <NavLink
+                  to={item.path}
+                  className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+                >
+                  {item.label}
+                </NavLink>
+              )}
             </li>
           ))}
         </ul>
       </aside>
 
-      {/* 右側主要區域 */}
       <main className="main-content">
         <header className="topbar">
           <div className="user-info" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
@@ -74,7 +120,6 @@ const MainLayout = () => {
           </div>
         </header>
 
-        {/* 實際內容 */}
         <div className="content-area">
           <Outlet />
         </div>

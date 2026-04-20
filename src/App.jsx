@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { RoleContext } from './context/RoleContext';
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import MainLayout from './components/layout/MainLayout';
@@ -17,12 +17,27 @@ import Purchasing from './pages/Purchasing';
 import ProcurementList from './pages/ProcurementList';
 import './index.css';
 
-// 全域角色 Context
-// RoleContext moved to ./context/RoleContext.jsx
-
 function App() {
-  const [authUser, setAuthUser] = useState(null); 
-  
+  const [authUser, setAuthUser] = useState(() => {
+    // 試圖從 localStorage 恢復連線階段
+    const saved = localStorage.getItem('erp_session');
+    try {
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      console.error('Failed to parse session:', e);
+      return null;
+    }
+  });
+
+  // 當 authUser 變動時同步到 localStorage
+  useEffect(() => {
+    if (authUser) {
+      localStorage.setItem('erp_session', JSON.stringify(authUser));
+    } else {
+      localStorage.removeItem('erp_session');
+    }
+  }, [authUser]);
+
   // 取得從 authUser 解構出來的 role (如果未登入則是 null)
   const role = authUser?.role;
 

@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import ImageModal from '../components/ImageModal';
-import { Upload, Plus, Save, Image as ImageIcon, Settings2, Trash2, X } from 'lucide-react';
+import { Plus, Save, Settings2, Trash2, X } from 'lucide-react';
 
 const Assets = () => {
   const [items, setItems] = useState([]);
@@ -12,12 +11,14 @@ const Assets = () => {
   const [showManageBrand, setShowManageBrand] = useState(false);
   const [newTypeName, setNewTypeName] = useState('');
   const [newBrandName, setNewBrandName] = useState('');
-  const [formData, setFormData] = useState({ type: '', brand: '', sn: '', specification: '', custodian: '', unit: '個', image: null, previewUrl: '' });
+  const [formData, setFormData] = useState({ 
+    type: '', brand: '', sn: '', specification: '', client: '', 
+    hostname: '', location: '', installed_date: '', 
+    customer_warranty_expire: '', system_date: '', warranty_expire: '',
+    unit: '個' 
+  });
   const UNIFIED_UNITS = ['個', '台', '盒', '包', '支', '組', '瓶', '卷', '張', '份'];
-  const [modalOpen, setModalOpen] = useState(false);
-  const [previewImage, setPreviewImage] = useState('');
   const [formKey, setFormKey] = useState(0); // 用於強制重整表單區域
-  const fileInputRef = React.useRef(null);
 
   const fetchAssets = useCallback(async () => {
     const res = await window.electronAPI.dbQuery(`
@@ -25,7 +26,7 @@ const Assets = () => {
       LEFT JOIN categories c ON i.category_id = c.id 
       WHERE c.name = '資訊設備' 
       ORDER BY i.id DESC
-      LIMIT 5
+      LIMIT 10
     `);
     if (res.success) {
       setItems(res.rows);
@@ -97,11 +98,7 @@ const Assets = () => {
       setNewTypeName('');
       setShowAddType(false);
     } else {
-      if (res.error && res.error.includes('duplicate key')) {
-        alert('此類型已存在於選單中');
-      } else {
-        alert('新增類型失敗：' + res.error);
-      }
+      alert('新增類型失敗：' + res.error);
     }
   };
 
@@ -142,11 +139,7 @@ const Assets = () => {
       setNewBrandName('');
       setShowAddBrand(false);
     } else {
-      if (res.error && res.error.includes('duplicate key')) {
-        alert('此廠牌已存在於選單中');
-      } else {
-        alert('新增廠牌失敗：' + res.error);
-      }
+      alert('新增廠牌失敗：' + res.error);
     }
   };
 
@@ -170,294 +163,199 @@ const Assets = () => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleImageChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData({ ...formData, image: file, previewUrl: reader.result });
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
   const handleAddAsset = async () => {
     if (!formData.sn || !formData.specification || !formData.type) return alert('請填寫必填欄位');
     
-    let image_path = null;
-    if (formData.image) {
-      try {
-        const buffer = await formData.image.arrayBuffer();
-        const saveRes = await window.electronAPI.saveFile(formData.image.name, buffer);
-        if (saveRes.success) {
-          image_path = saveRes.fileName;
-        }
-      } catch (err) {
-        console.error('Image upload failed:', err);
-      }
-    }
-
-    const res = await window.electronAPI.dbQuery(
-      'INSERT INTO items (sn, specification, type, brand, unit, custodian, category_id, image_path) VALUES ($1, $2, $3, $4, $5, $6, (SELECT id FROM categories WHERE name = $7), $8)',
-      [formData.sn, formData.specification, formData.type, formData.brand, formData.unit, formData.custodian, '資訊設備', image_path]
+    const res = await window.electronAPI.dbQuery(`
+      INSERT INTO items (
+        sn, specification, type, brand, unit, 
+        client, hostname, location, installed_date, 
+        customer_warranty_expire, system_date, warranty_expire,
+        category_id, purchase_price
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, (SELECT id FROM categories WHERE name = $13), 0)`,
+      [
+        formData.sn, formData.specification, formData.type, formData.brand, formData.unit, 
+        formData.client, formData.hostname, formData.location, formData.installed_date || null,
+        formData.customer_warranty_expire || null, formData.system_date || null, formData.warranty_expire || null,
+        '資訊設備'
+      ]
     );
 
     if (res.success) {
-      alert('資產建檔成功！');
+      alert('設備建檔成功！');
       await fetchAssets();
-      setFormData({ sn: '', specification: '', type: types[0] || '', brand: brands[0] || '', custodian: '', unit: '個', image: null, previewUrl: '' });
-      if (fileInputRef.current) fileInputRef.current.value = ''; // 徹底清除檔案選擇器
-      setFormKey(prev => prev + 1); // 強制重置整個表單區塊元件
+      setFormData({ 
+        sn: '', specification: '', type: types[0] || '', brand: brands[0] || '', client: '', 
+        hostname: '', location: '', installed_date: '', 
+        customer_warranty_expire: '', system_date: '', warranty_expire: '',
+        unit: '個' 
+      });
+      setFormKey(prev => prev + 1);
     } else {
       alert('建檔失敗：' + res.error);
     }
   };
 
-  const openPreview = (url) => {
-    if (!url) return;
-    setPreviewImage(url);
-    setModalOpen(true);
-  };
-
   return (
     <div className="assets-container">
       <div className="card-surface">
-        <h1 className="page-title">資產建檔 (Asset Registration)</h1>
+        <h1 className="page-title">設備建檔 (Device Registration)</h1>
         
-        <div key={formKey} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+        <div key={formKey} style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '32px' }}>
           {/* 左側：表單 */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <label style={{ fontWeight: 500 }}>類型 (Type) *</label>
+                <label style={{ fontWeight: 600, fontSize: '0.9rem', color: '#555' }}>類型 (Type) *</label>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <select name="type" value={formData.type} onChange={handleChange} style={{ flex: 1, padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
+                  <select name="type" value={formData.type} onChange={handleChange} style={inputStyle}>
                     {types.map(t => (
                       <option key={t} value={t}>{t}</option>
                     ))}
                   </select>
-                  <button 
-                    onClick={() => { setShowAddType(!showAddType); setShowManageType(false); }}
-                    style={{ padding: '0 10px', backgroundColor: '#f0f0f0', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer' }}
-                    title="新增類型"
-                  >
-                    <Plus size={18} />
-                  </button>
-                  <button 
-                    onClick={() => { setShowManageType(!showManageType); setShowAddType(false); }}
-                    style={{ padding: '0 10px', backgroundColor: '#f0f0f0', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer' }}
-                    title="管理類型"
-                  >
-                    <Settings2 size={18} />
-                  </button>
+                  <button onClick={() => { setShowAddType(!showAddType); setShowManageType(false); }} style={iconButtonStyle} title="新增類型"><Plus size={18} /></button>
+                  <button onClick={() => { setShowManageType(!showManageType); setShowAddType(false); }} style={iconButtonStyle} title="管理類型"><Settings2 size={18} /></button>
                 </div>
                 {showAddType && (
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '4px', backgroundColor: '#fffbe6', padding: '8px', borderRadius: '4px', border: '1px solid #ffe58f' }}>
-                    <input 
-                      type="text" 
-                      placeholder="輸入新類型名稱" 
-                      value={newTypeName} 
-                      onChange={(e) => setNewTypeName(e.target.value)}
-                      style={{ flex: 1, padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
-                    />
-                    <button 
-                      onClick={handleAddType}
-                      style={{ padding: '4px 12px', backgroundColor: '#faad14', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.85rem' }}
-                    >
-                      新增
-                    </button>
+                  <div style={popoverStyle}>
+                    <input type="text" placeholder="新名稱" value={newTypeName} onChange={(e) => setNewTypeName(e.target.value)} style={smallInputStyle} />
+                    <button onClick={handleAddType} style={smallAddButtonStyle}>新增</button>
                   </div>
                 )}
                 {showManageType && (
-                  <div style={{ marginTop: '4px', backgroundColor: '#f9f9f9', padding: '8px', borderRadius: '4px', border: '1px solid #eee', maxHeight: '150px', overflowY: 'auto' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', borderBottom: '1px solid #eee', paddingBottom: '4px' }}>
-                      <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>管理類型清單</span>
-                      <X size={14} style={{ cursor: 'pointer' }} onClick={() => setShowManageType(false)} />
-                    </div>
+                  <div style={manageListStyle}>
+                    <div style={manageHeaderStyle}><span>管理類型</span><X size={14} style={{ cursor: 'pointer' }} onClick={() => setShowManageType(false)} /></div>
                     {types.map(t => (
-                      <div key={t} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', fontSize: '0.85rem' }}>
-                        <span>{t}</span>
-                        <Trash2 size={14} color="#ff4d4f" style={{ cursor: 'pointer' }} onClick={() => handleDeleteType(t)} />
-                      </div>
+                      <div key={t} style={manageItemStyle}><span>{t}</span><Trash2 size={14} color="#ff4d4f" style={{ cursor: 'pointer' }} onClick={() => handleDeleteType(t)} /></div>
                     ))}
                   </div>
                 )}
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <label style={{ fontWeight: 500 }}>廠牌 (Brand) *</label>
+                <label style={{ fontWeight: 600, fontSize: '0.9rem', color: '#555' }}>廠牌 (Brand) *</label>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <select name="brand" value={formData.brand} onChange={handleChange} style={{ flex: 1, padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
+                  <select name="brand" value={formData.brand} onChange={handleChange} style={inputStyle}>
                     {brands.map(b => (
                       <option key={b} value={b}>{b}</option>
                     ))}
                   </select>
-                  <button 
-                    onClick={() => { setShowAddBrand(!showAddBrand); setShowManageBrand(false); }}
-                    style={{ padding: '0 10px', backgroundColor: '#f0f0f0', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer' }}
-                    title="新增廠牌"
-                  >
-                    <Plus size={18} />
-                  </button>
-                  <button 
-                    onClick={() => { setShowManageBrand(!showManageBrand); setShowAddBrand(false); }}
-                    style={{ padding: '0 10px', backgroundColor: '#f0f0f0', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer' }}
-                    title="管理廠牌"
-                  >
-                    <Settings2 size={18} />
-                  </button>
+                  <button onClick={() => { setShowAddBrand(!showAddBrand); setShowManageBrand(false); }} style={iconButtonStyle} title="新增廠牌"><Plus size={18} /></button>
+                  <button onClick={() => { setShowManageBrand(!showManageBrand); setShowAddBrand(false); }} style={iconButtonStyle} title="管理廠牌"><Settings2 size={18} /></button>
                 </div>
                 {showAddBrand && (
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '4px', backgroundColor: '#e6f7ff', padding: '8px', borderRadius: '4px', border: '1px solid #91d5ff' }}>
-                    <input 
-                      type="text" 
-                      placeholder="輸入新廠牌名稱" 
-                      value={newBrandName} 
-                      onChange={(e) => setNewBrandName(e.target.value)}
-                      style={{ flex: 1, padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
-                    />
-                    <button 
-                      onClick={handleAddBrand}
-                      style={{ padding: '4px 12px', backgroundColor: '#1890ff', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.85rem' }}
-                    >
-                      新增
-                    </button>
+                  <div style={popoverStyle}>
+                    <input type="text" placeholder="新名稱" value={newBrandName} onChange={(e) => setNewBrandName(e.target.value)} style={smallInputStyle} />
+                    <button onClick={handleAddBrand} style={smallAddButtonStyle}>新增</button>
                   </div>
                 )}
                 {showManageBrand && (
-                  <div style={{ marginTop: '4px', backgroundColor: '#f9f9f9', padding: '8px', borderRadius: '4px', border: '1px solid #eee', maxHeight: '150px', overflowY: 'auto' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', borderBottom: '1px solid #eee', paddingBottom: '4px' }}>
-                      <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>管理廠牌清單</span>
-                      <X size={14} style={{ cursor: 'pointer' }} onClick={() => setShowManageBrand(false)} />
-                    </div>
+                  <div style={manageListStyle}>
+                    <div style={manageHeaderStyle}><span>管理廠牌</span><X size={14} style={{ cursor: 'pointer' }} onClick={() => setShowManageBrand(false)} /></div>
                     {brands.map(b => (
-                      <div key={b} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', fontSize: '0.85rem' }}>
-                        <span>{b}</span>
-                        <Trash2 size={14} color="#ff4d4f" style={{ cursor: 'pointer' }} onClick={() => handleDeleteBrand(b)} />
-                      </div>
+                      <div key={b} style={manageItemStyle}><span>{b}</span><Trash2 size={14} color="#ff4d4f" style={{ cursor: 'pointer' }} onClick={() => handleDeleteBrand(b)} /></div>
                     ))}
                   </div>
                 )}
               </div>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <label style={{ fontWeight: 500 }}>序號 / SN *</label>
-              <input type="text" name="sn" value={formData.sn} onChange={handleChange} style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }} placeholder="請輸入裝備唯一序號" />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div>
+                <label style={labelStyle}>序號 / SN *</label>
+                <input type="text" name="sn" value={formData.sn} onChange={handleChange} style={inputStyle} placeholder="唯一硬體序號" />
+              </div>
+              <div>
+                <label style={labelStyle}>HostName</label>
+                <input type="text" name="hostname" value={formData.hostname} onChange={handleChange} style={inputStyle} placeholder="例如: SRV-APP-01" />
+              </div>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <label style={{ fontWeight: 500 }}>規格 (Specification) *</label>
-              <input type="text" name="specification" value={formData.specification} onChange={handleChange} style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }} placeholder="請輸入詳細規格" />
+            <div>
+              <label style={labelStyle}>規格 (Specification) *</label>
+              <input type="text" name="specification" value={formData.specification} onChange={handleChange} style={inputStyle} placeholder="詳細型號與規格文字" />
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <label style={{ fontWeight: 500 }}>保管人 (Custodian)</label>
-                <input type="text" name="custodian" value={formData.custodian} onChange={handleChange} style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }} placeholder="請輸入保管人姓名" />
+              <div><label style={labelStyle}>客戶名稱 (Customer)</label><input type="text" name="client" value={formData.client} onChange={handleChange} style={inputStyle} placeholder="客戶公司/名稱" /></div>
+              <div><label style={labelStyle}>放置位置 (Location)</label><input type="text" name="location" value={formData.location} onChange={handleChange} style={inputStyle} placeholder="例如: 1F A機櫃" /></div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div>
+                <label style={labelStyle}>專案安裝日期 (Project Date)</label>
+                <input type="date" name="installed_date" value={formData.installed_date} onChange={handleChange} style={inputStyle} />
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <label style={{ fontWeight: 500 }}>單位 (Unit)</label>
-                <select name="unit" value={formData.unit} onChange={handleChange} style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
+              <div>
+                <label style={labelStyle}>系統日期 (System Date)</label>
+                <input type="date" name="system_date" value={formData.system_date} onChange={handleChange} style={inputStyle} />
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div>
+                <label style={labelStyle}>原廠保固到期 (Warranty Expire)</label>
+                <input type="date" name="warranty_expire" value={formData.warranty_expire} onChange={handleChange} style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>客戶保固到期 (Cust Warranty)</label>
+                <input type="date" name="customer_warranty_expire" value={formData.customer_warranty_expire} onChange={handleChange} style={inputStyle} />
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div>
+                <label style={labelStyle}>單位 (Unit)</label>
+                <select name="unit" value={formData.unit} onChange={handleChange} style={inputStyle}>
                   {UNIFIED_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
                 </select>
               </div>
             </div>
 
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <label style={{ fontWeight: 500 }}>資產圖片上傳</label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <label style={{
-                  padding: '10px 16px',
-                  backgroundColor: '#f1f3f4',
-                  border: '1px dashed #aaa',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px'
-                }}>
-                  <Upload size={18} />
-                  <span>選擇圖片</span>
-                  <input 
-                    ref={fileInputRef}
-                    type="file" 
-                    accept="image/*" 
-                    onChange={handleImageChange} 
-                    style={{ display: 'none' }} 
-                  />
-                </label>
-                {formData.previewUrl && (
-                  <img src={formData.previewUrl} alt="preview" style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px', cursor: 'pointer' }} onClick={() => openPreview(formData.previewUrl)} />
-                )}
-              </div>
-            </div>
-
-            <button 
-              onClick={handleAddAsset}
-              style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                padding: '12px', marginTop: '16px', backgroundColor: 'var(--primary-color)',
-                color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600
-              }}
-            >
-              <Save size={18} />
-              儲存資產
+            <button onClick={handleAddAsset} className="btn-primary" style={{ marginTop: '12px', padding: '14px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+              <Save size={18} /> 儲存設備建檔
             </button>
           </div>
 
           {/* 右側：列表 */}
           <div>
-            <h3 style={{ marginBottom: '16px', color: 'var(--text-main)' }}>最近已建檔資產 (最新5筆)</h3>
+            <h3 style={{ marginBottom: '20px', color: 'var(--text-main)', fontSize: '1.1rem' }}>最近已建檔資產</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {items.map(item => (
-                <div key={item.id} style={{ display: 'flex', alignItems: 'center', padding: '12px', border: '1px solid #eee', borderRadius: '8px', backgroundColor: '#fafafa' }}>
-                  <div 
-                    onClick={() => openPreview(item.image_path ? window.getMediaUrl(`erp-media:///${item.image_path}`) : null)}
-                    style={{ 
-                      width: '48px', height: '48px', borderRadius: '6px', backgroundColor: '#e0e0e0',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: '16px',
-                      cursor: item.image_path ? 'pointer' : 'default', overflow: 'hidden'
-                    }}
-                  >
-                    {item.image_path ? (
-                      <img src={window.getMediaUrl(`erp-media:///${item.image_path}`)} alt={item.specification} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    ) : (
-                      <ImageIcon color="#aaa" />
-                    )}
-                  </div>
+                <div key={item.id} style={{ display: 'flex', alignItems: 'center', padding: '16px', border: '1px solid #eee', borderRadius: '12px', backgroundColor: '#fff' }}>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 600, color: 'var(--primary-color)' }}>{item.brand || '未指定廠牌'}</div>
-                    <div style={{ color: 'var(--text-main)', fontSize: '0.94rem', fontWeight: 500 }}>
-                      <span style={{ color: '#555', marginRight: '4px' }}>[{item.sn}]</span>
-                      {item.specification}
+                    <div style={{ fontWeight: 800, color: 'var(--primary-color)', fontSize: '0.9rem' }}>{item.brand || 'N/A'}</div>
+                    <div style={{ color: '#333', fontSize: '1rem', fontWeight: 600, margin: '4px 0' }}>
+                       <span style={{ color: '#888', marginRight: '6px' }}>[{item.sn}]</span>
+                       {item.specification}
                     </div>
-                    <div style={{ color: '#666', fontSize: '0.8rem', marginTop: '2px' }}>
-                      <span style={{ backgroundColor: '#f0f0f0', padding: '2px 6px', borderRadius: '4px' }}>{item.type}</span>
-                    </div>
+                    <div style={{ fontSize: '0.8rem', color: '#888' }}><span style={{ backgroundColor: '#f1f3f4', padding: '2px 6px', borderRadius: '4px' }}>{item.type}</span></div>
                   </div>
-                  <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', textAlign: 'right' }}>
-                    <div>保管人: {item.custodian || '未設定'}</div>
-                    {item.purchase_price && (
-                      <div style={{ fontWeight: 600, color: '#2e7d32', marginTop: '4px' }}>
-                        {item.currency} {Number(item.purchase_price).toLocaleString()}
-                      </div>
-                    )}
+                  <div style={{ textAlign: 'right', fontSize: '0.85rem' }}>
+                    <div style={{ color: '#722ed1', fontWeight: 600 }}>{item.client || '--'}</div>
+                    <div style={{ color: '#666', marginTop: '4px' }}>{item.hostname || 'No HostName'}</div>
+                    <div style={{ color: '#888', fontSize: '0.75rem' }}>{item.location || '--'}</div>
                   </div>
                 </div>
               ))}
-              {items.length === 0 && <p style={{ color: '#aaa', textAlign: 'center', marginTop: '20px' }}>尚無資產</p>}
+              {items.length === 0 && <p style={{ color: '#aaa', textAlign: 'center', marginTop: '40px' }}>目前尚清單為空</p>}
             </div>
           </div>
         </div>
       </div>
-
-      {/* 圖片彈出預覽 Modal */}
-      <ImageModal isOpen={modalOpen} imageUrl={previewImage} onClose={() => setModalOpen(false)} />
     </div>
   );
 };
+
+const labelStyle = { display: 'block', fontSize: '0.9rem', fontWeight: 600, color: '#555', marginBottom: '8px' };
+const inputStyle = { width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '0.95rem', outline: 'none', backgroundColor: '#fff', boxSizing: 'border-box' };
+const iconButtonStyle = { padding: '0 12px', backgroundColor: '#f5f5f5', border: '1px solid #ddd', borderRadius: '8px', cursor: 'pointer' };
+const smallInputStyle = { flex: 1, padding: '6px 10px', borderRadius: '6px', border: '1px solid #ccc', fontSize: '0.85rem' };
+const smallAddButtonStyle = { padding: '6px 12px', backgroundColor: 'var(--primary-color)', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' };
+const popoverStyle = { display: 'flex', gap: '8px', marginTop: '4px', backgroundColor: '#f9fafb', padding: '8px', borderRadius: '8px', border: '1px solid #eee' };
+const manageListStyle = { marginTop: '8px', backgroundColor: '#fff', padding: '12px', borderRadius: '10px', border: '1px solid #eee', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', maxHeight: '200px', overflowY: 'auto' };
+const manageHeaderStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', borderBottom: '1px solid #f0f0f0', paddingBottom: '6px', fontSize: '0.9rem', fontWeight: 700 };
+const manageItemStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', fontSize: '0.9rem', borderBottom: '1px solid #f9f9f9' };
 
 export default Assets;

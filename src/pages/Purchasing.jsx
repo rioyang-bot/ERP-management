@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useContext } from 'react';
-import { Plus, Search, FileText, ShoppingCart, CheckCircle, Clock, AlertCircle, Trash2, DollarSign, Package, Tag, Filter, X, Save, Settings2 } from 'lucide-react';
+import { Plus, Search, FileText, ShoppingCart, CheckCircle, Clock, AlertCircle, Trash2, DollarSign, Package, Tag, Filter, X, Save, Settings2, Trash } from 'lucide-react';
 import { RoleContext } from '../context/RoleContext';
 
 const ProcurementRegistration = () => {
@@ -7,117 +7,149 @@ const ProcurementRegistration = () => {
   const [purchaseRecords, setPurchaseRecords] = useState([]);
   const [partners, setPartners] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [types, setTypes] = useState([]);
-  const [brands, setBrands] = useState([]);
+  
+  // Options state for selects
+  const [options, setOptions] = useState({
+    types: {},
+    brands: {}
+  });
+
   const [loading, setLoading] = useState(true);
 
-  // 新增類型/廠牌的 UI 狀態
-  const [showAddType, setShowAddType] = useState(false);
-  const [showAddBrand, setShowAddBrand] = useState(false);
-  const [newTypeName, setNewTypeName] = useState('');
-  const [newBrandName, setNewBrandName] = useState('');
+  // PO Header states
+  const [orderNo, setOrderNo] = useState('');
+  const [partnerId, setPartnerId] = useState('');
+  const [remarks, setRemarks] = useState('');
 
-  // 表單狀態
-  const [formData, setFormData] = useState(() => ({
-    order_no: `PO-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(Math.random() * 1000)}`,
-    partner_id: '',
-    category_id: '',
-    item_type: '',
-    brand: '',
-    specification: '',
-    unit: '個',
-    unit_price: '',
-    quantity: 1
-  }));
+  // Items in this PO
+  const [items, setItems] = useState([
+    { id: 'initial-row', category_id: '', item_type: '', brand: '', specification: '', unit: '個', unit_price: '', quantity: 1 }
+  ]);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    const [recordsRes, partnersRes, catsRes] = await Promise.all([
-      window.electronAPI.dbQuery(`
-        SELECT pr.*, p.name as partner_name, c.name as category_name, u.full_name as purchaser_name
-        FROM purchase_records pr
-        LEFT JOIN partners p ON pr.partner_id = p.id
-        LEFT JOIN categories c ON pr.category_id = c.id
-        LEFT JOIN users u ON pr.purchaser_id = u.id
-        ORDER BY pr.created_at DESC
-        LIMIT 5
-      `),
-      window.electronAPI.dbQuery("SELECT id, name FROM partners WHERE partner_type = 'SUPPLIER' ORDER BY name ASC"),
-      window.electronAPI.dbQuery("SELECT id, name FROM categories")
-    ]);
+  // Quick Add UI states
+  const [quickAdd, setQuickAdd] = useState({ show: false, type: '', rowId: null, catId: null });
+  const [newName, setNewName] = useState('');
 
-    if (recordsRes.success) setPurchaseRecords(recordsRes.rows);
-    if (partnersRes.success) setPartners(partnersRes.rows);
-    if (catsRes.success) {
-      setCategories(catsRes.rows);
-      setFormData(prev => {
-        if (!prev.category_id && catsRes.rows.length > 0) {
-          return { ...prev, category_id: catsRes.rows[0].id.toString() };
-        }
-        return prev;
-      });
-    }
-    setLoading(false);
-  }, []);
-
-  const fetchTypesAndBrands = useCallback(async (catId) => {
+  const fetchOptions = useCallback(async (catId) => {
     if (!catId) return;
     const [typesRes, brandsRes] = await Promise.all([
       window.electronAPI.dbQuery("SELECT name FROM item_types WHERE category_id = $1 ORDER BY name ASC", [catId]),
       window.electronAPI.dbQuery("SELECT name FROM item_brands WHERE category_id = $1 ORDER BY name ASC", [catId])
     ]);
-    if (typesRes.success) setTypes(typesRes.rows.map(r => r.name));
-    if (brandsRes.success) setBrands(brandsRes.rows.map(r => r.name));
+    
+    setOptions(prev => ({
+      ...prev,
+      types: { ...prev.types, [catId]: typesRes.success ? typesRes.rows.map(r => r.name) : [] },
+      brands: { ...prev.brands, [catId]: brandsRes.success ? brandsRes.rows.map(r => r.name) : [] }
+    }));
   }, []);
 
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [recordsRes, partnersRes, catsRes] = await Promise.all([
+        window.electronAPI.dbQuery(`
+          SELECT pr.*, p.name as partner_name, c.name as category_name, u.full_name as purchaser_name
+          FROM purchase_records pr
+          LEFT JOIN partners p ON pr.partner_id = p.id
+          LEFT JOIN categories c ON pr.category_id = c.id
+          LEFT JOIN users u ON pr.purchaser_id = u.id
+          ORDER BY pr.created_at DESC
+          LIMIT 10
+        `),
+        window.electronAPI.dbQuery("SELECT id, name FROM partners WHERE partner_type = 'SUPPLIER' ORDER BY name ASC"),
+        window.electronAPI.dbQuery("SELECT id, name FROM categories")
+      ]);
+
+      if (recordsRes.success) setPurchaseRecords(recordsRes.rows);
+      if (partnersRes.success) setPartners(partnersRes.rows);
+      if (catsRes.success) {
+        setCategories(catsRes.rows);
+        for (const cat of catsRes.rows) {
+          await fetchOptions(cat.id);
+        }
+        
+        // Generate initial PO status if empty
+        const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+        const poCountRes = await window.electronAPI.dbQuery(
+          "SELECT COUNT(DISTINCT order_no) as count FROM purchase_records WHERE order_no LIKE $1",
+          [`PO-${today}-%`]
+        );
+        const nextNum = (poCountRes.success ? Number(poCountRes.rows[0].count) : 0) + 1;
+        const paddedNum = nextNum.toString().padStart(2, '0');
+        setOrderNo(prev => prev || `PO-${today}-${paddedNum}`);
+
+        // Only init items if they are empty
+        setItems(prev => {
+          if (prev.length === 0 || (prev.length === 1 && !prev[0].specification)) {
+             return [{ id: Date.now(), category_id: catsRes.rows[0].id.toString(), item_type: '', brand: '', specification: '', unit: '個', quantity: 1 }];
+          }
+          return prev;
+        });
+      }
+    } catch (err) {
+      console.error("Fetch Data Error:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchOptions]);
+
   useEffect(() => {
-    const init = async () => {
-      await fetchData();
-    };
-    init();
+    Promise.resolve().then(() => {
+      fetchData();
+    });
   }, [fetchData]);
 
-  useEffect(() => {
-    const syncTypesAndBrands = async () => {
-      if (formData.category_id) {
-        await fetchTypesAndBrands(formData.category_id);
+  const handleAddItem = () => {
+    const lastItem = items[items.length - 1];
+    setItems([
+      ...items,
+      { 
+        id: Date.now(), 
+        category_id: lastItem?.category_id || categories[0]?.id.toString() || '', 
+        item_type: '', 
+        brand: '', 
+        specification: '', 
+        unit: '個', 
+        quantity: 1 
       }
-    };
-    syncTypesAndBrands();
-  }, [formData.category_id, fetchTypesAndBrands]);
-
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    ]);
   };
 
-  const handleAddType = async () => {
-    if (!newTypeName.trim() || !formData.category_id) return;
-    const res = await window.electronAPI.dbQuery(
-      'INSERT INTO item_types (category_id, name) VALUES ($1, $2)',
-      [formData.category_id, newTypeName.trim()]
-    );
-    if (res.success) {
-      setFormData(prev => ({ ...prev, item_type: newTypeName.trim() }));
-      setNewTypeName('');
-      setShowAddType(false);
-      fetchTypesAndBrands(formData.category_id);
-    } else {
-      alert('新增失敗：' + res.error);
-    }
+  const handleRemoveItem = (id) => {
+    if (items.length === 1) return;
+    setItems(items.filter(item => item.id !== id));
   };
 
-  const handleAddBrand = async () => {
-    if (!newBrandName.trim() || !formData.category_id) return;
+  const handleItemChange = (id, field, value) => {
+    setItems(items.map(item => {
+      if (item.id === id) {
+        if (field === 'category_id') {
+          return { ...item, [field]: value, item_type: '', brand: '' };
+        }
+        return { ...item, [field]: value };
+      }
+      return item;
+    }));
+  };
+
+  const openQuickAdd = (rowId, catId, type) => {
+    setQuickAdd({ show: true, type, rowId, catId });
+    setNewName('');
+  };
+
+  const handleQuickAddSave = async () => {
+    if (!newName.trim()) return;
+    const table = quickAdd.type === 'type' ? 'item_types' : 'item_brands';
     const res = await window.electronAPI.dbQuery(
-      'INSERT INTO item_brands (category_id, name) VALUES ($1, $2)',
-      [formData.category_id, newBrandName.trim()]
+      `INSERT INTO ${table} (category_id, name) VALUES ($1, $2)`,
+      [quickAdd.catId, newName.trim()]
     );
+
     if (res.success) {
-      setFormData(prev => ({ ...prev, brand: newBrandName.trim() }));
-      setNewBrandName('');
-      setShowAddBrand(false);
-      fetchTypesAndBrands(formData.category_id);
+      await fetchOptions(quickAdd.catId);
+      handleItemChange(quickAdd.rowId, quickAdd.type === 'type' ? 'item_type' : 'brand', newName.trim());
+      setQuickAdd({ show: false, type: '', rowId: null, catId: null });
     } else {
       alert('新增失敗：' + res.error);
     }
@@ -125,42 +157,44 @@ const ProcurementRegistration = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.partner_id || !formData.category_id || !formData.specification || !formData.unit_price) {
-      return alert('請填寫完整採購資訊');
+    if (!partnerId) return alert('請選擇供應商');
+    if (items.some(i => !i.category_id || !i.specification || !i.quantity)) {
+      return alert('請填寫完整的品項資訊');
     }
 
-    const res = await window.electronAPI.dbQuery(`
-      INSERT INTO purchase_records (
-        order_no, partner_id, category_id, item_type, brand, 
-        specification, unit, unit_price, quantity, purchaser_id
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-    `, [
-      formData.order_no, 
-      formData.partner_id, 
-      formData.category_id, 
-      formData.item_type, 
-      formData.brand, 
-      formData.specification, 
-      formData.unit, 
-      formData.unit_price, 
-      formData.quantity, 
-      authUser?.id
-    ]);
+    setLoading(true);
+    try {
+      for (const item of items) {
+        const res = await window.electronAPI.dbQuery(`
+          INSERT INTO purchase_records (
+            order_no, partner_id, category_id, item_type, brand, 
+            specification, unit, quantity, purchaser_id, status, remarks,
+            unit_price
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 0)`,
+          [
+            orderNo, partnerId, item.category_id, item.item_type, item.brand,
+            item.specification, item.unit, item.quantity, authUser?.id, 'ORDERED', remarks
+          ]
+        );
+        if (!res.success) {
+          throw new Error(`品項 ${item.specification} 儲存失敗: ${res.error}`);
+        }
+      }
 
-    if (res.success) {
-      alert('採購紀錄已建立');
-      setFormData(prev => ({
-        ...prev,
-        order_no: `PO-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(Math.random() * 1000)}`,
-        item_type: '',
-        brand: '',
-        specification: '',
-        unit_price: '',
-        quantity: 1
-      }));
-      fetchData();
-    } else {
-      alert('建立失敗：' + res.error);
+      alert('採購建檔成功！');
+      
+      // Reset form properly
+      setOrderNo(''); 
+      setRemarks('');
+      setPartnerId('');
+      setItems([]); // Clear items so fetchData can re-init
+      
+      await fetchData();
+    } catch (err) {
+      console.error("Submit Error:", err);
+      alert('採購建檔失敗：' + err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -176,164 +210,227 @@ const ProcurementRegistration = () => {
     <div className="purchasing-container">
       <div className="card-surface">
         <h1 className="page-title">採購建檔 (Procurement Registration)</h1>
-        
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(400px, 1fr) 1.5fr', gap: '32px' }}>
-          {/* 左側：表單 */}
-          <div style={{ padding: '24px', backgroundColor: '#fcfcfc', borderRadius: '12px', border: '1px solid #eee' }}>
-            <h3 style={{ margin: '0 0 24px 0', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.2rem' }}>
-              <Plus size={22} color="var(--primary-color)" /> 新建採購單
-            </h3>
-            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <div>
-                <label style={labelStyle}>採購類別 (Category)</label>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  {categories.map(c => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onClick={() => setFormData(prev => ({ ...prev, category_id: c.id.toString(), item_type: '', brand: '' }))}
-                      style={{
-                        flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid',
-                        borderColor: formData.category_id === c.id.toString() ? 'var(--primary-color)' : '#ddd',
-                        backgroundColor: formData.category_id === c.id.toString() ? '#f0f7ff' : '#fff',
-                        color: formData.category_id === c.id.toString() ? 'var(--primary-color)' : '#666',
-                        fontWeight: formData.category_id === c.id.toString() ? 700 : 400,
-                        cursor: 'pointer', transition: 'all 0.2s', fontSize: '0.9rem'
-                      }}
-                    >
-                      {c.name === '資訊設備' ? '資產 (Asset)' : (c.name === '辦公耗材' ? '耗材 (Consumable)' : c.name)}
-                    </button>
-                  ))}
-                </div>
-              </div>
 
+        <form onSubmit={handleSubmit}>
+          {/* Header Section */}
+          <div className="card-surface" style={{ backgroundColor: '#f8f9fa', marginBottom: '24px', padding: '24px', border: '1px solid #eee' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '24px', marginBottom: '16px' }}>
               <div>
-                <label style={labelStyle}>供應商 (Supplier)</label>
-                <select name="partner_id" value={formData.partner_id} onChange={handleInputChange} style={inputStyle}>
+                <label style={labelStyle}>採購單號 (PO No.)</label>
+                <input value={orderNo} readOnly style={{ ...inputStyle, backgroundColor: '#eee', fontWeight: 'bold' }} />
+              </div>
+              <div>
+                <label style={labelStyle}>供應商 (Supplier) *</label>
+                <select value={partnerId} onChange={e => setPartnerId(e.target.value)} style={inputStyle}>
                   <option value="">請選擇供應商</option>
                   {partners.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                <div style={{ position: 'relative' }}>
-                  <label style={labelStyle}>類型 (Type)</label>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <select name="item_type" value={formData.item_type} onChange={handleInputChange} style={{ ...inputStyle, flex: 1 }}>
-                      <option value="">請選擇類型</option>
-                      {types.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                    <button type="button" onClick={() => setShowAddType(!showAddType)} style={iconButtonStyle}><Plus size={18} /></button>
-                  </div>
-                  {showAddType && (
-                    <div className="popover-input">
-                      <input type="text" placeholder="名稱" value={newTypeName} onChange={(e) => setNewTypeName(e.target.value)} style={smallInputStyle} />
-                      <button type="button" onClick={handleAddType} className="btn-small-add">新增</button>
-                      <X size={14} style={{ cursor: 'pointer' }} onClick={() => setShowAddType(false)} />
-                    </div>
-                  )}
-                </div>
-                <div style={{ position: 'relative' }}>
-                  <label style={labelStyle}>廠牌 (Brand)</label>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <select name="brand" value={formData.brand} onChange={handleInputChange} style={{ ...inputStyle, flex: 1 }}>
-                      <option value="">請選擇廠牌</option>
-                      {brands.map(b => <option key={b} value={b}>{b}</option>)}
-                    </select>
-                    <button type="button" onClick={() => setShowAddBrand(!showAddBrand)} style={iconButtonStyle}><Plus size={18} /></button>
-                  </div>
-                  {showAddBrand && (
-                    <div className="popover-input">
-                      <input type="text" placeholder="名稱" value={newBrandName} onChange={(e) => setNewBrandName(e.target.value)} style={smallInputStyle} />
-                      <button type="button" onClick={handleAddBrand} className="btn-small-add">新增</button>
-                      <X size={14} style={{ cursor: 'pointer' }} onClick={() => setShowAddBrand(false)} />
-                    </div>
-                  )}
-                </div>
-              </div>
-
               <div>
-                <label style={labelStyle}>規格 (Specification)</label>
-                <input type="text" name="specification" value={formData.specification} onChange={handleInputChange} style={inputStyle} placeholder="詳細規格描述" />
+                <label style={labelStyle}>採購人員 (Purchaser)</label>
+                <input disabled value={authUser?.full_name || '--'} style={{ ...inputStyle, backgroundColor: '#eee' }} />
               </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div>
-                  <label style={labelStyle}>單位 (Unit)</label>
-                  <select name="unit" value={formData.unit} onChange={handleInputChange} style={inputStyle}>
-                    {UNIFIED_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label style={labelStyle}>數量 (Qty)</label>
-                  <input type="number" name="quantity" value={formData.quantity} onChange={handleInputChange} style={inputStyle} min="1" />
-                </div>
-              </div>
-
-              <div>
-                <label style={labelStyle}>採購單價 (Unit Price)</label>
-                <div style={{ position: 'relative' }}>
-                  <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#888' }}>$</span>
-                  <input type="number" name="unit_price" value={formData.unit_price} onChange={handleInputChange} style={{ ...inputStyle, paddingLeft: '28px' }} placeholder="0.00" />
-                </div>
-              </div>
-
-              <button type="submit" className="btn-primary" style={{ width: '100%', marginTop: '12px', padding: '14px', borderRadius: '10px', fontSize: '1rem', fontWeight: 700 }}>
-                 確認建立採購單
-              </button>
-            </form>
+            </div>
+            <div>
+              <label style={labelStyle}>採購備註 (PO Remarks)</label>
+              <textarea 
+                value={remarks} 
+                onChange={e => setRemarks(e.target.value)} 
+                placeholder="請輸入此採購案的備註說明（選填）..."
+                style={{ ...inputStyle, minHeight: '40px', height: '40px', resize: 'none' }}
+              />
+            </div>
           </div>
 
-          {/* 右側：最近紀錄 */}
-          <div>
-            <h3 style={{ marginBottom: '20px', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Clock size={20} color="#666" /> 最近採購紀錄 (最新5筆)
-            </h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {loading ? (
-                <p style={{ color: '#aaa', textAlign: 'center', marginTop: '40px' }}>資料載入中...</p>
-              ) : purchaseRecords.length === 0 ? (
-                <p style={{ color: '#aaa', textAlign: 'center', marginTop: '40px' }}>尚無採購紀錄</p>
-              ) : (
-                purchaseRecords.map(record => (
-                  <div key={record.id} style={{ display: 'flex', alignItems: 'center', padding: '16px', border: '1px solid #eee', borderRadius: '12px', backgroundColor: '#fff' }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                        <span style={{ fontWeight: 700, color: 'var(--primary-color)', fontSize: '0.95rem' }}>{record.order_no}</span>
-                        <span style={{ 
-                          padding: '2px 8px', borderRadius: '12px', fontSize: '0.7rem', fontWeight: 600,
-                          backgroundColor: statusColors[record.status]?.bg, color: statusColors[record.status]?.color
-                        }}>{statusColors[record.status]?.label}</span>
+          {/* Items Section */}
+          <div className="card-surface" style={{ padding: '0', overflow: 'hidden', border: '1px solid #eee' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ backgroundColor: '#f1f3f4', textAlign: 'left' }}>
+                  <th style={{ ...thStyle, width: '140px' }}>類別</th>
+                  <th style={{ ...thStyle, width: '160px' }}>類型 / 廠牌</th>
+                  <th style={thStyle}>規格 (Specification)</th>
+                  <th style={{ ...thStyle, width: '100px' }}>單位</th>
+                  <th style={{ ...thStyle, width: '100px' }}>數量</th>
+                  <th style={{ ...thStyle, width: '60px', textAlign: 'center' }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((row) => (
+                  <tr key={row.id} style={{ borderBottom: '1px solid #eee' }}>
+                    <td style={tdStyle}>
+                      <select 
+                        value={row.category_id} 
+                        onChange={e => handleItemChange(row.id, 'category_id', e.target.value)}
+                        style={inputStyle}
+                      >
+                        {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                    </td>
+                    <td style={tdStyle}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div style={{ display: 'flex', gap: '4px' }}>
+                          <select 
+                            value={row.item_type} 
+                            onChange={e => handleItemChange(row.id, 'item_type', e.target.value)}
+                            style={{ ...inputStyle, fontSize: '0.8rem', padding: '6px' }}
+                          >
+                            <option value="">(類型)</option>
+                            {(options.types[row.category_id] || []).map(t => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                          <button type="button" onClick={() => openQuickAdd(row.id, row.category_id, 'type')} style={smallIconButtonStyle}><Plus size={14} /></button>
+                        </div>
+                        <div style={{ display: 'flex', gap: '4px' }}>
+                          <select 
+                            value={row.brand} 
+                            onChange={e => handleItemChange(row.id, 'brand', e.target.value)}
+                            style={{ ...inputStyle, fontSize: '0.8rem', padding: '6px' }}
+                          >
+                            <option value="">(廠牌)</option>
+                            {(options.brands[row.category_id] || []).map(b => <option key={b} value={b}>{b}</option>)}
+                          </select>
+                          <button type="button" onClick={() => openQuickAdd(row.id, row.category_id, 'brand')} style={smallIconButtonStyle}><Plus size={14} /></button>
+                        </div>
                       </div>
-                      <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>{record.specification}</div>
-                      <div style={{ fontSize: '0.8rem', color: '#888', marginTop: '4px' }}>
-                        {record.partner_name} · {record.quantity} {record.unit} · <span style={{ fontWeight: 600, color: '#444' }}>${Number(record.unit_price).toLocaleString()}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
+                    </td>
+                    <td style={tdStyle}>
+                      <input 
+                        value={row.specification} 
+                        onChange={e => handleItemChange(row.id, 'specification', e.target.value)}
+                        style={inputStyle}
+                        placeholder="詳細規格說明"
+                      />
+                    </td>
+                    <td style={tdStyle}>
+                      <select 
+                        value={row.unit} 
+                        onChange={e => handleItemChange(row.id, 'unit', e.target.value)}
+                        style={inputStyle}
+                      >
+                        {UNIFIED_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                      </select>
+                    </td>
+                    <td style={tdStyle}>
+                      <input 
+                        type="number" 
+                        value={row.quantity} 
+                        onChange={e => handleItemChange(row.id, 'quantity', e.target.value)}
+                        style={inputStyle}
+                        min="1"
+                      />
+                    </td>
+                    <td style={{ ...tdStyle, textAlign: 'center' }}>
+                      <button type="button" onClick={() => handleRemoveItem(row.id)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#ff4d4f' }}>
+                        <Trash2 size={18} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            
+            <div style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fafafa' }}>
+              <button type="button" onClick={handleAddItem} style={{ 
+                display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', 
+                backgroundColor: 'white', border: '1px solid #ddd', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, color: 'var(--primary-color)'
+              }}>
+                <Plus size={18} /> 增加採購品項
+              </button>
+              <div style={{ textAlign: 'right' }}>
+                <span style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--primary-color)' }}>
+                  採購項目: {items.length} 筆
+                </span>
+              </div>
             </div>
+          </div>
+
+          <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end', gap: '16px' }}>
+            <button type="button" onClick={fetchData} style={{ 
+              padding: '14px 32px', backgroundColor: '#fff', border: '1px solid #ddd', borderRadius: '10px', fontWeight: 600, cursor: 'pointer' 
+            }}>取消並重設</button>
+            <button type="submit" disabled={loading} className="btn-primary" style={{ 
+              padding: '14px 48px', borderRadius: '10px', fontSize: '1.1rem', fontWeight: 700, boxShadow: '0 4px 12px rgba(27, 54, 93, 0.2)'
+            }}>
+              {loading ? '儲存中...' : '確認提交採購單'}
+            </button>
+          </div>
+        </form>
+
+        <hr style={{ margin: '40px 0', border: 'none', borderTop: '1px solid #eee' }} />
+
+        {/* Recently Added List */}
+        <div>
+          <h3 style={{ marginBottom: '20px', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Clock size={20} color="#666" /> 最近採購紀錄 (最新 10 筆)
+          </h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            {loading && purchaseRecords.length === 0 ? (
+              <p style={{ color: '#aaa', gridColumn: '1 / span 2', textAlign: 'center' }}>載入中...</p>
+            ) : purchaseRecords.length === 0 ? (
+              <p style={{ color: '#aaa', gridColumn: '1 / span 2', textAlign: 'center' }}>尚無採購紀錄</p>
+            ) : (
+              purchaseRecords.map(record => (
+                <div key={record.id} style={{ display: 'flex', flexDirection: 'column', padding: '16px', border: '1px solid #eee', borderRadius: '12px', backgroundColor: '#fff' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <span style={{ fontWeight: 700, color: 'var(--primary-color)', fontSize: '0.9rem' }}>{record.order_no}</span>
+                    <span style={{ 
+                      padding: '2px 8px', borderRadius: '12px', fontSize: '0.7rem', fontWeight: 600,
+                      backgroundColor: statusColors[record.status]?.bg, color: statusColors[record.status]?.color
+                    }}>{statusColors[record.status]?.label}</span>
+                  </div>
+                  <div style={{ fontWeight: 600, fontSize: '1rem', color: '#333' }}>{record.specification}</div>
+                  <div style={{ fontSize: '0.85rem', color: '#666', marginTop: '4px' }}>
+                    <span style={{ color: '#888' }}>{record.partner_name}</span> · 
+                    <span style={{ fontWeight: 700, color: '#444' }}>{record.quantity} {record.unit}</span>
+                  </div>
+                  {record.remarks && (
+                    <div style={{ marginTop: '8px', padding: '4px 8px', backgroundColor: '#f9f9f9', borderRadius: '4px', fontSize: '0.75rem', color: '#777', borderLeft: '3px solid #ddd' }}>
+                      備註: {record.remarks}
+                    </div>
+                  )}
+                  <div style={{ marginTop: '12px', textAlign: 'right', fontSize: '0.7rem', color: '#aaa', borderTop: '1px solid #fafafa', paddingTop: '8px' }}>
+                    採購人: {record.purchaser_name || '--'} · {new Date(record.created_at).toLocaleString()}
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>
 
+      {/* Quick Add Popover/Modal */}
+      {quickAdd.show && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
+          <div className="card-surface" style={{ width: '360px', padding: '24px' }}>
+            <h3 style={{ marginBottom: '16px' }}>新增{quickAdd.type === 'type' ? '類型' : '廠牌'}</h3>
+            <p style={{ fontSize: '0.8rem', color: '#666', marginBottom: '16px' }}>類別: {categories.find(c => c.id.toString() === quickAdd.catId.toString())?.name}</p>
+            <input 
+              autoFocus
+              value={newName} 
+              onChange={e => setNewName(e.target.value)} 
+              placeholder="輸入名稱..." 
+              style={{ ...inputStyle, marginBottom: '20px' }}
+              onKeyDown={e => e.key === 'Enter' && handleQuickAddSave()}
+            />
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <button onClick={() => setQuickAdd({ show: false, type: '', rowId: null, catId: null })} style={{ padding: '8px 16px', border: '1px solid #ddd', borderRadius: '6px', background: '#fff', cursor: 'pointer' }}>取消</button>
+              <button onClick={handleQuickAddSave} style={{ padding: '8px 24px', backgroundColor: 'var(--primary-color)', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>儲存</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <style>{`
-        .popover-input {
-          position: absolute; top: 100%; left: 0; right: 0; z-index: 10;
-          display: flex; gap: 8px; align-items: center;
-          padding: 8px; background: #fff; border: 1px solid #ddd;
-          border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-top: 4px;
-        }
-        .btn-small-add { padding: 4px 10px; background: var(--primary-color); color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 0.75rem; }
+        .purchasing-container { max-width: 1200px; margin: 0 auto; }
       `}</style>
     </div>
   );
 };
 
 const labelStyle = { display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#555', marginBottom: '8px' };
-const inputStyle = { width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '0.95rem', outline: 'none', backgroundColor: '#fff' };
-const smallInputStyle = { flex: 1, padding: '6px 10px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '0.8rem' };
-const iconButtonStyle = { display: 'flex', alignItems: 'center', justifyContent: 'center', width: '42px', backgroundColor: '#f5f5f5', border: '1px solid #ddd', borderRadius: '8px', cursor: 'pointer' };
+const inputStyle = { width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '0.95rem', outline: 'none', backgroundColor: '#fff', boxSizing: 'border-box' };
+const thStyle = { padding: '12px 16px', borderBottom: '2px solid #eee', fontWeight: 600, color: '#666', fontSize: '0.85rem' };
+const tdStyle = { padding: '12px 16px', verticalAlign: 'middle' };
+const smallIconButtonStyle = { display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px', backgroundColor: '#f0f0f0', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer' };
 
-export default ProcurementRegistration;
+export default ProcurementRegistration; 

@@ -15,7 +15,7 @@ const Dashboard = () => {
     const load = async () => {
       setLoading(true);
       const queries = [
-        'SELECT SUM(purchase_price * physical_qty) as total_value, COUNT(*) as total_items FROM v_inventory_summary',
+        'SELECT COUNT(*) as total_items FROM v_inventory_summary',
         'SELECT COUNT(*) as low_stock FROM v_inventory_summary WHERE available_qty < safety_stock',
         'SELECT COUNT(*) as draft_orders FROM inbound_orders WHERE status = \'DRAFT\''
       ];
@@ -24,7 +24,6 @@ const Dashboard = () => {
       
       if (!ignore && results.every(r => r.success)) {
         setStats({
-          totalValue: results[0].rows[0].total_value || 0,
           totalItems: results[0].rows[0].total_items || 0,
           lowStock: results[1].rows[0].low_stock || 0,
           draftOrders: results[2].rows[0].draft_orders || 0
@@ -40,22 +39,7 @@ const Dashboard = () => {
     <div className="dashboard-container">
       <h1 className="page-title" style={{ marginBottom: '24px' }}>數據總覽 (Dashboard)</h1>
       
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '32px' }}>
-        {/* 資產總值 */}
-        <div className="card-surface" style={{ padding: '24px', margin: 0, borderLeft: '4px solid #1976d2' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '8px' }}>資產庫存總值</p>
-              <h2 style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-main)' }}>
-                {loading ? '...' : `TWD ${Number(stats.totalValue).toLocaleString()}`}
-              </h2>
-            </div>
-            <div style={{ padding: '10px', backgroundColor: '#e3f2fd', borderRadius: '8px', color: '#1976d2' }}>
-              <TrendingUp size={24} />
-            </div>
-          </div>
-        </div>
- 
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '32px' }}>
         {/* 品項總數 */}
         <div className="card-surface" style={{ padding: '24px', margin: 0, borderLeft: '4px solid #388e3c' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>

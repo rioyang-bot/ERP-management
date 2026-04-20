@@ -8,19 +8,13 @@ const Reports = () => {
   // States for report generation
   const [reportType, setReportType] = useState('INVENTORY');
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
-  const [includeFinancial, setIncludeFinancial] = useState(false);
   const [includePartner, setIncludePartner] = useState(false);
 
   const handleExport = () => {
-    // Determine what we are actually exporting based on role and settings
+    // Determine what we are actually exporting based on settings
     let exportInfo = `\n報表類型: ${reportType === 'INVENTORY' ? '當前實體庫存盤點表' : '進出貨歷史總表'}`;
     
-    if (role === 'IT') {
-      exportInfo += `\n權限過濾: 已自動隱藏單價、總額與進貨供應商，僅匯出純數量與品項資訊。`;
-    } else {
-      if (includeFinancial) exportInfo += `\n附加資料: 包含採購單價與資產總值`;
-      if (includePartner) exportInfo += `\n附加資料: 包含進貨來源/出貨對象`;
-    }
+    if (includePartner) exportInfo += `\n附加資料: 包含進貨來源/出貨對象`;
 
     if (dateRange.start && dateRange.end) {
       exportInfo += `\n日期區間: ${dateRange.start} ~ ${dateRange.end}`;
@@ -28,7 +22,7 @@ const Reports = () => {
       exportInfo += `\n日期區間: 全部時期`;
     }
 
-    alert(`檔案準備下載... (Demo)\n\n--- 產出條件設定 ---${exportInfo}\n\n已經依照您的角色 (${role}) 限制與勾選條件過濾資料欄位。`);
+    alert(`檔案準備下載... (Demo)\n\n--- 產出條件設定 ---${exportInfo}\n\n資產單價與總額欄位已被系統移除。`);
   };
 
   return (
@@ -81,33 +75,17 @@ const Reports = () => {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <label style={{ fontWeight: 600, fontSize: '0.95rem' }}>3. 進階匯出選項</label>
             
-            {role === 'IT' ? (
-              <div style={{ backgroundColor: '#fff3e0', color: '#e65100', padding: '12px 16px', borderRadius: '8px', display: 'flex', gap: '8px', fontSize: '0.85rem', alignItems: 'center' }}>
-                <Lock size={16} />
-                <span>IT 角色匯出時，報表將自動遮蔽單價、金額與供應商等進貨來源，僅匯出用於盤點的純庫存數量清單。</span>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', backgroundColor: '#f0f4f8', padding: '16px', borderRadius: '8px', border: '1px solid #d0e0ed' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#333', cursor: 'pointer' }}>
-                  <input 
-                    type="checkbox" 
-                    checked={includeFinancial}
-                    onChange={(e) => setIncludeFinancial(e.target.checked)}
-                    style={{ width: '16px', height: '16px' }}
-                  />
-                  匯出內容包含「採購單價」與「總額」
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#333', cursor: 'pointer' }}>
-                  <input 
-                    type="checkbox" 
-                    checked={includePartner}
-                    onChange={(e) => setIncludePartner(e.target.checked)}
-                    style={{ width: '16px', height: '16px' }}
-                  />
-                  匯出內容包含「進貨供應商」資訊
-                </label>
-              </div>
-            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', backgroundColor: '#f0f4f8', padding: '16px', borderRadius: '8px', border: '1px solid #d0e0ed' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#333', cursor: 'pointer' }}>
+                <input 
+                  type="checkbox" 
+                  checked={includePartner}
+                  onChange={(e) => setIncludePartner(e.target.checked)}
+                  style={{ width: '16px', height: '16px' }}
+                />
+                匯出內容包含「進貨供應商」資訊
+              </label>
+            </div>
           </div>
 
           <button 
@@ -137,21 +115,9 @@ const Reports = () => {
               <strong>品項編號 (SN)</strong>、<strong>品項名稱</strong>、<strong>安全水位預警</strong>、<strong style={{ color: '#2e7d32' }}>可動用數量 (Available Qty)</strong> 以及 <strong>當前實體庫存在庫數 (Physical Qty)</strong>。
             </p>
             
-            {role === 'WAREHOUSE' && includeFinancial && (
-              <p style={{ color: '#d32f2f', marginBottom: '12px', fontSize: '0.9rem', fontWeight: 500 }}>
-                ⚠️ 包含敏感財務資訊：對應之幣別、採購單價及庫存總資產殘值。
-              </p>
-            )}
-            
-            {role === 'WAREHOUSE' && includePartner && (
+            {includePartner && (
               <p style={{ color: '#1976d2', marginBottom: '0', fontSize: '0.9rem', fontWeight: 500 }}>
                 🏢 包含進銷來源：紀錄該批物品之原始進貨供應商名稱。
-              </p>
-            )}
-
-            {role === 'IT' && (
-              <p style={{ color: '#e65100', marginBottom: '0', fontSize: '0.9rem', fontWeight: 500 }}>
-                🔒 安全過濾狀態：您目前的權限等級僅允許匯出實體庫存盤點等「非金額業務」所需之欄位資訊。
               </p>
             )}
           </div>
