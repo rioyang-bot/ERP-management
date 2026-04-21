@@ -8,7 +8,9 @@ import './MainLayout.css';
 const MainLayout = () => {
   const { role, authUser, setAuthUser } = useContext(RoleContext);
   const [brands, setBrands] = useState([]);
+  const [consumableTypes, setConsumableTypes] = useState([]);
   const [isAssetListExpanded, setIsAssetListExpanded] = useState(true);
+  const [isConsumableListExpanded, setIsConsumableListExpanded] = useState(true);
   const location = useLocation();
 
   useEffect(() => {
@@ -24,17 +26,42 @@ const MainLayout = () => {
         setBrands(res.rows.map(r => r.brand));
       }
     };
+
+    const fetchConsumableTypes = async () => {
+      const res = await window.electronAPI.dbQuery(`
+        SELECT DISTINCT type 
+        FROM items i 
+        JOIN categories c ON i.category_id = c.id 
+        WHERE c.name = '辦公耗材' AND i.type IS NOT NULL AND i.type != ''
+        ORDER BY type ASC
+      `);
+      if (res.success) {
+        setConsumableTypes(res.rows.map(r => r.type));
+      }
+    };
+    
     fetchBrands();
-  }, []);
+    fetchConsumableTypes();
+
+    // Listen for custom event to refresh sidebar
+    const handleDbUpdate = () => {
+      fetchBrands();
+      fetchConsumableTypes();
+    };
+    window.addEventListener('db-update', handleDbUpdate);
+    
+    return () => window.removeEventListener('db-update', handleDbUpdate);
+  }, [location.pathname, location.search]);
 
   const allMenuItems = [
     { id: 'inventory', path: '/inventory', label: '庫存查閱 (Inventory)' },
     { id: 'inbound', path: '/inbound', label: '進貨入庫 (Inbound)' },
     { id: 'outbound', path: '/outbound', label: '出貨進銷 (Cart)' },
     { id: 'review', path: '/review', label: '出貨審核 (Review)' },
-    { id: 'assets', path: '/assets', label: '資產建檔 (Asset)' },
+    { id: 'assets', path: '/assets', label: '設備建檔 (Device)' },
     { id: 'assetList', path: '/asset-list', label: '設備列表 (Equipments)', hasSub: true },
     { id: 'consumables', path: '/consumables', label: '耗材建檔 (Items)' },
+    { id: 'consumableList', path: '/consumable-list', label: '耗材列表 (Items List)', hasSub: true },
     { id: 'purchasing', path: '/purchasing', label: '採購建檔 (Procurement)' },
     { id: 'procurementList', path: '/procurement-list', label: '採購列表 (Procurement list)' },
     { id: 'partners', path: '/partners', label: '客戶/廠商管理 (Partners)' },
@@ -79,6 +106,34 @@ const MainLayout = () => {
                             className={({ isActive }) => `nav-sub-item ${isActive && location.search.includes(brand) ? 'active' : ''}`}
                           >
                             • {brand}
+                          </NavLink>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              ) : item.id === 'consumableList' ? (
+                <>
+                  <div 
+                    onClick={() => setIsConsumableListExpanded(!isConsumableListExpanded)}
+                    className={`nav-item ${location.pathname === '/consumable-list' ? 'active' : ''}`}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}
+                  >
+                    <NavLink to="/consumable-list" onClick={(e) => e.stopPropagation()} style={{ flex: 1, color: 'inherit', textDecoration: 'none' }}>
+                      {item.label}
+                    </NavLink>
+                    {isConsumableListExpanded ? <ChevronDown size={16} opacity={0.5} /> : <ChevronRight size={16} opacity={0.5} />}
+                  </div>
+                  
+                  {isConsumableListExpanded && (
+                    <ul style={{ listStyle: 'none', paddingLeft: '12px', marginTop: '4px' }}>
+                      {consumableTypes.map(type => (
+                        <li key={type}>
+                          <NavLink 
+                            to={`/consumable-list?type=${encodeURIComponent(type)}`}
+                            className={({ isActive }) => `nav-sub-item ${isActive && location.search.includes(type) ? 'active' : ''}`}
+                          >
+                            • {type}
                           </NavLink>
                         </li>
                       ))}

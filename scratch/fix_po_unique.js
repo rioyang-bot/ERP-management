@@ -11,9 +11,11 @@ const pool = new Pool({
 
 async function migrate() {
   try {
-    console.log('Migrating user permissions to include consumableList...');
-    await pool.query(`UPDATE users SET menu_access = menu_access || '{"consumableList": true}'::jsonb WHERE role IN ('ADMIN', 'WAREHOUSE');`);
-    console.log('Successfully updated users.');
+    console.log('Removing UNIQUE constraint on purchase_records.order_no...');
+    await pool.query(`
+      ALTER TABLE purchase_records DROP CONSTRAINT IF EXISTS purchase_records_order_no_key;
+    `);
+    console.log('Successfully updated purchase_records table.');
   } catch (err) {
     console.error('Migration failed:', err);
   } finally {

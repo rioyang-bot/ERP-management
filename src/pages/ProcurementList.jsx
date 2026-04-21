@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Search, FileText, ShoppingCart, Filter, Calendar, ExternalLink, ChevronDown, ChevronRight, Package, Truck, CheckCircle2 } from 'lucide-react';
+import { Search, FileText, ShoppingCart, Filter, Calendar, ExternalLink, ChevronDown, ChevronRight, Package, Truck, CheckCircle2, Trash2, Edit2, X, Save } from 'lucide-react';
 
 const ProcurementList = () => {
   const [purchaseRecords, setPurchaseRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedOrders, setExpandedOrders] = useState(new Set());
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingOrder, setEditingOrder] = useState(null);
 
   const fetchRecords = useCallback(async () => {
     setLoading(true);
@@ -34,6 +36,47 @@ const ProcurementList = () => {
       else next.add(orderNo);
       return next;
     });
+  };
+
+  const handleDeleteOrder = async (orderNo) => {
+    if (!confirm(`確定要刪除整個採購單 ${orderNo} 嗎？此操作不可還原。`)) return;
+    
+    const res = await window.electronAPI.dbQuery(
+      "DELETE FROM purchase_records WHERE order_no = $1",
+      [orderNo]
+    );
+    
+    if (res.success) {
+      alert('刪除成功');
+      fetchRecords();
+    } else {
+      alert('刪除失敗：' + res.error);
+    }
+  };
+
+  const handleEditOrder = (order) => {
+    setEditingOrder(JSON.parse(JSON.stringify(order))); // Deep copy
+    setShowEditModal(true);
+  };
+
+  const handleUpdateOrder = async () => {
+    try {
+      for (const item of editingOrder.items) {
+        const res = await window.electronAPI.dbQuery(`
+          UPDATE purchase_records 
+          SET quantity = $1, specification = $2, model = $3, item_type = $4, brand = $5
+          WHERE id = $6
+        `, [item.quantity, item.specification, item.model, item.item_type, item.brand, item.id]);
+        
+        if (!res.success) throw new Error(res.error);
+      }
+      
+      alert('修改成功');
+      setShowEditModal(false);
+      fetchRecords();
+    } catch (err) {
+      alert('修改失敗：' + err.message);
+    }
   };
 
   // Group records by PO Number
@@ -70,16 +113,24 @@ const ProcurementList = () => {
 
   const orders = Object.values(ordersMap).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
-  const filteredOrders = orders.filter(order => 
-    order.order_no.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    order.partner_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    order.items.some(item => item.specification.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  const filteredOrders = orders.filter(order => {
+    const search = searchTerm.toLowerCase();
+    const orderNo = (order.order_no || '').toLowerCase();
+    const partner = (order.partner_name || '').toLowerCase();
+    
+    return orderNo.includes(search) ||
+           partner.includes(search) ||
+           order.items.some(item => {
+             const spec = (item.specification || '').toLowerCase();
+             const model = (item.model || '').toLowerCase();
+             return spec.includes(search) || model.includes(search);
+           });
+  });
 
   const statusColors = {
     'ORDERED': { bg: '#e3f2fd', color: '#1976d2', label: '已下單' },
     'PARTIAL': { bg: '#fff3e0', color: '#e65100', label: '部分入庫' },
-    'COMPLETED': { bg: '#e8f5e9', color: '#2e7d32', label: '結案' }
+    'COMPLETED': { bg: '#e8f5e9', color: '#2e7d32', label: '已結案入庫' }
   };
 
   return (
@@ -145,13 +196,14 @@ const ProcurementList = () => {
                 <th style={{ ...thStyle, textAlign: 'center' }}>品項數</th>
                 <th style={{ ...thStyle, textAlign: 'center' }}>總到貨進度</th>
                 <th style={thStyle}>狀態</th>
+                <th style={{ ...thStyle, textAlign: 'center' }}>功能</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan="6" style={{ padding: '60px', textAlign: 'center', color: '#999' }}>資料載入中...</td></tr>
+                <tr><td colSpan="7" style={{ padding: '60px', textAlign: 'center', color: '#999' }}>資料載入中...</td></tr>
               ) : filteredOrders.length === 0 ? (
-                <tr><td colSpan="6" style={{ padding: '60px', textAlign: 'center', color: '#999' }}>未找到符合條件的採購單</td></tr>
+                <tr><td colSpan="7" style={{ padding: '60px', textAlign: 'center', color: '#999' }}>未找到符合條件的採購單</td></tr>
               ) : (
                 filteredOrders.map(order => (
                   <React.Fragment key={order.order_no}>
@@ -195,16 +247,41 @@ const ProcurementList = () => {
                           {statusColors[order.status]?.label}
                         </span>
                       </td>
+                      <td style={{ padding: '16px 24px', textAlign: 'center' }}>
+                          <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
+                            {order.status !== 'COMPLETED' ? (
+                              <>
+                                <button 
+                                  onClick={(e) => { e.stopPropagation(); handleEditOrder(order); }} 
+                                  style={{ ...iconButtonStyle, color: '#1890ff' }}
+                                  title="修改採購單"
+                                >
+                                  <Edit2 size={16} />
+                                </button>
+                                <button 
+                                  onClick={(e) => { e.stopPropagation(); handleDeleteOrder(order.order_no); }} 
+                                  style={{ ...iconButtonStyle, color: '#ff4d4f' }}
+                                  title="刪除採購單"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </>
+                            ) : (
+                              <span style={{ fontSize: '0.7rem', color: '#ccc' }}>唯讀紀錄</span>
+                            )}
+                          </div>
+                      </td>
                     </tr>
                     
                     {/* Collapsible Details */}
                     {expandedOrders.has(order.order_no) && (
                       <tr>
-                        <td colSpan="6" style={{ padding: '0', backgroundColor: '#fdfdfd' }}>
+                        <td colSpan="7" style={{ padding: '0', backgroundColor: '#fdfdfd' }}>
                           <div style={{ padding: '20px 24px 20px 72px', borderBottom: '1px solid #eee' }}>
                             <table style={{ width: '100%', borderCollapse: 'collapse', backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #eee', overflow: 'hidden' }}>
                               <thead>
                                 <tr style={{ backgroundColor: '#f9fafb', textAlign: 'left', borderBottom: '1px solid #eee' }}>
+                                  <th style={innerThStyle}>廠牌 / 型號</th>
                                   <th style={innerThStyle}>規格 (Item Specification)</th>
                                   <th style={{ ...innerThStyle, textAlign: 'center' }}>數量</th>
                                   <th style={{ ...innerThStyle, textAlign: 'center' }}>已到貨</th>
@@ -215,8 +292,12 @@ const ProcurementList = () => {
                                 {order.items.map(item => (
                                   <tr key={item.id} style={{ borderBottom: '1px solid #f5f5f5' }}>
                                     <td style={innerTdStyle}>
+                                      <div style={{ fontWeight: 600, color: 'var(--primary-color)' }}>{item.brand || '--'}</div>
+                                      <div style={{ fontSize: '0.75rem', color: '#666' }}>{item.model || '--'}</div>
+                                    </td>
+                                    <td style={innerTdStyle}>
                                       <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{item.specification}</div>
-                                      <div style={{ fontSize: '0.75rem', color: '#999' }}>{item.category_name} · {item.brand || '--'}</div>
+                                      <div style={{ fontSize: '0.75rem', color: '#999' }}>{item.category_name}</div>
                                     </td>
                                     <td style={{ ...innerTdStyle, textAlign: 'center' }}>{item.quantity} {item.unit}</td>
                                     <td style={{ ...innerThStyle, textAlign: 'center', fontWeight: 700, color: item.received_quantity === item.quantity ? '#2e7d32' : '#e65100' }}>{item.received_quantity}</td>
@@ -239,6 +320,90 @@ const ProcurementList = () => {
         </div>
       </div>
 
+      {showEditModal && editingOrder && (
+        <div style={modalOverlayStyle}>
+          <div className="card-surface" style={modalContentStyle}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 800 }}>修改採購單 - {editingOrder.order_no}</h2>
+              <X size={24} style={{ cursor: 'pointer', color: '#999' }} onClick={() => setShowEditModal(false)} />
+            </div>
+
+            <div style={{ maxHeight: '60vh', overflowY: 'auto', marginBottom: '24px' }}>
+              {editingOrder.items.map((item, idx) => (
+                <div key={item.id} style={{ padding: '20px', border: '1px solid #eee', borderRadius: '12px', marginBottom: '16px', backgroundColor: '#fafafa' }}>
+                  <div style={{ fontWeight: 700, color: 'var(--primary-color)', marginBottom: '12px' }}>品項 #{idx + 1}</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', marginBottom: '12px' }}>
+                    <div>
+                      <label style={labelStyle}>規格內容 (Specification)</label>
+                      <input 
+                        type="text" 
+                        value={item.specification} 
+                        onChange={(e) => {
+                          const newItems = [...editingOrder.items];
+                          newItems[idx].specification = e.target.value;
+                          setEditingOrder({ ...editingOrder, items: newItems });
+                        }}
+                        style={inputStyle}
+                      />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>數量 (Qty)</label>
+                      <input 
+                        type="number" 
+                        value={item.quantity} 
+                        onChange={(e) => {
+                          const newItems = [...editingOrder.items];
+                          newItems[idx].quantity = parseInt(e.target.value) || 0;
+                          setEditingOrder({ ...editingOrder, items: newItems });
+                        }}
+                        style={inputStyle}
+                      />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>單位 (Unit)</label>
+                      <input type="text" readOnly value={item.unit} style={{ ...inputStyle, backgroundColor: '#eee' }} />
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                     <div>
+                       <label style={labelStyle}>廠牌 (Brand)</label>
+                       <input type="text" value={item.brand || ''} onChange={(e) => {
+                          const newItems = [...editingOrder.items];
+                          newItems[idx].brand = e.target.value;
+                          setEditingOrder({ ...editingOrder, items: newItems });
+                       }} style={inputStyle} />
+                     </div>
+                     <div>
+                       <label style={labelStyle}>類型 (Type)</label>
+                       <input type="text" value={item.item_type || ''} onChange={(e) => {
+                          const newItems = [...editingOrder.items];
+                          newItems[idx].item_type = e.target.value;
+                          setEditingOrder({ ...editingOrder, items: newItems });
+                       }} style={inputStyle} />
+                     </div>
+                     <div>
+                       <label style={labelStyle}>型號 (Model)</label>
+                       <input type="text" value={item.model || ''} onChange={(e) => {
+                          const newItems = [...editingOrder.items];
+                          newItems[idx].model = e.target.value;
+                          setEditingOrder({ ...editingOrder, items: newItems });
+                       }} style={inputStyle} />
+                     </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button onClick={handleUpdateOrder} className="btn-primary" style={{ flex: 1, padding: '12px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                <Save size={18} /> 儲存變更
+              </button>
+              <button onClick={() => setShowEditModal(false)} className="btn-secondary" style={{ padding: '12px 24px', borderRadius: '10px' }}>取消</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <style>{`
         .row-hover-effect:hover {
           background-color: #fcfdfe !important;
@@ -252,5 +417,10 @@ const thStyle = { padding: '16px 24px', fontSize: '0.85rem', fontWeight: 600, co
 const innerThStyle = { padding: '10px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#888' };
 const innerTdStyle = { padding: '12px 16px', fontSize: '0.85rem', color: '#555' };
 const actionButtonStyle = { display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', fontSize: '0.85rem' };
+const iconButtonStyle = { padding: '6px', borderRadius: '6px', border: 'none', backgroundColor: 'transparent', cursor: 'pointer' };
+const modalOverlayStyle = { position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' };
+const modalContentStyle = { width: '800px', maxHeight: '85vh', padding: '32px', borderRadius: '16px', backgroundColor: '#fff', overflow: 'hidden', display: 'flex', flexDirection: 'column' };
+const labelStyle = { display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#aaa', marginBottom: '6px' };
+const inputStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '0.9rem', boxSizing: 'border-box' };
 
 export default ProcurementList;

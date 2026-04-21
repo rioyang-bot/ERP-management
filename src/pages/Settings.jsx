@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useContext } from 'react';
+import { RoleContext } from '../context/RoleContext';
 import { hashPassword } from '../utils/auth';
 import { Shield, User, Settings as SettingsIcon, CheckSquare, Square, X, Save, Key } from 'lucide-react';
 
@@ -7,9 +8,10 @@ const MENU_OPTIONS = [
   { id: 'inbound', label: '進貨入庫 (Inbound)' },
   { id: 'outbound', label: '出貨進銷 (Cart)' },
   { id: 'review', label: '出貨審核 (Review)' },
-  { id: 'assets', label: '資產建檔 (Asset)' },
-  { id: 'assetList', label: '資產列表 (Asset List)' },
+  { id: 'assets', label: '設備建檔 (Device)' },
+  { id: 'assetList', label: '設備列表 (Equipments)' },
   { id: 'consumables', label: '耗材建檔 (Items)' },
+  { id: 'consumableList', label: '耗材列表 (Items List)' },
   { id: 'purchasing', label: '採購建檔 (Procurement)' },
   { id: 'procurementList', label: '採購列表 (Procurement list)' },
   { id: 'partners', label: '客戶/廠商管理 (Partners)' },
@@ -18,6 +20,7 @@ const MENU_OPTIONS = [
 ];
 
 const Settings = () => {
+  const { authUser, setAuthUser } = useContext(RoleContext);
   // DB Config State
   const [dbConfig, setDbConfig] = useState({
     host: 'localhost',
@@ -63,9 +66,9 @@ const Settings = () => {
       // 根據角色給予預設權限
       const defaultAccess = 
         newUser.role === 'IT' ? { inventory: true, outbound: true, reports: true } :
-        (newUser.role === 'WAREHOUSE' ? { inventory: true, review: true, inbound: true, assets: true, assetList: true, consumables: true, partners: true, reports: true } :
+        (newUser.role === 'WAREHOUSE' ? { inventory: true, review: true, inbound: true, assets: true, assetList: true, consumables: true, consumableList: true, partners: true, reports: true } :
         (newUser.role === 'PURCHASING' ? { inventory: true, purchasing: true, reports: true } : 
-        { settings: true }));
+        { settings: true, inventory: true, inbound: true, outbound: true, review: true, assets: true, assetList: true, consumables: true, consumableList: true, purchasing: true, procurementList: true, partners: true, reports: true }));
 
       const res = await window.electronAPI.dbQuery(
         'INSERT INTO users (username, password_hash, role, full_name, menu_access) VALUES ($1, $2, $3, $4, $5)',
@@ -127,6 +130,15 @@ const Settings = () => {
 
     if (res.success) {
       alert('權限更新成功');
+      
+      // 如果更新的是當前登入者，同步更新 Session
+      if (editingUser.id === authUser.id) {
+        setAuthUser({
+          ...authUser,
+          menu_access: editingUser.menu_access
+        });
+      }
+
       setShowPermissionModal(false);
       await fetchUsers();
     } else {
@@ -247,7 +259,7 @@ const Settings = () => {
       {/* 權限設定 Modal */}
       {showPermissionModal && editingUser && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
-          <div className="card-surface" style={{ width: '500px', padding: '32px' }}>
+          <div className="card-surface" style={{ width: '550px', padding: '32px', maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
               <div>
                 <h2 style={{ fontSize: '1.25rem', color: 'var(--primary-color)', margin: 0 }}>權限設定</h2>

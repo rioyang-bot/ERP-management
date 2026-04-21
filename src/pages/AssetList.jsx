@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Search, Edit2, Trash2, ShieldAlert, X, Save, Wrench, PauseCircle, ShoppingBag, Layers } from 'lucide-react';
 
 const AssetList = () => {
@@ -7,6 +7,8 @@ const AssetList = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const [customers, setCustomers] = useState([]);
   const brandFilter = searchParams.get('brand');
   
   // Pagination states
@@ -29,8 +31,9 @@ const AssetList = () => {
   const fetchAssets = useCallback(async () => {
     setLoading(true);
     let query = `
-      SELECT i.*, c.name as category_name 
-      FROM items i 
+      SELECT a.*, a.id as id, i.id as item_master_id, i.specification, i.type, i.brand, i.model, i.unit, c.name as category_name 
+      FROM assets a 
+      JOIN item_master i ON a.item_master_id = i.id
       LEFT JOIN categories c ON i.category_id = c.id 
       WHERE c.name = '資訊設備'
     `;
@@ -48,20 +51,40 @@ const AssetList = () => {
     setLoading(false);
   }, [brandFilter]);
 
+  const fetchCustomers = useCallback(async () => {
+    const res = await window.electronAPI.dbQuery("SELECT name FROM partners WHERE partner_type = 'CUSTOMER' ORDER BY name ASC");
+    if (res.success) {
+      setCustomers(res.rows.map(r => r.name));
+    }
+  }, []);
+
   useEffect(() => {
     Promise.resolve().then(() => {
       fetchAssets();
+      fetchCustomers();
       setCurrentPage(1); // Reset page when filter changes
     });
-  }, [fetchAssets]);
+  }, [fetchAssets, fetchCustomers]);
 
   const handleDelete = async (id, sn) => {
     if (!window.confirm(`確定要刪除設備 [${sn}] 嗎？此操作不可逆，將會移除所有紀錄。`)) return;
     
-    const res = await window.electronAPI.dbQuery('DELETE FROM items WHERE id = $1', [id]);
+    const res = await window.electronAPI.dbQuery('DELETE FROM assets WHERE id = $1', [id]);
     if (res.success) {
       alert('刪除成功');
-      fetchAssets();
+      window.dispatchEvent(new Event('db-update'));
+      
+      const newItems = items.filter(i => i.id !== id);
+      if (brandFilter && newItems.length === 0) {
+        navigate('/asset-list');
+      } else {
+        // Adjust pagination if the current page becomes empty
+        const newTotalPages = Math.ceil(newItems.length / itemsPerPage);
+        if (currentPage > newTotalPages && newTotalPages > 0) {
+          setCurrentPage(newTotalPages);
+        }
+        fetchAssets();
+      }
     } else {
       alert('刪除失敗：' + res.error);
     }
@@ -70,7 +93,7 @@ const AssetList = () => {
   const handleUpdateStatus = async (id, sn, newStatus, label) => {
     if (!window.confirm(`確定要將設備 [${sn}] 變更為「${label}」狀態嗎？`)) return;
     
-    const res = await window.electronAPI.dbQuery("UPDATE items SET status = $1 WHERE id = $2", [newStatus, id]);
+    const res = await window.electronAPI.dbQuery("UPDATE assets SET status = $1 WHERE id = $2", [newStatus, id]);
     if (res.success) {
       alert(`已成功變更為 ${label}`);
       fetchAssets();
@@ -80,16 +103,18 @@ const AssetList = () => {
   };
 
   const handleUpdate = async () => {
-    if (!editItem.sn || !editItem.specification) return alert('請填寫必填欄位');
+    if (!editItem.specification) return alert('請填寫必填欄位');
+    
+    await window.electronAPI.dbQuery(`UPDATE item_master SET specification = $1, model = $2 WHERE id = $3`, [editItem.specification, editItem.model, editItem.item_master_id]);
     
     const res = await window.electronAPI.dbQuery(
-      `UPDATE items SET 
-        sn = $1, specification = $2, client = $3, 
-        hostname = $4, location = $5, installed_date = $6, 
-        customer_warranty_expire = $7, system_date = $8, warranty_expire = $9 
-       WHERE id = $10`,
+      `UPDATE assets SET 
+        sn = $1, client = $2, 
+        hostname = $3, location = $4, installed_date = $5, 
+        customer_warranty_expire = $6, system_date = $7, warranty_expire = $8
+       WHERE id = $9`,
       [
-        editItem.sn, editItem.specification, editItem.client, 
+        editItem.sn, editItem.client, 
         editItem.hostname, editItem.location, editItem.installed_date,
         editItem.customer_warranty_expire, editItem.system_date, editItem.warranty_expire,
         editItem.id
@@ -105,14 +130,24 @@ const AssetList = () => {
     }
   };
 
-  const filteredItems = items.filter(item => 
-    item.sn.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.specification.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (item.hostname && item.hostname.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (item.brand && item.brand.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (item.client && item.client.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (item.location && item.location.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  const filteredItems = items.filter(item => {
+    const search = searchTerm.toLowerCase();
+    const sn = (item.sn || '').toLowerCase();
+    const spec = (item.specification || '').toLowerCase();
+    const host = (item.hostname || '').toLowerCase();
+    const brand = (item.brand || '').toLowerCase();
+    const model = (item.model || '').toLowerCase();
+    const client = (item.client || '').toLowerCase();
+    const loc = (item.location || '').toLowerCase();
+
+    return sn.includes(search) ||
+           spec.includes(search) ||
+           host.includes(search) ||
+           brand.includes(search) ||
+           model.includes(search) ||
+           client.includes(search) ||
+           loc.includes(search);
+  });
 
   // Pagination logic
   const totalPages = Math.ceil(filteredItems.length / itemsPerPage);
@@ -160,11 +195,12 @@ const AssetList = () => {
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1200px' }}>
               <thead>
                 <tr style={{ textAlign: 'left', borderBottom: '2px solid #eee', color: '#444' }}>
-                  <th style={{ padding: '15px' }}>廠牌 / HostName</th>
-                  <th style={{ padding: '15px' }}>序號 / SN</th>
+                  <th style={{ padding: '15px' }}>廠牌 / 類型 / 型號</th>
                   <th style={{ padding: '15px' }}>規格內容</th>
+                  <th style={{ padding: '15px' }}>序號 / SN</th>
+                  <th style={{ padding: '15px' }}>HostName</th>
                   <th style={{ padding: '15px' }}>客戶 / 位置</th>
-                  <th style={{ padding: '15px' }}>保固到期</th>
+                  <th style={{ padding: '15px' }}>關鍵日期 (Timeline)</th>
                   <th style={{ padding: '15px' }}>狀態</th>
                   <th style={{ padding: '15px', textAlign: 'center' }}>功能</th>
                 </tr>
@@ -176,18 +212,24 @@ const AssetList = () => {
                     <tr key={item.id} style={{ borderBottom: '1px solid #f5f5f5', transition: 'background-color 0.2s' }}>
                       <td style={{ padding: '15px' }}>
                         <div style={{ fontWeight: 700, color: 'var(--primary-color)' }}>{item.brand || '--'}</div>
-                        <div style={{ fontSize: '0.85rem', color: '#333', fontWeight: 600 }}>{item.hostname || <span style={{ color: '#ccc' }}>[No HostName]</span>}</div>
+                        <div style={{ fontSize: '0.75rem', color: '#888' }}>{item.type || '--'}</div>
+                        <div style={{ fontSize: '0.8rem', color: '#666', fontWeight: 600 }}>{item.model || '--'}</div>
+                      </td>
+                      <td style={{ padding: '15px' }}>
+                        <div style={{ fontSize: '0.8rem', color: '#555', maxWidth: '300px', whiteSpace: 'normal', overflow: 'hidden', textOverflow: 'ellipsis' }} title={item.specification}>
+                          {item.specification}
+                        </div>
                       </td>
                       <td style={{ padding: '15px', fontWeight: 600, fontFamily: 'monospace', color: '#333' }}>{item.sn}</td>
-                      <td style={{ padding: '15px', fontSize: '0.85rem', maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={item.specification}>
-                        {item.specification}
-                      </td>
+                      <td style={{ padding: '15px', color: '#1890ff', fontWeight: 600 }}>{item.hostname || '--'}</td>
                       <td style={{ padding: '15px' }}>
                         <div style={{ color: '#722ed1', fontWeight: 700 }}>{item.client || '--'}</div>
                         <div style={{ fontSize: '0.75rem', color: '#666' }}>{item.location || '--'}</div>
                       </td>
-                      <td style={{ padding: '15px', fontSize: '0.8rem' }}>
-                        <div title="原廠保固(Warranty Expire)">W: {item.warranty_expire ? new Date(item.warranty_expire).toLocaleDateString() : '--'}</div>
+                      <td style={{ padding: '15px', fontSize: '0.75rem', lineHeight: '1.4' }}>
+                        <div title="專案安裝日期 (Project Date)" style={{ color: '#000' }}>P: {item.installed_date ? new Date(item.installed_date).toLocaleDateString() : '--'}</div>
+                        <div title="系統日期 (System Date)" style={{ color: '#000' }}>S: {item.system_date ? new Date(item.system_date).toLocaleDateString() : '--'}</div>
+                        <div title="原廠保固(Warranty Expire)" style={{ color: '#1890ff' }}>W: {item.warranty_expire ? new Date(item.warranty_expire).toLocaleDateString() : '--'}</div>
                         <div title="客戶保固(Customer Warranty)" style={{ color: '#d46b08' }}>C: {item.customer_warranty_expire ? new Date(item.customer_warranty_expire).toLocaleDateString() : '--'}</div>
                       </td>
                       <td style={{ padding: '15px' }}>
@@ -308,14 +350,31 @@ const AssetList = () => {
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                <div><label style={editLabelStyle}>序號 / SN</label><input type="text" value={editItem.sn} onChange={(e) => setEditItem({...editItem, sn: e.target.value})} style={editInputStyle} /></div>
-                <div><label style={editLabelStyle}>HostName</label><input type="text" value={editItem.hostname || ''} onChange={(e) => setEditItem({...editItem, hostname: e.target.value})} style={editInputStyle} placeholder="例如: SRV-APP-01" /></div>
+                <div><label style={editLabelStyle}>序號 / SN</label><input type="text" value={editItem.sn || ''} onChange={(e) => setEditItem({...editItem, sn: e.target.value})} style={editInputStyle} placeholder="序號 (選填)" /></div>
+                <div><label style={editLabelStyle}>廠牌 / 類型 / 型號</label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input type="text" value={editItem.brand || ''} readOnly style={{ ...editInputStyle, backgroundColor: '#f5f5f5', width: '30%' }} />
+                    <input type="text" value={editItem.type || ''} readOnly style={{ ...editInputStyle, backgroundColor: '#f5f5f5', width: '30%' }} />
+                    <input type="text" value={editItem.model || ''} onChange={(e) => setEditItem({...editItem, model: e.target.value})} style={{ ...editInputStyle, flex: 1 }} placeholder="型號" />
+                  </div>
+                </div>
               </div>
+              <div><label style={editLabelStyle}>HostName</label><input type="text" value={editItem.hostname || ''} onChange={(e) => setEditItem({...editItem, hostname: e.target.value})} style={editInputStyle} placeholder="例如: SRV-APP-01" /></div>
 
               <div><label style={editLabelStyle}>規格 (Specification)</label><textarea value={editItem.specification} onChange={(e) => setEditItem({...editItem, specification: e.target.value})} style={{ ...editInputStyle, minHeight: '60px' }} /></div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                <div><label style={editLabelStyle}>客戶名稱</label><input type="text" value={editItem.client || ''} onChange={(e) => setEditItem({...editItem, client: e.target.value})} style={editInputStyle} /></div>
+                <div>
+                  <label style={editLabelStyle}>客戶名稱</label>
+                  <select 
+                    value={editItem.client || ''} 
+                    onChange={(e) => setEditItem({...editItem, client: e.target.value})} 
+                    style={editInputStyle}
+                  >
+                    <option value="">請選擇客戶</option>
+                    {customers.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
                 <div><label style={editLabelStyle}>放置位置 (Location)</label><input type="text" value={editItem.location || ''} onChange={(e) => setEditItem({...editItem, location: e.target.value})} style={editInputStyle} placeholder="例如: 1F A機櫃" /></div>
               </div>
 

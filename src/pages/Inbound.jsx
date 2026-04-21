@@ -22,7 +22,7 @@ const Inbound = () => {
       const [itemsRes, partnersRes, purchasesRes] = await Promise.all([
         window.electronAPI.dbQuery(`
           SELECT i.id, i.specification, i.type, i.brand, i.unit, c.name as cat_name 
-          FROM items i 
+          FROM item_master i 
           LEFT JOIN categories c ON i.category_id = c.id 
           ORDER BY i.id DESC
         `),
@@ -113,11 +113,10 @@ const Inbound = () => {
 
   const handleQuickAddSave = async () => {
     if (!quickAddData.name) return alert('請輸入品項名稱');
-    const generatedSN = `TEMP-${Date.now()}`;
     const fullSpec = `${quickAddData.name} ${quickAddData.spec ? `(${quickAddData.spec})` : ''}`.trim();
     const res = await window.electronAPI.dbQuery(
-      'INSERT INTO items (sn, specification, type, brand, unit, category_id, purchase_price) VALUES ($1, $2, $3, $4, $5, (SELECT id FROM categories WHERE name = $6), 0) RETURNING id',
-      [generatedSN, fullSpec, quickAddData.type, quickAddData.brand, quickAddData.unit, quickAddData.type_cat === 'ASSET' ? '資訊設備' : '辦公耗材']
+      'INSERT INTO item_master (specification, type, brand, unit, category_id, purchase_price) VALUES ($1, $2, $3, $4, (SELECT id FROM categories WHERE name = $5), 0) RETURNING id',
+      [fullSpec, quickAddData.type, quickAddData.brand, quickAddData.unit, quickAddData.type_cat === 'ASSET' ? '資訊設備' : '辦公耗材']
     );
     if (res.success) {
       const newId = res.rows[0].id;
@@ -141,15 +140,10 @@ const Inbound = () => {
         for (const item of items) {
           let finalItemId = item.itemId;
           if (item.type === 'ASSET') {
-            const masterRes = await window.electronAPI.dbQuery('SELECT * FROM items WHERE id = $1', [item.itemId]);
-            if (masterRes.success && masterRes.rows.length > 0) {
-              const master = masterRes.rows[0];
-              const newAssetRes = await window.electronAPI.dbQuery(
-                `INSERT INTO items (sn, specification, type, brand, unit, category_id, status, purchase_price) VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVE', 0) RETURNING id`, 
-                [item.sn, master.specification, master.type, master.brand, master.unit, master.category_id]
-              );
-              if (newAssetRes.success) finalItemId = newAssetRes.rows[0].id;
-            }
+            await window.electronAPI.dbQuery(
+              `INSERT INTO assets (sn, item_master_id, status) VALUES ($1, $2, 'ACTIVE')`, 
+              [item.sn, finalItemId]
+            );
           }
           await window.electronAPI.dbQuery(
             'INSERT INTO inbound_items (inbound_order_id, item_id, sn, quantity, purchase_record_id, unit_price) VALUES ($1, $2, $3, $4, $5, 0)', 

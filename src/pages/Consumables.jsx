@@ -7,17 +7,21 @@ const Consumables = () => {
   const [brands, setBrands] = useState([]);
   const [showAddType, setShowAddType] = useState(false);
   const [showAddBrand, setShowAddBrand] = useState(false);
+  const [showAddModel, setShowAddModel] = useState(false);
   const [showManageType, setShowManageType] = useState(false);
   const [showManageBrand, setShowManageBrand] = useState(false);
+  const [showManageModel, setShowManageModel] = useState(false);
   const [newTypeName, setNewTypeName] = useState('');
   const [newBrandName, setNewBrandName] = useState('');
-  const [formData, setFormData] = useState({ type: '', brand: '', spec: '', unit: '個', safety_stock: 0 });
+  const [newModelName, setNewModelName] = useState('');
+  const [models, setModels] = useState([]);
+  const [formData, setFormData] = useState({ type: '', brand: '', model: '', spec: '', unit: '個', safety_stock: 0 });
   const UNIFIED_UNITS = ['個', '台', '盒', '包', '支', '組', '瓶', '卷', '張', '份'];
   const [formKey, setFormKey] = useState(0); // 用於強制重整表單區域
 
   const fetchConsumables = useCallback(async () => {
     const res = await window.electronAPI.dbQuery(`
-      SELECT i.* FROM items i 
+      SELECT i.* FROM item_master i 
       LEFT JOIN categories c ON i.category_id = c.id 
       WHERE c.name = '辦公耗材' 
       ORDER BY i.id DESC
@@ -28,36 +32,68 @@ const Consumables = () => {
     }
   }, []);
 
-  const fetchTypes = useCallback(async () => {
+  const fetchTypes = useCallback(async (brandName) => {
+    if (!brandName) {
+      setTypes([]);
+      return;
+    }
     const res = await window.electronAPI.dbQuery(`
       SELECT name FROM item_types 
       WHERE category_id = (SELECT id FROM categories WHERE name = '辦公耗材')
+      AND brand_id = (SELECT id FROM item_brands WHERE name = $1 AND category_id = (SELECT id FROM categories WHERE name = '辦公耗材'))
       ORDER BY name ASC
-    `);
+    `, [brandName]);
     if (res.success) {
       const typeNames = res.rows.map(r => r.name);
       setTypes(typeNames);
       setFormData(prev => {
-        if (!prev.type && typeNames.length > 0) {
+        if (!typeNames.includes(prev.type) && typeNames.length > 0) {
           return { ...prev, type: typeNames[0] };
+        } else if (typeNames.length === 0) {
+          return { ...prev, type: '' };
         }
         return prev;
       });
     }
   }, []);
-
+  const fetchModels = useCallback(async (brandName, typeName) => {
+    if (!brandName || !typeName) {
+      setModels([]);
+      return;
+    }
+    const res = await window.electronAPI.dbQuery(`
+      SELECT m.name FROM item_models m
+      JOIN item_types t ON m.type_id = t.id
+      JOIN item_brands b ON t.brand_id = b.id
+      WHERE b.name = $1 AND t.name = $2
+      AND b.category_id = (SELECT id FROM categories WHERE name = '辦公耗材')
+      AND t.category_id = (SELECT id FROM categories WHERE name = '辦公耗材')
+      ORDER BY m.name ASC
+    `, [brandName, typeName]);
+    if (res.success) {
+      const modelNames = res.rows.map(r => r.name);
+      setModels(modelNames);
+      setFormData(prev => {
+        if (!modelNames.includes(prev.model) && modelNames.length > 0) {
+          return { ...prev, model: modelNames[0] };
+        } else if (modelNames.length === 0) {
+          return { ...prev, model: '' };
+        }
+        return prev;
+      });
+    }
+  }, []);
   const fetchBrands = useCallback(async () => {
     const res = await window.electronAPI.dbQuery(`
-      SELECT name FROM item_brands 
+      SELECT id, name FROM item_brands 
       WHERE category_id = (SELECT id FROM categories WHERE name = '辦公耗材')
       ORDER BY name ASC
     `);
     if (res.success) {
-      const brandNames = res.rows.map(r => r.name);
-      setBrands(brandNames);
+      setBrands(res.rows);
       setFormData(prev => {
-        if (!prev.brand && brandNames.length > 0) {
-          return { ...prev, brand: brandNames[0] };
+        if (!prev.brand && res.rows.length > 0) {
+          return { ...prev, brand: res.rows[0].name };
         }
         return prev;
       });
@@ -65,12 +101,21 @@ const Consumables = () => {
   }, []);
 
   useEffect(() => {
-    Promise.resolve().then(() => {
-      fetchConsumables();
-      fetchTypes();
-      fetchBrands();
-    });
-  }, [fetchConsumables, fetchTypes, fetchBrands]);
+    fetchConsumables();
+    fetchBrands();
+  }, [fetchConsumables, fetchBrands]);
+
+  useEffect(() => {
+    if (formData.brand) {
+      fetchTypes(formData.brand);
+    }
+  }, [formData.brand, fetchTypes]);
+
+  useEffect(() => {
+    if (formData.brand && formData.type) {
+      fetchModels(formData.brand, formData.type);
+    }
+  }, [formData.brand, formData.type, fetchModels]);
 
   const handleAddType = async () => {
     const trimmedName = newTypeName.trim();
@@ -84,12 +129,12 @@ const Consumables = () => {
     }
 
     const res = await window.electronAPI.dbQuery(
-      'INSERT INTO item_types (category_id, name) VALUES ((SELECT id FROM categories WHERE name = $1), $2)',
-      ['辦公耗材', trimmedName]
+      'INSERT INTO item_types (category_id, brand_id, name) VALUES ((SELECT id FROM categories WHERE name = $1), (SELECT id FROM item_brands WHERE name = $2 AND category_id = (SELECT id FROM categories WHERE name = $1)), $3)',
+      ['辦公耗材', formData.brand, trimmedName]
     );
     if (res.success) {
-      setFormData({ ...formData, type: trimmedName });
-      await fetchTypes();
+      setFormData(prev => ({ ...prev, type: trimmedName }));
+      await fetchTypes(formData.brand);
       setNewTypeName('');
       setShowAddType(false);
     } else {
@@ -100,11 +145,11 @@ const Consumables = () => {
   const handleDeleteType = async (typeName) => {
     if (!confirm(`確定要刪除「${typeName}」嗎？這不會影響現有耗材資料，但選單中將不再出現此選項。`)) return;
     const res = await window.electronAPI.dbQuery(
-      'DELETE FROM item_types WHERE name = $1 AND category_id = (SELECT id FROM categories WHERE name = $2)',
-      [typeName, '辦公耗材']
+      'DELETE FROM item_types WHERE name = $1 AND category_id = (SELECT id FROM categories WHERE name = $2) AND brand_id = (SELECT id FROM item_brands WHERE name = $3 AND category_id = (SELECT id FROM categories WHERE name = $2))',
+      [typeName, '辦公耗材', formData.brand]
     );
     if (res.success) {
-      await fetchTypes();
+      await fetchTypes(formData.brand);
       if (formData.type === typeName) {
         setFormData(prev => ({ ...prev, type: '' }));
       }
@@ -117,7 +162,7 @@ const Consumables = () => {
     const trimmedName = newBrandName.trim();
     if (!trimmedName) return;
 
-    if (brands.includes(trimmedName)) {
+    if (brands.some(b => b.name === trimmedName)) {
       setFormData({ ...formData, brand: trimmedName });
       setNewBrandName('');
       setShowAddBrand(false);
@@ -135,6 +180,60 @@ const Consumables = () => {
       setShowAddBrand(false);
     } else {
       alert('新增廠牌失敗：' + res.error);
+    }
+  };
+
+  const handleAddModel = async () => {
+    const trimmedName = newModelName.trim();
+    if (!trimmedName) return;
+
+    if (models.includes(trimmedName)) {
+      setFormData({ ...formData, model: trimmedName });
+      setNewModelName('');
+      setShowAddModel(false);
+      return;
+    }
+
+    const res = await window.electronAPI.dbQuery(
+      `INSERT INTO item_models (type_id, name) VALUES (
+        (SELECT t.id FROM item_types t 
+         JOIN item_brands b ON t.brand_id = b.id 
+         WHERE b.name = $1 AND t.name = $2 
+         AND b.category_id = (SELECT id FROM categories WHERE name = $3)
+         AND t.category_id = (SELECT id FROM categories WHERE name = $3)), 
+        $4
+      )`,
+      [formData.brand, formData.type, '辦公耗材', trimmedName]
+    );
+    if (res.success) {
+      setFormData(prev => ({ ...prev, model: trimmedName }));
+      await fetchModels(formData.brand, formData.type);
+      setNewModelName('');
+      setShowAddModel(false);
+    } else {
+      alert('新增型號失敗：' + res.error);
+    }
+  };
+
+  const handleDeleteModel = async (modelName) => {
+    if (!confirm(`確定要刪除「${modelName}」嗎？這不會影響現有耗材資料，但選單中將不再出現此選項。`)) return;
+    const res = await window.electronAPI.dbQuery(
+      `DELETE FROM item_models WHERE name = $1 AND type_id = (
+        SELECT t.id FROM item_types t 
+        JOIN item_brands b ON t.brand_id = b.id 
+        WHERE b.name = $2 AND t.name = $3 
+        AND b.category_id = (SELECT id FROM categories WHERE name = $4)
+        AND t.category_id = (SELECT id FROM categories WHERE name = $4)
+      )`,
+      [modelName, formData.brand, formData.type, '辦公耗材']
+    );
+    if (res.success) {
+      await fetchModels(formData.brand, formData.type);
+      if (formData.model === modelName) {
+        setFormData(prev => ({ ...prev, model: '' }));
+      }
+    } else {
+      alert('刪除失敗：' + res.error);
     }
   };
 
@@ -159,20 +258,19 @@ const Consumables = () => {
   };
 
   const handleAddConsumable = async () => {
-    if (!formData.type || !formData.brand) return alert('請填寫必填欄位');
+    if (!formData.type || !formData.brand || !formData.model) return alert('請填寫必填欄位 (型號為必填)');
 
-    const generatedSN = `CONS-${Date.now()}`;
     const fullSpec = `${formData.type} ${formData.brand} ${formData.spec ? `(${formData.spec})` : ''}`.trim();
 
     const res = await window.electronAPI.dbQuery(
-      'INSERT INTO items (sn, specification, type, brand, unit, safety_stock, category_id, purchase_price) VALUES ($1, $2, $3, $4, $5, $6, (SELECT id FROM categories WHERE name = $7), 0)',
-      [generatedSN, fullSpec, formData.type, formData.brand, formData.unit, formData.safety_stock || 0, '辦公耗材']
+      'INSERT INTO item_master (specification, type, brand, model, unit, safety_stock, category_id, purchase_price) VALUES ($1, $2, $3, $4, $5, $6, (SELECT id FROM categories WHERE name = $7), 0)',
+      [fullSpec, formData.type, formData.brand, formData.model, formData.unit, formData.safety_stock || 0, '辦公耗材']
     );
 
     if (res.success) {
       alert('耗材建檔成功！');
       await fetchConsumables();
-      setFormData({ type: types[0] || '', brand: brands[0] || '', spec: '', unit: '個', safety_stock: 0 });
+      setFormData({ type: types[0] || '', brand: brands[0] || '', model: '', spec: '', unit: '個', safety_stock: 0 });
       setFormKey(prev => prev + 1);
     } else {
       alert('建檔失敗：' + res.error);
@@ -188,6 +286,34 @@ const Consumables = () => {
           {/* 左側：表單 */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={labelStyle}>廠牌 (Brand) *</label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <select name="brand" value={formData.brand} onChange={handleChange} style={inputStyle}>
+                      <option value="">請選擇廠牌</option>
+                      {brands.map(b => (
+                        <option key={b.id} value={b.name}>{b.name}</option>
+                      ))}
+                    </select>
+                    <button onClick={() => { setShowAddBrand(!showAddBrand); setShowManageBrand(false); }} style={iconButtonStyle} title="新增廠牌"><Plus size={18} /></button>
+                    <button onClick={() => { setShowManageBrand(!showManageBrand); setShowAddBrand(false); }} style={iconButtonStyle} title="管理廠牌"><Settings2 size={18} /></button>
+                  </div>
+                  {showAddBrand && (
+                    <div style={popoverStyle}>
+                      <input type="text" placeholder="新名稱" value={newBrandName} onChange={(e) => setNewBrandName(e.target.value)} style={smallInputStyle} />
+                      <button onClick={handleAddBrand} style={smallAddButtonStyle}>新增</button>
+                    </div>
+                  )}
+                  {showManageBrand && (
+                    <div style={manageListStyle}>
+                      <div style={manageHeaderStyle}><span>管理廠牌</span><X size={14} style={{ cursor: 'pointer' }} onClick={() => setShowManageBrand(false)} /></div>
+                      {brands.map(b => (
+                        <div key={b.id} style={manageItemStyle}><span>{b.name}</span><Trash2 size={14} color="#ff4d4f" style={{ cursor: 'pointer' }} onClick={() => handleDeleteBrand(b.name)} /></div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <label style={labelStyle}>類型 (Type) *</label>
                   <div style={{ display: 'flex', gap: '8px' }}>
@@ -214,33 +340,34 @@ const Consumables = () => {
                     </div>
                   )}
                 </div>
+            </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <label style={labelStyle}>廠牌 (Brand) *</label>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <select name="brand" value={formData.brand} onChange={handleChange} style={inputStyle}>
-                      {brands.map(b => (
-                        <option key={b} value={b}>{b}</option>
-                      ))}
-                    </select>
-                    <button onClick={() => { setShowAddBrand(!showAddBrand); setShowManageBrand(false); }} style={iconButtonStyle} title="新增廠牌"><Plus size={18} /></button>
-                    <button onClick={() => { setShowManageBrand(!showManageBrand); setShowAddBrand(false); }} style={iconButtonStyle} title="管理廠牌"><Settings2 size={18} /></button>
-                  </div>
-                  {showAddBrand && (
-                    <div style={popoverStyle}>
-                      <input type="text" placeholder="新名稱" value={newBrandName} onChange={(e) => setNewBrandName(e.target.value)} style={smallInputStyle} />
-                      <button onClick={handleAddBrand} style={smallAddButtonStyle}>新增</button>
-                    </div>
-                  )}
-                  {showManageBrand && (
-                    <div style={manageListStyle}>
-                      <div style={manageHeaderStyle}><span>管理廠牌</span><X size={14} style={{ cursor: 'pointer' }} onClick={() => setShowManageBrand(false)} /></div>
-                      {brands.map(b => (
-                        <div key={b} style={manageItemStyle}><span>{b}</span><Trash2 size={14} color="#ff4d4f" style={{ cursor: 'pointer' }} onClick={() => handleDeleteBrand(b)} /></div>
-                      ))}
-                    </div>
-                  )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <label style={labelStyle}>型號 (Model) *</label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <select name="model" value={formData.model} onChange={handleChange} style={inputStyle}>
+                  <option value="">請選擇型號</option>
+                  {models.map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+                <button onClick={() => { setShowAddModel(!showAddModel); setShowManageModel(false); }} style={iconButtonStyle} title="新增型號"><Plus size={18} /></button>
+                <button onClick={() => { setShowManageModel(!showManageModel); setShowAddModel(false); }} style={iconButtonStyle} title="管理型號"><Settings2 size={18} /></button>
+              </div>
+              {showAddModel && (
+                <div style={popoverStyle}>
+                  <input type="text" placeholder="新名稱" value={newModelName} onChange={(e) => setNewModelName(e.target.value)} style={smallInputStyle} />
+                  <button onClick={handleAddModel} style={smallAddButtonStyle}>新增</button>
                 </div>
+              )}
+              {showManageModel && (
+                <div style={manageListStyle}>
+                  <div style={manageHeaderStyle}><span>管理型號</span><X size={14} style={{ cursor: 'pointer' }} onClick={() => setShowManageModel(false)} /></div>
+                  {models.map(m => (
+                    <div key={m} style={manageItemStyle}><span>{m}</span><Trash2 size={14} color="#ff4d4f" style={{ cursor: 'pointer' }} onClick={() => handleDeleteModel(m)} /></div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div>
@@ -273,7 +400,9 @@ const Consumables = () => {
               {items.map(item => (
                 <div key={item.id} style={{ display: 'flex', alignItems: 'center', padding: '16px', border: '1px solid #eee', borderRadius: '12px', backgroundColor: '#fff' }}>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 800, color: 'var(--primary-color)', fontSize: '0.9rem' }}>{item.brand || 'N/A'}</div>
+                    <div style={{ fontWeight: 800, color: 'var(--primary-color)', fontSize: '0.9rem' }}>
+                      {item.brand || 'N/A'} {item.model && <span style={{ color: '#666', fontWeight: 400 }}>({item.model})</span>}
+                    </div>
                     <div style={{ color: '#333', fontSize: '1rem', fontWeight: 600, margin: '4px 0' }}>
                       {item.specification.replace(`${item.type} ${item.brand}`, '').trim().replace(/^\(|\)$/g, '') || '通用規格'}
                     </div>

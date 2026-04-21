@@ -11,9 +11,9 @@ const pool = new Pool({
 
 async function migrate() {
   try {
-    console.log('Migrating user permissions to include consumableList...');
-    await pool.query(`UPDATE users SET menu_access = menu_access || '{"consumableList": true}'::jsonb WHERE role IN ('ADMIN', 'WAREHOUSE');`);
-    console.log('Successfully updated users.');
+    console.log('Dropping NOT NULL constraint from items.sn...');
+    await pool.query(`ALTER TABLE items ALTER COLUMN sn DROP NOT NULL;`);
+    console.log('Successfully updated items table.');
   } catch (err) {
     console.error('Migration failed:', err);
   } finally {

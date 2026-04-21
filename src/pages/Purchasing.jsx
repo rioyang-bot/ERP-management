@@ -11,7 +11,8 @@ const ProcurementRegistration = () => {
   // Options state for selects
   const [options, setOptions] = useState({
     types: {},
-    brands: {}
+    brands: {},
+    models: {}
   });
 
   const [loading, setLoading] = useState(true);
@@ -23,7 +24,7 @@ const ProcurementRegistration = () => {
 
   // Items in this PO
   const [items, setItems] = useState([
-    { id: 'initial-row', category_id: '', item_type: '', brand: '', specification: '', unit: '個', unit_price: '', quantity: 1 }
+    { id: 'initial-row', category_id: '', item_type: '', brand: '', model: '', specification: '', unit: '個', unit_price: '', quantity: 1 }
   ]);
 
   // Quick Add UI states
@@ -32,15 +33,25 @@ const ProcurementRegistration = () => {
 
   const fetchOptions = useCallback(async (catId) => {
     if (!catId) return;
-    const [typesRes, brandsRes] = await Promise.all([
-      window.electronAPI.dbQuery("SELECT name FROM item_types WHERE category_id = $1 ORDER BY name ASC", [catId]),
-      window.electronAPI.dbQuery("SELECT name FROM item_brands WHERE category_id = $1 ORDER BY name ASC", [catId])
+    const [brandsRes, typesRes, modelsRes] = await Promise.all([
+      window.electronAPI.dbQuery("SELECT name FROM item_brands WHERE category_id = $1 ORDER BY name ASC", [catId]),
+      window.electronAPI.dbQuery("SELECT name, (SELECT name FROM item_brands WHERE id = t.brand_id) as brand FROM item_types t WHERE category_id = $1 ORDER BY name ASC", [catId]),
+      window.electronAPI.dbQuery(`
+        SELECT m.name as model, t.name as type, b.name as brand, i.specification, i.unit
+        FROM item_models m
+        JOIN item_types t ON m.type_id = t.id
+        JOIN item_brands b ON t.brand_id = b.id
+        LEFT JOIN items i ON (i.model = m.name AND i.type = t.name AND i.brand = b.name)
+        WHERE t.category_id = $1
+        ORDER BY m.name ASC
+      `, [catId])
     ]);
     
     setOptions(prev => ({
       ...prev,
-      types: { ...prev.types, [catId]: typesRes.success ? typesRes.rows.map(r => r.name) : [] },
-      brands: { ...prev.brands, [catId]: brandsRes.success ? brandsRes.rows.map(r => r.name) : [] }
+      brands: { ...prev.brands, [catId]: brandsRes.success ? brandsRes.rows.map(r => r.name) : [] },
+      types: { ...prev.types, [catId]: typesRes.success ? typesRes.rows : [] },
+      models: { ...prev.models, [catId]: modelsRes.success ? modelsRes.rows : [] }
     }));
   }, []);
 
@@ -82,7 +93,7 @@ const ProcurementRegistration = () => {
         // Only init items if they are empty
         setItems(prev => {
           if (prev.length === 0 || (prev.length === 1 && !prev[0].specification)) {
-             return [{ id: Date.now(), category_id: catsRes.rows[0].id.toString(), item_type: '', brand: '', specification: '', unit: '個', quantity: 1 }];
+             return [{ id: Date.now(), category_id: catsRes.rows[0].id.toString(), item_type: '', brand: '', model: '', specification: '', unit: '個', quantity: 1 }];
           }
           return prev;
         });
@@ -109,6 +120,7 @@ const ProcurementRegistration = () => {
         category_id: lastItem?.category_id || categories[0]?.id.toString() || '', 
         item_type: '', 
         brand: '', 
+        model: '', 
         specification: '', 
         unit: '個', 
         quantity: 1 
@@ -125,7 +137,28 @@ const ProcurementRegistration = () => {
     setItems(items.map(item => {
       if (item.id === id) {
         if (field === 'category_id') {
-          return { ...item, [field]: value, item_type: '', brand: '' };
+          return { ...item, [field]: value, item_type: '', brand: '', model: '', specification: '' };
+        }
+        if (field === 'brand') {
+          return { ...item, brand: value, item_type: '', model: '' };
+        }
+        if (field === 'item_type') {
+          return { ...item, item_type: value, model: '' };
+        }
+        if (field === 'model' && value !== '') {
+          // Auto-fill from model data
+          const catModels = options.models[item.category_id] || [];
+          const selectedModel = catModels.find(m => m.model === value);
+          if (selectedModel) {
+            return { 
+              ...item, 
+              model: value, 
+              item_type: selectedModel.type || '', 
+              brand: selectedModel.brand || '', 
+              specification: selectedModel.specification || '',
+              unit: selectedModel.unit || item.unit
+            };
+          }
         }
         return { ...item, [field]: value };
       }
@@ -167,12 +200,12 @@ const ProcurementRegistration = () => {
       for (const item of items) {
         const res = await window.electronAPI.dbQuery(`
           INSERT INTO purchase_records (
-            order_no, partner_id, category_id, item_type, brand, 
+            order_no, partner_id, category_id, item_type, brand, model,
             specification, unit, quantity, purchaser_id, status, remarks,
             unit_price
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 0)`,
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 0)`,
           [
-            orderNo, partnerId, item.category_id, item.item_type, item.brand,
+            orderNo, partnerId, item.category_id, item.item_type, item.brand, item.model,
             item.specification, item.unit, item.quantity, authUser?.id, 'ORDERED', remarks
           ]
         );
@@ -247,9 +280,10 @@ const ProcurementRegistration = () => {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ backgroundColor: '#f1f3f4', textAlign: 'left' }}>
-                  <th style={{ ...thStyle, width: '140px' }}>類別</th>
-                  <th style={{ ...thStyle, width: '160px' }}>類型 / 廠牌</th>
-                  <th style={thStyle}>規格 (Specification)</th>
+                  <th style={{ ...thStyle, width: '130px' }}>類別</th>
+                  <th style={{ ...thStyle, width: '230px' }}>廠牌 / 類型</th>
+                  <th style={{ ...thStyle, width: '230px' }}>型號</th>
+                  <th style={{ ...thStyle, width: '220px' }}>規格 (Specification)</th>
                   <th style={{ ...thStyle, width: '100px' }}>單位</th>
                   <th style={{ ...thStyle, width: '100px' }}>數量</th>
                   <th style={{ ...thStyle, width: '60px', textAlign: 'center' }}></th>
@@ -269,29 +303,45 @@ const ProcurementRegistration = () => {
                     </td>
                     <td style={tdStyle}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <div style={{ display: 'flex', gap: '4px' }}>
-                          <select 
-                            value={row.item_type} 
-                            onChange={e => handleItemChange(row.id, 'item_type', e.target.value)}
-                            style={{ ...inputStyle, fontSize: '0.8rem', padding: '6px' }}
-                          >
-                            <option value="">(類型)</option>
-                            {(options.types[row.category_id] || []).map(t => <option key={t} value={t}>{t}</option>)}
-                          </select>
-                          <button type="button" onClick={() => openQuickAdd(row.id, row.category_id, 'type')} style={smallIconButtonStyle}><Plus size={14} /></button>
-                        </div>
-                        <div style={{ display: 'flex', gap: '4px' }}>
-                          <select 
-                            value={row.brand} 
-                            onChange={e => handleItemChange(row.id, 'brand', e.target.value)}
-                            style={{ ...inputStyle, fontSize: '0.8rem', padding: '6px' }}
-                          >
-                            <option value="">(廠牌)</option>
-                            {(options.brands[row.category_id] || []).map(b => <option key={b} value={b}>{b}</option>)}
-                          </select>
-                          <button type="button" onClick={() => openQuickAdd(row.id, row.category_id, 'brand')} style={smallIconButtonStyle}><Plus size={14} /></button>
-                        </div>
+                        <select 
+                          value={row.brand} 
+                          onChange={e => handleItemChange(row.id, 'brand', e.target.value)}
+                          style={{ ...inputStyle, fontSize: '0.8rem', padding: '6px' }}
+                          disabled={!!row.model}
+                        >
+                          <option value="">(廠牌)</option>
+                          {(options.brands[row.category_id] || []).map(b => <option key={b} value={b}>{b}</option>)}
+                        </select>
+                        <select 
+                          value={row.item_type} 
+                          onChange={e => handleItemChange(row.id, 'item_type', e.target.value)}
+                          style={{ ...inputStyle, fontSize: '0.8rem', padding: '6px' }}
+                          disabled={!!row.model}
+                        >
+                          <option value="">(類型)</option>
+                          {Array.from(new Set(
+                            (options.types[row.category_id] || [])
+                              .filter(t => !row.brand || t.brand === row.brand)
+                              .map(t => t.name)
+                          )).map(typeName => <option key={typeName} value={typeName}>{typeName}</option>)}
+                        </select>
                       </div>
+                    </td>
+                    <td style={tdStyle}>
+                      <select 
+                        value={row.model || ''} 
+                        onChange={e => handleItemChange(row.id, 'model', e.target.value)}
+                        style={inputStyle}
+                      >
+                        <option value="">(選擇型號)</option>
+                        {Array.from(new Set(
+                          (options.models[row.category_id] || [])
+                            .filter(m => (!row.brand || m.brand === row.brand) && (!row.item_type || m.type === row.item_type))
+                            .map(m => m.model)
+                        )).map(modelName => (
+                          <option key={modelName} value={modelName}>{modelName}</option>
+                        ))}
+                      </select>
                     </td>
                     <td style={tdStyle}>
                       <input 
@@ -378,7 +428,10 @@ const ProcurementRegistration = () => {
                       backgroundColor: statusColors[record.status]?.bg, color: statusColors[record.status]?.color
                     }}>{statusColors[record.status]?.label}</span>
                   </div>
-                  <div style={{ fontWeight: 600, fontSize: '1rem', color: '#333' }}>{record.specification}</div>
+                  <div style={{ fontWeight: 600, fontSize: '1rem', color: '#333' }}>
+                    {record.specification}
+                    {record.model && <span style={{ fontSize: '0.8rem', color: '#666', fontWeight: 400, marginLeft: '6px' }}>({record.model})</span>}
+                  </div>
                   <div style={{ fontSize: '0.85rem', color: '#666', marginTop: '4px' }}>
                     <span style={{ color: '#888' }}>{record.partner_name}</span> · 
                     <span style={{ fontWeight: 700, color: '#444' }}>{record.quantity} {record.unit}</span>

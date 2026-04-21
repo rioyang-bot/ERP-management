@@ -15,6 +15,7 @@ import Login from './pages/Login';
 import Consumables from './pages/Consumables';
 import Purchasing from './pages/Purchasing';
 import ProcurementList from './pages/ProcurementList';
+import ConsumableList from './pages/ConsumableList';
 import './index.css';
 
 function App() {
@@ -59,6 +60,7 @@ function App() {
             <Route path="reports" element={<Reports />} />
             <Route path="purchasing" element={<Purchasing />} />
             <Route path="procurement-list" element={<ProcurementList />} />
+            <Route path="consumable-list" element={<ConsumableList />} />
             <Route path="settings" element={<Settings />} />
           </Route>
         </Routes>

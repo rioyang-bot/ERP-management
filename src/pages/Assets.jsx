@@ -5,14 +5,19 @@ const Assets = () => {
   const [items, setItems] = useState([]);
   const [types, setTypes] = useState([]);
   const [brands, setBrands] = useState([]);
+  const [customers, setCustomers] = useState([]);
   const [showAddType, setShowAddType] = useState(false);
   const [showAddBrand, setShowAddBrand] = useState(false);
+  const [showAddModel, setShowAddModel] = useState(false);
   const [showManageType, setShowManageType] = useState(false);
   const [showManageBrand, setShowManageBrand] = useState(false);
+  const [showManageModel, setShowManageModel] = useState(false);
   const [newTypeName, setNewTypeName] = useState('');
   const [newBrandName, setNewBrandName] = useState('');
+  const [newModelName, setNewModelName] = useState('');
+  const [models, setModels] = useState([]);
   const [formData, setFormData] = useState({ 
-    type: '', brand: '', sn: '', specification: '', client: '', 
+    type: '', brand: '', model: '', sn: '', specification: '', client: '', 
     hostname: '', location: '', installed_date: '', 
     customer_warranty_expire: '', system_date: '', warranty_expire: '',
     unit: '個' 
@@ -22,10 +27,12 @@ const Assets = () => {
 
   const fetchAssets = useCallback(async () => {
     const res = await window.electronAPI.dbQuery(`
-      SELECT i.* FROM items i 
+      SELECT a.*, i.specification, i.type, i.brand, i.model, i.unit, c.name as category_name 
+      FROM assets a 
+      JOIN item_master i ON a.item_master_id = i.id
       LEFT JOIN categories c ON i.category_id = c.id 
       WHERE c.name = '資訊設備' 
-      ORDER BY i.id DESC
+      ORDER BY a.id DESC
       LIMIT 10
     `);
     if (res.success) {
@@ -33,49 +40,102 @@ const Assets = () => {
     }
   }, []);
 
-  const fetchTypes = useCallback(async () => {
+  const fetchModels = useCallback(async (brandName, typeName) => {
+    if (!brandName || !typeName) {
+      setModels([]);
+      return { modelNames: [] };
+    }
+    const res = await window.electronAPI.dbQuery(`
+      SELECT m.name FROM item_models m
+      JOIN item_types t ON m.type_id = t.id
+      JOIN item_brands b ON t.brand_id = b.id
+      WHERE b.name = $1 AND t.name = $2
+      AND b.category_id = (SELECT id FROM categories WHERE name = '資訊設備')
+      AND t.category_id = (SELECT id FROM categories WHERE name = '資訊設備')
+      ORDER BY m.name ASC
+    `, [brandName, typeName]);
+    if (res.success) {
+      const modelNames = res.rows.map(r => r.name);
+      setModels(modelNames);
+      setFormData(prev => ({
+        ...prev,
+        model: modelNames.includes(prev.model) ? prev.model : (modelNames[0] || '')
+      }));
+      return { modelNames };
+    }
+    return { modelNames: [] };
+  }, []);
+
+  const fetchTypes = useCallback(async (brandName, currentType = '') => {
+    if (!brandName) {
+      setTypes([]);
+      return { typeNames: [], nextType: '' };
+    }
     const res = await window.electronAPI.dbQuery(`
       SELECT name FROM item_types 
       WHERE category_id = (SELECT id FROM categories WHERE name = '資訊設備')
+      AND brand_id = (SELECT id FROM item_brands WHERE name = $1 AND category_id = (SELECT id FROM categories WHERE name = '資訊設備'))
       ORDER BY name ASC
-    `);
+    `, [brandName]);
+
     if (res.success) {
       const typeNames = res.rows.map(r => r.name);
       setTypes(typeNames);
-      setFormData(prev => {
-        if (!prev.type && typeNames.length > 0) {
-          return { ...prev, type: typeNames[0] };
-        }
-        return prev;
-      });
+      const nextType = typeNames.includes(currentType) ? currentType : (typeNames[0] || '');
+      setFormData(prev => ({ ...prev, type: nextType }));
+      return { typeNames, nextType };
     }
+    return { typeNames: [], nextType: '' };
   }, []);
 
   const fetchBrands = useCallback(async () => {
     const res = await window.electronAPI.dbQuery(`
-      SELECT name FROM item_brands 
+      SELECT id, name FROM item_brands 
       WHERE category_id = (SELECT id FROM categories WHERE name = '資訊設備')
       ORDER BY name ASC
     `);
     if (res.success) {
-      const brandNames = res.rows.map(r => r.name);
-      setBrands(brandNames);
-      setFormData(prev => {
-        if (!prev.brand && brandNames.length > 0) {
-          return { ...prev, brand: brandNames[0] };
-        }
-        return prev;
-      });
+      setBrands(res.rows);
+      if (!formData.brand && res.rows.length > 0) {
+        const initialBrand = res.rows[0].name;
+        setFormData(prev => ({ ...prev, brand: initialBrand }));
+        // Trigger cascading fetch for the new initial brand
+        const { nextType } = await fetchTypes(initialBrand);
+        if (nextType) await fetchModels(initialBrand, nextType);
+      }
+    }
+  }, [formData.brand, fetchTypes, fetchModels]);
+
+  const fetchCustomers = useCallback(async () => {
+    const res = await window.electronAPI.dbQuery("SELECT name FROM partners WHERE partner_type = 'CUSTOMER' ORDER BY name ASC");
+    if (res.success) {
+      setCustomers(res.rows.map(r => r.name));
     }
   }, []);
 
   useEffect(() => {
-    Promise.resolve().then(() => {
+    const init = async () => {
       fetchAssets();
-      fetchTypes();
-      fetchBrands();
-    });
-  }, [fetchAssets, fetchTypes, fetchBrands]);
+      fetchCustomers();
+      
+      const res = await window.electronAPI.dbQuery(`
+        SELECT id, name FROM item_brands 
+        WHERE category_id = (SELECT id FROM categories WHERE name = '資訊設備')
+        ORDER BY name ASC
+      `);
+
+      if (res.success && res.rows.length > 0) {
+        setBrands(res.rows);
+        const initialBrand = res.rows[0].name;
+        // Start sequential fetch
+        const { nextType } = await fetchTypes(initialBrand);
+        if (nextType) {
+          await fetchModels(initialBrand, nextType);
+        }
+      }
+    };
+    init();
+  }, [fetchAssets, fetchTypes, fetchModels, fetchCustomers]);
 
   const handleAddType = async () => {
     const trimmedName = newTypeName.trim();
@@ -89,12 +149,13 @@ const Assets = () => {
     }
 
     const res = await window.electronAPI.dbQuery(
-      'INSERT INTO item_types (category_id, name) VALUES ((SELECT id FROM categories WHERE name = $1), $2)',
-      ['資訊設備', trimmedName]
+      'INSERT INTO item_types (category_id, brand_id, name) VALUES ((SELECT id FROM categories WHERE name = $1), (SELECT id FROM item_brands WHERE name = $2 AND category_id = (SELECT id FROM categories WHERE name = $1)), $3)',
+      ['資訊設備', formData.brand, trimmedName]
     );
     if (res.success) {
-      setFormData({ ...formData, type: trimmedName });
-      await fetchTypes();
+      // Temporarily update formData with the new type name
+      setFormData(prev => ({ ...prev, type: trimmedName }));
+      await fetchTypes(formData.brand, trimmedName);
       setNewTypeName('');
       setShowAddType(false);
     } else {
@@ -105,13 +166,67 @@ const Assets = () => {
   const handleDeleteType = async (typeName) => {
     if (!confirm(`確定要刪除「${typeName}」嗎？這不會影響現有資產資料，但選單中將不再出現此選項。`)) return;
     const res = await window.electronAPI.dbQuery(
-      'DELETE FROM item_types WHERE name = $1 AND category_id = (SELECT id FROM categories WHERE name = $2)',
-      [typeName, '資訊設備']
+      'DELETE FROM item_types WHERE name = $1 AND category_id = (SELECT id FROM categories WHERE name = $2) AND brand_id = (SELECT id FROM item_brands WHERE name = $3 AND category_id = (SELECT id FROM categories WHERE name = $2))',
+      [typeName, '資訊設備', formData.brand]
     );
     if (res.success) {
-      await fetchTypes();
+      await fetchTypes(formData.brand, formData.type);
       if (formData.type === typeName) {
         setFormData(prev => ({ ...prev, type: '' }));
+      }
+    } else {
+      alert('刪除失敗：' + res.error);
+    }
+  };
+
+  const handleAddModel = async () => {
+    const trimmedName = newModelName.trim();
+    if (!trimmedName) return;
+
+    if (models.includes(trimmedName)) {
+      setFormData({ ...formData, model: trimmedName });
+      setNewModelName('');
+      setShowAddModel(false);
+      return;
+    }
+
+    const res = await window.electronAPI.dbQuery(
+      `INSERT INTO item_models (type_id, name) VALUES (
+        (SELECT t.id FROM item_types t 
+         JOIN item_brands b ON t.brand_id = b.id 
+         WHERE b.name = $1 AND t.name = $2 
+         AND b.category_id = (SELECT id FROM categories WHERE name = $3)
+         AND t.category_id = (SELECT id FROM categories WHERE name = $3)), 
+        $4
+      )`,
+      [formData.brand, formData.type, '資訊設備', trimmedName]
+    );
+    if (res.success) {
+      setFormData(prev => ({ ...prev, model: trimmedName }));
+      await fetchModels(formData.brand, formData.type);
+      setNewModelName('');
+      setShowAddModel(false);
+    } else {
+      alert('新增型號失敗：' + res.error);
+    }
+  };
+
+  const handleDeleteModel = async (modelName) => {
+    if (!confirm(`確定要刪除「${modelName}」嗎？這不會影響現有資產資料，但選單中將不再出現此選項。`)) return;
+    const res = await window.electronAPI.dbQuery(
+      `DELETE FROM item_models WHERE name = $1 AND type_id = (
+        SELECT t.id FROM item_types t 
+        JOIN item_brands b ON t.brand_id = b.id 
+        WHERE b.name = $2 AND t.name = $3 
+        AND b.category_id = (SELECT id FROM categories WHERE name = $4)
+        AND t.category_id = (SELECT id FROM categories WHERE name = $4)
+      )`,
+      [modelName, formData.brand, formData.type, '資訊設備']
+    );
+    if (res.success) {
+      await fetchModels(formData.brand, formData.type);
+      if (formData.model === modelName) {
+        setFormData(prev => ({ ...prev, model: '' }));
       }
     } else {
       alert('刪除失敗：' + res.error);
@@ -122,7 +237,7 @@ const Assets = () => {
     const trimmedName = newBrandName.trim();
     if (!trimmedName) return;
 
-    if (brands.includes(trimmedName)) {
+    if (brands.some(b => b.name === trimmedName)) {
       setFormData({ ...formData, brand: trimmedName });
       setNewBrandName('');
       setShowAddBrand(false);
@@ -134,8 +249,9 @@ const Assets = () => {
       ['資訊設備', trimmedName]
     );
     if (res.success) {
-      setFormData({ ...formData, brand: trimmedName });
+      setFormData(prev => ({ ...prev, brand: trimmedName }));
       await fetchBrands();
+      await fetchTypes(trimmedName);
       setNewBrandName('');
       setShowAddBrand(false);
     } else {
@@ -159,37 +275,69 @@ const Assets = () => {
     }
   };
 
-  const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+  const handleChange = async (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+
+    if (name === 'brand') {
+      const { nextType } = await fetchTypes(value);
+      if (nextType) await fetchModels(value, nextType);
+      else setModels([]);
+    } else if (name === 'type') {
+      await fetchModels(formData.brand, value);
+    }
   };
 
   const handleAddAsset = async () => {
-    if (!formData.sn || !formData.specification || !formData.type) return alert('請填寫必填欄位');
+    if (!formData.specification || !formData.type) return alert('請填寫必填欄位');
     
+    const getMasterRes = await window.electronAPI.dbQuery(`
+      SELECT id FROM item_master 
+      WHERE specification = $1 AND type = $2 AND brand = $3 AND model = $4
+    `, [formData.specification, formData.type, formData.brand, formData.model]);
+
+    let masterId;
+    if (getMasterRes.success && getMasterRes.rows.length > 0) {
+      masterId = getMasterRes.rows[0].id;
+    } else {
+      const masterRes = await window.electronAPI.dbQuery(`
+        INSERT INTO item_master (specification, type, brand, model, unit, category_id, purchase_price)
+        VALUES ($1, $2, $3, $4, $5, (SELECT id FROM categories WHERE name = $6), 0)
+        RETURNING id
+      `, [formData.specification, formData.type, formData.brand, formData.model, formData.unit, '資訊設備']);
+      masterId = masterRes.rows[0].id;
+    }
+
     const res = await window.electronAPI.dbQuery(`
-      INSERT INTO items (
-        sn, specification, type, brand, unit, 
-        client, hostname, location, installed_date, 
-        customer_warranty_expire, system_date, warranty_expire,
-        category_id, purchase_price
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, (SELECT id FROM categories WHERE name = $13), 0)`,
+      INSERT INTO assets (
+        item_master_id, sn, client, hostname, location, installed_date, 
+        customer_warranty_expire, system_date, warranty_expire
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [
-        formData.sn, formData.specification, formData.type, formData.brand, formData.unit, 
+        masterId, formData.sn.trim() || null, 
         formData.client, formData.hostname, formData.location, formData.installed_date || null,
-        formData.customer_warranty_expire || null, formData.system_date || null, formData.warranty_expire || null,
-        '資訊設備'
+        formData.customer_warranty_expire || null, formData.system_date || null, formData.warranty_expire || null
       ]
     );
 
     if (res.success) {
       alert('設備建檔成功！');
+      window.dispatchEvent(new Event('db-update'));
       await fetchAssets();
+      
+      const defaultBrand = brands[0]?.name || '';
       setFormData({ 
-        sn: '', specification: '', type: types[0] || '', brand: brands[0] || '', client: '', 
+        sn: '', specification: '', type: '', brand: defaultBrand, model: '', client: '', 
         hostname: '', location: '', installed_date: '', 
         customer_warranty_expire: '', system_date: '', warranty_expire: '',
         unit: '個' 
       });
+      
+      if (defaultBrand) {
+        const { nextType } = await fetchTypes(defaultBrand);
+        if (nextType) await fetchModels(defaultBrand, nextType);
+      }
+      
       setFormKey(prev => prev + 1);
     } else {
       alert('建檔失敗：' + res.error);
@@ -205,7 +353,35 @@ const Assets = () => {
           {/* 左側：表單 */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <label style={{ fontWeight: 600, fontSize: '0.9rem', color: '#555' }}>廠牌 (Brand) *</label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <select name="brand" value={formData.brand} onChange={handleChange} style={inputStyle}>
+                    <option value="">請選擇廠牌</option>
+                    {brands.map(b => (
+                      <option key={b.id} value={b.name}>{b.name}</option>
+                    ))}
+                  </select>
+                  <button onClick={() => { setShowAddBrand(!showAddBrand); setShowManageBrand(false); }} style={iconButtonStyle} title="新增廠牌"><Plus size={18} /></button>
+                  <button onClick={() => { setShowManageBrand(!showManageBrand); setShowAddBrand(false); }} style={iconButtonStyle} title="管理廠牌"><Settings2 size={18} /></button>
+                </div>
+                {showAddBrand && (
+                  <div style={popoverStyle}>
+                    <input type="text" placeholder="新名稱" value={newBrandName} onChange={(e) => setNewBrandName(e.target.value)} style={smallInputStyle} />
+                    <button onClick={handleAddBrand} style={smallAddButtonStyle}>新增</button>
+                  </div>
+                )}
+                {showManageBrand && (
+                  <div style={manageListStyle}>
+                    <div style={manageHeaderStyle}><span>管理廠牌</span><X size={14} style={{ cursor: 'pointer' }} onClick={() => setShowManageBrand(false)} /></div>
+                    {brands.map(b => (
+                      <div key={b.id} style={manageItemStyle}><span>{b.name}</span><Trash2 size={14} color="#ff4d4f" style={{ cursor: 'pointer' }} onClick={() => handleDeleteBrand(b.name)} /></div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <label style={{ fontWeight: 600, fontSize: '0.9rem', color: '#555' }}>類型 (Type) *</label>
                 <div style={{ display: 'flex', gap: '8px' }}>
@@ -234,37 +410,42 @@ const Assets = () => {
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <label style={{ fontWeight: 600, fontSize: '0.9rem', color: '#555' }}>廠牌 (Brand) *</label>
+                <label style={{ fontWeight: 600, fontSize: '0.9rem', color: '#555' }}>型號 (Model) *</label>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <select name="brand" value={formData.brand} onChange={handleChange} style={inputStyle}>
-                    {brands.map(b => (
-                      <option key={b} value={b}>{b}</option>
+                  <select name="model" value={formData.model} onChange={handleChange} style={inputStyle}>
+                    <option value="">請選擇型號</option>
+                    {models.map(m => (
+                      <option key={m} value={m}>{m}</option>
                     ))}
                   </select>
-                  <button onClick={() => { setShowAddBrand(!showAddBrand); setShowManageBrand(false); }} style={iconButtonStyle} title="新增廠牌"><Plus size={18} /></button>
-                  <button onClick={() => { setShowManageBrand(!showManageBrand); setShowAddBrand(false); }} style={iconButtonStyle} title="管理廠牌"><Settings2 size={18} /></button>
+                  <button onClick={() => { setShowAddModel(!showAddModel); setShowManageModel(false); }} style={iconButtonStyle} title="新增型號"><Plus size={18} /></button>
+                  <button onClick={() => { setShowManageModel(!showManageModel); setShowAddModel(false); }} style={iconButtonStyle} title="管理型號"><Settings2 size={18} /></button>
                 </div>
-                {showAddBrand && (
+                {showAddModel && (
                   <div style={popoverStyle}>
-                    <input type="text" placeholder="新名稱" value={newBrandName} onChange={(e) => setNewBrandName(e.target.value)} style={smallInputStyle} />
-                    <button onClick={handleAddBrand} style={smallAddButtonStyle}>新增</button>
+                    <input type="text" placeholder="新名稱" value={newModelName} onChange={(e) => setNewModelName(e.target.value)} style={smallInputStyle} />
+                    <button onClick={handleAddModel} style={smallAddButtonStyle}>新增</button>
                   </div>
                 )}
-                {showManageBrand && (
+                {showManageModel && (
                   <div style={manageListStyle}>
-                    <div style={manageHeaderStyle}><span>管理廠牌</span><X size={14} style={{ cursor: 'pointer' }} onClick={() => setShowManageBrand(false)} /></div>
-                    {brands.map(b => (
-                      <div key={b} style={manageItemStyle}><span>{b}</span><Trash2 size={14} color="#ff4d4f" style={{ cursor: 'pointer' }} onClick={() => handleDeleteBrand(b)} /></div>
+                    <div style={manageHeaderStyle}><span>管理型號</span><X size={14} style={{ cursor: 'pointer' }} onClick={() => setShowManageModel(false)} /></div>
+                    {models.map(m => (
+                      <div key={m} style={manageItemStyle}><span>{m}</span><Trash2 size={14} color="#ff4d4f" style={{ cursor: 'pointer' }} onClick={() => handleDeleteModel(m)} /></div>
                     ))}
                   </div>
                 )}
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr', gap: '16px' }}>
               <div>
-                <label style={labelStyle}>序號 / SN *</label>
-                <input type="text" name="sn" value={formData.sn} onChange={handleChange} style={inputStyle} placeholder="唯一硬體序號" />
+                <label style={labelStyle}>規格 (Specification) *</label>
+                <input type="text" name="specification" value={formData.specification} onChange={handleChange} style={inputStyle} placeholder="詳細型號與規格文字" />
+              </div>
+              <div>
+                <label style={labelStyle}>序號 / SN</label>
+                <input type="text" name="sn" value={formData.sn} onChange={handleChange} style={inputStyle} placeholder="唯一硬體序號 (選填)" />
               </div>
               <div>
                 <label style={labelStyle}>HostName</label>
@@ -272,13 +453,14 @@ const Assets = () => {
               </div>
             </div>
 
-            <div>
-              <label style={labelStyle}>規格 (Specification) *</label>
-              <input type="text" name="specification" value={formData.specification} onChange={handleChange} style={inputStyle} placeholder="詳細型號與規格文字" />
-            </div>
-
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <div><label style={labelStyle}>客戶名稱 (Customer)</label><input type="text" name="client" value={formData.client} onChange={handleChange} style={inputStyle} placeholder="客戶公司/名稱" /></div>
+              <div>
+                <label style={labelStyle}>客戶名稱 (Customer)</label>
+                <select name="client" value={formData.client} onChange={handleChange} style={inputStyle}>
+                  <option value="">請選擇客戶</option>
+                  {customers.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
               <div><label style={labelStyle}>放置位置 (Location)</label><input type="text" name="location" value={formData.location} onChange={handleChange} style={inputStyle} placeholder="例如: 1F A機櫃" /></div>
             </div>
 
@@ -325,7 +507,9 @@ const Assets = () => {
               {items.map(item => (
                 <div key={item.id} style={{ display: 'flex', alignItems: 'center', padding: '16px', border: '1px solid #eee', borderRadius: '12px', backgroundColor: '#fff' }}>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 800, color: 'var(--primary-color)', fontSize: '0.9rem' }}>{item.brand || 'N/A'}</div>
+                    <div style={{ fontWeight: 800, color: 'var(--primary-color)', fontSize: '0.9rem' }}>
+                      {item.brand || 'N/A'} {item.model && <span style={{ color: '#666', fontWeight: 400 }}>({item.model})</span>}
+                    </div>
                     <div style={{ color: '#333', fontSize: '1rem', fontWeight: 600, margin: '4px 0' }}>
                        <span style={{ color: '#888', marginRight: '6px' }}>[{item.sn}]</span>
                        {item.specification}

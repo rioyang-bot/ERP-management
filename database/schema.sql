@@ -51,20 +51,37 @@ CREATE TABLE IF NOT EXISTS partners (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 資產與品項主檔
-CREATE TABLE IF NOT EXISTS items (
+-- 品項主檔 (SKU Master)
+CREATE TABLE IF NOT EXISTS item_master (
     id SERIAL PRIMARY KEY,
     category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
-    sn VARCHAR(100) UNIQUE NOT NULL, -- 序號 (資產類必填)
-    specification TEXT NOT NULL,     -- 規格 (原資產名稱)
+    specification TEXT NOT NULL,     -- 規格 
     type VARCHAR(100),               -- 類型
     brand VARCHAR(100),              -- 廠牌
-    custodian VARCHAR(100),          -- 保管人 (新加入)
-    unit VARCHAR(20) DEFAULT '個',    -- 單位 (新加入，如：個, 支, 包)
-    safety_stock INTEGER DEFAULT 0,  -- 安全水位 (耗材類仍可使用)
+    model VARCHAR(100),              -- 型號
+    custodian VARCHAR(100),          -- 保管人
+    unit VARCHAR(20) DEFAULT '個',    -- 單位
+    safety_stock INTEGER DEFAULT 0,  -- 安全水位
     purchase_price DECIMAL(15, 2),   -- 採購單價
     currency VARCHAR(10) DEFAULT 'TWD', -- 幣別
     image_path TEXT,                 -- 圖片路徑
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 資產實體 (Asset Instances)
+CREATE TABLE IF NOT EXISTS assets (
+    id SERIAL PRIMARY KEY,
+    item_master_id INTEGER REFERENCES item_master(id) ON DELETE CASCADE,
+    sn VARCHAR(100) UNIQUE NOT NULL, -- 序號 (唯一列管)
+    hostname VARCHAR(100),           -- 主機名稱
+    client VARCHAR(100),             -- 客戶
+    location VARCHAR(100),           -- 地點
+    status VARCHAR(20) DEFAULT 'ACTIVE', -- ACTIVE, BROKEN, PENDING, SHIPPED
+    installed_date DATE,             -- 安裝日期
+    system_date DATE,                -- 系統日期
+    warranty_expire DATE,            -- 保固到期
+    customer_warranty_expire DATE,   -- 客戶保固到期
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -85,7 +102,7 @@ CREATE TABLE IF NOT EXISTS inbound_orders (
 CREATE TABLE IF NOT EXISTS inbound_items (
     id SERIAL PRIMARY KEY,
     inbound_order_id INTEGER REFERENCES inbound_orders(id) ON DELETE CASCADE,
-    item_id INTEGER REFERENCES items(id),
+    item_id INTEGER REFERENCES item_master(id) ON DELETE CASCADE,
     sn VARCHAR(100), -- 若是設備類可以填入批次 SN
     unit_price DECIMAL(15, 2) NOT NULL,
     quantity INTEGER NOT NULL DEFAULT 1,
@@ -104,18 +121,39 @@ CREATE TABLE IF NOT EXISTS outbound_requests (
 CREATE TABLE IF NOT EXISTS outbound_items (
     id SERIAL PRIMARY KEY,
     request_id INTEGER REFERENCES outbound_requests(id) ON DELETE CASCADE,
-    item_id INTEGER REFERENCES items(id),
+    item_id INTEGER REFERENCES item_master(id) ON DELETE CASCADE,
     quantity INTEGER NOT NULL DEFAULT 1
+);
+
+-- 採購紀錄表 (Purchase Records)
+CREATE TABLE IF NOT EXISTS purchase_records (
+    id SERIAL PRIMARY KEY,
+    order_no VARCHAR(50) UNIQUE NOT NULL, -- 採購單號
+    partner_id INTEGER REFERENCES partners(id), -- 供應商
+    category_id INTEGER REFERENCES categories(id), -- 資產或耗材
+    item_type VARCHAR(100),              -- 類型 (Type)
+    brand VARCHAR(100),                  -- 廠牌 (Brand)
+    model VARCHAR(100),                  -- 型號 (Model)
+    specification TEXT NOT NULL,         -- 規格 (Specification)
+    unit VARCHAR(20),                    -- 單位 (Unit)
+    unit_price DECIMAL(15, 2) NOT NULL,    -- 採購單價
+    quantity INTEGER NOT NULL DEFAULT 1,   -- 採購數量
+    received_quantity INTEGER DEFAULT 0,  -- 已入庫數量
+    status VARCHAR(20) DEFAULT 'ORDERED', -- ORDERED, PARTIAL, COMPLETED
+    purchaser_id INTEGER REFERENCES users(id), -- 採購人員
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 即時庫存摘要視圖 (Inventory Dashboard Core)
 CREATE OR REPLACE VIEW v_inventory_summary AS
 SELECT 
     i.id AS item_id,
-    i.sn AS master_sn,
+    null AS master_sn,
     i.specification AS item_name, -- 舊的 item_name 現在對應到新的規格欄位
     i.type,
     i.brand,
+    i.model,
     i.specification,
     i.custodian,
     i.unit,
@@ -129,7 +167,7 @@ SELECT
     COALESCE(outbound.total_locked, 0) AS locked_qty,
     -- 可用庫存 (Available Qty) = 實體庫存 - 鎖定數量
     (COALESCE(inbound.total_in, 0) - COALESCE(outbound.total_shipped, 0)) - COALESCE(outbound.total_locked, 0) AS available_qty
-FROM items i
+FROM item_master i
 LEFT JOIN (
     SELECT item_id, SUM(quantity) as total_in 
     FROM inbound_items 
