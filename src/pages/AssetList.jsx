@@ -266,8 +266,9 @@ const AssetList = () => {
                             customAttrs = {}; 
                           }
                           const value = f.isNative ? item[f.id] : customAttrs[f.id];
+                          const labelColor = f.color || (isFirst ? '#1890ff' : '#666');
                           return (
-                            <div key={f.id} style={{ fontSize: isFirst ? '0.9rem' : '0.8rem', color: isFirst ? '#1890ff' : '#666', marginTop: isFirst ? '0' : '4px' }}>
+                            <div key={f.id} style={{ fontSize: isFirst ? '0.9rem' : '0.8rem', color: labelColor, marginTop: isFirst ? '0' : '4px' }}>
                               {f.label.split(' ')[0]}: <span style={{ fontWeight: 600, color: '#444' }}>{value || '--'}</span>
                             </div>
                           );
@@ -452,7 +453,7 @@ const AssetList = () => {
                       
                       return (
                         <div key={f.id}>
-                          <label style={editLabelStyle}>{f.label}</label>
+                          <label style={{ ...editLabelStyle, color: f.color || editLabelStyle.color }}>{f.label}</label>
                           <input type="text" value={value || ''} onChange={(e) => {
                             if (f.isNative) {
                               setEditItem({...editItem, [f.id]: e.target.value});
@@ -491,11 +492,22 @@ const AssetList = () => {
                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                  {customFieldDefs.map((def, i) => (
                    <div key={def.id} style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                     <input 
+                        type="color" 
+                        value={def.color || '#1890ff'} 
+                        onChange={(e) => {
+                          const newDefs = [...customFieldDefs];
+                          newDefs[i].color = e.target.value;
+                          setCustomFieldDefs(newDefs);
+                        }}
+                        style={{ width: '40px', height: '36px', padding: '2px', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer', backgroundColor: '#fff' }}
+                        title="選擇顯示顏色"
+                      />
                      <input type="text" value={def.label} onChange={(e) => {
                          const newDefs = [...customFieldDefs];
                          newDefs[i].label = e.target.value;
                          setCustomFieldDefs(newDefs);
-                     }} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #ccc', width: '250px', backgroundColor: '#fff' }} title={'編輯欄位顯示名稱'} placeholder="顯示名稱" />
+                     }} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #ccc', width: '200px', backgroundColor: '#fff' }} title={'編輯欄位顯示名稱'} placeholder="顯示名稱" />
                      {!def.isNative && (
                        <button onClick={() => {
                          if(window.confirm('確定移除此自訂屬性？(資料庫對應內容不會刪除，但不會再顯示於前端)')) {

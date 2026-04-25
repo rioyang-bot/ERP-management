@@ -19,6 +19,18 @@ const Consumables = () => {
   const UNIFIED_UNITS = ['個', '台', '盒', '包', '支', '組', '瓶', '卷', '張', '份'];
   const [formKey, setFormKey] = useState(0); // 用於強制重整表單區域
 
+  const validateAndSanitize = (val, fieldName = '欄位') => {
+    if (typeof val !== 'string' || !val) return val;
+    const charRegex = /[|&;$%@'"\\()+\r\n,]/g;
+    const keywordRegex = /\b(Select|Insert|Dbo|Declare|Cast|Drop|Union|Exec|Nvarchar)\b/gi;
+    
+    if (charRegex.test(val) || keywordRegex.test(val)) {
+      alert(`「${fieldName}」包含不合規的安全規則字元或關鍵字，請移除特殊符號。`);
+      return null;
+    }
+    return val.trim();
+  };
+
   const fetchConsumables = useCallback(async () => {
     const res = await window.electronAPI.namedQuery('fetchRecentConsumables');
     if (res.success) {
@@ -124,7 +136,8 @@ const Consumables = () => {
   };
 
   const handleAddBrand = async () => {
-    const trimmedName = newBrandName.trim();
+    const trimmedName = validateAndSanitize(newBrandName, '廠牌名稱');
+    if (trimmedName === null) return;
     if (!trimmedName) return;
 
     if (brands.some(b => b.name === trimmedName)) {
@@ -146,7 +159,8 @@ const Consumables = () => {
   };
 
   const handleAddModel = async () => {
-    const trimmedName = newModelName.trim();
+    const trimmedName = validateAndSanitize(newModelName, '型號名稱');
+    if (trimmedName === null) return;
     if (!trimmedName) return;
 
     if (models.includes(trimmedName)) {
@@ -158,6 +172,10 @@ const Consumables = () => {
 
     const res = await window.electronAPI.namedQuery('insertDeviceModel', [formData.brand, formData.type, '辦公耗材', trimmedName]);
     if (res.success) {
+      if (res.rowCount === 0) {
+        alert('無法新增：系統找不到該廠牌與類型的對應關係，請確認該耗材廠牌與類型是否正確。');
+        return;
+      }
       setFormData(prev => ({ ...prev, model: trimmedName }));
       await fetchModels(formData.brand, formData.type);
       setNewModelName('');
