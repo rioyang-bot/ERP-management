@@ -20,21 +20,15 @@ const Assets = () => {
     type: '', brand: '', model: '', sn: '', specification: '', client: '', 
     hostname: '', location: '', installed_date: '', 
     customer_warranty_expire: '', system_date: '', warranty_expire: '',
-    unit: '個' 
+    os: '', nic: '', custom_attributes: {}
   });
+  const [brandFieldConfigs, setBrandFieldConfigs] = useState({});
+  const [customFieldDefs, setCustomFieldDefs] = useState([]);
   const UNIFIED_UNITS = ['個', '台', '盒', '包', '支', '組', '瓶', '卷', '張', '份'];
   const [formKey, setFormKey] = useState(0); // 用於強制重整表單區域
 
   const fetchAssets = useCallback(async () => {
-    const res = await window.electronAPI.dbQuery(`
-      SELECT a.*, i.specification, i.type, i.brand, i.model, i.unit, c.name as category_name 
-      FROM assets a 
-      JOIN item_master i ON a.item_master_id = i.id
-      LEFT JOIN categories c ON i.category_id = c.id 
-      WHERE c.name = '資訊設備' 
-      ORDER BY a.id DESC
-      LIMIT 10
-    `);
+    const res = await window.electronAPI.namedQuery('fetchRecentAssets');
     if (res.success) {
       setItems(res.rows);
     }
@@ -45,15 +39,7 @@ const Assets = () => {
       setModels([]);
       return { modelNames: [] };
     }
-    const res = await window.electronAPI.dbQuery(`
-      SELECT m.name FROM item_models m
-      JOIN item_types t ON m.type_id = t.id
-      JOIN item_brands b ON t.brand_id = b.id
-      WHERE b.name = $1 AND t.name = $2
-      AND b.category_id = (SELECT id FROM categories WHERE name = '資訊設備')
-      AND t.category_id = (SELECT id FROM categories WHERE name = '資訊設備')
-      ORDER BY m.name ASC
-    `, [brandName, typeName]);
+    const res = await window.electronAPI.namedQuery('fetchModelsByBrandType', [brandName, typeName]);
     if (res.success) {
       const modelNames = res.rows.map(r => r.name);
       setModels(modelNames);
@@ -71,12 +57,7 @@ const Assets = () => {
       setTypes([]);
       return { typeNames: [], nextType: '' };
     }
-    const res = await window.electronAPI.dbQuery(`
-      SELECT name FROM item_types 
-      WHERE category_id = (SELECT id FROM categories WHERE name = '資訊設備')
-      AND brand_id = (SELECT id FROM item_brands WHERE name = $1 AND category_id = (SELECT id FROM categories WHERE name = '資訊設備'))
-      ORDER BY name ASC
-    `, [brandName]);
+    const res = await window.electronAPI.namedQuery('fetchTypesByBrand', [brandName]);
 
     if (res.success) {
       const typeNames = res.rows.map(r => r.name);
@@ -89,11 +70,7 @@ const Assets = () => {
   }, []);
 
   const fetchBrands = useCallback(async () => {
-    const res = await window.electronAPI.dbQuery(`
-      SELECT id, name FROM item_brands 
-      WHERE category_id = (SELECT id FROM categories WHERE name = '資訊設備')
-      ORDER BY name ASC
-    `);
+    const res = await window.electronAPI.namedQuery('fetchDeviceBrands');
     if (res.success) {
       setBrands(res.rows);
       if (!formData.brand && res.rows.length > 0) {
@@ -107,27 +84,40 @@ const Assets = () => {
   }, [formData.brand, fetchTypes, fetchModels]);
 
   const fetchCustomers = useCallback(async () => {
-    const res = await window.electronAPI.dbQuery("SELECT name FROM partners WHERE partner_type = 'CUSTOMER' ORDER BY name ASC");
+    const res = await window.electronAPI.namedQuery('fetchCustomers');
     if (res.success) {
       setCustomers(res.rows.map(r => r.name));
     }
   }, []);
 
+  const fetchSettings = useCallback(async () => {
+    const res = await window.electronAPI.namedQuery('getSystemSetting', ['brandFieldConfigs']);
+    if (res.success && res.rows.length > 0) {
+      setBrandFieldConfigs(res.rows[0].value || {});
+    }
+    const defsRes = await window.electronAPI.namedQuery('getSystemSetting', ['customFieldDefinitions']);
+    if (defsRes.success && defsRes.rows.length > 0) {
+      setCustomFieldDefs(defsRes.rows[0].value || []);
+    }
+  }, []);
+
+  const isFieldVisible = (brand, fieldName) => {
+    if (!brand) return true;
+    const config = brandFieldConfigs[brand] || {};
+    if (config[fieldName] !== undefined) return config[fieldName];
+    return true;
+  };
+
   useEffect(() => {
     const init = async () => {
       fetchAssets();
       fetchCustomers();
+      fetchSettings();
       
-      const res = await window.electronAPI.dbQuery(`
-        SELECT id, name FROM item_brands 
-        WHERE category_id = (SELECT id FROM categories WHERE name = '資訊設備')
-        ORDER BY name ASC
-      `);
-
+      const res = await window.electronAPI.namedQuery('fetchDeviceBrands');
       if (res.success && res.rows.length > 0) {
         setBrands(res.rows);
         const initialBrand = res.rows[0].name;
-        // Start sequential fetch
         const { nextType } = await fetchTypes(initialBrand);
         if (nextType) {
           await fetchModels(initialBrand, nextType);
@@ -135,7 +125,7 @@ const Assets = () => {
       }
     };
     init();
-  }, [fetchAssets, fetchTypes, fetchModels, fetchCustomers]);
+  }, [fetchAssets, fetchTypes, fetchModels, fetchCustomers, fetchSettings]);
 
   const handleAddType = async () => {
     const trimmedName = newTypeName.trim();
@@ -148,10 +138,7 @@ const Assets = () => {
       return;
     }
 
-    const res = await window.electronAPI.dbQuery(
-      'INSERT INTO item_types (category_id, brand_id, name) VALUES ((SELECT id FROM categories WHERE name = $1), (SELECT id FROM item_brands WHERE name = $2 AND category_id = (SELECT id FROM categories WHERE name = $1)), $3)',
-      ['資訊設備', formData.brand, trimmedName]
-    );
+    const res = await window.electronAPI.namedQuery('insertDeviceType', ['資訊設備', formData.brand, trimmedName]);
     if (res.success) {
       // Temporarily update formData with the new type name
       setFormData(prev => ({ ...prev, type: trimmedName }));
@@ -165,10 +152,7 @@ const Assets = () => {
 
   const handleDeleteType = async (typeName) => {
     if (!confirm(`確定要刪除「${typeName}」嗎？這不會影響現有資產資料，但選單中將不再出現此選項。`)) return;
-    const res = await window.electronAPI.dbQuery(
-      'DELETE FROM item_types WHERE name = $1 AND category_id = (SELECT id FROM categories WHERE name = $2) AND brand_id = (SELECT id FROM item_brands WHERE name = $3 AND category_id = (SELECT id FROM categories WHERE name = $2))',
-      [typeName, '資訊設備', formData.brand]
-    );
+    const res = await window.electronAPI.namedQuery('deleteDeviceType', [typeName, '資訊設備', formData.brand]);
     if (res.success) {
       await fetchTypes(formData.brand, formData.type);
       if (formData.type === typeName) {
@@ -190,17 +174,7 @@ const Assets = () => {
       return;
     }
 
-    const res = await window.electronAPI.dbQuery(
-      `INSERT INTO item_models (type_id, name) VALUES (
-        (SELECT t.id FROM item_types t 
-         JOIN item_brands b ON t.brand_id = b.id 
-         WHERE b.name = $1 AND t.name = $2 
-         AND b.category_id = (SELECT id FROM categories WHERE name = $3)
-         AND t.category_id = (SELECT id FROM categories WHERE name = $3)), 
-        $4
-      )`,
-      [formData.brand, formData.type, '資訊設備', trimmedName]
-    );
+    const res = await window.electronAPI.namedQuery('insertDeviceModel', [formData.brand, formData.type, '資訊設備', trimmedName]);
     if (res.success) {
       setFormData(prev => ({ ...prev, model: trimmedName }));
       await fetchModels(formData.brand, formData.type);
@@ -213,16 +187,7 @@ const Assets = () => {
 
   const handleDeleteModel = async (modelName) => {
     if (!confirm(`確定要刪除「${modelName}」嗎？這不會影響現有資產資料，但選單中將不再出現此選項。`)) return;
-    const res = await window.electronAPI.dbQuery(
-      `DELETE FROM item_models WHERE name = $1 AND type_id = (
-        SELECT t.id FROM item_types t 
-        JOIN item_brands b ON t.brand_id = b.id 
-        WHERE b.name = $2 AND t.name = $3 
-        AND b.category_id = (SELECT id FROM categories WHERE name = $4)
-        AND t.category_id = (SELECT id FROM categories WHERE name = $4)
-      )`,
-      [modelName, formData.brand, formData.type, '資訊設備']
-    );
+    const res = await window.electronAPI.namedQuery('deleteDeviceModel', [modelName, formData.brand, formData.type, '資訊設備']);
     if (res.success) {
       await fetchModels(formData.brand, formData.type);
       if (formData.model === modelName) {
@@ -244,10 +209,7 @@ const Assets = () => {
       return;
     }
 
-    const res = await window.electronAPI.dbQuery(
-      'INSERT INTO item_brands (category_id, name) VALUES ((SELECT id FROM categories WHERE name = $1), $2)',
-      ['資訊設備', trimmedName]
-    );
+    const res = await window.electronAPI.namedQuery('insertDeviceBrand', ['資訊設備', trimmedName]);
     if (res.success) {
       setFormData(prev => ({ ...prev, brand: trimmedName }));
       await fetchBrands();
@@ -261,10 +223,7 @@ const Assets = () => {
 
   const handleDeleteBrand = async (brandName) => {
     if (!confirm(`確定要刪除「${brandName}」嗎？這不會影響現有資產資料，但選單中將不再出現此選項。`)) return;
-    const res = await window.electronAPI.dbQuery(
-      'DELETE FROM item_brands WHERE name = $1 AND category_id = (SELECT id FROM categories WHERE name = $2)',
-      [brandName, '資訊設備']
-    );
+    const res = await window.electronAPI.namedQuery('deleteDeviceBrand', [brandName, '資訊設備']);
     if (res.success) {
       await fetchBrands();
       if (formData.brand === brandName) {
@@ -291,34 +250,22 @@ const Assets = () => {
   const handleAddAsset = async () => {
     if (!formData.specification || !formData.type) return alert('請填寫必填欄位');
     
-    const getMasterRes = await window.electronAPI.dbQuery(`
-      SELECT id FROM item_master 
-      WHERE specification = $1 AND type = $2 AND brand = $3 AND model = $4
-    `, [formData.specification, formData.type, formData.brand, formData.model]);
+    const getMasterRes = await window.electronAPI.namedQuery('findItemMaster', [formData.specification, formData.type, formData.brand, formData.model]);
 
     let masterId;
     if (getMasterRes.success && getMasterRes.rows.length > 0) {
       masterId = getMasterRes.rows[0].id;
     } else {
-      const masterRes = await window.electronAPI.dbQuery(`
-        INSERT INTO item_master (specification, type, brand, model, unit, category_id, purchase_price)
-        VALUES ($1, $2, $3, $4, $5, (SELECT id FROM categories WHERE name = $6), 0)
-        RETURNING id
-      `, [formData.specification, formData.type, formData.brand, formData.model, formData.unit, '資訊設備']);
+      const masterRes = await window.electronAPI.namedQuery('insertItemMaster', [formData.specification, formData.type, formData.brand, formData.model, '台', '資訊設備']);
       masterId = masterRes.rows[0].id;
     }
 
-    const res = await window.electronAPI.dbQuery(`
-      INSERT INTO assets (
-        item_master_id, sn, client, hostname, location, installed_date, 
-        customer_warranty_expire, system_date, warranty_expire
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [
+    const res = await window.electronAPI.namedQuery('insertAssetRecord', [
         masterId, formData.sn.trim() || null, 
         formData.client, formData.hostname, formData.location, formData.installed_date || null,
-        formData.customer_warranty_expire || null, formData.system_date || null, formData.warranty_expire || null
-      ]
-    );
+        formData.customer_warranty_expire || null, formData.system_date || null, formData.warranty_expire || null,
+        formData.os, formData.nic, formData.custom_attributes
+    ]);
 
     if (res.success) {
       alert('設備建檔成功！');
@@ -330,7 +277,7 @@ const Assets = () => {
         sn: '', specification: '', type: '', brand: defaultBrand, model: '', client: '', 
         hostname: '', location: '', installed_date: '', 
         customer_warranty_expire: '', system_date: '', warranty_expire: '',
-        unit: '個' 
+        os: '', nic: '', custom_attributes: {}
       });
       
       if (defaultBrand) {
@@ -438,7 +385,7 @@ const Assets = () => {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 1.5fr) 1fr', gap: '16px' }}>
               <div>
                 <label style={labelStyle}>規格 (Specification) *</label>
                 <input type="text" name="specification" value={formData.specification} onChange={handleChange} style={inputStyle} placeholder="詳細型號與規格文字" />
@@ -446,10 +393,6 @@ const Assets = () => {
               <div>
                 <label style={labelStyle}>序號 / SN</label>
                 <input type="text" name="sn" value={formData.sn} onChange={handleChange} style={inputStyle} placeholder="唯一硬體序號 (選填)" />
-              </div>
-              <div>
-                <label style={labelStyle}>HostName</label>
-                <input type="text" name="hostname" value={formData.hostname} onChange={handleChange} style={inputStyle} placeholder="例如: SRV-APP-01" />
               </div>
             </div>
 
@@ -486,14 +429,37 @@ const Assets = () => {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <div>
-                <label style={labelStyle}>單位 (Unit)</label>
-                <select name="unit" value={formData.unit} onChange={handleChange} style={inputStyle}>
-                  {UNIFIED_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
-                </select>
+            {/* 動態自訂欄位區域 */}
+            {customFieldDefs.filter(f => isFieldVisible(formData.brand, f.id)).length > 0 && (
+              <div style={{ marginTop: '12px', padding: '20px', backgroundColor: '#f8f9ff', borderRadius: '12px', border: '1px solid #eef0ff' }}>
+                <div style={{ fontSize: '0.9rem', fontWeight: 800, color: '#1890ff', marginBottom: '16px' }}>自訂設備屬性 (依廠牌配置顯示)</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  {customFieldDefs.filter(f => isFieldVisible(formData.brand, f.id)).map(f => (
+                    <div key={f.id}>
+                      <label style={labelStyle}>{f.label}</label>
+                      <input 
+                        type="text" 
+                        value={f.isNative ? formData[f.id] : (formData.custom_attributes[f.id] || '')} 
+                        onChange={(e) => {
+                          if (f.isNative) {
+                            setFormData({ ...formData, [f.id]: e.target.value });
+                          } else {
+                            setFormData({ 
+                              ...formData, 
+                              custom_attributes: { ...formData.custom_attributes, [f.id]: e.target.value } 
+                            });
+                          }
+                        }} 
+                        style={inputStyle} 
+                        placeholder={`輸入 ${f.label}`} 
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
+
+
 
             <button onClick={handleAddAsset} className="btn-primary" style={{ marginTop: '12px', padding: '14px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
               <Save size={18} /> 儲存設備建檔

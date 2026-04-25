@@ -34,17 +34,9 @@ const ProcurementRegistration = () => {
   const fetchOptions = useCallback(async (catId) => {
     if (!catId) return;
     const [brandsRes, typesRes, modelsRes] = await Promise.all([
-      window.electronAPI.dbQuery("SELECT name FROM item_brands WHERE category_id = $1 ORDER BY name ASC", [catId]),
-      window.electronAPI.dbQuery("SELECT name, (SELECT name FROM item_brands WHERE id = t.brand_id) as brand FROM item_types t WHERE category_id = $1 ORDER BY name ASC", [catId]),
-      window.electronAPI.dbQuery(`
-        SELECT m.name as model, t.name as type, b.name as brand, i.specification, i.unit
-        FROM item_models m
-        JOIN item_types t ON m.type_id = t.id
-        JOIN item_brands b ON t.brand_id = b.id
-        LEFT JOIN items i ON (i.model = m.name AND i.type = t.name AND i.brand = b.name)
-        WHERE t.category_id = $1
-        ORDER BY m.name ASC
-      `, [catId])
+      window.electronAPI.namedQuery("fetchBrandsByCategory", [catId]),
+      window.electronAPI.namedQuery("fetchTypesByCategory", [catId]),
+      window.electronAPI.namedQuery("fetchModelsByCategory", [catId])
     ]);
     
     setOptions(prev => ({
@@ -59,17 +51,9 @@ const ProcurementRegistration = () => {
     setLoading(true);
     try {
       const [recordsRes, partnersRes, catsRes] = await Promise.all([
-        window.electronAPI.dbQuery(`
-          SELECT pr.*, p.name as partner_name, c.name as category_name, u.full_name as purchaser_name
-          FROM purchase_records pr
-          LEFT JOIN partners p ON pr.partner_id = p.id
-          LEFT JOIN categories c ON pr.category_id = c.id
-          LEFT JOIN users u ON pr.purchaser_id = u.id
-          ORDER BY pr.created_at DESC
-          LIMIT 10
-        `),
-        window.electronAPI.dbQuery("SELECT id, name FROM partners WHERE partner_type = 'SUPPLIER' ORDER BY name ASC"),
-        window.electronAPI.dbQuery("SELECT id, name FROM categories")
+        window.electronAPI.namedQuery('fetchPurchasingRecords'),
+        window.electronAPI.namedQuery('fetchSuppliers'),
+        window.electronAPI.namedQuery('fetchCategories')
       ]);
 
       if (recordsRes.success) setPurchaseRecords(recordsRes.rows);
@@ -82,8 +66,8 @@ const ProcurementRegistration = () => {
         
         // Generate initial PO status if empty
         const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-        const poCountRes = await window.electronAPI.dbQuery(
-          "SELECT COUNT(DISTINCT order_no) as count FROM purchase_records WHERE order_no LIKE $1",
+        const poCountRes = await window.electronAPI.namedQuery(
+          "countPurchaseOrders",
           [`PO-${today}-%`]
         );
         const nextNum = (poCountRes.success ? Number(poCountRes.rows[0].count) : 0) + 1;
@@ -173,9 +157,9 @@ const ProcurementRegistration = () => {
 
   const handleQuickAddSave = async () => {
     if (!newName.trim()) return;
-    const table = quickAdd.type === 'type' ? 'item_types' : 'item_brands';
-    const res = await window.electronAPI.dbQuery(
-      `INSERT INTO ${table} (category_id, name) VALUES ($1, $2)`,
+    const queryName = quickAdd.type === 'type' ? 'insertItemType' : 'insertItemBrand';
+    const res = await window.electronAPI.namedQuery(
+      queryName,
       [quickAdd.catId, newName.trim()]
     );
 
@@ -198,12 +182,7 @@ const ProcurementRegistration = () => {
     setLoading(true);
     try {
       for (const item of items) {
-        const res = await window.electronAPI.dbQuery(`
-          INSERT INTO purchase_records (
-            order_no, partner_id, category_id, item_type, brand, model,
-            specification, unit, quantity, purchaser_id, status, remarks,
-            unit_price
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 0)`,
+        const res = await window.electronAPI.namedQuery('insertPurchaseRecord',
           [
             orderNo, partnerId, item.category_id, item.item_type, item.brand, item.model,
             item.specification, item.unit, item.quantity, authUser?.id, 'ORDERED', remarks

@@ -20,102 +20,73 @@ const Consumables = () => {
   const [formKey, setFormKey] = useState(0); // 用於強制重整表單區域
 
   const fetchConsumables = useCallback(async () => {
-    const res = await window.electronAPI.dbQuery(`
-      SELECT i.* FROM item_master i 
-      LEFT JOIN categories c ON i.category_id = c.id 
-      WHERE c.name = '辦公耗材' 
-      ORDER BY i.id DESC
-      LIMIT 10
-    `);
+    const res = await window.electronAPI.namedQuery('fetchRecentConsumables');
     if (res.success) {
       setItems(res.rows);
     }
   }, []);
 
-  const fetchTypes = useCallback(async (brandName) => {
+  const fetchTypes = useCallback(async (brandName, currentType = '') => {
     if (!brandName) {
       setTypes([]);
-      return;
+      return { typeNames: [], nextType: '' };
     }
-    const res = await window.electronAPI.dbQuery(`
-      SELECT name FROM item_types 
-      WHERE category_id = (SELECT id FROM categories WHERE name = '辦公耗材')
-      AND brand_id = (SELECT id FROM item_brands WHERE name = $1 AND category_id = (SELECT id FROM categories WHERE name = '辦公耗材'))
-      ORDER BY name ASC
-    `, [brandName]);
+    const res = await window.electronAPI.namedQuery('fetchConsumableTypesByBrand', [brandName]);
     if (res.success) {
       const typeNames = res.rows.map(r => r.name);
       setTypes(typeNames);
-      setFormData(prev => {
-        if (!typeNames.includes(prev.type) && typeNames.length > 0) {
-          return { ...prev, type: typeNames[0] };
-        } else if (typeNames.length === 0) {
-          return { ...prev, type: '' };
-        }
-        return prev;
-      });
+      const nextType = typeNames.includes(currentType) ? currentType : (typeNames[0] || '');
+      setFormData(prev => ({ ...prev, type: nextType }));
+      return { typeNames, nextType };
     }
+    return { typeNames: [], nextType: '' };
   }, []);
   const fetchModels = useCallback(async (brandName, typeName) => {
     if (!brandName || !typeName) {
       setModels([]);
-      return;
+      return { modelNames: [] };
     }
-    const res = await window.electronAPI.dbQuery(`
-      SELECT m.name FROM item_models m
-      JOIN item_types t ON m.type_id = t.id
-      JOIN item_brands b ON t.brand_id = b.id
-      WHERE b.name = $1 AND t.name = $2
-      AND b.category_id = (SELECT id FROM categories WHERE name = '辦公耗材')
-      AND t.category_id = (SELECT id FROM categories WHERE name = '辦公耗材')
-      ORDER BY m.name ASC
-    `, [brandName, typeName]);
+    const res = await window.electronAPI.namedQuery('fetchConsumableModelsByBrandType', [brandName, typeName]);
     if (res.success) {
       const modelNames = res.rows.map(r => r.name);
       setModels(modelNames);
-      setFormData(prev => {
-        if (!modelNames.includes(prev.model) && modelNames.length > 0) {
-          return { ...prev, model: modelNames[0] };
-        } else if (modelNames.length === 0) {
-          return { ...prev, model: '' };
-        }
-        return prev;
-      });
+      setFormData(prev => ({
+        ...prev,
+        model: modelNames.includes(prev.model) ? prev.model : (modelNames[0] || '')
+      }));
+      return { modelNames };
     }
+    return { modelNames: [] };
   }, []);
   const fetchBrands = useCallback(async () => {
-    const res = await window.electronAPI.dbQuery(`
-      SELECT id, name FROM item_brands 
-      WHERE category_id = (SELECT id FROM categories WHERE name = '辦公耗材')
-      ORDER BY name ASC
-    `);
+    const res = await window.electronAPI.namedQuery('fetchConsumableBrands');
     if (res.success) {
       setBrands(res.rows);
-      setFormData(prev => {
-        if (!prev.brand && res.rows.length > 0) {
-          return { ...prev, brand: res.rows[0].name };
+      if (!formData.brand && res.rows.length > 0) {
+        const initialBrand = res.rows[0].name;
+        setFormData(prev => ({ ...prev, brand: initialBrand }));
+        const { nextType } = await fetchTypes(initialBrand);
+        if (nextType) await fetchModels(initialBrand, nextType);
+      }
+    }
+  }, [formData.brand, fetchTypes, fetchModels]);
+
+  useEffect(() => {
+    const init = async () => {
+      fetchConsumables();
+      
+      const res = await window.electronAPI.namedQuery('fetchConsumableBrands');
+      if (res.success && res.rows.length > 0) {
+        setBrands(res.rows);
+        const initialBrand = res.rows[0].name;
+        const { nextType } = await fetchTypes(initialBrand);
+        if (nextType) {
+          await fetchModels(initialBrand, nextType);
         }
-        return prev;
-      });
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchConsumables();
-    fetchBrands();
-  }, [fetchConsumables, fetchBrands]);
-
-  useEffect(() => {
-    if (formData.brand) {
-      fetchTypes(formData.brand);
-    }
-  }, [formData.brand, fetchTypes]);
-
-  useEffect(() => {
-    if (formData.brand && formData.type) {
-      fetchModels(formData.brand, formData.type);
-    }
-  }, [formData.brand, formData.type, fetchModels]);
+      }
+    };
+    init();
+  }, [fetchConsumables, fetchTypes, fetchModels]);
 
   const handleAddType = async () => {
     const trimmedName = newTypeName.trim();
@@ -128,10 +99,7 @@ const Consumables = () => {
       return;
     }
 
-    const res = await window.electronAPI.dbQuery(
-      'INSERT INTO item_types (category_id, brand_id, name) VALUES ((SELECT id FROM categories WHERE name = $1), (SELECT id FROM item_brands WHERE name = $2 AND category_id = (SELECT id FROM categories WHERE name = $1)), $3)',
-      ['辦公耗材', formData.brand, trimmedName]
-    );
+    const res = await window.electronAPI.namedQuery('insertDeviceType', ['辦公耗材', formData.brand, trimmedName]);
     if (res.success) {
       setFormData(prev => ({ ...prev, type: trimmedName }));
       await fetchTypes(formData.brand);
@@ -144,10 +112,7 @@ const Consumables = () => {
 
   const handleDeleteType = async (typeName) => {
     if (!confirm(`確定要刪除「${typeName}」嗎？這不會影響現有耗材資料，但選單中將不再出現此選項。`)) return;
-    const res = await window.electronAPI.dbQuery(
-      'DELETE FROM item_types WHERE name = $1 AND category_id = (SELECT id FROM categories WHERE name = $2) AND brand_id = (SELECT id FROM item_brands WHERE name = $3 AND category_id = (SELECT id FROM categories WHERE name = $2))',
-      [typeName, '辦公耗材', formData.brand]
-    );
+    const res = await window.electronAPI.namedQuery('deleteDeviceType', [typeName, '辦公耗材', formData.brand]);
     if (res.success) {
       await fetchTypes(formData.brand);
       if (formData.type === typeName) {
@@ -169,10 +134,7 @@ const Consumables = () => {
       return;
     }
 
-    const res = await window.electronAPI.dbQuery(
-      'INSERT INTO item_brands (category_id, name) VALUES ((SELECT id FROM categories WHERE name = $1), $2)',
-      ['辦公耗材', trimmedName]
-    );
+    const res = await window.electronAPI.namedQuery('insertDeviceBrand', ['辦公耗材', trimmedName]);
     if (res.success) {
       setFormData({ ...formData, brand: trimmedName });
       await fetchBrands();
@@ -194,17 +156,7 @@ const Consumables = () => {
       return;
     }
 
-    const res = await window.electronAPI.dbQuery(
-      `INSERT INTO item_models (type_id, name) VALUES (
-        (SELECT t.id FROM item_types t 
-         JOIN item_brands b ON t.brand_id = b.id 
-         WHERE b.name = $1 AND t.name = $2 
-         AND b.category_id = (SELECT id FROM categories WHERE name = $3)
-         AND t.category_id = (SELECT id FROM categories WHERE name = $3)), 
-        $4
-      )`,
-      [formData.brand, formData.type, '辦公耗材', trimmedName]
-    );
+    const res = await window.electronAPI.namedQuery('insertDeviceModel', [formData.brand, formData.type, '辦公耗材', trimmedName]);
     if (res.success) {
       setFormData(prev => ({ ...prev, model: trimmedName }));
       await fetchModels(formData.brand, formData.type);
@@ -217,16 +169,7 @@ const Consumables = () => {
 
   const handleDeleteModel = async (modelName) => {
     if (!confirm(`確定要刪除「${modelName}」嗎？這不會影響現有耗材資料，但選單中將不再出現此選項。`)) return;
-    const res = await window.electronAPI.dbQuery(
-      `DELETE FROM item_models WHERE name = $1 AND type_id = (
-        SELECT t.id FROM item_types t 
-        JOIN item_brands b ON t.brand_id = b.id 
-        WHERE b.name = $2 AND t.name = $3 
-        AND b.category_id = (SELECT id FROM categories WHERE name = $4)
-        AND t.category_id = (SELECT id FROM categories WHERE name = $4)
-      )`,
-      [modelName, formData.brand, formData.type, '辦公耗材']
-    );
+    const res = await window.electronAPI.namedQuery('deleteDeviceModel', [modelName, formData.brand, formData.type, '辦公耗材']);
     if (res.success) {
       await fetchModels(formData.brand, formData.type);
       if (formData.model === modelName) {
@@ -239,10 +182,7 @@ const Consumables = () => {
 
   const handleDeleteBrand = async (brandName) => {
     if (!confirm(`確定要刪除「${brandName}」嗎？這不會影響現有耗材資料，但選單中將不再出現此選項。`)) return;
-    const res = await window.electronAPI.dbQuery(
-      'DELETE FROM item_brands WHERE name = $1 AND category_id = (SELECT id FROM categories WHERE name = $2)',
-      [brandName, '辦公耗材']
-    );
+    const res = await window.electronAPI.namedQuery('deleteDeviceBrand', [brandName, '辦公耗材']);
     if (res.success) {
       await fetchBrands();
       if (formData.brand === brandName) {
@@ -253,8 +193,17 @@ const Consumables = () => {
     }
   };
 
-  const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+  const handleChange = async (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+
+    if (name === 'brand') {
+      const { nextType } = await fetchTypes(value);
+      if (nextType) await fetchModels(value, nextType);
+      else setModels([]);
+    } else if (name === 'type') {
+      await fetchModels(formData.brand, value);
+    }
   };
 
   const handleAddConsumable = async () => {
@@ -262,10 +211,7 @@ const Consumables = () => {
 
     const fullSpec = `${formData.type} ${formData.brand} ${formData.spec ? `(${formData.spec})` : ''}`.trim();
 
-    const res = await window.electronAPI.dbQuery(
-      'INSERT INTO item_master (specification, type, brand, model, unit, safety_stock, category_id, purchase_price) VALUES ($1, $2, $3, $4, $5, $6, (SELECT id FROM categories WHERE name = $7), 0)',
-      [fullSpec, formData.type, formData.brand, formData.model, formData.unit, formData.safety_stock || 0, '辦公耗材']
-    );
+    const res = await window.electronAPI.namedQuery('insertConsumableMaster', [fullSpec, formData.type, formData.brand, formData.model, formData.unit, formData.safety_stock || 0, '辦公耗材']);
 
     if (res.success) {
       alert('耗材建檔成功！');

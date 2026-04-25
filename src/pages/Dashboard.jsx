@@ -14,19 +14,14 @@ const Dashboard = () => {
     let ignore = false;
     const load = async () => {
       setLoading(true);
-      const queries = [
-        'SELECT COUNT(*) as total_items FROM v_inventory_summary',
-        'SELECT COUNT(*) as low_stock FROM v_inventory_summary WHERE available_qty < safety_stock',
-        'SELECT COUNT(*) as draft_orders FROM inbound_orders WHERE status = \'DRAFT\''
-      ];
-
-      const results = await Promise.all(queries.map(q => window.electronAPI.dbQuery(q)));
       
-      if (!ignore && results.every(r => r.success)) {
+      const result = await window.electronAPI.getDashboardStats();
+      
+      if (!ignore && result.success) {
         setStats({
-          totalItems: results[0].rows[0].total_items || 0,
-          lowStock: results[1].rows[0].low_stock || 0,
-          draftOrders: results[2].rows[0].draft_orders || 0
+          totalItems: result.stats.totalItems || 0,
+          lowStock: result.stats.lowStock || 0,
+          draftOrders: result.stats.draftOrders || 0
         });
       }
       if (!ignore) setLoading(false);

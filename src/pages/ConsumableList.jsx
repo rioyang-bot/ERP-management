@@ -20,21 +20,13 @@ const ConsumableList = () => {
 
   const fetchConsumables = useCallback(async () => {
     setLoading(true);
-    let query = `
-      SELECT v.*, i.id as id, c.name as category_name 
-      FROM v_inventory_summary v
-      JOIN item_master i ON v.item_id = i.id
-      LEFT JOIN categories c ON i.category_id = c.id 
-      WHERE c.name = '辦公耗材'
-    `;
-    const params = [];
+    let res;
     if (typeFilter) {
-      query += ` AND v.type = $1`;
-      params.push(typeFilter);
+      res = await window.electronAPI.namedQuery('fetchConsumablesListByType', [typeFilter]);
+    } else {
+      res = await window.electronAPI.namedQuery('fetchConsumablesList');
     }
-    query += ` ORDER BY i.id DESC`;
 
-    const res = await window.electronAPI.dbQuery(query, params);
     if (res.success) {
       setItems(res.rows);
     }
@@ -50,8 +42,7 @@ const ConsumableList = () => {
 
   const handleDelete = async (id, specification) => {
     if (!window.confirm(`確定要刪除耗材 [${specification}] 嗎？此操作不可逆，將會移除所有紀錄。`)) return;
-    
-    const res = await window.electronAPI.dbQuery('DELETE FROM item_master WHERE id = $1', [id]);
+    const res = await window.electronAPI.namedQuery('deleteConsumableMaster', [id]);
     if (res.success) {
       alert('刪除成功');
       window.dispatchEvent(new Event('db-update'));
@@ -74,17 +65,11 @@ const ConsumableList = () => {
   const handleUpdate = async () => {
     if (!editItem.specification || !editItem.model) return alert('請填寫必填欄位');
     
-    const res = await window.electronAPI.dbQuery(
-      `UPDATE item_master SET 
-        brand = $1, type = $2, model = $3, 
-        specification = $4, unit = $5, safety_stock = $6
-       WHERE id = $7`,
-      [
+    const res = await window.electronAPI.namedQuery('updateConsumableMaster', [
         editItem.brand, editItem.type, editItem.model, 
         editItem.specification, editItem.unit, editItem.safety_stock,
         editItem.id
-      ]
-    );
+    ]);
 
     if (res.success) {
       alert('更新成功');

@@ -11,14 +11,7 @@ const ProcurementList = () => {
 
   const fetchRecords = useCallback(async () => {
     setLoading(true);
-    const res = await window.electronAPI.dbQuery(`
-      SELECT pr.*, p.name as partner_name, c.name as category_name, u.full_name as purchaser_name
-      FROM purchase_records pr
-      LEFT JOIN partners p ON pr.partner_id = p.id
-      LEFT JOIN categories c ON pr.category_id = c.id
-      LEFT JOIN users u ON pr.purchaser_id = u.id
-      ORDER BY pr.created_at DESC
-    `);
+    const res = await window.electronAPI.namedQuery('fetchProcurementList');
     if (res.success) {
       setPurchaseRecords(res.rows);
     }
@@ -41,8 +34,8 @@ const ProcurementList = () => {
   const handleDeleteOrder = async (orderNo) => {
     if (!confirm(`確定要刪除整個採購單 ${orderNo} 嗎？此操作不可還原。`)) return;
     
-    const res = await window.electronAPI.dbQuery(
-      "DELETE FROM purchase_records WHERE order_no = $1",
+    const res = await window.electronAPI.namedQuery(
+      "deletePurchaseRecordList",
       [orderNo]
     );
     
@@ -62,11 +55,7 @@ const ProcurementList = () => {
   const handleUpdateOrder = async () => {
     try {
       for (const item of editingOrder.items) {
-        const res = await window.electronAPI.dbQuery(`
-          UPDATE purchase_records 
-          SET quantity = $1, specification = $2, model = $3, item_type = $4, brand = $5
-          WHERE id = $6
-        `, [item.quantity, item.specification, item.model, item.item_type, item.brand, item.id]);
+        const res = await window.electronAPI.namedQuery('updatePurchaseRecordList', [item.quantity, item.specification, item.model, item.item_type, item.brand, item.id]);
         
         if (!res.success) throw new Error(res.error);
       }

@@ -31,11 +31,8 @@ const Login = ({ setAuthUser }) => {
       // 1. 將輸入的密碼進行 SHA-256 雜湊
       const hashedContent = await hashPassword(password);
 
-      // 2. 查詢資料庫
-      const res = await window.electronAPI.dbQuery(
-        'SELECT id, username, role, full_name, password_hash, menu_access FROM users WHERE username = $1 AND is_active = TRUE',
-        [username]
-      );
+      // 2. 呼叫後端專屬的登入 API，不再使用前端動態 SQL
+      const res = await window.electronAPI.authLogin(username);
 
       if (res.success && res.rows.length > 0) {
         const user = res.rows[0];

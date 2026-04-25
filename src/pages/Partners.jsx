@@ -10,7 +10,7 @@ const Partners = () => {
     let ignore = false;
     const load = async () => {
       setLoading(true);
-      const res = await window.electronAPI.dbQuery('SELECT id, partner_type as type, name, contact_person as contact, phone FROM partners ORDER BY id DESC');
+      const res = await window.electronAPI.namedQuery('fetchPartners');
       if (!ignore && res.success) {
         setPartners(res.rows);
       }
@@ -24,14 +24,14 @@ const Partners = () => {
 
   const handleAdd = async () => {
     if (!formData.name) return;
-    const res = await window.electronAPI.dbQuery(
-      'INSERT INTO partners (partner_type, name, contact_person, phone) VALUES ($1, $2, $3, $4)',
+    const res = await window.electronAPI.namedQuery(
+      'insertPartner',
       [formData.type, formData.name, formData.contact, formData.phone]
     );
 
     if (res.success) {
       // 重新整理列表
-      const refresh = await window.electronAPI.dbQuery('SELECT id, partner_type as type, name, contact_person as contact, phone FROM partners ORDER BY id DESC');
+      const refresh = await window.electronAPI.namedQuery('fetchPartners');
       if (refresh.success) setPartners(refresh.rows);
       
       setFormData({ type: 'CUSTOMER', name: '', contact: '', phone: '' });
@@ -42,10 +42,10 @@ const Partners = () => {
 
   const handleDelete = async (id) => {
     if(window.confirm('確定要刪除這筆資料嗎？')) {
-      const res = await window.electronAPI.dbQuery('DELETE FROM partners WHERE id = $1', [id]);
+      const res = await window.electronAPI.namedQuery('deletePartner', [id]);
       if (res.success) {
         // 重新整理列表
-        const refresh = await window.electronAPI.dbQuery('SELECT id, partner_type as type, name, contact_person as contact, phone FROM partners ORDER BY id DESC');
+        const refresh = await window.electronAPI.namedQuery('fetchPartners');
         if (refresh.success) setPartners(refresh.rows);
       } else {
         alert('刪除失敗：' + res.error);

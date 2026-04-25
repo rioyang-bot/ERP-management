@@ -15,26 +15,14 @@ const MainLayout = () => {
 
   useEffect(() => {
     const fetchBrands = async () => {
-      const res = await window.electronAPI.dbQuery(`
-        SELECT DISTINCT brand 
-        FROM items i 
-        JOIN categories c ON i.category_id = c.id 
-        WHERE c.name = '資訊設備' AND i.brand IS NOT NULL AND i.brand != ''
-        ORDER BY brand ASC
-      `);
+      const res = await window.electronAPI.namedQuery('fetchMenuAssetBrands');
       if (res.success) {
         setBrands(res.rows.map(r => r.brand));
       }
     };
 
     const fetchConsumableTypes = async () => {
-      const res = await window.electronAPI.dbQuery(`
-        SELECT DISTINCT type 
-        FROM items i 
-        JOIN categories c ON i.category_id = c.id 
-        WHERE c.name = '辦公耗材' AND i.type IS NOT NULL AND i.type != ''
-        ORDER BY type ASC
-      `);
+      const res = await window.electronAPI.namedQuery('fetchMenuConsumableTypes');
       if (res.success) {
         setConsumableTypes(res.rows.map(r => r.type));
       }

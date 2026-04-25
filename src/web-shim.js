@@ -3,19 +3,49 @@
 const API_BASE = ''; 
 
 window.electronAPI = {
-  dbQuery: async (sql, params = []) => {
+
+
+  namedQuery: async (queryName, params = []) => {
     try {
-      const response = await fetch(`${API_BASE}/api/query`, {
+      const response = await fetch(`${API_BASE}/api/namedQuery`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sql, params }),
+        body: JSON.stringify({ queryName, params }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
       return data;
     } catch (error) {
-      console.error('[WebShim Error]', error);
-      return { success: false, error: error.message === 'Failed to fetch' ? '無法連線至後端 API (Vite Proxy)' : error.message };
+      console.error('[WebShim Error] namedQuery:', error);
+      return { success: false, error: '無法連線至後端 API (Named Query)' };
+    }
+  },
+
+  authLogin: async (username) => {
+    try {
+      const response = await fetch(`${API_BASE}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      return data;
+    } catch (error) {
+      console.error('[WebShim Error] authLogin:', error);
+      return { success: false, error: error.message === 'Failed to fetch' ? '無法連線至後端 API' : error.message };
+    }
+  },
+
+  getDashboardStats: async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/dashboard/stats`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      return data;
+    } catch (error) {
+      console.error('[WebShim Error] getDashboardStats:', error);
+      return { success: false, error: '無法取得儀表板資料' };
     }
   },
 

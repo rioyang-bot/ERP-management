@@ -20,21 +20,9 @@ const Inbound = () => {
   const fetchData = useCallback(async () => {
     try {
       const [itemsRes, partnersRes, purchasesRes] = await Promise.all([
-        window.electronAPI.dbQuery(`
-          SELECT i.id, i.specification, i.type, i.brand, i.unit, c.name as cat_name 
-          FROM item_master i 
-          LEFT JOIN categories c ON i.category_id = c.id 
-          ORDER BY i.id DESC
-        `),
-        window.electronAPI.dbQuery("SELECT id, name FROM partners WHERE partner_type = 'SUPPLIER'"),
-        window.electronAPI.dbQuery(`
-          SELECT pr.*, p.name as partner_name, c.name as category_name
-          FROM purchase_records pr
-          LEFT JOIN partners p ON pr.partner_id = p.id
-          LEFT JOIN categories c ON pr.category_id = c.id
-          WHERE pr.status != 'COMPLETED'
-          ORDER BY pr.created_at DESC
-        `)
+        window.electronAPI.namedQuery('fetchInboundItemMaster'),
+        window.electronAPI.namedQuery('fetchSuppliers'),
+        window.electronAPI.namedQuery('fetchPendingPurchases')
       ]);
 
       if (itemsRes.success) {
@@ -52,7 +40,7 @@ const Inbound = () => {
   }, []);
 
   useEffect(() => {
-    fetchData();
+    Promise.resolve().then(() => fetchData());
   }, [fetchData]);
 
   const handleAddItem = () => {
@@ -114,8 +102,8 @@ const Inbound = () => {
   const handleQuickAddSave = async () => {
     if (!quickAddData.name) return alert('請輸入品項名稱');
     const fullSpec = `${quickAddData.name} ${quickAddData.spec ? `(${quickAddData.spec})` : ''}`.trim();
-    const res = await window.electronAPI.dbQuery(
-      'INSERT INTO item_master (specification, type, brand, unit, category_id, purchase_price) VALUES ($1, $2, $3, $4, (SELECT id FROM categories WHERE name = $5), 0) RETURNING id',
+    const res = await window.electronAPI.namedQuery(
+      'insertInboundItemMaster',
       [fullSpec, quickAddData.type, quickAddData.brand, quickAddData.unit, quickAddData.type_cat === 'ASSET' ? '資訊設備' : '辦公耗材']
     );
     if (res.success) {
@@ -134,23 +122,23 @@ const Inbound = () => {
     if (items.some(i => !i.itemId)) return alert('請確認所有明細均已連結至庫存品項');
     if (items.some(i => i.type === 'ASSET' && !i.sn)) return alert('資產類別必須輸入序號。');
     if (window.confirm('確認將此單據入庫？')) {
-      const orderRes = await window.electronAPI.dbQuery('INSERT INTO inbound_orders (order_no, partner_id, invoice_no, status) VALUES ($1, $2, $3, $4) RETURNING id', [orderNo, partnerId, invoiceNo, 'COMPLETED']);
+      const orderRes = await window.electronAPI.namedQuery('insertInboundOrder', [orderNo, partnerId, invoiceNo, 'COMPLETED']);
       if (orderRes.success) {
         const orderId = orderRes.rows[0].id;
         for (const item of items) {
           let finalItemId = item.itemId;
           if (item.type === 'ASSET') {
-            await window.electronAPI.dbQuery(
-              `INSERT INTO assets (sn, item_master_id, status) VALUES ($1, $2, 'ACTIVE')`, 
+            await window.electronAPI.namedQuery(
+              'insertInboundAssets', 
               [item.sn, finalItemId]
             );
           }
-          await window.electronAPI.dbQuery(
-            'INSERT INTO inbound_items (inbound_order_id, item_id, sn, quantity, purchase_record_id, unit_price) VALUES ($1, $2, $3, $4, $5, 0)', 
+          await window.electronAPI.namedQuery(
+            'insertInboundItems', 
             [orderId, finalItemId, item.sn, item.qty, item.purchaseRecordId || null]
           );
           if (item.purchaseRecordId) {
-            await window.electronAPI.dbQuery(`UPDATE purchase_records SET received_quantity = COALESCE(received_quantity, 0) + $1, status = CASE WHEN COALESCE(received_quantity, 0) + $1 >= quantity THEN 'COMPLETED' ELSE 'PARTIAL' END, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [item.qty, item.purchaseRecordId]);
+            await window.electronAPI.namedQuery('updatePurchaseRecordStatus', [item.qty, item.purchaseRecordId]);
           }
         }
         alert('進貨入庫成功！');

@@ -21,15 +21,7 @@ const MENU_OPTIONS = [
 
 const Settings = () => {
   const { authUser, setAuthUser } = useContext(RoleContext);
-  // DB Config State
-  const [dbConfig, setDbConfig] = useState({
-    host: 'localhost',
-    port: '5432',
-    user: 'postgres',
-    password: '',
-    database: 'ERP_db'
-  });
-  const [status, setStatus] = useState('');
+
 
   // User Management State
   const [users, setUsers] = useState([]);
@@ -42,7 +34,7 @@ const Settings = () => {
 
   const fetchUsers = useCallback(async () => {
     setLoadingUsers(true);
-    const res = await window.electronAPI.dbQuery('SELECT id, username, role, full_name, is_active, menu_access FROM users ORDER BY id ASC');
+    const res = await window.electronAPI.namedQuery('fetchUsers');
     if (res.success) {
       setUsers(res.rows);
     }
@@ -50,7 +42,7 @@ const Settings = () => {
   }, []);
 
   useEffect(() => {
-    fetchUsers();
+    Promise.resolve().then(() => fetchUsers());
   }, [fetchUsers]);
 
   const handleUserChange = (e) => {
@@ -70,8 +62,8 @@ const Settings = () => {
         (newUser.role === 'PURCHASING' ? { inventory: true, purchasing: true, reports: true } : 
         { settings: true, inventory: true, inbound: true, outbound: true, review: true, assets: true, assetList: true, consumables: true, consumableList: true, purchasing: true, procurementList: true, partners: true, reports: true }));
 
-      const res = await window.electronAPI.dbQuery(
-        'INSERT INTO users (username, password_hash, role, full_name, menu_access) VALUES ($1, $2, $3, $4, $5)',
+      const res = await window.electronAPI.namedQuery(
+        'insertUser',
         [newUser.username, hashedPassword, newUser.role, newUser.full_name, JSON.stringify(defaultAccess)]
       );
 
@@ -88,7 +80,7 @@ const Settings = () => {
   };
 
   const handleToggleActive = async (id, currentStatus) => {
-    const res = await window.electronAPI.dbQuery('UPDATE users SET is_active = $1 WHERE id = $2', [!currentStatus, id]);
+    const res = await window.electronAPI.namedQuery('updateUserActive', [!currentStatus, id]);
     if (res.success) {
       await fetchUsers();
     }
@@ -97,7 +89,7 @@ const Settings = () => {
   const handleDeleteUser = async (id, username) => {
     if (username === 'admin') return alert('系統管理員帳號不可刪除'); 
     if (window.confirm(`確定要永久刪除帳號 [${username}] 嗎？此動作無法復原。`)) {
-      const res = await window.electronAPI.dbQuery('DELETE FROM users WHERE id = $1', [id]);
+      const res = await window.electronAPI.namedQuery('deleteUser', [id]);
       if (res.success) {
         await fetchUsers();
       }
@@ -123,8 +115,8 @@ const Settings = () => {
   };
 
   const handleSavePermissions = async () => {
-    const res = await window.electronAPI.dbQuery(
-      'UPDATE users SET menu_access = $1 WHERE id = $2',
+    const res = await window.electronAPI.namedQuery(
+      'updateUserAccess',
       [JSON.stringify(editingUser.menu_access), editingUser.id]
     );
 

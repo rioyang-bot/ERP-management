@@ -3,6 +3,21 @@ import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { query } from './db.js';
 import fs from 'fs/promises';
+import { queries as namedQueries } from '../database/queries.js';
+
+// 安全防護：過濾不安全之輸入字元與關鍵字，防範 Mass SQL Injection
+function sanitizeParams(params) {
+  if (!Array.isArray(params)) return params;
+  const charRegex = /[|&;$%@'"\\()+\r\n,]/g;
+  const keywordRegex = /\b(Select|Insert|Dbo|Declare|Cast|Drop|Union|Exec|Nvarchar)\b/gi;
+
+  return params.map(param => {
+    if (typeof param === 'string') {
+      return param.replace(charRegex, '').replace(keywordRegex, '');
+    }
+    return param;
+  });
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -71,11 +86,67 @@ app.whenReady().then(async () => {
 // 資料庫查詢 IPC
 ipcMain.handle('db:query', async (event, sql, params) => {
   try {
-    const result = await query(sql, params);
+    const safeParams = sanitizeParams(params);
+    const result = await query(sql, safeParams);
     return { success: true, rows: result.rows };
   } catch (error) {
     console.error('[DB] Query Error:', error);
-    return { success: false, error: error.message };
+    // 遮蔽系統詳細錯誤，避免輸出至畫面
+    return { success: false, error: '資料庫連線或查詢失敗，請聯絡系統管理員。' };
+  }
+});
+
+// 認證 API IPC
+ipcMain.handle('auth:login', async (event, username) => {
+  try {
+    const safeParams = sanitizeParams([username]);
+    const result = await query(
+      'SELECT id, username, role, full_name, password_hash, menu_access FROM users WHERE username = $1 AND is_active = TRUE',
+      safeParams
+    );
+    return { success: true, rows: result.rows };
+  } catch (error) {
+    console.error('[DB] Auth Error:', error);
+    return { success: false, error: '資料庫連線或查詢失敗，請聯絡系統管理員。' };
+  }
+});
+
+// 儀表板 API IPC
+ipcMain.handle('dashboard:stats', async (event) => {
+  try {
+    const queries = [
+      query('SELECT COUNT(*) as total_items FROM v_inventory_summary'),
+      query('SELECT COUNT(*) as low_stock FROM v_inventory_summary WHERE available_qty < safety_stock'),
+      query("SELECT COUNT(*) as draft_orders FROM inbound_orders WHERE status = 'DRAFT'")
+    ];
+    const results = await Promise.all(queries);
+    return {
+      success: true,
+      stats: {
+        totalItems: results[0].rows[0].total_items,
+        lowStock: results[1].rows[0].low_stock,
+        draftOrders: results[2].rows[0].draft_orders
+      }
+    };
+  } catch (error) {
+    console.error('[DB] Dashboard Error:', error);
+    return { success: false, error: '資料庫連線或查詢失敗，請聯絡系統管理員。' };
+  }
+});
+
+// 具名查詢 IPC
+ipcMain.handle('db:namedQuery', async (event, queryName, params) => {
+  if (!queryName || !namedQueries[queryName]) {
+    return { success: false, error: '無效的查詢要求' };
+  }
+  try {
+    const sql = namedQueries[queryName];
+    const safeParams = sanitizeParams(params);
+    const result = await query(sql, safeParams);
+    return { success: true, rows: result.rows };
+  } catch (error) {
+    console.error(`[DB] NamedQuery Error (${queryName}):`, error);
+    return { success: false, error: '資料庫連線或查詢失敗，請聯絡系統管理員。' };
   }
 });
 

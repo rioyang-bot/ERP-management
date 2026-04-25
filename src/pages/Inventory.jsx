@@ -1,9 +1,6 @@
-import React, { useState, useContext, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PackageOpen, AlertTriangle, CheckCircle2, Package } from 'lucide-react';
-import { RoleContext } from '../context/RoleContext';
-
 const Inventory = () => {
-  const { role } = useContext(RoleContext);
   const [inventory, setInventory] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -13,9 +10,7 @@ const Inventory = () => {
     let ignore = false;
     const load = async () => {
       setLoading(true);
-      const res = await window.electronAPI.dbQuery(
-        'SELECT item_id as id, master_sn as sn, item_name as name, safety_stock, physical_qty, locked_qty, available_qty FROM v_inventory_summary'
-      );
+      const res = await window.electronAPI.namedQuery('fetchInventorySummary');
       if (!ignore && res.success) {
         setInventory(res.rows);
       }
