@@ -16,6 +16,8 @@ import Consumables from './pages/Consumables';
 import Purchasing from './pages/Purchasing';
 import ProcurementList from './pages/ProcurementList';
 import ConsumableList from './pages/ConsumableList';
+import NicRegistration from './pages/NicRegistration';
+import NicList from './pages/NicList';
 import './index.css';
 
 function App() {
@@ -61,6 +63,8 @@ function App() {
             <Route path="purchasing" element={<Purchasing />} />
             <Route path="procurement-list" element={<ProcurementList />} />
             <Route path="consumable-list" element={<ConsumableList />} />
+            <Route path="nic-registration" element={<NicRegistration />} />
+            <Route path="nic-list" element={<NicList />} />
             <Route path="settings" element={<Settings />} />
           </Route>
         </Routes>

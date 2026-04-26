@@ -17,7 +17,7 @@ window.electronAPI = {
       return data;
     } catch (error) {
       console.error('[WebShim Error] namedQuery:', error);
-      return { success: false, error: '無法連線至後端 API (Named Query)' };
+      return { success: false, error: error.message || '連線至後端 API 發生異常' };
     }
   },
 

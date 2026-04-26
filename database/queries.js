@@ -11,7 +11,12 @@ export const queries = {
   updateItemMasterSpecs: `UPDATE item_master SET specification = $1, model = $2 WHERE id = $3`,
   updateAssetDetails: `UPDATE assets SET sn = $1, client = $2, hostname = $3, location = $4, installed_date = $5, customer_warranty_expire = $6, system_date = $7, warranty_expire = $8, os = $9, nic = $10, custom_attributes = $11 WHERE id = $12`,
   
-  // Settings / Dynamic Configs
+  // Menu Queries
+  fetchMenuAssetBrands: `SELECT DISTINCT i.brand FROM assets a JOIN item_master i ON a.item_master_id = i.id LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '資訊設備' ORDER BY i.brand ASC`,
+  fetchMenuConsumableTypes: `SELECT DISTINCT i.type FROM item_master i LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '辦公耗材' ORDER BY i.type ASC`,
+  fetchMenuNicTypes: `SELECT DISTINCT i.type FROM item_master i LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '網卡' ORDER BY i.type ASC`,
+  
+  // Dashboard / Misc
   getSystemSetting: `SELECT value FROM system_settings WHERE key = $1`,
   upsertSystemSetting: `INSERT INTO system_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
   
@@ -92,8 +97,9 @@ export const queries = {
   updatePurchaseRecordStatus: `UPDATE purchase_records SET received_quantity = COALESCE(received_quantity, 0) + $1, status = CASE WHEN COALESCE(received_quantity, 0) + $1 >= quantity THEN 'COMPLETED' ELSE 'PARTIAL' END, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
 
   // MainLayout.jsx
-  fetchMenuAssetBrands: `SELECT DISTINCT brand FROM item_master i JOIN categories c ON i.category_id = c.id WHERE c.name = '資訊設備' AND i.brand IS NOT NULL AND i.brand != '' ORDER BY brand ASC`,
-  fetchMenuConsumableTypes: `SELECT DISTINCT type FROM item_master i JOIN categories c ON i.category_id = c.id WHERE c.name = '辦公耗材' AND i.type IS NOT NULL AND i.type != '' ORDER BY type ASC`,
+  fetchMenuAssetBrands: `SELECT DISTINCT i.brand FROM assets a JOIN item_master i ON a.item_master_id = i.id JOIN categories c ON i.category_id = c.id WHERE c.name = '資訊設備' ORDER BY i.brand ASC`,
+  fetchMenuConsumableTypes: `SELECT DISTINCT i.type FROM item_master i JOIN categories c ON i.category_id = c.id WHERE c.name = '辦公耗材' ORDER BY i.type ASC`,
+  fetchMenuNicTypes: `SELECT DISTINCT i.type FROM assets a JOIN item_master i ON a.item_master_id = i.id JOIN categories c ON i.category_id = c.id WHERE c.name = '網卡' ORDER BY i.type ASC`,
 
   // Inventory.jsx
   fetchInventorySummary: `SELECT item_id as id, master_sn as sn, item_name as name, safety_stock, physical_qty, locked_qty, available_qty FROM v_inventory_summary`,
@@ -108,5 +114,25 @@ export const queries = {
   insertUser: `INSERT INTO users (username, password_hash, role, full_name, menu_access) VALUES ($1, $2, $3, $4, $5)`,
   updateUserActive: `UPDATE users SET is_active = $1 WHERE id = $2`,
   deleteUser: `DELETE FROM users WHERE id = $1`,
-  updateUserAccess: `UPDATE users SET menu_access = $1 WHERE id = $2`
+  updateUserAccess: `UPDATE users SET menu_access = $1 WHERE id = $2`,
+
+  // NIC Registration & List
+  fetchNicBrands: `SELECT id, name FROM item_brands WHERE category_id = (SELECT id FROM categories WHERE name = '網卡') ORDER BY name ASC`,
+  fetchNicTypesByBrand: `
+      SELECT name FROM item_types WHERE category_id = (SELECT id FROM categories WHERE name = '網卡') AND brand_id = (SELECT id FROM item_brands WHERE name = $1 AND category_id = (SELECT id FROM categories WHERE name = '網卡')) ORDER BY name ASC`,
+  fetchNicModelsByBrandType: `
+      SELECT m.name FROM item_models m JOIN item_types t ON m.type_id = t.id JOIN item_brands b ON t.brand_id = b.id
+      WHERE b.name = $1 AND t.name = $2 AND b.category_id = (SELECT id FROM categories WHERE name = '網卡') AND t.category_id = (SELECT id FROM categories WHERE name = '網卡') ORDER BY m.name ASC`,
+  fetchNicList: `
+      SELECT a.*, i.specification, i.type, i.brand, i.model, i.unit, 
+             s.client as server_client, s.location as server_location,
+             s.hostname as server_hostname, s.os as server_os, s.nic as server_nic,
+             s.custom_attributes as server_custom_attributes
+      FROM assets a 
+      JOIN item_master i ON a.item_master_id = i.id 
+      LEFT JOIN assets s ON (a.custom_attributes->>'server_sn' = s.sn AND s.sn IS NOT NULL AND s.sn != '')
+      WHERE i.category_id = (SELECT id FROM categories WHERE name = '網卡')
+      ORDER BY a.id DESC`,
+  updateNicDetails: `UPDATE assets SET sn = $1, client = $2, location = $3, custom_attributes = COALESCE(custom_attributes, '{}'::jsonb) || jsonb_build_object('server_sn', $4::text, 'order_date', $5::text) WHERE id = $6`,
+  updateNicSn: `UPDATE assets SET sn = $1 WHERE id = $2`
 };

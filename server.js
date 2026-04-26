@@ -5,6 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import pg from 'pg';
+import { queries as namedQueries } from './database/queries.js';
 
 const { Pool } = pg;
 const __filename = fileURLToPath(import.meta.url);
@@ -13,43 +14,26 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = 3000;
 
-// 安全防護：過濾不安全之輸入字元與關鍵字，防範 Mass SQL Injection
+// 優化後的安全性處理：針對 Named Query 不再暴力濾除
+// 因為 Named Query 使用參數化查詢 ($1, $2)，本身即具備防禦 SQL Injection 能力
 function sanitizeParams(params) {
-  if (!Array.isArray(params)) return params;
-  
-  // 濾除字元：| & ; $ % @ ' " \ ( ) + CR LF ,
-  const charRegex = /[|&;$%@'"\\()+\r\n,]/g;
-  // 濾除關鍵字：Select, Insert, Dbo, Declare, Cast, Drop, Union, EXEC, NVARCHAR
-  const keywordRegex = /\b(Select|Insert|Dbo|Declare|Cast|Drop|Union|Exec|Nvarchar)\b/gi;
-
-  return params.map(param => {
-    if (typeof param === 'string') {
-      return param.replace(charRegex, '').replace(keywordRegex, '');
-    }
-    return param;
-  });
+  if (!Array.isArray(params)) return [];
+  return params; // 參數化查詢不需要手動濾除引號，手動濾除反而會破壞資料
 }
 
-// 資料庫設定 (與 electron/db.js 一致)
 const pool = new Pool({
   user: 'postgres',
   host: 'localhost',
-  database: 'ERP_db',
+  database: 'ERP_db', 
   password: 'Admin123',
   port: 5432,
 });
 
-// 建立上傳目錄
 const uploadsDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
-// Multer 設定
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'uploads/');
-  },
+  destination: (req, file, cb) => cb(null, 'uploads/'),
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
     const baseName = path.basename(file.originalname, ext);
@@ -62,34 +46,51 @@ app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static(uploadsDir));
 
-
-
-// 認證 API
-app.post('/api/auth/login', async (req, res) => {
-  let { username } = req.body;
-  const safeParams = sanitizeParams([username]);
-
+// Named Query API
+app.post('/api/namedQuery', async (req, res) => {
+  const { queryName, params = [] } = req.body;
+  
+  if (!queryName || !namedQueries[queryName]) {
+    return res.status(400).json({ success: false, error: `Invalid query name: ${queryName}` });
+  }
+  
+  const sql = namedQueries[queryName];
+  
   try {
-    const result = await pool.query(
-      'SELECT id, username, role, full_name, password_hash, menu_access FROM users WHERE username = $1 AND is_active = TRUE',
-      safeParams
+    // 處理 JSON 物件
+    const processedParams = params.map(p => 
+      (typeof p === 'object' && p !== null) ? JSON.stringify(p) : p
     );
+    
+    const result = await pool.query(sql, processedParams);
     res.json({ success: true, rows: result.rows });
   } catch (error) {
-    console.error('[DB Auth Error]', error);
-    res.status(500).json({ success: false, error: '資料庫處理失敗，請稍後再試或聯絡維護人員。' });
+    console.error(`[DB Error] ${queryName}:`, error.message);
+    res.status(500).json({ success: false, error: `資料庫錯誤: ${error.message}` });
   }
 });
 
-// 儀表板 API
+// 其他 API 簡化 (維持原有功能)...
+app.post('/api/auth/login', async (req, res) => {
+  const { username } = req.body;
+  try {
+    const result = await pool.query(
+      'SELECT id, username, role, full_name, password_hash, menu_access FROM users WHERE username = $1 AND is_active = TRUE',
+      [username]
+    );
+    res.json({ success: true, rows: result.rows });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 app.get('/api/dashboard/stats', async (req, res) => {
   try {
-    const queries = [
+    const results = await Promise.all([
       pool.query('SELECT COUNT(*) as total_items FROM v_inventory_summary'),
       pool.query('SELECT COUNT(*) as low_stock FROM v_inventory_summary WHERE available_qty < safety_stock'),
       pool.query("SELECT COUNT(*) as draft_orders FROM inbound_orders WHERE status = 'DRAFT'")
-    ];
-    const results = await Promise.all(queries);
+    ]);
     res.json({
       success: true,
       stats: {
@@ -99,39 +100,12 @@ app.get('/api/dashboard/stats', async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('[DB Dashboard Error]', error);
-    res.status(500).json({ success: false, error: '資料庫處理失敗，請稍後再試或聯絡維護人員。' });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-import { queries as namedQueries } from './database/queries.js';
-
-// 具名查詢 API (防範 SQL Injection，取代直接傳送動態 SQL)
-app.post('/api/namedQuery', async (req, res) => {
-  const { queryName, params } = req.body;
-  if (!queryName || !namedQueries[queryName]) {
-    return res.status(400).json({ success: false, error: '無效的查詢要求' });
-  }
-  
-  const sql = namedQueries[queryName];
-  const safeParams = sanitizeParams(params).map(p => 
-    (typeof p === 'object' && p !== null) ? JSON.stringify(p) : p
-  );
-
-  try {
-    const result = await pool.query(sql, safeParams);
-    res.json({ success: true, rows: result.rows });
-  } catch (error) {
-    console.error(`[DB NamedQuery Error] (${queryName}):`, error);
-    res.status(500).json({ success: false, error: '資料庫查詢失敗，請稍後再試或聯絡維護人員。' });
-  }
-});
-
-// 檔案上傳 API
 app.post('/api/upload', upload.single('file'), (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ success: false, error: 'No file uploaded' });
-  }
+  if (!req.file) return res.status(400).json({ success: false, error: 'No file uploaded' });
   res.json({ success: true, fileName: req.file.filename });
 });
 

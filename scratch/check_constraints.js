@@ -11,13 +11,13 @@ const pool = new Pool({
 
 async function checkConstraints() {
   try {
+    console.log('Checking unique constraints on item_models...');
     const res = await pool.query(`
-      SELECT conname, relname 
-      FROM pg_constraint c 
-      JOIN pg_class r ON c.conrelid = r.oid 
-      WHERE relname IN ('inbound_items', 'outbound_items')
+        SELECT conname, pg_get_constraintdef(oid) 
+        FROM pg_constraint 
+        WHERE conrelid = 'item_models'::regclass
     `);
-    console.log(res.rows);
+    console.log('Constraints:', res.rows);
   } catch (err) {
     console.error(err);
   } finally {
