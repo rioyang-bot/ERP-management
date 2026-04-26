@@ -366,7 +366,12 @@ const Devices = () => {
                 <div style={{ fontWeight: '800', color: '#2563eb', fontSize: '14px', marginBottom: '4px' }}>{item.brand} - {item.model}</div>
                 <div style={{ fontSize: '13px', color: '#334155', fontWeight: '600', marginBottom: '6px' }}>SN: {item.sn || '無序號'}</div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#94a3b8' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><User size={12}/> {item.client || '--'}</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><User size={12}/> {item.client || '--'}</span>
+                    {(item.partner_contact || item.partner_phone) && (
+                      <span style={{ fontSize: '11px', color: '#64748b', paddingLeft: '16px' }}>{item.partner_contact} {item.partner_phone}</span>
+                    )}
+                  </div>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><MapPin size={12}/> {item.location || '--'}</span>
                 </div>
               </div>

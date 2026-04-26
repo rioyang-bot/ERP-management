@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Search, Edit2, X, MoreHorizontal, MoreVertical, MapPin, User, Trash2, CheckCircle, ShoppingBag, Wrench, ShieldAlert, Cpu } from 'lucide-react';
+import { Search, Edit2, X, Save, MoreHorizontal, MoreVertical, MapPin, User, Trash2, CheckCircle, ShoppingBag, Wrench, ShieldAlert, Cpu } from 'lucide-react';
 
 const DeviceList = () => {
   const [items, setItems] = useState([]);
@@ -19,6 +19,7 @@ const DeviceList = () => {
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [brandFieldConfigs, setBrandFieldConfigs] = useState({});
   const [customFieldDefs, setCustomFieldDefs] = useState([]);
+  const [expandedItems, setExpandedItems] = useState({}); // 控制摺疊狀態
 
   const statusConfig = {
     ACTIVE: { label: '在庫', color: '#047857', bgColor: '#dcfce7', borderColor: '#bbf7d0' },
@@ -89,8 +90,7 @@ const DeviceList = () => {
   };
 
   const handleUpdate = async () => {
-    if (!editItem.specification) return alert('請填寫規格內容');
-    await window.electronAPI.namedQuery('updateItemMasterSpecs', [editItem.specification, editItem.model, editItem.item_master_id]);
+    await window.electronAPI.namedQuery('updateItemMasterSpecs', [editItem.specification || '', editItem.model, editItem.item_master_id]);
     const res = await window.electronAPI.namedQuery('updateAssetDetails', [
         editItem.sn, editItem.client, editItem.hostname, editItem.location, editItem.installed_date || null,
         editItem.customer_warranty_expire || null, editItem.system_date || null, editItem.warranty_expire || null,
@@ -137,7 +137,7 @@ const DeviceList = () => {
   };
 
   const handleCardClick = (st) => {
-    setSearchTerm(st.model);
+    setSearchTerm(prev => prev === st.model ? '' : st.model);
     setCurrentPage(1);
   };
 
@@ -158,49 +158,50 @@ const DeviceList = () => {
     const allKeys = Object.keys(statsMap);
     if (allKeys.length === 0) return null;
 
-    // --- 過濾模式：卡片置頂靠左 ---
-    // 注意：這裡只過濾搜尋關鍵字，因為品牌過濾已經在 API 層級處理過了
     if (brandFilter || searchTerm) {
       const s = searchTerm.toLowerCase();
-      const activeStats = allKeys
-        .filter(k => k.toLowerCase().includes(s))
-        .map(k => statsMap[k]);
+      // 如果有品牌過濾，顯示該品牌所有型號卡片；如果沒有品牌過濾（純搜尋），則顯示符合關鍵字的卡片
+      const displayKeys = brandFilter ? allKeys : allKeys.filter(k => k.toLowerCase().includes(s));
+      const activeStats = displayKeys.map(k => statsMap[k]);
 
       return (
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '24px', padding: '16px', backgroundColor: '#f8fafc', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-          {activeStats.map(st => (
-            <div 
-              key={st.key}
-              onClick={() => handleCardClick(st)}
-              style={{ 
-                backgroundColor: 'white', 
-                padding: '10px', 
-                borderRadius: '12px', 
-                border: '2px solid #2563eb', 
-                boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.1)',
-                cursor: 'pointer',
-                minWidth: '220px',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'space-between'
-              }}
-            >
-              <div style={{ fontSize: '13px', fontWeight: '900', color: '#1e293b', marginBottom: '8px', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
-                <Cpu size={12} color="#2563eb" style={{ marginRight: '4px' }} /> {st.type} <span style={{ color: '#64748b', fontSize: '11px', fontWeight: '500' }}>{st.model}</span>
+          {activeStats.map(st => {
+            const isSelected = searchTerm && st.model.toLowerCase() === searchTerm.toLowerCase();
+            return (
+              <div 
+                key={st.key}
+                onClick={() => handleCardClick(st)}
+                style={{ 
+                  backgroundColor: 'white', 
+                  padding: '10px', 
+                  borderRadius: '12px', 
+                  border: isSelected ? '2px solid #2563eb' : '1px solid #e2e8f0', 
+                  boxShadow: isSelected ? '0 4px 6px -1px rgba(37, 99, 235, 0.2)' : '0 2px 4px rgba(0,0,0,0.02)',
+                  cursor: 'pointer',
+                  minWidth: '220px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  transition: 'all 0.2s'
+                }}
+              >
+                <div style={{ fontSize: '13px', fontWeight: '900', color: isSelected ? '#2563eb' : '#1e293b', marginBottom: '8px', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
+                  <Cpu size={12} color={isSelected ? '#2563eb' : '#64748b'} style={{ marginRight: '4px' }} /> {st.type} <span style={{ color: isSelected ? '#3b82f6' : '#64748b', fontSize: '11px', fontWeight: '500' }}>{st.model}</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span>在庫</span><span style={{ color: '#166534', fontWeight: '800' }}>{st.active}</span></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span>出貨</span><span style={{ color: '#1e40af', fontWeight: '800' }}>{st.shipped}</span></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span>故障</span><span style={{ color: '#991b1b', fontWeight: '800' }}>{st.repair}</span></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span>報廢</span><span style={{ color: '#475569', fontWeight: '800' }}>{st.scrapped}</span></div>
+                </div>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span>在庫</span><span style={{ color: '#166534', fontWeight: '800' }}>{st.active}</span></div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span>出貨</span><span style={{ color: '#1e40af', fontWeight: '800' }}>{st.shipped}</span></div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span>故障</span><span style={{ color: '#991b1b', fontWeight: '800' }}>{st.repair}</span></div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span>報廢</span><span style={{ color: '#475569', fontWeight: '800' }}>{st.scrapped}</span></div>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       );
     }
 
-    // --- 首頁模式：自由位格 (手機桌面) ---
     const assignedKeys = Object.values(layoutMap);
     const missingKeys = allKeys.filter(k => !assignedKeys.includes(k));
     
@@ -216,8 +217,8 @@ const DeviceList = () => {
     }
 
     const maxOccupiedIdx = Object.keys(layoutMap).reduce((max, current) => Math.max(max, parseInt(current)), -1);
-    const baseCount = Math.max(maxOccupiedIdx + 1, allKeys.length, 12);
-    const rows = Math.ceil(baseCount / 6) + 1;
+    const baseCount = Math.max(maxOccupiedIdx + 1, allKeys.length);
+    const rows = Math.max(2, Math.ceil(baseCount / 6) + 1);
     const SLOTS_COUNT = rows * 6;
     const slots = Array.from({ length: SLOTS_COUNT });
 
@@ -291,13 +292,13 @@ const DeviceList = () => {
                           <th style={{ ...thStyle, textAlign: 'left' }}>品牌/型號</th>
                           <th style={{ ...thStyle, textAlign: 'left' }}>序號 (SN)</th>
                           <th style={{ ...thStyle, textAlign: 'left' }}>規格 (Spec)</th>
-                          <th style={{ ...thStyle, textAlign: 'left' }}>客戶</th>
                           <th style={{ ...thStyle, textAlign: 'left' }}>主機名稱</th>
-                          <th style={{ ...thStyle, textAlign: 'left' }}>位置</th>
                           {/* 插入自訂欄位標題 */}
                           {customFieldDefs.filter(f => isFieldVisible(brandFilter, f.id)).map(f => (
                              <th key={f.id} style={{ ...thStyle, textAlign: 'left', color: f.color || '#64748b' }}>{f.label}</th>
                           ))}
+                          <th style={{ ...thStyle, textAlign: 'left' }}>客戶</th>
+                          <th style={{ ...thStyle, textAlign: 'left' }}>位置</th>
                           <th style={{ ...thStyle, textAlign: 'left', width: '100px' }}>狀態</th>
                           <th style={{ ...thStyle, textAlign: 'center', width: '80px' }}>功能</th>
                         </tr>
@@ -314,11 +315,47 @@ const DeviceList = () => {
                                 <div style={{ fontWeight: 800, color: '#1e293b' }}>{item.brand}</div>
                                 <div style={{ fontSize: '11px', color: '#64748b' }}>{item.model}</div>
                               </td>
-                              <td style={{ ...tdStyle, fontWeight: 800, fontFamily: 'monospace', color: '#2563eb', whiteSpace: 'nowrap' }}>{item.sn}</td>
+                              <td style={{ ...tdStyle, fontWeight: 800, fontFamily: 'monospace', color: '#2563eb', whiteSpace: 'nowrap' }}>
+                                {item.sn}
+                                {item.components && item.components.length > 0 && (
+                                  <div style={{ marginTop: '4px' }}>
+                                    <button 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setExpandedItems(prev => ({ ...prev, [item.id]: !prev[item.id] }));
+                                      }}
+                                      style={{ 
+                                        fontSize: '10px', 
+                                        color: '#4f46e5', 
+                                        backgroundColor: '#eef2ff', 
+                                        border: '1px solid #c7d2fe', 
+                                        borderRadius: '4px', 
+                                        padding: '2px 6px', 
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        fontWeight: 'bold',
+                                        outline: 'none'
+                                      }}
+                                    >
+                                      <Cpu size={10} /> 搭載硬體 ({item.components.length})
+                                    </button>
+                                    
+                                    {expandedItems[item.id] && (
+                                      <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '3px', paddingLeft: '4px', borderLeft: '2px solid #e0e7ff' }}>
+                                        {item.components.map((comp, idx) => (
+                                          <div key={idx} style={{ fontSize: '10px', color: '#4338ca', fontWeight: 'normal' }}>
+                                            • {comp.brand} {comp.model} ({comp.sn})
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </td>
                               <td style={{ ...tdStyle, fontSize: '11px', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.specification}>{item.specification || '--'}</td>
-                              <td style={tdStyle}><div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><User size={14} color="#64748b" /> {item.client || '--'}</div></td>
                               <td style={tdStyle}>{item.hostname || '--'}</td>
-                              <td style={tdStyle}><div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><MapPin size={14} color="#64748b" /> {item.location || '--'}</div></td>
                               
                               {/* 插入自訂欄位數值 */}
                               {customFieldDefs.filter(f => isFieldVisible(brandFilter, f.id)).map(f => {
@@ -329,6 +366,24 @@ const DeviceList = () => {
                                   </td>
                                 );
                               })}
+
+                              <td style={tdStyle}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 700 }}>
+                                    <User size={14} color="#64748b" /> {item.client || '--'}
+                                  </div>
+                                  {(item.partner_contact || item.partner_phone) && (
+                                    <div style={{ fontSize: '11px', color: '#64748b', paddingLeft: '18px' }}>
+                                      {item.partner_contact} {item.partner_phone}
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+                              <td style={tdStyle}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <MapPin size={14} color="#64748b" /> {item.location || '--'}
+                                </div>
+                              </td>
 
                               <td style={{ ...tdStyle, width: '100px' }}>
                                 <span style={{ 
@@ -413,8 +468,9 @@ const DeviceList = () => {
               <div><label style={editLabelStyle}>規格 (Specification)</label><textarea value={editItem.specification} onChange={(e) => setEditItem({...editItem, specification: e.target.value})} style={{ ...editInputStyle, minHeight: '80px', lineHeight: '1.5' }} /></div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                 <div><label style={editLabelStyle}>客戶名稱</label><select value={editItem.client || ''} onChange={(e) => setEditItem({...editItem, client: e.target.value})} style={editInputStyle}>{customers.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-                <div><label style={editLabelStyle}>放置位置 (Location)</label><input type="text" value={editItem.location || ''} onChange={(e) => setEditItem({...editItem, location: e.target.value})} style={editInputStyle} /></div>
+                <div><label style={editLabelStyle}>主機名稱 (HostName)</label><input type="text" value={editItem.hostname || ''} onChange={(e) => setEditItem({...editItem, hostname: e.target.value})} style={editInputStyle} /></div>
               </div>
+              <div><label style={editLabelStyle}>放置位置 (Location)</label><input type="text" value={editItem.location || ''} onChange={(e) => setEditItem({...editItem, location: e.target.value})} style={editInputStyle} /></div>
               <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                 <div><label style={editLabelStyle}>安裝日期 (Project Date)</label><input type="date" value={editItem.installed_date || ''} onChange={(e) => setEditItem({...editItem, installed_date: e.target.value})} style={editInputStyle} /></div>
                 <div><label style={editLabelStyle}>系統日期 (System Date)</label><input type="date" value={editItem.system_date || ''} onChange={(e) => setEditItem({...editItem, system_date: e.target.value})} style={editInputStyle} /></div>

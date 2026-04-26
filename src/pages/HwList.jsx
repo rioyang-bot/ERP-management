@@ -10,6 +10,7 @@ const HwList = () => {
 
   const [nics, setNics] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [customers, setCustomers] = useState([]);
   const [activeMenuId, setActiveMenuId] = useState(null);
   const [showServerDetails, setShowServerDetails] = useState(true);
 
@@ -44,6 +45,11 @@ const HwList = () => {
       if (isMounted && prefRes.success && prefRes.rows.length > 0) {
         setSelectedSyncFields(prefRes.rows[0].value || ['hostname', 'os']);
       }
+
+      const custRes = await window.electronAPI.namedQuery('fetchCustomers');
+      if (isMounted && custRes.success) {
+        setCustomers(custRes.rows.map(r => r.name));
+      }
     };
 
     loadData();
@@ -69,12 +75,22 @@ const HwList = () => {
 
   const handleSave = async () => {
     if (!editItem) return;
+
+    // 先更新 item_master 中的規格
+    await window.electronAPI.namedQuery('updateItemMasterSpecs', [
+      editItem.specification || '',
+      editItem.model,
+      editItem.item_master_id
+    ]);
+
+    // 再更新資產明細
     const res = await window.electronAPI.namedQuery('updateNicDetails', [
       editItem.sn ? editItem.sn.trim() : null,
       editItem.client || null,
       editItem.location || null,
       editItem.temp_server_sn ? editItem.temp_server_sn.trim() : null,
       editItem.temp_order_date || null,
+      editItem.hostname || null,
       parseInt(editItem.id, 10)
     ]);
     if (res.success) { 
@@ -264,8 +280,8 @@ const HwList = () => {
     }
 
     const maxOccupiedIdx = Object.keys(layoutMap).reduce((max, current) => Math.max(max, parseInt(current)), -1);
-    const baseCount = Math.max(maxOccupiedIdx + 1, allKeys.length, 12);
-    const rows = Math.ceil(baseCount / 6) + 1;
+    const baseCount = Math.max(maxOccupiedIdx + 1, allKeys.length);
+    const rows = Math.max(2, Math.ceil(baseCount / 6) + 1);
     const SLOTS_COUNT = rows * 6;
     const slots = Array.from({ length: SLOTS_COUNT });
 
@@ -305,6 +321,7 @@ const HwList = () => {
           <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
             <th style={{ ...thStyle, textAlign: 'left' }}>廠牌 / 型號</th>
             <th style={{ ...thStyle, textAlign: 'left' }}>序號 (SN)</th>
+            <th style={{ ...thStyle, textAlign: 'left' }}>規格 (Spec)</th>
             <th style={{ ...thStyle, textAlign: 'left' }}>訂單日期</th>
             <th style={{ ...thStyle, textAlign: 'left' }}>對應伺服器</th>
             {showServerDetails && <th style={{ ...thStyle, textAlign: 'left' }}>伺服器屬性</th>}
@@ -329,6 +346,7 @@ const HwList = () => {
               <tr key={nic.id} style={{ borderBottom: '1px solid #f1f5f9', opacity: nic.status === 'SCRAPPED' ? 0.6 : 1 }}>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}><b>{nic.brand}</b><br /><span style={{ color: '#64748b', fontSize: '11px' }}>{nic.model}</span></td>
                 <td style={{ ...tdStyle, fontWeight: 800, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{nic.sn || '(未設定)'}</td>
+                <td style={{ ...tdStyle, fontSize: '11px', color: '#64748b' }}>{nic.specification || '--'}</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{nic.custom_attributes?.order_date || '--'}</td>
                 <td style={tdStyle}><div style={{ color: '#6366f1', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}><Server size={12} /> {nic.custom_attributes?.server_sn || '--'}</div></td>
                 {showServerDetails && (
@@ -344,7 +362,16 @@ const HwList = () => {
                     </div>
                   </td>
                 )}
-                <td style={tdStyle}><div style={{ fontWeight: 700, color: '#1e40af' }}>{nic.server_client || nic.client || '--'}</div></td>
+                <td style={tdStyle}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <div style={{ fontWeight: 700, color: '#1e40af' }}>{nic.server_client || nic.client || '--'}</div>
+                    {(nic.partner_contact || nic.partner_phone) && (
+                      <div style={{ fontSize: '11px', color: '#64748b' }}>
+                        {nic.partner_contact} {nic.partner_phone}
+                      </div>
+                    )}
+                  </div>
+                </td>
                 <td style={{ ...tdStyle, width: '100px' }}><span style={{ padding: '4px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: '800', backgroundColor: cfg.bgColor, color: cfg.color, border: `1px solid ${cfg.borderColor}`, whiteSpace: 'nowrap' }}>{cfg.label}</span></td>
                 <td style={{ ...tdStyle, textAlign: 'center', width: '80px', position: 'relative' }}>
                   <button onClick={() => setActiveMenuId(activeMenuId === nic.id ? null : nic.id)} style={{ border: 'none', background: 'none', color: '#64748b' }}><MoreHorizontal size={20} /></button>
@@ -423,10 +450,30 @@ const HwList = () => {
           <div style={{ backgroundColor: 'white', width: '500px', padding: '32px', borderRadius: '16px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}><h2>修改硬體資訊</h2><X size={24} style={{ cursor: 'pointer' }} onClick={() => setShowEditModal(false)} /></div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <label style={editLabelStyle}>硬體序號<input type="text" value={editItem.sn || ''} onChange={(e) => setEditItem({ ...editItem, sn: e.target.value })} style={editInputStyle} /></label>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <label style={editLabelStyle}>硬體序號<input type="text" value={editItem.sn || ''} onChange={(e) => setEditItem({ ...editItem, sn: e.target.value })} style={editInputStyle} /></label>
+                <label style={editLabelStyle}>主機名稱 (HostName)<input type="text" value={editItem.hostname || ''} onChange={(e) => setEditItem({ ...editItem, hostname: e.target.value })} style={editInputStyle} /></label>
+              </div>
+              <label style={editLabelStyle}>硬體規格 (Specification)
+                <textarea 
+                  value={editItem.specification || ''} 
+                  onChange={(e) => setEditItem({ ...editItem, specification: e.target.value })} 
+                  style={{ ...editInputStyle, minHeight: '80px', lineHeight: '1.5' }} 
+                  placeholder="請輸入型號詳細規格內容..."
+                />
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <label style={editLabelStyle}>客戶名稱
+                  <select value={editItem.client || ''} onChange={(e) => setEditItem({ ...editItem, client: e.target.value })} style={editInputStyle}>
+                    <option value="">-- 未設定 --</option>
+                    {customers.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </label>
+                <label style={editLabelStyle}>放置位置 (Location)<input type="text" value={editItem.location || ''} onChange={(e) => setEditItem({ ...editItem, location: e.target.value })} style={editInputStyle} /></label>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <label style={editLabelStyle}>對應伺服器 SN<input type="text" value={editItem.temp_server_sn || ''} onChange={(e) => setEditItem({ ...editItem, temp_server_sn: e.target.value })} style={editInputStyle} /></label>
                 <label style={editLabelStyle}>訂單日期<input type="date" value={editItem.temp_order_date || ''} onChange={(e) => setEditItem({ ...editItem, temp_order_date: e.target.value })} style={editInputStyle} /></label>
-                <label style={editLabelStyle}>伺服器 SN<input type="text" value={editItem.temp_server_sn || ''} onChange={(e) => setEditItem({ ...editItem, temp_server_sn: e.target.value })} style={editInputStyle} /></label>
               </div>
               <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}><button onClick={handleSave} style={{ flex: 1, padding: '14px', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 700 }}><Save size={18} /> 儲存變更</button></div>
             </div>

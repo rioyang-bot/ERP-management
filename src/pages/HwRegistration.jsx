@@ -357,7 +357,12 @@ const HwRegistration = () => {
                     )}
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#94a3b8', marginTop: '8px', borderTop: '1px solid #f1f5f9', paddingTop: '6px' }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><User size={12}/> {item.server_client || '--'}</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><User size={12}/> {item.server_client || item.client || '--'}</span>
+                      {(item.partner_contact || item.partner_phone) && (
+                        <span style={{ fontSize: '10px', color: '#64748b', paddingLeft: '16px' }}>{item.partner_contact} {item.partner_phone}</span>
+                      )}
+                    </div>
                     <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><MapPin size={12}/> {item.server_location || '--'}</span>
                   </div>
                 </div>

@@ -15,6 +15,13 @@ const MainLayout = () => {
   const [isNicListExpanded, setIsNicListExpanded] = useState(true);
   const location = useLocation();
 
+  // --- 選單排序邏輯 ---
+  const [menuOrder, setMenuOrder] = useState(() => {
+    const saved = localStorage.getItem('sidebar_menu_order');
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [draggingMenuId, setDraggingMenuId] = useState(null);
+
   useEffect(() => {
     const fetchDeviceBrands = async () => {
       const res = await window.electronAPI.namedQuery('fetchMenuAssetBrands');
@@ -53,8 +60,8 @@ const MainLayout = () => {
     { id: 'assetList', path: '/device-list', label: '設備列表 (Device List)', hasSub: true },
     { id: 'nic-registration', path: '/hw-registration', label: '硬體建檔 (HW Reg)' },
     { id: 'nic-list', path: '/hw-list', label: '硬體列表 (HW List)', hasSub: true },
-    { id: 'consumables', path: '/consumables', label: '耗材建檔 (Items)' },
-    { id: 'consumableList', path: '/consumable-list', label: '耗材列表 (Items List)', hasSub: true },
+    { id: 'consumables', path: '/consumables', label: '耗材建檔 (CSM Reg)' },
+    { id: 'consumableList', path: '/consumable-list', label: '耗材列表 (CSM List)', hasSub: true },
     { id: 'purchasing', path: '/purchasing', label: '採購建檔 (Procurement)' },
     { id: 'procurementList', path: '/procurement-list', label: '採購列表 (Procurement list)' },
     { id: 'partners', path: '/partners', label: '客戶/廠商管理 (Partners)' },
@@ -62,7 +69,57 @@ const MainLayout = () => {
     { id: 'settings', path: '/settings', label: '系統管理 (Accounts)' },
   ];
 
-  const menuItems = allMenuItems.filter(item => authUser?.menu_access?.[item.id]);
+  // 排序並過濾選單
+  const sortedAllItems = [...allMenuItems];
+  if (menuOrder) {
+    sortedAllItems.sort((a, b) => {
+      const idxA = menuOrder.indexOf(a.id);
+      const idxB = menuOrder.indexOf(b.id);
+      if (idxA === -1 && idxB === -1) return 0;
+      if (idxA === -1) return 1;
+      if (idxB === -1) return -1;
+      return idxA - idxB;
+    });
+  }
+  const menuItems = sortedAllItems.filter(item => authUser?.menu_access?.[item.id]);
+
+  // --- 選單拖曳事件 ---
+  const handleMenuDragStart = (e, id) => {
+    setDraggingMenuId(id);
+    e.dataTransfer.setData('menuId', id);
+    e.currentTarget.style.opacity = '0.4';
+  };
+
+  const handleMenuDragEnd = (e) => {
+    setDraggingMenuId(null);
+    e.currentTarget.style.opacity = '1';
+  };
+
+  const handleMenuDragOver = (e) => {
+    e.preventDefault();
+  };
+
+  const handleMenuDrop = (e, targetId) => {
+    e.preventDefault();
+    const sourceId = e.dataTransfer.getData('menuId');
+    if (sourceId === targetId) return;
+
+    const currentOrder = menuOrder || allMenuItems.map(i => i.id);
+    const newOrder = [...currentOrder];
+    
+    // 如果來源 ID 字串不在清單中（例如新功能），先補進去
+    if (!newOrder.includes(sourceId)) newOrder.push(sourceId);
+    if (!newOrder.includes(targetId)) newOrder.push(targetId);
+
+    const sourceIdx = newOrder.indexOf(sourceId);
+    const targetIdx = newOrder.indexOf(targetId);
+
+    newOrder.splice(sourceIdx, 1);
+    newOrder.splice(targetIdx, 0, sourceId);
+
+    setMenuOrder(newOrder);
+    localStorage.setItem('sidebar_menu_order', JSON.stringify(newOrder));
+  };
 
   return (
     <div className="layout-container">
@@ -76,7 +133,15 @@ const MainLayout = () => {
         </div>
         <ul className="sidebar-nav">
           {menuItems.map(item => (
-            <li key={item.id}>
+            <li 
+              key={item.id} 
+              draggable 
+              onDragStart={(e) => handleMenuDragStart(e, item.id)}
+              onDragEnd={handleMenuDragEnd}
+              onDragOver={handleMenuDragOver}
+              onDrop={(e) => handleMenuDrop(e, item.id)}
+              style={{ cursor: 'move', transition: 'all 0.2s', borderLeft: draggingMenuId === item.id ? '2px solid var(--primary-color)' : 'none' }}
+            >
               {item.id === 'assetList' ? (
                 <>
                   <div onClick={() => setIsDeviceListExpanded(!isDeviceListExpanded)} className={`nav-item ${location.pathname === '/device-list' ? 'active' : ''}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
