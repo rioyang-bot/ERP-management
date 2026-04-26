@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Search, Edit2, X, MoreHorizontal, MoreVertical, MapPin, User, Trash2, CheckCircle, ShoppingBag, Wrench, ShieldAlert, Cpu } from 'lucide-react';
 
-const AssetList = () => {
+const DeviceList = () => {
   const [items, setItems] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
@@ -12,7 +12,7 @@ const AssetList = () => {
   const brandFilter = searchParams.get('brand');
   
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 20;
+  const itemsPerPage = 10;
 
   const [editItem, setEditItem] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -114,18 +114,154 @@ const AssetList = () => {
   const totalPages = Math.ceil(sortedItems.length / itemsPerPage);
   const paginatedItems = sortedItems.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
+  const [layoutMap, setLayoutMap] = useState(() => {
+    const saved = localStorage.getItem('device_list_layout_map');
+    return saved ? JSON.parse(saved) : {};
+  });
+  const [draggingCardKey, setDraggingCardKey] = useState(null);
+
+  const handleSlotDragOver = (e) => { e.preventDefault(); };
+  const handleCardDragStart = (e, key) => { setDraggingCardKey(key); e.dataTransfer.setData('text/plain', key); };
+
+  const handleDropOnSlot = (e, targetSlotIdx) => {
+    e.preventDefault();
+    const key = e.dataTransfer.getData('text/plain');
+    const newMap = { ...layoutMap };
+    const oldSlotIdx = Object.keys(newMap).find(k => newMap[k] === key);
+    if (oldSlotIdx !== undefined) delete newMap[oldSlotIdx];
+    if (newMap[targetSlotIdx]) { if (oldSlotIdx !== undefined) newMap[oldSlotIdx] = newMap[targetSlotIdx]; }
+    newMap[targetSlotIdx] = key;
+    setLayoutMap(newMap);
+    localStorage.setItem('asset_list_layout_map', JSON.stringify(newMap));
+    setDraggingCardKey(null);
+  };
+
+  const handleCardClick = (st) => {
+    setSearchTerm(st.model);
+    setCurrentPage(1);
+  };
+
+  const renderStats = () => {
+    const statsMap = sortedItems.reduce((acc, curr) => {
+      const typeStr = curr.type || '未分類';
+      const modelStr = curr.model || '未設定型號';
+      const key = `${typeStr} - ${modelStr}`;
+      if (!acc[key]) acc[key] = { key, type: typeStr, model: modelStr, active: 0, shipped: 0, repair: 0, scrapped: 0 };
+      const s = curr.status;
+      if (s === 'ACTIVE') acc[key].active++;
+      else if (s === 'SHIPPED') acc[key].shipped++;
+      else if (s === 'REPAIRING') acc[key].repair++;
+      else if (s === 'PENDING_SCRAP' || s === 'SCRAPPED') acc[key].scrapped++;
+      return acc;
+    }, {});
+
+    const allKeys = Object.keys(statsMap);
+    if (allKeys.length === 0) return null;
+
+    // --- 過濾模式：卡片置頂靠左 ---
+    // 注意：這裡只過濾搜尋關鍵字，因為品牌過濾已經在 API 層級處理過了
+    if (brandFilter || searchTerm) {
+      const s = searchTerm.toLowerCase();
+      const activeStats = allKeys
+        .filter(k => k.toLowerCase().includes(s))
+        .map(k => statsMap[k]);
+
+      return (
+        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '24px', padding: '16px', backgroundColor: '#f8fafc', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+          {activeStats.map(st => (
+            <div 
+              key={st.key}
+              onClick={() => handleCardClick(st)}
+              style={{ 
+                backgroundColor: 'white', 
+                padding: '10px', 
+                borderRadius: '12px', 
+                border: '2px solid #2563eb', 
+                boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.1)',
+                cursor: 'pointer',
+                minWidth: '220px',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between'
+              }}
+            >
+              <div style={{ fontSize: '13px', fontWeight: '900', color: '#1e293b', marginBottom: '8px', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
+                <Cpu size={12} color="#2563eb" style={{ marginRight: '4px' }} /> {st.type} <span style={{ color: '#64748b', fontSize: '11px', fontWeight: '500' }}>{st.model}</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span>在庫</span><span style={{ color: '#166534', fontWeight: '800' }}>{st.active}</span></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span>出貨</span><span style={{ color: '#1e40af', fontWeight: '800' }}>{st.shipped}</span></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span>故障</span><span style={{ color: '#991b1b', fontWeight: '800' }}>{st.repair}</span></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span>報廢</span><span style={{ color: '#475569', fontWeight: '800' }}>{st.scrapped}</span></div>
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    // --- 首頁模式：自由位格 (手機桌面) ---
+    const assignedKeys = Object.values(layoutMap);
+    const missingKeys = allKeys.filter(k => !assignedKeys.includes(k));
+    
+    if (missingKeys.length > 0) {
+      const updatedMap = { ...layoutMap };
+      let currentIdx = 0;
+      missingKeys.forEach(key => {
+        while (updatedMap[currentIdx]) currentIdx++;
+        updatedMap[currentIdx] = key;
+      });
+      setLayoutMap(updatedMap);
+      localStorage.setItem('device_list_layout_map', JSON.stringify(updatedMap));
+    }
+
+    const maxOccupiedIdx = Object.keys(layoutMap).reduce((max, current) => Math.max(max, parseInt(current)), -1);
+    const baseCount = Math.max(maxOccupiedIdx + 1, allKeys.length, 12);
+    const rows = Math.ceil(baseCount / 6) + 1;
+    const SLOTS_COUNT = rows * 6;
+    const slots = Array.from({ length: SLOTS_COUNT });
+
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '12px', marginBottom: '24px', padding: '16px', backgroundColor: '#f8fafc', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+        {slots.map((_, idx) => {
+          const cardKey = layoutMap[idx];
+          const st = statsMap[cardKey];
+          return (
+            <div key={idx} onDragOver={handleSlotDragOver} onDrop={(e) => handleDropOnSlot(e, idx)} style={{ minHeight: '100px', borderRadius: '12px', border: draggingCardKey ? '1px dashed #cbd5e1' : '1px solid transparent', backgroundColor: draggingCardKey ? 'rgba(255,255,255,0.5)' : 'transparent', transition: 'all 0.2s' }}>
+              {st && (
+                <div draggable onDragStart={(e) => handleCardDragStart(e, st.key)} onClick={() => handleCardClick(st)} style={{ backgroundColor: 'white', padding: '10px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.02)', cursor: 'pointer', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', opacity: draggingCardKey === st.key ? 0.3 : 1, transform: 'scale(1)', transition: 'transform 0.1s' }} onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'} onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}>
+                  <div style={{ fontSize: '12px', fontWeight: '900', color: '#1e293b', marginBottom: '6px', borderBottom: '1px solid #f1f5f9', paddingBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px' }} title={st.key}>
+                    <Cpu size={12} color="#64748b" /> {st.type} <span style={{ color: '#64748b', fontSize: '10px', fontWeight: '500' }}>{st.model}</span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span>在庫</span><span style={{ color: '#166534', fontWeight: '800' }}>{st.active}</span></div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span>出貨</span><span style={{ color: '#1e40af', fontWeight: '800' }}>{st.shipped}</span></div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span>故障</span><span style={{ color: '#991b1b', fontWeight: '800' }}>{st.repair}</span></div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span>報廢</span><span style={{ color: '#475569', fontWeight: '800' }}>{st.scrapped}</span></div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   const containerStyle = { padding: '24px', backgroundColor: '#f1f5f9', minHeight: '100vh' };
   const cardStyle = { backgroundColor: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' };
   const menuButtonStyle = { display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', border: 'none', background: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: '#475569', borderRadius: '8px', textAlign: 'left' };
   const editLabelStyle = { display: 'block', fontWeight: 800, fontSize: '13px', marginBottom: '6px', color: '#475569' };
   const editInputStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', outline: 'none', fontSize: '13px' };
   const navBtnStyle = { padding: '8px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', backgroundColor: 'white', cursor: 'pointer', fontWeight: '700' };
+  const thStyle = { padding: '14px', fontSize: '12px', color: '#64748b', fontWeight: '700' };
+  const tdStyle = { padding: '14px', fontSize: '13px' };
 
   return (
     <div style={containerStyle}>
       <div style={cardStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-          <h1 style={{ fontSize: '24px', fontWeight: '900', color: '#1e293b' }}>
+          <h1 style={{ fontSize: '24px', fontWeight: '900', color: '#1e293b', cursor: 'pointer' }} onClick={() => setSearchTerm('')}>
             {brandFilter ? `${brandFilter} - 設備清單` : '設備列表 (Device List)'}
           </h1>
           <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
@@ -139,136 +275,119 @@ const AssetList = () => {
           </div>
         </div>
 
-        {loading ? (
-          <div style={{ textAlign: 'center', padding: '100px', color: '#64748b' }}>載入中...</div>
-        ) : (
-          <div>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ textAlign: 'left', borderBottom: '2px solid #f1f5f9', color: '#444', backgroundColor: '#f8fafc' }}>
-                  <th style={{ padding: '14px' }}>廠牌 / 型號</th>
-                  <th style={{ padding: '14px' }}>規格內容</th>
-                  <th style={{ padding: '14px' }}>序號 / SN</th>
-                  <th style={{ padding: '14px' }}>搭載硬體</th>
-                  <th style={{ padding: '14px' }}>自訂屬性</th>
-                  <th style={{ padding: '14px' }}>客戶 / 位置</th>
-                  <th style={{ padding: '14px' }}>關鍵日期</th>
-                  <th style={{ padding: '14px' }}>狀態</th>
-                  <th style={{ padding: '14px', textAlign: 'center' }}>功能</th>
-                </tr>
-              </thead>
-              <tbody>
-                {paginatedItems.map(item => {
-                  const config = statusConfig[item.status] || statusConfig['ACTIVE'];
-                  return (
-                    <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '14px' }}>
-                        <div style={{ fontWeight: 800, color: '#2563eb' }}>{item.brand || '--'}</div>
-                        <div style={{ fontSize: '11px', color: '#64748b' }}>{item.type || '--'} / {item.model || '--'}</div>
-                      </td>
-                      <td style={{ padding: '14px' }}>
-                         <div style={{ fontSize: '12px', color: '#475569', maxWidth: '280px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={item.specification}>{item.specification}</div>
-                      </td>
-                      <td style={{ padding: '14px', fontWeight: 800, fontFamily: 'monospace' }}>{item.sn}</td>
-                      <td style={{ padding: '14px' }}>
-                        {item.components && item.components.length > 0 ? (
-                          <details style={{ cursor: 'pointer' }}>
-                            <summary style={{ 
-                              fontSize: '11px', 
-                              fontWeight: '800', 
-                              color: '#2563eb', 
-                              listStyle: 'none',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '6px'
-                            }}>
-                              <Cpu size={14}/> 搭載 {item.components.length} 項硬體
-                            </summary>
-                            <div style={{ 
-                              marginTop: '8px',
-                              display: 'flex', 
-                              flexDirection: 'column', 
-                              gap: '6px', 
-                              maxWidth: '220px', 
-                              maxHeight: '200px', 
-                              overflowY: 'auto',
-                              padding: '4px',
-                              borderLeft: '2px solid #e2e8f0',
-                              paddingLeft: '10px'
-                            }}>
-                              {item.components.map((comp, idx) => (
-                                <div key={idx} style={{ 
-                                  fontSize: '10px', 
-                                  backgroundColor: '#f0fdf4', 
-                                  padding: '6px 10px', 
-                                  borderRadius: '8px', 
-                                  border: '1px solid #dcfce7', 
-                                  color: '#166534',
-                                  lineHeight: '1.4'
-                                }}>
-                                  <div style={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                    {comp.brand}
-                                  </div>
-                                  <div style={{ color: '#64748b', fontSize: '9px' }}>
-                                    {comp.model} / <span style={{ fontWeight: 600 }}>{comp.sn || '無序號'}</span>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </details>
-                        ) : (
-                          <span style={{ color: '#94a3b8', fontSize: '11px' }}>--</span>
-                        )}
-                      </td>
-                      <td style={{ padding: '14px' }}>
-                        {customFieldDefs.filter(f => isFieldVisible(item.brand, f.id)).map(f => {
+        {renderStats()}
+
+        { (brandFilter || searchTerm) ? (
+          <>
+            {loading ? (
+              <div style={{ textAlign: 'center', padding: '100px', color: '#64748b' }}>載入中...</div>
+            ) : (
+              paginatedItems.length > 0 ? (
+                <>
+                  <div style={{ marginBottom: '20px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
+                          <th style={{ ...thStyle, textAlign: 'left' }}>品牌/型號</th>
+                          <th style={{ ...thStyle, textAlign: 'left' }}>序號 (SN)</th>
+                          <th style={{ ...thStyle, textAlign: 'left' }}>規格 (Spec)</th>
+                          <th style={{ ...thStyle, textAlign: 'left' }}>客戶</th>
+                          <th style={{ ...thStyle, textAlign: 'left' }}>主機名稱</th>
+                          <th style={{ ...thStyle, textAlign: 'left' }}>位置</th>
+                          {/* 插入自訂欄位標題 */}
+                          {customFieldDefs.filter(f => isFieldVisible(brandFilter, f.id)).map(f => (
+                             <th key={f.id} style={{ ...thStyle, textAlign: 'left', color: f.color || '#64748b' }}>{f.label}</th>
+                          ))}
+                          <th style={{ ...thStyle, textAlign: 'left', width: '100px' }}>狀態</th>
+                          <th style={{ ...thStyle, textAlign: 'center', width: '80px' }}>功能</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {paginatedItems.map(item => {
+                          const config = statusConfig[item.status] || statusConfig['ACTIVE'];
                           let attrs = {};
                           try { attrs = typeof item.custom_attributes === 'string' ? JSON.parse(item.custom_attributes) : (item.custom_attributes || {}); } catch { attrs = {}; }
-                          const val = f.isNative ? item[f.id] : attrs[f.id];
-                          return <div key={f.id} style={{ fontSize: '11px', color: f.color || '#64748b' }}>{f.label.split(' ')[0]}: <b>{val || '--'}</b></div>
+                          
+                          return (
+                            <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9', backgroundColor: item.status === 'SCRAPPED' ? '#fff1f0' : 'transparent' }}>
+                              <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                                <div style={{ fontWeight: 800, color: '#1e293b' }}>{item.brand}</div>
+                                <div style={{ fontSize: '11px', color: '#64748b' }}>{item.model}</div>
+                              </td>
+                              <td style={{ ...tdStyle, fontWeight: 800, fontFamily: 'monospace', color: '#2563eb', whiteSpace: 'nowrap' }}>{item.sn}</td>
+                              <td style={{ ...tdStyle, fontSize: '11px', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.specification}>{item.specification || '--'}</td>
+                              <td style={tdStyle}><div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><User size={14} color="#64748b" /> {item.client || '--'}</div></td>
+                              <td style={tdStyle}>{item.hostname || '--'}</td>
+                              <td style={tdStyle}><div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><MapPin size={14} color="#64748b" /> {item.location || '--'}</div></td>
+                              
+                              {/* 插入自訂欄位數值 */}
+                              {customFieldDefs.filter(f => isFieldVisible(brandFilter, f.id)).map(f => {
+                                const val = f.isNative ? item[f.id] : attrs[f.id];
+                                return (
+                                  <td key={f.id} style={{ ...tdStyle, color: f.color || 'inherit' }}>
+                                    {val || '--'}
+                                  </td>
+                                );
+                              })}
+
+                              <td style={{ ...tdStyle, width: '100px' }}>
+                                <span style={{ 
+                                  padding: '4px 10px', 
+                                  borderRadius: '20px', 
+                                  fontSize: '11px', 
+                                  fontWeight: '800',
+                                  backgroundColor: config.bgColor,
+                                  color: config.color,
+                                  border: `1px solid ${config.borderColor}`,
+                                  whiteSpace: 'nowrap'
+                                }}>
+                                  {config.label}
+                                </span>
+                              </td>
+                              <td style={{ ...tdStyle, textAlign: 'center', width: '80px', position: 'relative' }}>
+                                <button onClick={() => setActiveMenuId(activeMenuId === item.id ? null : item.id)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#64748b' }}>
+                                  <MoreHorizontal size={20} />
+                                </button>
+                                {activeMenuId === item.id && (
+                                  <div style={{ position: 'absolute', right: 0, top: '100%', backgroundColor: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', zIndex: 9999, padding: '8px', minWidth: '180px', display: 'flex', flexDirection: 'column', marginTop: '4px' }}>
+                                    <button onClick={() => handleEditClick(item)} style={menuButtonStyle}><Edit2 size={14} /> 編輯詳細資訊</button>
+                                    <div style={{ height: '1px', backgroundColor: '#f1f5f9', margin: '4px 0' }} />
+                                    <button onClick={() => handleUpdateStatus(item.id, item.sn, 'ACTIVE', '在庫')} style={{ ...menuButtonStyle, color: '#059669' }}><CheckCircle size={14} /> 標記為在庫</button>
+                                    <button onClick={() => handleUpdateStatus(item.id, item.sn, 'SHIPPED', '已出貨')} style={{ ...menuButtonStyle, color: '#2563eb' }}><ShoppingBag size={14} /> 標記為出貨</button>
+                                    <button onClick={() => handleUpdateStatus(item.id, item.sn, 'REPAIRING', '異常維修')} style={{ ...menuButtonStyle, color: '#d97706' }}><Wrench size={14} /> 標記為維修</button>
+                                    <button onClick={() => handleUpdateStatus(item.id, item.sn, 'SCRAPPED', '報廢')} style={{ ...menuButtonStyle, color: '#dc2626' }}><ShieldAlert size={14} /> 標記為報廢</button>
+                                    <div style={{ height: '1px', backgroundColor: '#f1f5f9', margin: '4px 0' }} />
+                                    <button onClick={() => handleDelete(item.id, item.sn)} style={{ ...menuButtonStyle, color: '#e11d48' }}><Trash2 size={14} /> 刪除紀錄</button>
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          );
                         })}
-                      </td>
-                      <td style={{ padding: '14px' }}>
-                        <div style={{ color: '#722ed1', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}><User size={12}/> {item.client || '--'}</div>
-                        <div style={{ fontSize: '11px', color: '#64748b' }}><MapPin size={11}/> {item.location || '--'}</div>
-                      </td>
-                      <td style={{ padding: '14px', fontSize: '11px', lineHeight: '1.5' }}>
-                        <div style={{ color: '#0f172a' }}>P: {item.installed_date ? new Date(item.installed_date).toLocaleDateString() : '--'}</div>
-                        <div style={{ color: '#64748b' }}>S: {item.system_date ? new Date(item.system_date).toLocaleDateString() : '--'}</div>
-                        <div style={{ color: '#2563eb' }}>W: {item.warranty_expire ? new Date(item.warranty_expire).toLocaleDateString() : '--'}</div>
-                        <div style={{ color: '#d46b08' }}>C: {item.customer_warranty_expire ? new Date(item.customer_warranty_expire).toLocaleDateString() : '--'}</div>
-                      </td>
-                      <td style={{ padding: '14px' }}>
-                        <span style={{ padding: '4px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: '800', backgroundColor: config.bgColor, color: config.color, border: `1px solid ${config.borderColor}` }}>{config.label}</span>
-                      </td>
-                      <td style={{ padding: '14px', textAlign: 'center', position: 'relative' }}>
-                        <button onClick={() => setActiveMenuId(activeMenuId === item.id ? null : item.id)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#64748b' }}><MoreHorizontal size={20} /></button>
-                        {activeMenuId === item.id && (
-                          <div style={{ position: 'absolute', right: 0, top: '100%', backgroundColor: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.2)', zIndex: 9999, padding: '8px', minWidth: '160px', display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
-                            <button onClick={() => handleEditClick(item)} style={menuButtonStyle}><Edit2 size={14}/> 編輯詳細資訊</button>
-                            <div style={{ height: '1px', backgroundColor: '#f1f5f9', margin: '4px 0' }} />
-                            <button onClick={() => handleUpdateStatus(item.id, item.sn, 'ACTIVE', '在庫')} style={{ ...menuButtonStyle, color: '#047857' }}><CheckCircle size={14}/> 標記為在庫</button>
-                            <button onClick={() => handleUpdateStatus(item.id, item.sn, 'SHIPPED', '已出貨')} style={{ ...menuButtonStyle, color: '#1d4ed8' }}><ShoppingBag size={14}/> 標記為出貨</button>
-                            <button onClick={() => handleUpdateStatus(item.id, item.sn, 'REPAIRING', '異常/維修中')} style={{ ...menuButtonStyle, color: '#fa8c16' }}><Wrench size={14}/> 標記為維修</button>
-                            <button onClick={() => handleUpdateStatus(item.id, item.sn, 'SCRAPPED', '已報廢')} style={{ ...menuButtonStyle, color: '#e11d48' }}><ShieldAlert size={14}/> 標記為報廢</button>
-                            <div style={{ height: '1px', backgroundColor: '#f1f5f9', margin: '4px 0' }} />
-                            <button onClick={() => handleDelete(item.id, item.sn)} style={{ ...menuButtonStyle, color: '#f43f5e', backgroundColor: '#fff1f2' }}><Trash2 size={14}/> 刪除紀錄</button>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-            
-            {totalPages > 1 && (
-              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '12px', marginTop: '32px' }}>
-                <button disabled={currentPage === 1} onClick={() => setCurrentPage(prev => prev - 1)} style={navBtnStyle}>上一頁</button>
-                <div style={{ fontSize: '13px', fontWeight: '800' }}>{currentPage} / {totalPages}</div>
-                <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(prev => prev + 1)} style={navBtnStyle}>下一頁</button>
-              </div>
+                      </tbody>
+                    </table>
+                  </div>
+                  {totalPages > 1 && (
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginTop: '20px' }}>
+                      <button disabled={currentPage === 1} onClick={() => setCurrentPage(prev => prev - 1)} style={{ ...navBtnStyle, opacity: currentPage === 1 ? 0.5 : 1 }}>上一頁</button>
+                      <span style={{ display: 'flex', alignItems: 'center', fontWeight: '800', color: '#475569' }}>第 {currentPage} 頁 / 共 {totalPages} 頁</span>
+                      <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(prev => prev + 1)} style={{ ...navBtnStyle, opacity: currentPage === totalPages ? 0.5 : 1 }}>下一頁</button>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '100px', color: '#94a3b8', fontSize: '14px' }}>未找到符合條件的設備</div>
+              )
             )}
+          </>
+        ) : (
+          <div style={{ textAlign: 'center', padding: '60px 20px', backgroundColor: '#f8fafc', borderRadius: '16px', border: '1px dashed #e2e8f0', marginTop: '20px' }}>
+            <div style={{ color: '#94a3b8', fontSize: '15px', fontWeight: '500' }}>
+              請點擊上方統計卡片，或從左側選單選擇品牌來查看詳細清單
+            </div>
+            <div style={{ color: '#cbd5e1', fontSize: '12px', marginTop: '8px' }}>
+              您也可以在右上角使用搜尋功能直接查找
+            </div>
           </div>
         )}
       </div>
@@ -401,4 +520,4 @@ const AssetList = () => {
   );
 };
 
-export default AssetList;
+export default DeviceList;

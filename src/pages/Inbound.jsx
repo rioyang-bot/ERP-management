@@ -54,7 +54,7 @@ const Inbound = () => {
   const handleExpandRow = (rowId) => {
     const row = items.find(r => r.id === rowId);
     if (!row || row.qty <= 1 || row.type !== 'ASSET') return;
-    if (!window.confirm(`確定要將此項目展開為 ${row.qty} 筆獨立資產以分別輸入序號嗎？`)) return;
+    if (!window.confirm(`確定要將此項目展開為 ${row.qty} 筆獨立設備以分別輸入序號嗎？`)) return;
     const newRows = [];
     for (let i = 0; i < row.qty; i++) {
       newRows.push({ ...row, id: Date.now() + i, qty: 1, sn: '' });
@@ -120,7 +120,7 @@ const Inbound = () => {
   const handleSubmit = async () => {
     if (!partnerId) return alert('請選擇供應商');
     if (items.some(i => !i.itemId)) return alert('請確認所有明細均已連結至庫存品項');
-    if (items.some(i => i.type === 'ASSET' && !i.sn)) return alert('資產類別必須輸入序號。');
+    if (items.some(i => i.type === 'ASSET' && !i.sn)) return alert('設備類別必須輸入序號。');
     if (window.confirm('確認將此單據入庫？')) {
       const orderRes = await window.electronAPI.namedQuery('insertInboundOrder', [orderNo, partnerId, invoiceNo, 'COMPLETED']);
       if (orderRes.success) {
@@ -203,7 +203,7 @@ const Inbound = () => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div><label style={labelStyle}>品項名稱 *</label><input type="text" value={quickAddData.name} onChange={(e) => setQuickAddData({...quickAddData, name: e.target.value})} style={inputStyle} /></div>
               <div style={{ display: 'flex', gap: '16px' }}>
-                <div style={{ flex: 1 }}><label style={labelStyle}>類別</label><div style={{ display: 'flex', gap: '16px', marginTop: '8px' }}><label style={radioLabelStyle}><input type="radio" checked={quickAddData.type_cat === 'ASSET'} onChange={() => setQuickAddData({...quickAddData, type_cat: 'ASSET'})} /> 資產</label><label style={radioLabelStyle}><input type="radio" checked={quickAddData.type_cat === 'CONSUMABLE'} onChange={() => setQuickAddData({...quickAddData, type_cat: 'CONSUMABLE'})} /> 耗材</label></div></div>
+                <div style={{ flex: 1 }}><label style={labelStyle}>類別</label><div style={{ display: 'flex', gap: '16px', marginTop: '8px' }}><label style={radioLabelStyle}><input type="radio" checked={quickAddData.type_cat === 'ASSET'} onChange={() => setQuickAddData({...quickAddData, type_cat: 'ASSET'})} /> 設備</label><label style={radioLabelStyle}><input type="radio" checked={quickAddData.type_cat === 'CONSUMABLE'} onChange={() => setQuickAddData({...quickAddData, type_cat: 'CONSUMABLE'})} /> 耗材</label></div></div>
                 <div><label style={labelStyle}>單位</label><select value={quickAddData.unit} onChange={(e) => setQuickAddData({...quickAddData, unit: e.target.value})} style={inputStyle}>{UNIFIED_UNITS.map(u => <option key={u} value={u}>{u}</option>)}</select></div>
               </div>
             </div>

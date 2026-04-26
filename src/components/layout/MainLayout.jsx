@@ -7,18 +7,18 @@ import './MainLayout.css';
 
 const MainLayout = () => {
   const { role, authUser, setAuthUser } = useContext(RoleContext);
-  const [brands, setBrands] = useState([]);
+  const [deviceBrands, setDeviceBrands] = useState([]);
   const [consumableTypes, setConsumableTypes] = useState([]);
   const [nicTypes, setNicTypes] = useState([]);
-  const [isAssetListExpanded, setIsAssetListExpanded] = useState(true);
+  const [isDeviceListExpanded, setIsDeviceListExpanded] = useState(true);
   const [isConsumableListExpanded, setIsConsumableListExpanded] = useState(true);
   const [isNicListExpanded, setIsNicListExpanded] = useState(true);
   const location = useLocation();
 
   useEffect(() => {
-    const fetchBrands = async () => {
+    const fetchDeviceBrands = async () => {
       const res = await window.electronAPI.namedQuery('fetchMenuAssetBrands');
-      if (res.success) setBrands(res.rows.map(r => r.brand));
+      if (res.success) setDeviceBrands(res.rows.map(r => r.brand));
     };
 
     const fetchConsumableTypes = async () => {
@@ -31,12 +31,12 @@ const MainLayout = () => {
       if (res.success) setNicTypes(res.rows.map(r => r.type));
     };
     
-    fetchBrands();
+    fetchDeviceBrands();
     fetchConsumableTypes();
     fetchNicTypes();
 
     const handleDbUpdate = () => {
-      fetchBrands();
+      fetchDeviceBrands();
       fetchConsumableTypes();
       fetchNicTypes();
     };
@@ -49,8 +49,8 @@ const MainLayout = () => {
     { id: 'inbound', path: '/inbound', label: '進貨入庫 (Inbound)' },
     { id: 'outbound', path: '/outbound', label: '出貨進銷 (Cart)' },
     { id: 'review', path: '/review', label: '出貨審核 (Review)' },
-    { id: 'assets', path: '/assets', label: '設備建檔 (Device Reg)' },
-    { id: 'assetList', path: '/asset-list', label: '設備列表 (Device List)', hasSub: true },
+    { id: 'assets', path: '/devices', label: '設備管理 (Device Reg)' },
+    { id: 'assetList', path: '/device-list', label: '設備列表 (Device List)', hasSub: true },
     { id: 'nic-registration', path: '/hw-registration', label: '硬體建檔 (HW Reg)' },
     { id: 'nic-list', path: '/hw-list', label: '硬體列表 (HW List)', hasSub: true },
     { id: 'consumables', path: '/consumables', label: '耗材建檔 (Items)' },
@@ -71,7 +71,7 @@ const MainLayout = () => {
           <img src={logo} alt="Logo" style={{ width: '36px', height: '36px' }} />
           <div style={{ display: 'flex', flexDirection: 'column', lineHeight: '1.2' }}>
             <span style={{ fontSize: '1.2rem', fontWeight: '800', letterSpacing: '1px' }}>METECH ERP</span>
-            <span style={{ fontSize: '0.75rem', fontWeight: '400', opacity: '0.8', marginTop: '4px' }}>資產進銷存系統</span>
+            <span style={{ fontSize: '0.75rem', fontWeight: '400', opacity: '0.8', marginTop: '4px' }}>設備進銷存系統</span>
           </div>
         </div>
         <ul className="sidebar-nav">
@@ -79,14 +79,14 @@ const MainLayout = () => {
             <li key={item.id}>
               {item.id === 'assetList' ? (
                 <>
-                  <div onClick={() => setIsAssetListExpanded(!isAssetListExpanded)} className={`nav-item ${location.pathname === '/asset-list' ? 'active' : ''}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
-                    <NavLink to="/asset-list" onClick={(e) => e.stopPropagation()} style={{ flex: 1, color: 'inherit', textDecoration: 'none' }}>{item.label}</NavLink>
-                    {isAssetListExpanded ? <ChevronDown size={16} opacity={0.5} /> : <ChevronRight size={16} opacity={0.5} />}
+                  <div onClick={() => setIsDeviceListExpanded(!isDeviceListExpanded)} className={`nav-item ${location.pathname === '/device-list' ? 'active' : ''}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
+                    <NavLink to="/device-list" onClick={(e) => e.stopPropagation()} style={{ flex: 1, color: 'inherit', textDecoration: 'none' }}>{item.label}</NavLink>
+                    {isDeviceListExpanded ? <ChevronDown size={16} opacity={0.5} /> : <ChevronRight size={16} opacity={0.5} />}
                   </div>
-                  {isAssetListExpanded && (
+                  {isDeviceListExpanded && (
                     <ul style={{ listStyle: 'none', paddingLeft: '12px', marginTop: '4px' }}>
-                      {brands.map(brand => (
-                        <li key={brand}><NavLink to={`/asset-list?brand=${encodeURIComponent(brand)}`} className={({ isActive }) => `nav-sub-item ${isActive && location.search.includes(brand) ? 'active' : ''}`}>• {brand}</NavLink></li>
+                      {deviceBrands.map(brand => (
+                        <li key={brand}><NavLink to={`/device-list?brand=${encodeURIComponent(brand)}`} className={({ isActive }) => `nav-sub-item ${isActive && location.search.includes(brand) ? 'active' : ''}`}>• {brand}</NavLink></li>
                       ))}
                     </ul>
                   )}

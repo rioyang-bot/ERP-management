@@ -46,7 +46,7 @@ const ITOutbound = () => {
 
   return (
     <div className="outbound-layout">
-      {/* 左側：資產選擇區 */}
+      {/* 左側：設備選擇區 */}
       <div className="asset-selection">
         <h1 className="page-title" style={{ marginBottom: '16px' }}>出貨/領用申請 (IT 面板)</h1>
         
@@ -59,7 +59,7 @@ const ITOutbound = () => {
           {inventory.map(item => (
             <div key={item.id} className="asset-card" onClick={() => handleAddToCart(item)}>
               <div className="asset-image-placeholder">
-                <span style={{ color: '#999', fontSize: '0.9rem' }}>資產照片縮圖</span>
+                <span style={{ color: '#999', fontSize: '0.9rem' }}>設備照片縮圖</span>
               </div>
               <div className="asset-info">
                 <div className="asset-name">{item.name}</div>

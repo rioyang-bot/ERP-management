@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Save, Settings2, Trash2, X, Monitor, Clock, User, MapPin, ListFilter, Layers } from 'lucide-react';
 
-const Assets = () => {
+const Devices = () => {
   const [items, setItems] = useState([]);
   const [types, setTypes] = useState([]);
   const [brands, setBrands] = useState([]);
@@ -222,7 +222,7 @@ const Assets = () => {
         if (res.success) successCount++;
       }
 
-      alert(isBulkMode ? `批次建檔完成！成功建立 ${successCount} 筆資產紀錄。` : '設備建檔成功！');
+      alert(isBulkMode ? `批次建檔完成！成功建立 ${successCount} 筆設備紀錄。` : '設備建檔成功！');
       fetchAssets();
       setFormData({ 
         sn: '', specification: '', type: '', brand: brands[0]?.name || '', model: '', client: '', 
@@ -379,4 +379,4 @@ const Assets = () => {
   );
 };
 
-export default Assets;
+export default Devices;

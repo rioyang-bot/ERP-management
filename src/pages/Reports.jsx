@@ -22,7 +22,7 @@ const Reports = () => {
       exportInfo += `\n日期區間: 全部時期`;
     }
 
-    alert(`檔案準備下載... (Demo)\n\n--- 產出條件設定 ---${exportInfo}\n\n資產單價與總額欄位已被系統移除。`);
+    alert(`檔案準備下載... (Demo)\n\n--- 產出條件設定 ---${exportInfo}\n\n設備單價與總額欄位已被系統移除。`);
   };
 
   return (

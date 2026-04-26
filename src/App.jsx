@@ -4,8 +4,8 @@ import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import MainLayout from './components/layout/MainLayout';
 import Inventory from './pages/Inventory';
 import Inbound from './pages/Inbound';
-import Assets from './pages/Assets';
-import AssetList from './pages/AssetList';
+import Devices from './pages/Devices';
+import DeviceList from './pages/DeviceList';
 import Partners from './pages/Partners';
 import Settings from './pages/Settings';
 import ITOutbound from './pages/ITOutbound';
@@ -55,8 +55,8 @@ function App() {
             <Route path="inbound" element={<Inbound />} />
             <Route path="outbound" element={<ITOutbound />} />
             <Route path="review" element={<WarehouseReview />} />
-            <Route path="assets" element={<Assets />} />
-            <Route path="asset-list" element={<AssetList />} />
+            <Route path="devices" element={<Devices />} />
+            <Route path="device-list" element={<DeviceList />} />
             <Route path="consumables" element={<Consumables />} />
             <Route path="partners" element={<Partners />} />
             <Route path="reports" element={<Reports />} />
