@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Save, Settings2, Trash2, X, Monitor, Clock, User, MapPin } from 'lucide-react';
+import { Plus, Save, Settings2, Trash2, X, Monitor, Clock, User, MapPin, ListFilter, Layers } from 'lucide-react';
 
 const Assets = () => {
   const [items, setItems] = useState([]);
@@ -22,6 +22,8 @@ const Assets = () => {
     customer_warranty_expire: '', system_date: '', warranty_expire: '',
     os: '', nic: '', custom_attributes: {}
   });
+  const [isBulkMode, setIsBulkMode] = useState(false);
+  const [bulkSns, setBulkSns] = useState('');
   const [brandFieldConfigs, setBrandFieldConfigs] = useState({});
   const [customFieldDefs, setCustomFieldDefs] = useState([]);
   const UNIFIED_UNITS = ['個', '台', '盒', '包', '支', '組', '瓶', '卷', '張', '份'];
@@ -185,30 +187,52 @@ const Assets = () => {
   };
 
   const handleAddAsset = async () => {
-    if (!formData.specification || !formData.type) return alert('請填寫必填欄位');
-    let masterId;
-    const findRes = await window.electronAPI.namedQuery('findItemMaster', [formData.specification, formData.type, formData.brand, formData.model]);
-    if (findRes.success && findRes.rows.length > 0) {
-      masterId = findRes.rows[0].id;
+    if (!formData.brand || !formData.type) return alert('請填寫必填欄位 (廠牌與類型)');
+    
+    // 解析序號清單
+    let snList = [];
+    if (isBulkMode) {
+      snList = bulkSns.split('\n').map(s => s.trim()).filter(s => s !== '');
+      if (snList.length === 0) return alert('請輸入至少一個序號');
+      if (new Set(snList).size !== snList.length) {
+        if (!confirm('偵測到重複的序號，是否要繼續（重複的紀錄會被分別建立）？')) return;
+      }
     } else {
-      const res = await window.electronAPI.namedQuery('insertItemMaster', [formData.specification, formData.type, formData.brand, formData.model, '台', '資訊設備']);
-      if (res.success) masterId = res.rows[0].id;
+      snList = [formData.sn.trim()];
     }
-    if (!masterId) return;
-    const res = await window.electronAPI.namedQuery('insertAssetRecord', [
-        masterId, formData.sn.trim() || null, formData.client, formData.hostname, formData.location, formData.installed_date || null,
-        formData.customer_warranty_expire || null, formData.system_date || null, formData.warranty_expire || null,
-        formData.os, formData.nic, formData.custom_attributes
-    ]);
-    if (res.success) {
-      alert('設備建檔成功！');
+
+    try {
+      let masterId;
+      const findRes = await window.electronAPI.namedQuery('findItemMaster', [formData.specification || '', formData.type, formData.brand, formData.model]);
+      if (findRes.success && findRes.rows.length > 0) {
+        masterId = findRes.rows[0].id;
+      } else {
+        const res = await window.electronAPI.namedQuery('insertItemMaster', [formData.specification || '', formData.type, formData.brand, formData.model, '台', '資訊設備']);
+        if (res.success) masterId = res.rows[0].id;
+      }
+      if (!masterId) throw new Error('建立物料主檔失敗');
+
+      let successCount = 0;
+      for (const sn of snList) {
+        const res = await window.electronAPI.namedQuery('insertAssetRecord', [
+            masterId, sn || null, formData.client, formData.hostname, formData.location, formData.installed_date || null,
+            formData.customer_warranty_expire || null, formData.system_date || null, formData.warranty_expire || null,
+            formData.os, formData.nic, formData.custom_attributes
+        ]);
+        if (res.success) successCount++;
+      }
+
+      alert(isBulkMode ? `批次建檔完成！成功建立 ${successCount} 筆資產紀錄。` : '設備建檔成功！');
       fetchAssets();
       setFormData({ 
         sn: '', specification: '', type: '', brand: brands[0]?.name || '', model: '', client: '', 
         hostname: '', location: '', installed_date: '', customer_warranty_expire: '', system_date: '', warranty_expire: '',
         os: '', nic: '', custom_attributes: {}
       });
+      if (isBulkMode) setBulkSns('');
       setFormKey(prev => prev + 1);
+    } catch (err) {
+      alert('建檔失敗: ' + err.message);
     }
   };
 
@@ -221,6 +245,13 @@ const Assets = () => {
   const inputStyle = { width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '14px', boxSizing: 'border-box', outline: 'none' };
   const iconButtonStyle = { padding: '8px', border: '1px solid #e2e8f0', borderRadius: '8px', backgroundColor: '#fff', cursor: 'pointer' };
   const manageItemStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', fontSize: '13px', borderBottom: '1px solid #f1f5f9' };
+  const modeBtnStyle = (active) => ({
+    flex: 1, padding: '10px', borderRadius: '8px', border: 'none', 
+    backgroundColor: active ? '#2563eb' : '#f1f5f9', 
+    color: active ? '#fff' : '#475569',
+    fontWeight: '700', fontSize: '13px', cursor: 'pointer', transition: 'all 0.2s',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
+  });
 
   return (
     <div style={containerStyle}>
@@ -232,7 +263,7 @@ const Assets = () => {
           <div key={formKey} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
               <div>
-                <label style={labelStyle}>廠牌 (Brand) *</label>
+                <label style={labelStyle}>廠牌 (Brand) <span style={{ color: '#ef4444' }}>*</span></label>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <select name="brand" value={formData.brand} onChange={handleChange} style={inputStyle}>
                     <option value="">請選擇</option>
@@ -245,7 +276,7 @@ const Assets = () => {
                 {showManageBrand && <div style={{ marginTop: '8px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>{brands.map(b => ( <div key={b.id} style={manageItemStyle}><span>{b.name}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteBrand(b.name)} /></div> ))}</div>}
               </div>
               <div>
-                <label style={labelStyle}>類型 (Type) *</label>
+                <label style={labelStyle}>類型 (Type) <span style={{ color: '#ef4444' }}>*</span></label>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <select name="type" value={formData.type} onChange={handleChange} style={inputStyle}>
                     {types.map(t => <option key={t} value={t}>{t}</option>)}
@@ -257,7 +288,7 @@ const Assets = () => {
                 {showManageType && <div style={{ marginTop: '8px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>{types.map(t => ( <div key={t} style={manageItemStyle}><span>{t}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteType(t)} /></div> ))}</div>}
               </div>
               <div>
-                <label style={labelStyle}>型號 (Model) *</label>
+                <label style={labelStyle}>型號 (Model) <span style={{ color: '#ef4444' }}>*</span></label>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <select name="model" value={formData.model} onChange={handleChange} style={inputStyle}>
                     <option value="">請選擇</option>
@@ -272,8 +303,35 @@ const Assets = () => {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 1.5fr) 1fr', gap: '16px' }}>
-              <div><label style={labelStyle}>規格 (Specification) *</label><input type="text" name="specification" value={formData.specification} onChange={handleChange} style={inputStyle} /></div>
-              <div><label style={labelStyle}>序號 / SN</label><input type="text" name="sn" value={formData.sn} onChange={handleChange} style={inputStyle} /></div>
+              <div><label style={labelStyle}>規格 (Specification)</label><input type="text" name="specification" value={formData.specification} onChange={handleChange} style={inputStyle} /></div>
+              <div>
+                <label style={labelStyle}>建檔模式</label>
+                <div style={{ display: 'flex', gap: '4px', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>
+                   <button type="button" onClick={() => setIsBulkMode(false)} style={modeBtnStyle(!isBulkMode)}><ListFilter size={14}/> 單筆</button>
+                   <button type="button" onClick={() => setIsBulkMode(true)} style={modeBtnStyle(isBulkMode)}><Layers size={14}/> 多筆</button>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label style={labelStyle}>
+                {isBulkMode ? (
+                  <>設備序號清單 (每行一個序號) <span style={{ color: "#ef4444" }}>*</span></>
+                ) : (
+                  '設備序號 / SN'
+                )}
+              </label>
+              {isBulkMode ? (
+                <textarea 
+                  value={bulkSns} 
+                  onChange={e => setBulkSns(e.target.value)} 
+                  style={{ ...inputStyle, minHeight: '120px', fontFamily: 'monospace' }} 
+                  placeholder="請在此處貼上多個序號..."
+                />
+              ) : (
+                <input type="text" name="sn" value={formData.sn} onChange={handleChange} style={inputStyle} placeholder="請輸入設備序號" />
+              )}
+              {isBulkMode && <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>已偵測: <b>{bulkSns.split('\n').filter(s => s.trim()).length}</b> 個序號</div>}
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
@@ -292,7 +350,7 @@ const Assets = () => {
               </div>
             )}
 
-            <div style={{ textAlign: 'right' }}><button onClick={handleAddAsset} style={{ ...inputStyle, width: 'auto', backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '12px 40px', fontWeight: '700', cursor: 'pointer' }}><Save size={18} style={{ marginRight: '8px' }} /> 儲存設備資料</button></div>
+            <div style={{ textAlign: 'right' }}><button onClick={handleAddAsset} style={{ ...inputStyle, width: '100%', backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '14px', fontWeight: '900', cursor: 'pointer', borderRadius: '12px', fontSize: '16px' }}><Save size={20} style={{ marginRight: '8px', verticalAlign: 'middle' }} /> {isBulkMode ? `開始多筆建檔 (${bulkSns.split('\n').filter(s => s.trim()).length} 筆)` : '儲存設備資料'}</button></div>
           </div>
         </div>
       </div>

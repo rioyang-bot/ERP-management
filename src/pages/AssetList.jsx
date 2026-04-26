@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Search, Edit2, Trash2, ShieldAlert, X, Wrench, ShoppingBag, MoreHorizontal, AlertTriangle, CheckCircle, MapPin, User, Clock, Save } from 'lucide-react';
+import { Search, Edit2, X, MoreHorizontal, MoreVertical, MapPin, User, Trash2, CheckCircle, ShoppingBag, Wrench, ShieldAlert, Cpu } from 'lucide-react';
 
 const AssetList = () => {
   const [items, setItems] = useState([]);
@@ -146,12 +146,13 @@ const AssetList = () => {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ textAlign: 'left', borderBottom: '2px solid #f1f5f9', color: '#444', backgroundColor: '#f8fafc' }}>
-                  <th style={{ padding: '14px' }}>廠牌 / 類型 / 型號</th>
+                  <th style={{ padding: '14px' }}>廠牌 / 型號</th>
                   <th style={{ padding: '14px' }}>規格內容</th>
                   <th style={{ padding: '14px' }}>序號 / SN</th>
+                  <th style={{ padding: '14px' }}>搭載硬體</th>
+                  <th style={{ padding: '14px' }}>自訂屬性</th>
                   <th style={{ padding: '14px' }}>客戶 / 位置</th>
                   <th style={{ padding: '14px' }}>關鍵日期</th>
-                  <th style={{ padding: '14px' }}>自訂屬性</th>
                   <th style={{ padding: '14px' }}>狀態</th>
                   <th style={{ padding: '14px', textAlign: 'center' }}>功能</th>
                 </tr>
@@ -170,14 +171,54 @@ const AssetList = () => {
                       </td>
                       <td style={{ padding: '14px', fontWeight: 800, fontFamily: 'monospace' }}>{item.sn}</td>
                       <td style={{ padding: '14px' }}>
-                        <div style={{ color: '#722ed1', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}><User size={12}/> {item.client || '--'}</div>
-                        <div style={{ fontSize: '11px', color: '#64748b' }}><MapPin size={11}/> {item.location || '--'}</div>
-                      </td>
-                      <td style={{ padding: '14px', fontSize: '11px', lineHeight: '1.5' }}>
-                        <div style={{ color: '#0f172a' }}>P: {item.installed_date ? new Date(item.installed_date).toLocaleDateString() : '--'}</div>
-                        <div style={{ color: '#64748b' }}>S: {item.system_date ? new Date(item.system_date).toLocaleDateString() : '--'}</div>
-                        <div style={{ color: '#2563eb' }}>W: {item.warranty_expire ? new Date(item.warranty_expire).toLocaleDateString() : '--'}</div>
-                        <div style={{ color: '#d46b08' }}>C: {item.customer_warranty_expire ? new Date(item.customer_warranty_expire).toLocaleDateString() : '--'}</div>
+                        {item.components && item.components.length > 0 ? (
+                          <details style={{ cursor: 'pointer' }}>
+                            <summary style={{ 
+                              fontSize: '11px', 
+                              fontWeight: '800', 
+                              color: '#2563eb', 
+                              listStyle: 'none',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px'
+                            }}>
+                              <Cpu size={14}/> 搭載 {item.components.length} 項硬體
+                            </summary>
+                            <div style={{ 
+                              marginTop: '8px',
+                              display: 'flex', 
+                              flexDirection: 'column', 
+                              gap: '6px', 
+                              maxWidth: '220px', 
+                              maxHeight: '200px', 
+                              overflowY: 'auto',
+                              padding: '4px',
+                              borderLeft: '2px solid #e2e8f0',
+                              paddingLeft: '10px'
+                            }}>
+                              {item.components.map((comp, idx) => (
+                                <div key={idx} style={{ 
+                                  fontSize: '10px', 
+                                  backgroundColor: '#f0fdf4', 
+                                  padding: '6px 10px', 
+                                  borderRadius: '8px', 
+                                  border: '1px solid #dcfce7', 
+                                  color: '#166534',
+                                  lineHeight: '1.4'
+                                }}>
+                                  <div style={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    {comp.brand}
+                                  </div>
+                                  <div style={{ color: '#64748b', fontSize: '9px' }}>
+                                    {comp.model} / <span style={{ fontWeight: 600 }}>{comp.sn || '無序號'}</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        ) : (
+                          <span style={{ color: '#94a3b8', fontSize: '11px' }}>--</span>
+                        )}
                       </td>
                       <td style={{ padding: '14px' }}>
                         {customFieldDefs.filter(f => isFieldVisible(item.brand, f.id)).map(f => {
@@ -186,6 +227,16 @@ const AssetList = () => {
                           const val = f.isNative ? item[f.id] : attrs[f.id];
                           return <div key={f.id} style={{ fontSize: '11px', color: f.color || '#64748b' }}>{f.label.split(' ')[0]}: <b>{val || '--'}</b></div>
                         })}
+                      </td>
+                      <td style={{ padding: '14px' }}>
+                        <div style={{ color: '#722ed1', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}><User size={12}/> {item.client || '--'}</div>
+                        <div style={{ fontSize: '11px', color: '#64748b' }}><MapPin size={11}/> {item.location || '--'}</div>
+                      </td>
+                      <td style={{ padding: '14px', fontSize: '11px', lineHeight: '1.5' }}>
+                        <div style={{ color: '#0f172a' }}>P: {item.installed_date ? new Date(item.installed_date).toLocaleDateString() : '--'}</div>
+                        <div style={{ color: '#64748b' }}>S: {item.system_date ? new Date(item.system_date).toLocaleDateString() : '--'}</div>
+                        <div style={{ color: '#2563eb' }}>W: {item.warranty_expire ? new Date(item.warranty_expire).toLocaleDateString() : '--'}</div>
+                        <div style={{ color: '#d46b08' }}>C: {item.customer_warranty_expire ? new Date(item.customer_warranty_expire).toLocaleDateString() : '--'}</div>
                       </td>
                       <td style={{ padding: '14px' }}>
                         <span style={{ padding: '4px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: '800', backgroundColor: config.bgColor, color: config.color, border: `1px solid ${config.borderColor}` }}>{config.label}</span>

@@ -51,8 +51,8 @@ const MainLayout = () => {
     { id: 'review', path: '/review', label: '出貨審核 (Review)' },
     { id: 'assets', path: '/assets', label: '設備建檔 (Device Reg)' },
     { id: 'assetList', path: '/asset-list', label: '設備列表 (Device List)', hasSub: true },
-    { id: 'nic-registration', path: '/nic-registration', label: '網卡建檔 (NIC Reg)' },
-    { id: 'nic-list', path: '/nic-list', label: '網卡列表 (NIC List)', hasSub: true },
+    { id: 'nic-registration', path: '/hw-registration', label: '硬體建檔 (HW Reg)' },
+    { id: 'nic-list', path: '/hw-list', label: '硬體列表 (HW List)', hasSub: true },
     { id: 'consumables', path: '/consumables', label: '耗材建檔 (Items)' },
     { id: 'consumableList', path: '/consumable-list', label: '耗材列表 (Items List)', hasSub: true },
     { id: 'purchasing', path: '/purchasing', label: '採購建檔 (Procurement)' },
@@ -107,14 +107,14 @@ const MainLayout = () => {
                 </>
               ) : item.id === 'nic-list' ? (
                 <>
-                  <div onClick={() => setIsNicListExpanded(!isNicListExpanded)} className={`nav-item ${location.pathname === '/nic-list' ? 'active' : ''}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
-                    <NavLink to="/nic-list" onClick={(e) => e.stopPropagation()} style={{ flex: 1, color: 'inherit', textDecoration: 'none' }}>{item.label}</NavLink>
+                  <div onClick={() => setIsNicListExpanded(!isNicListExpanded)} className={`nav-item ${location.pathname === '/hw-list' ? 'active' : ''}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
+                    <NavLink to="/hw-list" onClick={(e) => e.stopPropagation()} style={{ flex: 1, color: 'inherit', textDecoration: 'none' }}>{item.label}</NavLink>
                     {isNicListExpanded ? <ChevronDown size={16} opacity={0.5} /> : <ChevronRight size={16} opacity={0.5} />}
                   </div>
                   {isNicListExpanded && (
                     <ul style={{ listStyle: 'none', paddingLeft: '12px', marginTop: '4px' }}>
                       {nicTypes.map(type => (
-                        <li key={type}><NavLink to={`/nic-list?type=${encodeURIComponent(type)}`} className={({ isActive }) => `nav-sub-item ${isActive && location.search.includes(type) ? 'active' : ''}`}>• {type}</NavLink></li>
+                        <li key={type}><NavLink to={`/hw-list?type=${encodeURIComponent(type)}`} className={({ isActive }) => `nav-sub-item ${isActive && location.search.includes(type) ? 'active' : ''}`}>• {type}</NavLink></li>
                       ))}
                     </ul>
                   )}

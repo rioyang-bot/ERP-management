@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Save, Trash2, Cpu, Settings2, X, Server, Clock, User, MapPin, Layers, ListFilter } from 'lucide-react';
 
-const NicRegistration = () => {
+const HwRegistration = () => {
   const [brands, setBrands] = useState([]);
   const [types, setTypes] = useState([]);
   const [models, setModels] = useState([]);
@@ -81,7 +81,7 @@ const NicRegistration = () => {
   const handleAddBrand = async () => {
     const name = validateAndSanitize(newBrandName, '廠牌名稱');
     if (!name) return;
-    const res = await window.electronAPI.namedQuery('insertDeviceBrand', ['網卡', name]);
+    const res = await window.electronAPI.namedQuery('insertDeviceBrand', ['硬體', name]);
     if (res.success) { await fetchBrands(); setNewBrandName(''); setActiveAdd(null); }
     else alert('新增失敗：' + res.error);
   };
@@ -89,7 +89,7 @@ const NicRegistration = () => {
   const handleAddType = async () => {
     const name = validateAndSanitize(newTypeName, '類型名稱');
     if (!name || !formData.brand) return;
-    const res = await window.electronAPI.namedQuery('insertDeviceType', ['網卡', formData.brand, name]);
+    const res = await window.electronAPI.namedQuery('insertDeviceType', ['硬體', formData.brand, name]);
     if (res.success) { await fetchTypes(formData.brand); setNewTypeName(''); setActiveAdd(null); }
     else alert('新增失敗：' + res.error);
   };
@@ -97,28 +97,28 @@ const NicRegistration = () => {
   const handleAddModel = async () => {
     const name = validateAndSanitize(newModelName, '型號名稱');
     if (!name || !formData.brand || !formData.type) return;
-    const res = await window.electronAPI.namedQuery('insertDeviceModel', [formData.brand, formData.type, '網卡', name]);
+    const res = await window.electronAPI.namedQuery('insertDeviceModel', [formData.brand, formData.type, '硬體', name]);
     if (res.success) { await fetchModels(formData.brand, formData.type); setNewModelName(''); setActiveAdd(null); }
     else alert('新增失敗：' + res.error);
   };
 
   const handleDeleteBrand = async (brandName) => {
     if (!confirm(`確定要刪除廠牌「${brandName}」嗎？`)) return;
-    const res = await window.electronAPI.namedQuery('deleteDeviceBrand', [brandName, '網卡']);
+    const res = await window.electronAPI.namedQuery('deleteDeviceBrand', [brandName, '硬體']);
     if (res.success) await fetchBrands();
     else alert('刪除失敗：' + res.error);
   };
 
   const handleDeleteType = async (typeName) => {
     if (!confirm(`確定要刪除類型「${typeName}」嗎？`)) return;
-    const res = await window.electronAPI.namedQuery('deleteDeviceType', [typeName, '網卡', formData.brand]);
+    const res = await window.electronAPI.namedQuery('deleteDeviceType', [typeName, '硬體', formData.brand]);
     if (res.success) await fetchTypes(formData.brand);
     else alert('刪除失敗：' + res.error);
   };
 
   const handleDeleteModel = async (modelName) => {
     if (!confirm(`確定要刪除型號「${modelName}」嗎？`)) return;
-    const res = await window.electronAPI.namedQuery('deleteDeviceModel', [modelName, formData.brand, formData.type, '網卡']);
+    const res = await window.electronAPI.namedQuery('deleteDeviceModel', [modelName, formData.brand, formData.type, '硬體']);
     if (res.success) await fetchModels(formData.brand, formData.type);
     else alert('刪除失敗：' + res.error);
   };
@@ -133,7 +133,7 @@ const NicRegistration = () => {
     const safeSpec = validateAndSanitize(formData.specification, '規格');
     const safeServerSn = validateAndSanitize(formData.server_sn, 'Server SN');
 
-    if (!safeBrand || !safeType || !safeModel || !safeSpec) {
+    if (!safeBrand || !safeType || !safeModel) {
       return alert('請填寫必填欄位 (*) 並確保符合安全規範');
     }
 
@@ -158,7 +158,7 @@ const NicRegistration = () => {
       if (findRes.success && findRes.rows.length > 0) {
         itemMasterId = findRes.rows[0].id;
       } else {
-        const insMaster = await window.electronAPI.namedQuery('insertItemMaster', [safeSpec, safeType, safeBrand, safeModel, '個', '網卡']);
+        const insMaster = await window.electronAPI.namedQuery('insertItemMaster', [safeSpec || '', safeType, safeBrand, safeModel, '個', '硬體']);
         if (insMaster.success && insMaster.rows?.length > 0) {
           itemMasterId = insMaster.rows[0].id;
         } else {
@@ -205,7 +205,7 @@ const NicRegistration = () => {
   const leftSectionStyle = { flex: '0 0 60%' };
   const rightSectionStyle = { flex: '0 0 40%' };
   const cardStyle = { backgroundColor: '#ffffff', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', marginBottom: '24px' };
-  const labelStyle = { display: 'block', fontSize: '14px', fontWeight: '800', color: '#475569', marginBottom: '6px' };
+  const labelStyle = { display: 'block', fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' };
   const inputStyle = { width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '14px', outline: 'none' };
   const iconBtnStyle = { padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', backgroundColor: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center' };
   
@@ -239,12 +239,12 @@ const NicRegistration = () => {
       <div style={leftSectionStyle}>
         <div style={cardStyle}>
           <h2 style={{ fontSize: '20px', fontWeight: '900', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
-            <Cpu size={26} color="#2563eb" /> 網卡建檔 (NIC Registration)
+            <Cpu size={26} color="#2563eb" /> 硬體建檔 (Hardware Registration)
           </h2>
           <form onSubmit={handleSubmit}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' }}>
               <div>
-                <label style={labelStyle}>廠牌 (Brand) *</label>
+                <label style={labelStyle}>廠牌 (Brand) <span style={{ color: '#ef4444' }}>*</span></label>
                 <div style={{ display: 'flex', gap: '4px' }}>
                   <select name="brand" value={formData.brand} onChange={handleChange} style={inputStyle} required>
                     <option value="">選擇廠牌</option>
@@ -258,7 +258,7 @@ const NicRegistration = () => {
               </div>
 
               <div>
-                <label style={labelStyle}>類型 (Type) *</label>
+                <label style={labelStyle}>類型 (Type) <span style={{ color: '#ef4444' }}>*</span></label>
                 <div style={{ display: 'flex', gap: '4px' }}>
                   <select name="type" value={formData.type} onChange={handleChange} style={inputStyle} required disabled={!formData.brand}>
                     <option value="">選擇類型</option>
@@ -272,7 +272,7 @@ const NicRegistration = () => {
               </div>
 
               <div>
-                <label style={labelStyle}>型號 (Model) *</label>
+                <label style={labelStyle}>型號 (Model) <span style={{ color: '#ef4444' }}>*</span></label>
                 <div style={{ display: 'flex', gap: '4px' }}>
                   <select name="model" value={formData.model} onChange={handleChange} style={inputStyle} required disabled={!formData.type}>
                     <option value="">選擇型號</option>
@@ -286,21 +286,22 @@ const NicRegistration = () => {
               </div>
             </div>
 
-            <div style={{ marginBottom: '24px' }}>
-              <label style={labelStyle}>規格 (Specification) *</label>
-              <input type="text" name="specification" value={formData.specification} onChange={handleChange} style={inputStyle} placeholder="例如: 10GbE SFP+ Dual Port" required />
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 1.5fr) 1fr', gap: '16px', marginBottom: '24px' }}>
+              <div>
+                <label style={labelStyle}>規格 (Specification)</label>
+                <input type="text" name="specification" value={formData.specification} onChange={handleChange} style={inputStyle} placeholder="例如: 10GbE SFP+ Dual Port" />
+              </div>
+              <div>
+                <label style={labelStyle}>建檔模式</label>
+                <div style={{ display: 'flex', gap: '4px', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>
+                   <button type="button" onClick={() => setIsBulkMode(false)} style={modeBtnStyle(!isBulkMode)}><ListFilter size={14}/> 單筆</button>
+                   <button type="button" onClick={() => setIsBulkMode(true)} style={modeBtnStyle(isBulkMode)}><Layers size={14}/> 多筆</button>
+                </div>
+              </div>
             </div>
 
             <div style={{ marginBottom: '24px' }}>
-               <label style={labelStyle}>建檔模式</label>
-               <div style={{ display: 'flex', gap: '10px', backgroundColor: '#f1f5f9', padding: '6px', borderRadius: '12px' }}>
-                  <button type="button" onClick={() => setIsBulkMode(false)} style={modeBtnStyle(!isBulkMode)}><ListFilter size={16}/> 單筆建檔</button>
-                  <button type="button" onClick={() => setIsBulkMode(true)} style={modeBtnStyle(isBulkMode)}><Layers size={16}/> 多筆建檔</button>
-               </div>
-            </div>
-
-            <div style={{ marginBottom: '24px' }}>
-              <label style={labelStyle}>{isBulkMode ? '網卡序號清單 (每行一個序號)' : '網卡序號 (SN)'}</label>
+              <label style={labelStyle}>{isBulkMode ? '硬體序號清單 (每行一個序號)' : '硬體序號 (SN)'}</label>
               {isBulkMode ? (
                 <textarea 
                   value={bulkSns} 
@@ -309,7 +310,7 @@ const NicRegistration = () => {
                   placeholder="請在此處貼上或掃描多個序號..."
                 />
               ) : (
-                <input type="text" name="sn" value={formData.sn} onChange={handleChange} style={inputStyle} placeholder="請輸入網卡序號" />
+                <input type="text" name="sn" value={formData.sn} onChange={handleChange} style={inputStyle} placeholder="請輸入硬體序號" />
               )}
               {isBulkMode && <div style={{ fontSize: '12px', color: '#64748b', marginTop: '6px' }}>已輸入: <b>{bulkSns.split('\n').filter(s => s.trim()).length}</b> 個序號</div>}
             </div>
@@ -330,7 +331,7 @@ const NicRegistration = () => {
 
             <div style={{ textAlign: 'right' }}>
               <button type="submit" style={{ ...inputStyle, width: '100%', backgroundColor: '#2563eb', color: 'white', border: 'none', padding: '14px', fontWeight: '900', cursor: 'pointer', borderRadius: '12px', fontSize: '16px', boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.2)' }}>
-                <Save size={20} style={{ marginRight: '8px', verticalAlign: 'middle' }} /> {isBulkMode ? `開始多筆建檔 (${bulkSns.split('\n').filter(s => s.trim()).length} 筆)` : '儲存網卡資料'}
+                <Save size={20} style={{ marginRight: '8px', verticalAlign: 'middle' }} /> {isBulkMode ? `開始多筆建檔 (${bulkSns.split('\n').filter(s => s.trim()).length} 筆)` : '儲存硬體資料'}
               </button>
             </div>
           </form>
@@ -369,4 +370,4 @@ const NicRegistration = () => {
   );
 };
 
-export default NicRegistration;
+export default HwRegistration;

@@ -1,9 +1,19 @@
 export const queries = {
   // AssetList.jsx
-  fetchAssetsList: `SELECT a.*, a.id as id, i.id as item_master_id, i.specification, i.type, i.brand, i.model, i.unit, c.name as category_name 
+  fetchAssetsList: `SELECT a.*, a.id as id, i.id as item_master_id, i.specification, i.type, i.brand, i.model, i.unit, c.name as category_name,
+      (SELECT json_agg(json_build_object('brand', hi.brand, 'model', hi.model, 'sn', ha.sn)) 
+       FROM assets ha JOIN item_master hi ON ha.item_master_id = hi.id 
+       WHERE ha.custom_attributes->>'server_sn' IS NOT NULL AND ha.custom_attributes->>'server_sn' != '' 
+       AND a.sn IS NOT NULL AND a.sn != ''
+       AND TRIM(ha.custom_attributes->>'server_sn') = TRIM(a.sn)) as components
       FROM assets a JOIN item_master i ON a.item_master_id = i.id LEFT JOIN categories c ON i.category_id = c.id 
       WHERE c.name = '資訊設備' ORDER BY i.id DESC`,
-  fetchAssetsListByBrand: `SELECT a.*, a.id as id, i.id as item_master_id, i.specification, i.type, i.brand, i.model, i.unit, c.name as category_name 
+  fetchAssetsListByBrand: `SELECT a.*, a.id as id, i.id as item_master_id, i.specification, i.type, i.brand, i.model, i.unit, c.name as category_name,
+      (SELECT json_agg(json_build_object('brand', hi.brand, 'model', hi.model, 'sn', ha.sn)) 
+       FROM assets ha JOIN item_master hi ON ha.item_master_id = hi.id 
+       WHERE ha.custom_attributes->>'server_sn' IS NOT NULL AND ha.custom_attributes->>'server_sn' != '' 
+       AND a.sn IS NOT NULL AND a.sn != ''
+       AND TRIM(ha.custom_attributes->>'server_sn') = TRIM(a.sn)) as components
       FROM assets a JOIN item_master i ON a.item_master_id = i.id LEFT JOIN categories c ON i.category_id = c.id 
       WHERE c.name = '資訊設備' AND i.brand = $1 ORDER BY i.id DESC`,
   deleteAsset: `DELETE FROM assets WHERE id = $1`,
@@ -14,7 +24,7 @@ export const queries = {
   // Menu Queries
   fetchMenuAssetBrands: `SELECT DISTINCT i.brand FROM assets a JOIN item_master i ON a.item_master_id = i.id LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '資訊設備' ORDER BY i.brand ASC`,
   fetchMenuConsumableTypes: `SELECT DISTINCT i.type FROM item_master i LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '辦公耗材' ORDER BY i.type ASC`,
-  fetchMenuNicTypes: `SELECT DISTINCT i.type FROM item_master i LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '網卡' ORDER BY i.type ASC`,
+  fetchMenuNicTypes: `SELECT DISTINCT i.type FROM item_master i LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '硬體' ORDER BY i.type ASC`,
   
   // Dashboard / Misc
   getSystemSetting: `SELECT value FROM system_settings WHERE key = $1`,
@@ -34,11 +44,11 @@ export const queries = {
   fetchTypesByBrand: `
       SELECT name FROM item_types WHERE category_id = (SELECT id FROM categories WHERE name = '資訊設備') AND brand_id = (SELECT id FROM item_brands WHERE name = $1 AND category_id = (SELECT id FROM categories WHERE name = '資訊設備')) ORDER BY name ASC`,
   fetchDeviceBrands: `SELECT id, name FROM item_brands WHERE category_id = (SELECT id FROM categories WHERE name = '資訊設備') ORDER BY name ASC`,
-  insertDeviceType: `INSERT INTO item_types (category_id, brand_id, name) VALUES ((SELECT id FROM categories WHERE name = $1), (SELECT id FROM item_brands WHERE name = $2 AND category_id = (SELECT id FROM categories WHERE name = $1)), $3)`,
+  insertDeviceType: `INSERT INTO item_types (category_id, brand_id, name) VALUES ((SELECT id FROM categories WHERE name = $1), (SELECT id FROM item_brands WHERE name = $2 AND category_id = (SELECT id FROM categories WHERE name = $1)), $3) ON CONFLICT DO NOTHING`,
   deleteDeviceType: `DELETE FROM item_types WHERE name = $1 AND category_id = (SELECT id FROM categories WHERE name = $2) AND brand_id IN (SELECT id FROM item_brands WHERE name = $3 AND category_id = (SELECT id FROM categories WHERE name = $2))`,
-  insertDeviceModel: `INSERT INTO item_models (type_id, name) SELECT t.id, $4 FROM item_types t JOIN item_brands b ON t.brand_id = b.id WHERE LOWER(b.name) = LOWER($1) AND LOWER(t.name) = LOWER($2) AND b.category_id = (SELECT id FROM categories WHERE name = $3) LIMIT 1`,
+  insertDeviceModel: `INSERT INTO item_models (type_id, name) SELECT t.id, $4 FROM item_types t JOIN item_brands b ON t.brand_id = b.id WHERE LOWER(b.name) = LOWER($1) AND LOWER(t.name) = LOWER($2) AND b.category_id = (SELECT id FROM categories WHERE name = $3) ON CONFLICT DO NOTHING`,
   deleteDeviceModel: `DELETE FROM item_models WHERE name = $1 AND type_id IN (SELECT t.id FROM item_types t JOIN item_brands b ON t.brand_id = b.id WHERE LOWER(b.name) = LOWER($2) AND LOWER(t.name) = LOWER($3) AND b.category_id = (SELECT id FROM categories WHERE name = $4))`,
-  insertDeviceBrand: `INSERT INTO item_brands (category_id, name) VALUES ((SELECT id FROM categories WHERE name = $1), $2)`,
+  insertDeviceBrand: `INSERT INTO item_brands (category_id, name) VALUES ((SELECT id FROM categories WHERE name = $1), $2) ON CONFLICT ON CONSTRAINT item_brands_category_id_name_key DO NOTHING`,
   deleteDeviceBrand: `DELETE FROM item_brands WHERE name = $1 AND category_id = (SELECT id FROM categories WHERE name = $2)`,
   
   findItemMaster: `SELECT id FROM item_master WHERE specification = $1 AND type = $2 AND brand = $3 AND model = $4`,
@@ -99,7 +109,7 @@ export const queries = {
   // MainLayout.jsx
   fetchMenuAssetBrands: `SELECT DISTINCT i.brand FROM assets a JOIN item_master i ON a.item_master_id = i.id JOIN categories c ON i.category_id = c.id WHERE c.name = '資訊設備' ORDER BY i.brand ASC`,
   fetchMenuConsumableTypes: `SELECT DISTINCT i.type FROM item_master i JOIN categories c ON i.category_id = c.id WHERE c.name = '辦公耗材' ORDER BY i.type ASC`,
-  fetchMenuNicTypes: `SELECT DISTINCT i.type FROM assets a JOIN item_master i ON a.item_master_id = i.id JOIN categories c ON i.category_id = c.id WHERE c.name = '網卡' ORDER BY i.type ASC`,
+  fetchMenuNicTypes: `SELECT DISTINCT i.type FROM assets a JOIN item_master i ON a.item_master_id = i.id JOIN categories c ON i.category_id = c.id WHERE c.name = '硬體' ORDER BY i.type ASC`,
 
   // Inventory.jsx
   fetchInventorySummary: `SELECT item_id as id, master_sn as sn, item_name as name, safety_stock, physical_qty, locked_qty, available_qty FROM v_inventory_summary`,
@@ -117,12 +127,22 @@ export const queries = {
   updateUserAccess: `UPDATE users SET menu_access = $1 WHERE id = $2`,
 
   // NIC Registration & List
-  fetchNicBrands: `SELECT id, name FROM item_brands WHERE category_id = (SELECT id FROM categories WHERE name = '網卡') ORDER BY name ASC`,
+  fetchNicBrands: `SELECT id, name FROM item_brands WHERE category_id = (SELECT id FROM categories WHERE name = '硬體') ORDER BY name ASC`,
   fetchNicTypesByBrand: `
-      SELECT name FROM item_types WHERE category_id = (SELECT id FROM categories WHERE name = '網卡') AND brand_id = (SELECT id FROM item_brands WHERE name = $1 AND category_id = (SELECT id FROM categories WHERE name = '網卡')) ORDER BY name ASC`,
+      SELECT name FROM item_types WHERE category_id = (SELECT id FROM categories WHERE name = '硬體') AND brand_id = (SELECT id FROM item_brands WHERE name = $1 AND category_id = (SELECT id FROM categories WHERE name = '硬體')) ORDER BY name ASC`,
   fetchNicModelsByBrandType: `
       SELECT m.name FROM item_models m JOIN item_types t ON m.type_id = t.id JOIN item_brands b ON t.brand_id = b.id
-      WHERE b.name = $1 AND t.name = $2 AND b.category_id = (SELECT id FROM categories WHERE name = '網卡') AND t.category_id = (SELECT id FROM categories WHERE name = '網卡') ORDER BY m.name ASC`,
+      WHERE b.name = $1 AND t.name = $2 AND b.category_id = (SELECT id FROM categories WHERE name = '硬體') AND t.category_id = (SELECT id FROM categories WHERE name = '硬體') ORDER BY m.name ASC`,
+  fetchNicListByType: `
+      SELECT a.*, i.specification, i.type, i.brand, i.model, i.unit, 
+             s.client as server_client, s.location as server_location,
+             s.hostname as server_hostname, s.os as server_os, s.nic as server_nic,
+             s.custom_attributes as server_custom_attributes
+      FROM assets a 
+      JOIN item_master i ON a.item_master_id = i.id 
+      LEFT JOIN assets s ON (a.custom_attributes->>'server_sn' = s.sn AND s.sn IS NOT NULL AND s.sn != '')
+      WHERE i.category_id = (SELECT id FROM categories WHERE name = '硬體') AND i.type = $1
+      ORDER BY a.id DESC`,
   fetchNicList: `
       SELECT a.*, i.specification, i.type, i.brand, i.model, i.unit, 
              s.client as server_client, s.location as server_location,
@@ -131,7 +151,7 @@ export const queries = {
       FROM assets a 
       JOIN item_master i ON a.item_master_id = i.id 
       LEFT JOIN assets s ON (a.custom_attributes->>'server_sn' = s.sn AND s.sn IS NOT NULL AND s.sn != '')
-      WHERE i.category_id = (SELECT id FROM categories WHERE name = '網卡')
+      WHERE i.category_id = (SELECT id FROM categories WHERE name = '硬體')
       ORDER BY a.id DESC`,
   updateNicDetails: `UPDATE assets SET sn = $1, client = $2, location = $3, custom_attributes = COALESCE(custom_attributes, '{}'::jsonb) || jsonb_build_object('server_sn', $4::text, 'order_date', $5::text) WHERE id = $6`,
   updateNicSn: `UPDATE assets SET sn = $1 WHERE id = $2`

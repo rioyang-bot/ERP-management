@@ -1,13 +1,17 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Search, Edit2, X, Server, User, MapPin, MoreHorizontal, Trash2, ShoppingBag, AlertTriangle, CheckCircle, Save, Monitor, Settings, ShieldAlert } from 'lucide-react';
 
-const NicList = () => {
+const HwList = () => {
+  const location = useLocation();
+  const queryParams = new URLSearchParams(location.search);
+  const filterType = queryParams.get('type');
+
   const [nics, setNics] = useState([]);
-  const [customers, setCustomers] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeMenuId, setActiveMenuId] = useState(null);
   const [showServerDetails, setShowServerDetails] = useState(true);
-  
+
   const [showSyncConfig, setShowSyncConfig] = useState(false);
   const [availableFieldDefs, setAvailableFieldDefs] = useState([]);
   const [selectedSyncFields, setSelectedSyncFields] = useState(['hostname', 'os']);
@@ -15,26 +19,42 @@ const NicList = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editItem, setEditItem] = useState(null);
 
-  const fetchNics = useCallback(async () => {
-    const res = await window.electronAPI.namedQuery('fetchNicList');
-    if (res.success) setNics(res.rows);
-  }, []);
-
-  const fetchCustomers = useCallback(async () => {
-    const res = await window.electronAPI.namedQuery('fetchCustomers');
-    if (res.success) setCustomers(res.rows.map(r => r.name));
-  }, []);
-
-  const fetchSettings = useCallback(async () => {
-    const defsRes = await window.electronAPI.namedQuery('getSystemSetting', ['customFieldDefinitions']);
-    if (defsRes.success && defsRes.rows.length > 0) setAvailableFieldDefs(defsRes.rows[0].value || []);
-    const prefRes = await window.electronAPI.namedQuery('getSystemSetting', ['nicSyncFieldPreference']);
-    if (prefRes.success && prefRes.rows.length > 0) setSelectedSyncFields(prefRes.rows[0].value || ['hostname', 'os']);
-  }, []);
-
   useEffect(() => {
-    fetchNics(); fetchCustomers(); fetchSettings();
-  }, [fetchNics, fetchCustomers, fetchSettings]);
+    let isMounted = true;
+
+    const loadData = async () => {
+      // 根據是否有 filterType 決定呼叫的查詢
+      let nicsRes;
+      if (filterType) {
+        nicsRes = await window.electronAPI.namedQuery('fetchNicListByType', [filterType]);
+      } else {
+        nicsRes = await window.electronAPI.namedQuery('fetchNicList');
+      }
+      
+      if (isMounted && nicsRes.success) setNics(nicsRes.rows);
+
+      // 抓取系統設定
+      const defsRes = await window.electronAPI.namedQuery('getSystemSetting', ['customFieldDefinitions']);
+      if (isMounted && defsRes.success && defsRes.rows.length > 0) {
+        setAvailableFieldDefs(defsRes.rows[0].value || []);
+      }
+
+      const prefRes = await window.electronAPI.namedQuery('getSystemSetting', ['nicSyncFieldPreference']);
+      if (isMounted && prefRes.success && prefRes.rows.length > 0) {
+        setSelectedSyncFields(prefRes.rows[0].value || ['hostname', 'os']);
+      }
+    };
+
+    loadData();
+
+    const handleDbUpdate = () => { if (isMounted) loadData(); };
+    window.addEventListener('db-update', handleDbUpdate);
+
+    return () => {
+      isMounted = false;
+      window.removeEventListener('db-update', handleDbUpdate);
+    };
+  }, [filterType]); // 當類型變動時，重新載入資料
 
   const handleEdit = (nic) => {
     setEditItem({
@@ -56,7 +76,10 @@ const NicList = () => {
       editItem.temp_order_date || null,
       parseInt(editItem.id, 10)
     ]);
-    if (res.success) { setShowEditModal(false); fetchNics(); }
+    if (res.success) { 
+      setShowEditModal(false); 
+      window.dispatchEvent(new CustomEvent('db-update'));
+    }
     else alert('儲存失敗：' + res.error);
   };
 
@@ -73,13 +96,16 @@ const NicList = () => {
   const handleUpdateStatus = async (id, sn, newStatus, label) => {
     if (!confirm(`確定變更狀態為 [${label}] 嗎？`)) return;
     await window.electronAPI.namedQuery('updateAssetStatus', [newStatus, id]);
-    fetchNics(); setActiveMenuId(null);
+    window.dispatchEvent(new CustomEvent('db-update'));
+    setActiveMenuId(null);
   };
 
-  const handleDelete = async (id, sn) => {
-    if (!confirm(`確定要刪除網卡 [${sn || '未設定'}] 嗎？`)) return;
-    await window.electronAPI.namedQuery('deleteAsset', [id]);
-    fetchNics(); setActiveMenuId(null);
+  const handleDelete = async (nic) => {
+    const displayName = `${nic.brand} - ${nic.model} [${nic.sn || '未設定序號'}]`;
+    if (!confirm(`確定要刪除硬體 [${displayName}] 嗎？`)) return;
+    await window.electronAPI.namedQuery('deleteAsset', [nic.id]);
+    window.dispatchEvent(new CustomEvent('db-update'));
+    setActiveMenuId(null);
   };
 
   const getStatusConfig = (status) => {
@@ -95,6 +121,7 @@ const NicList = () => {
   const cardStyle = { backgroundColor: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' };
   const thStyle = { textAlign: 'left', padding: '14px', borderBottom: '2px solid #f1f5f9', color: '#475569', fontSize: '13px', fontWeight: '800', backgroundColor: '#f8fafc' };
   const tdStyle = { padding: '14px', borderBottom: '1px solid #f1f5f9', fontSize: '12px' };
+  const menuButtonStyle = { display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', border: 'none', background: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: '#475569', borderRadius: '8px', textAlign: 'left' };
   const editLabelStyle = { display: 'block', fontWeight: '800', fontSize: '13px', marginBottom: '6px', color: '#475569' };
   const editInputStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', outline: 'none', fontSize: '13px' };
 
@@ -102,7 +129,7 @@ const NicList = () => {
   const statusPriority = { 'REPAIR': 1, 'ACTIVE': 2, 'SHIPPED': 3, 'SCRAPPED': 4 };
 
   const filteredNics = nics
-    .filter(n => 
+    .filter(n =>
       (n.sn || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (n.brand || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (n.model || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -114,14 +141,16 @@ const NicList = () => {
     <div style={containerStyle}>
       <div style={cardStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-          <h2 style={{ fontSize: '24px', fontWeight: '900', color: '#1e293b' }}>網卡列表 (NIC List)</h2>
+          <h2 style={{ fontSize: '24px', fontWeight: '900', color: '#1e293b' }}>
+            {filterType ? `${filterType} - 硬體清單` : '硬體列表 (Hardware List)'}
+          </h2>
           <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <input type="checkbox" id="showServerDetails" checked={showServerDetails} onChange={(e) => setShowServerDetails(e.target.checked)} style={{ cursor: 'pointer' }} />
               <label htmlFor="showServerDetails" style={{ fontSize: '13px', fontWeight: '700', color: '#64748b', cursor: 'pointer' }}>顯示伺服器同步資訊</label>
             </div>
             <button onClick={() => setShowSyncConfig(true)} style={{ padding: '10px 16px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', fontWeight: '700', color: '#475569', gap: '6px' }}>
-              <Settings size={16}/> 同步欄位設定
+              <Settings size={16} /> 同步欄位設定
             </button>
             <div style={{ position: 'relative' }}>
               <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
@@ -135,7 +164,7 @@ const NicList = () => {
             <thead>
               <tr>
                 <th style={thStyle}>廠牌 / 型號</th>
-                <th style={thStyle}>網卡序號 (SN)</th>
+                <th style={thStyle}>硬體序號 (SN)</th>
                 <th style={thStyle}>訂單日期</th>
                 <th style={thStyle}>對應伺服器</th>
                 {showServerDetails && <th style={thStyle}>伺服器屬性</th>}
@@ -148,14 +177,14 @@ const NicList = () => {
               {filteredNics.map(nic => {
                 const cfg = getStatusConfig(nic.status);
                 let serverAttrs = {};
-                try { serverAttrs = typeof nic.server_custom_attributes === 'string' ? JSON.parse(nic.server_custom_attributes) : (nic.server_custom_attributes || {}); } catch(e) {}
-                
+                try { serverAttrs = typeof nic.server_custom_attributes === 'string' ? JSON.parse(nic.server_custom_attributes) : (nic.server_custom_attributes || {}); } catch { /* ignore parse error */ }
+
                 return (
                   <tr key={nic.id} style={{ borderBottom: '1px solid #f1f5f9', opacity: nic.status === 'SCRAPPED' ? 0.6 : 1 }}>
-                    <td style={tdStyle}><b>{nic.brand}</b><br/><span style={{ color: '#64748b', fontSize: '11px' }}>{nic.model}</span></td>
+                    <td style={tdStyle}><b>{nic.brand}</b><br /><span style={{ color: '#64748b', fontSize: '11px' }}>{nic.model}</span></td>
                     <td style={{ ...tdStyle, fontWeight: 800 }}>{nic.sn || '(未設定)'}</td>
                     <td style={tdStyle}>{nic.custom_attributes?.order_date || '--'}</td>
-                    <td style={tdStyle}><div style={{ color: '#6366f1', fontWeight: 700 }}><Server size={12}/> {nic.custom_attributes?.server_sn || '--'}</div></td>
+                    <td style={tdStyle}><div style={{ color: '#6366f1', fontWeight: 700 }}><Server size={12} /> {nic.custom_attributes?.server_sn || '--'}</div></td>
                     {showServerDetails && (
                       <td style={tdStyle}>
                         <div style={{ fontSize: '11px' }}>
@@ -175,14 +204,14 @@ const NicList = () => {
                       <button onClick={() => setActiveMenuId(activeMenuId === nic.id ? null : nic.id)} style={{ border: 'none', background: 'none', color: '#64748b' }}><MoreHorizontal size={20} /></button>
                       {activeMenuId === nic.id && (
                         <div style={{ position: 'absolute', right: 0, top: '100%', backgroundColor: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.2)', zIndex: 9999, padding: '8px', minWidth: '150px', display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
-                          <button onClick={() => handleEdit(nic)} style={menuButtonStyle}><Edit2 size={14}/> 編輯詳細資訊</button>
+                          <button onClick={() => handleEdit(nic)} style={menuButtonStyle}><Edit2 size={14} /> 編輯詳細資訊</button>
                           <div style={{ height: '1px', backgroundColor: '#f1f5f9', margin: '4px 0' }} />
-                          <button onClick={() => handleUpdateStatus(nic.id, nic.sn, 'ACTIVE', '在庫')} style={{ ...menuButtonStyle, color: '#047857' }}><CheckCircle size={14}/> 標記為在庫</button>
-                          <button onClick={() => handleUpdateStatus(nic.id, nic.sn, 'SHIPPED', '已出貨')} style={{ ...menuButtonStyle, color: '#1d4ed8' }}><ShoppingBag size={14}/> 標記為出貨</button>
-                          <button onClick={() => handleUpdateStatus(nic.id, nic.sn, 'REPAIR', '故障')} style={{ ...menuButtonStyle, color: '#b91c1c' }}><AlertTriangle size={14}/> 標記為故障</button>
-                          <button onClick={() => handleUpdateStatus(nic.id, nic.sn, 'SCRAPPED', '已報廢')} style={{ ...menuButtonStyle, color: '#e11d48' }}><ShieldAlert size={14}/> 標記為報廢</button>
+                          <button onClick={() => handleUpdateStatus(nic.id, nic.sn, 'ACTIVE', '在庫')} style={{ ...menuButtonStyle, color: '#047857' }}><CheckCircle size={14} /> 標記為在庫</button>
+                          <button onClick={() => handleUpdateStatus(nic.id, nic.sn, 'SHIPPED', '已出貨')} style={{ ...menuButtonStyle, color: '#1d4ed8' }}><ShoppingBag size={14} /> 標記為出貨</button>
+                          <button onClick={() => handleUpdateStatus(nic.id, nic.sn, 'REPAIR', '故障')} style={{ ...menuButtonStyle, color: '#b91c1c' }}><AlertTriangle size={14} /> 標記為故障</button>
+                          <button onClick={() => handleUpdateStatus(nic.id, nic.sn, 'SCRAPPED', '已報廢')} style={{ ...menuButtonStyle, color: '#e11d48' }}><ShieldAlert size={14} /> 標記為報廢</button>
                           <div style={{ height: '1px', backgroundColor: '#f1f5f9', margin: '4px 0' }} />
-                          <button onClick={() => handleDelete(nic.id, nic.sn)} style={{ ...menuButtonStyle, color: '#f43f5e', backgroundColor: '#fff1f2' }}><Trash2 size={14}/> 刪除紀錄</button>
+                          <button onClick={() => handleDelete(nic)} style={{ ...menuButtonStyle, color: '#f43f5e', backgroundColor: '#fff1f2' }}><Trash2 size={14} /> 刪除紀錄</button>
                         </div>
                       )}
                     </td>
@@ -220,14 +249,14 @@ const NicList = () => {
       {showEditModal && editItem && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ backgroundColor: 'white', width: '500px', padding: '32px', borderRadius: '16px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}><h2>修改網卡資訊</h2><X size={24} style={{ cursor: 'pointer' }} onClick={() => setShowEditModal(false)} /></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}><h2>修改硬體資訊</h2><X size={24} style={{ cursor: 'pointer' }} onClick={() => setShowEditModal(false)} /></div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <label style={editLabelStyle}>網卡序號<input type="text" value={editItem.sn || ''} onChange={(e) => setEditItem({...editItem, sn: e.target.value})} style={editInputStyle} /></label>
+              <label style={editLabelStyle}>硬體序號<input type="text" value={editItem.sn || ''} onChange={(e) => setEditItem({ ...editItem, sn: e.target.value })} style={editInputStyle} /></label>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                <label style={editLabelStyle}>訂單日期<input type="date" value={editItem.temp_order_date || ''} onChange={(e) => setEditItem({...editItem, temp_order_date: e.target.value})} style={editInputStyle} /></label>
-                <label style={editLabelStyle}>伺服器 SN<input type="text" value={editItem.temp_server_sn || ''} onChange={(e) => setEditItem({...editItem, temp_server_sn: e.target.value})} style={editInputStyle} /></label>
+                <label style={editLabelStyle}>訂單日期<input type="date" value={editItem.temp_order_date || ''} onChange={(e) => setEditItem({ ...editItem, temp_order_date: e.target.value })} style={editInputStyle} /></label>
+                <label style={editLabelStyle}>伺服器 SN<input type="text" value={editItem.temp_server_sn || ''} onChange={(e) => setEditItem({ ...editItem, temp_server_sn: e.target.value })} style={editInputStyle} /></label>
               </div>
-              <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}><button onClick={handleSave} style={{ flex: 1, padding: '14px', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 700 }}><Save size={18}/> 儲存變更</button></div>
+              <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}><button onClick={handleSave} style={{ flex: 1, padding: '14px', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 700 }}><Save size={18} /> 儲存變更</button></div>
             </div>
           </div>
         </div>
@@ -236,8 +265,4 @@ const NicList = () => {
   );
 };
 
-const menuButtonStyle = { display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', border: 'none', background: 'none', fontSize: '12px', fontWeight: '600', color: '#475569', borderRadius: '8px', textAlign: 'left' };
-const editLabelStyle = { display: 'block', fontWeight: '800', fontSize: '13px', marginBottom: '6px', color: '#475569' };
-const editInputStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', outline: 'none', fontSize: '13px' };
-
-export default NicList;
+export default HwList;
