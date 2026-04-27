@@ -6,7 +6,11 @@ export const queries = {
        FROM assets ha JOIN item_master hi ON ha.item_master_id = hi.id 
        WHERE ha.custom_attributes->>'server_sn' IS NOT NULL AND ha.custom_attributes->>'server_sn' != '' 
        AND a.sn IS NOT NULL AND a.sn != ''
-       AND TRIM(ha.custom_attributes->>'server_sn') = TRIM(a.sn)) as components
+       AND TRIM(ha.custom_attributes->>'server_sn') = TRIM(a.sn)) as components,
+      (SELECT json_agg(json_build_object('specification', im.specification, 'brand', im.brand, 'model', im.model, 'quantity', la.sum_qty))
+       FROM (SELECT item_master_id, asset_id, SUM(quantity) as sum_qty FROM item_lab_assignments GROUP BY item_master_id, asset_id) la 
+       JOIN item_master im ON la.item_master_id = im.id 
+       WHERE la.asset_id = a.id AND la.sum_qty > 0) as lab_consumables
       FROM assets a 
       JOIN item_master i ON a.item_master_id = i.id 
       LEFT JOIN categories c ON i.category_id = c.id 
@@ -18,7 +22,11 @@ export const queries = {
        FROM assets ha JOIN item_master hi ON ha.item_master_id = hi.id 
        WHERE ha.custom_attributes->>'server_sn' IS NOT NULL AND ha.custom_attributes->>'server_sn' != '' 
        AND a.sn IS NOT NULL AND a.sn != ''
-       AND TRIM(ha.custom_attributes->>'server_sn') = TRIM(a.sn)) as components
+       AND TRIM(ha.custom_attributes->>'server_sn') = TRIM(a.sn)) as components,
+      (SELECT json_agg(json_build_object('specification', im.specification, 'brand', im.brand, 'model', im.model, 'quantity', la.sum_qty))
+       FROM (SELECT item_master_id, asset_id, SUM(quantity) as sum_qty FROM item_lab_assignments GROUP BY item_master_id, asset_id) la 
+       JOIN item_master im ON la.item_master_id = im.id 
+       WHERE la.asset_id = a.id AND la.sum_qty > 0) as lab_consumables
       FROM assets a 
       JOIN item_master i ON a.item_master_id = i.id 
       LEFT JOIN categories c ON i.category_id = c.id 
@@ -68,10 +76,15 @@ export const queries = {
   insertAssetRecord: `INSERT INTO assets (item_master_id, sn, client, hostname, location, installed_date, customer_warranty_expire, system_date, warranty_expire, os, nic, custom_attributes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
 
   // ConsumableList.jsx
-  fetchConsumablesList: `SELECT v.*, i.id as id, c.name as category_name FROM v_inventory_summary v JOIN item_master i ON v.item_id = i.id LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '辦公耗材' ORDER BY i.id DESC`,
-  fetchConsumablesListByType: `SELECT v.*, i.id as id, c.name as category_name FROM v_inventory_summary v JOIN item_master i ON v.item_id = i.id LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '辦公耗材' AND v.type = $1 ORDER BY i.id DESC`,
+  fetchConsumablesList: `SELECT v.*, i.id as id, i.stock_qty, i.lab_qty, c.name as category_name FROM v_inventory_summary v JOIN item_master i ON v.item_id = i.id LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '辦公耗材' ORDER BY i.id DESC`,
+  fetchConsumablesListByType: `SELECT v.*, i.id as id, i.stock_qty, i.lab_qty, c.name as category_name FROM v_inventory_summary v JOIN item_master i ON v.item_id = i.id LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '辦公耗材' AND v.type = $1 ORDER BY i.id DESC`,
   deleteConsumableMaster: `DELETE FROM item_master WHERE id = $1`,
   updateConsumableMaster: `UPDATE item_master SET brand = $1, type = $2, model = $3, specification = $4, unit = $5, safety_stock = $6 WHERE id = $7`,
+  transferStockToLab: `UPDATE item_master SET stock_qty = stock_qty - $1, lab_qty = lab_qty + $1 WHERE id = $2`,
+  transferLabToStock: `UPDATE item_master SET stock_qty = stock_qty + $1, lab_qty = lab_qty - $1 WHERE id = $2`,
+  insertLabAssignment: `INSERT INTO item_lab_assignments (item_master_id, asset_id, quantity, note) VALUES ($1, $2, $3, $4)`,
+  fetchLabAssignments: `SELECT la.*, a.sn, a.hostname FROM item_lab_assignments la LEFT JOIN assets a ON la.asset_id = a.id WHERE la.item_master_id = $1 ORDER BY la.created_at DESC`,
+  fetchAllAssetsForSelect: `SELECT a.id, a.sn, a.hostname, i.brand, i.model FROM assets a JOIN item_master i ON a.item_master_id = i.id ORDER BY a.hostname ASC, a.sn ASC`,
 
   // Consumables.jsx
   fetchRecentConsumables: `SELECT i.* FROM item_master i LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '辦公耗材' ORDER BY i.id DESC LIMIT 10`,
@@ -116,6 +129,7 @@ export const queries = {
   insertInboundOrder: `INSERT INTO inbound_orders (order_no, partner_id, invoice_no, status) VALUES ($1, $2, $3, $4) RETURNING id`,
   insertInboundAssets: `INSERT INTO assets (sn, item_master_id, status) VALUES ($1, $2, 'ACTIVE')`,
   insertInboundItems: `INSERT INTO inbound_items (inbound_order_id, item_id, sn, quantity, purchase_record_id, unit_price) VALUES ($1, $2, $3, $4, $5, 0)`,
+  updateStockQtyOnInbound: `UPDATE item_master SET stock_qty = stock_qty + $1 WHERE id = $2`,
   updatePurchaseRecordStatus: `UPDATE purchase_records SET received_quantity = COALESCE(received_quantity, 0) + $1, status = CASE WHEN COALESCE(received_quantity, 0) + $1 >= quantity THEN 'COMPLETED' ELSE 'PARTIAL' END, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
 
   // MainLayout.jsx
@@ -174,5 +188,6 @@ export const queries = {
       WHERE i.category_id = (SELECT id FROM categories WHERE name = '硬體')
       ORDER BY a.id DESC`,
   updateNicDetails: `UPDATE assets SET sn = $1, client = $2, location = $3, custom_attributes = COALESCE(custom_attributes, '{}'::jsonb) || jsonb_build_object('server_sn', $4::text, 'order_date', $5::text), hostname = $6 WHERE id = $7`,
-  updateNicSn: `UPDATE assets SET sn = $1 WHERE id = $2`
+  updateNicSn: `UPDATE assets SET sn = $1 WHERE id = $2`,
+  findAssetBySn: `SELECT id FROM assets WHERE TRIM(LOWER(sn)) = TRIM(LOWER($1))`
 };

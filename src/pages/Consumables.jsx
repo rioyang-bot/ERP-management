@@ -11,12 +11,15 @@ const Consumables = () => {
   const [showManageType, setShowManageType] = useState(false);
   const [showManageBrand, setShowManageBrand] = useState(false);
   const [showManageModel, setShowManageModel] = useState(false);
+  const [showAddUnit, setShowAddUnit] = useState(false);
+  const [showManageUnit, setShowManageUnit] = useState(false);
   const [newTypeName, setNewTypeName] = useState('');
   const [newBrandName, setNewBrandName] = useState('');
   const [newModelName, setNewModelName] = useState('');
+  const [newUnitName, setNewUnitName] = useState('');
   const [models, setModels] = useState([]);
+  const [units, setUnits] = useState(['個', '台', '盒', '包', '支', '組', '瓶', '卷', '張', '份']);
   const [formData, setFormData] = useState({ type: '', brand: '', model: '', spec: '', unit: '個', safety_stock: 0 });
-  const UNIFIED_UNITS = ['個', '台', '盒', '包', '支', '組', '瓶', '卷', '張', '份'];
   const [formKey, setFormKey] = useState(0); // 用於強制重整表單區域
 
   const validateAndSanitize = (val, fieldName = '欄位') => {
@@ -60,6 +63,13 @@ const Consumables = () => {
     return { modelNames: [] };
   }, []);
 
+  const fetchUnits = useCallback(async () => {
+    const res = await window.electronAPI.namedQuery('getSystemSetting', ['unified_units']);
+    if (res.success && res.rows.length > 0) {
+      setUnits(res.rows[0].value || ['個', '台', '盒', '包', '支', '組', '瓶', '卷', '張', '份']);
+    }
+  }, []);
+
   const fetchBrands = useCallback(async () => {
     const res = await window.electronAPI.namedQuery('fetchConsumableBrands');
     if (res.success) {
@@ -77,11 +87,12 @@ const Consumables = () => {
     const initData = async () => {
       await Promise.all([
         fetchConsumables(),
-        fetchBrands()
+        fetchBrands(),
+        fetchUnits()
       ]);
     };
     initData();
-  }, [fetchConsumables, fetchBrands]);
+  }, [fetchConsumables, fetchBrands, fetchUnits]);
 
   const handleAddType = async () => {
     const name = validateAndSanitize(newTypeName, '類型名稱');
@@ -138,6 +149,29 @@ const Consumables = () => {
     }
   };
 
+  const handleAddUnit = async () => {
+    const name = validateAndSanitize(newUnitName, '單位名稱');
+    if (!name) return;
+    const updatedUnits = [...new Set([...units, name])];
+    const res = await window.electronAPI.namedQuery('upsertSystemSetting', ['unified_units', updatedUnits]);
+    if (res.success) {
+      setUnits(updatedUnits);
+      setFormData(prev => ({ ...prev, unit: name }));
+      setNewUnitName('');
+      setShowAddUnit(false);
+    }
+  };
+
+  const handleDeleteUnit = async (unitName) => {
+    if (!confirm(`確定要刪除單位「${unitName}」嗎？`)) return;
+    const updatedUnits = units.filter(u => u !== unitName);
+    const res = await window.electronAPI.namedQuery('upsertSystemSetting', ['unified_units', updatedUnits]);
+    if (res.success) {
+      setUnits(updatedUnits);
+      if (formData.unit === unitName) setFormData(prev => ({ ...prev, unit: updatedUnits[0] || '' }));
+    }
+  };
+
   const handleDeleteBrand = async (brandName) => {
     if (!confirm(`確定要刪除「${brandName}」嗎？`)) return;
     const res = await window.electronAPI.namedQuery('deleteDeviceBrand', [brandName, '辦公耗材']);
@@ -190,12 +224,12 @@ const Consumables = () => {
           </h2>
 
           <div key={formKey} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
               <div>
-                <label style={labelStyle}>廠牌 (Brand) *</label>
+                <label style={labelStyle}>廠牌 (Brand) <span style={{ color: '#ef4444' }}>*</span></label>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <select name="brand" value={formData.brand} onChange={handleChange} style={inputStyle}>
-                    <option value="">請選擇廠牌</option>
+                    <option value="">請選擇</option>
                     {brands.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}
                   </select>
                   <button onClick={() => setShowAddBrand(!showAddBrand)} style={iconButtonStyle}><Plus size={18} /></button>
@@ -206,7 +240,7 @@ const Consumables = () => {
               </div>
 
               <div>
-                <label style={labelStyle}>類型 (Type) *</label>
+                <label style={labelStyle}>類型 (Type) <span style={{ color: '#ef4444' }}>*</span></label>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <select name="type" value={formData.type} onChange={handleChange} style={inputStyle}>
                     {types.map(t => <option key={t} value={t}>{t}</option>)}
@@ -217,20 +251,20 @@ const Consumables = () => {
                 {showAddType && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newTypeName} onChange={e => setNewTypeName(e.target.value)} style={inputStyle} /><button onClick={handleAddType} style={{ ...iconButtonStyle, background: '#2563eb', color: '#fff' }}><Plus size={18}/></button></div>}
                 {showManageType && <div style={{ marginTop: '8px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>{types.map(t => ( <div key={t} style={manageItemStyle}><span>{t}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteType(t)} /></div> ))}</div>}
               </div>
-            </div>
 
-            <div>
-              <label style={labelStyle}>型號 (Model) *</label>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <select name="model" value={formData.model} onChange={handleChange} style={inputStyle}>
-                  <option value="">請選擇型號</option>
-                  {models.map(m => <option key={m} value={m}>{m}</option>)}
-                </select>
-                <button onClick={() => setShowAddModel(!showAddModel)} style={iconButtonStyle}><Plus size={18} /></button>
-                <button onClick={() => setShowManageModel(!showManageModel)} style={iconButtonStyle}><Settings2 size={18} /></button>
+              <div>
+                <label style={labelStyle}>型號 (Model) <span style={{ color: '#ef4444' }}>*</span></label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <select name="model" value={formData.model} onChange={handleChange} style={inputStyle}>
+                    <option value="">請選擇型號</option>
+                    {models.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                  <button onClick={() => setShowAddModel(!showAddModel)} style={iconButtonStyle}><Plus size={18} /></button>
+                  <button onClick={() => setShowManageModel(!showManageModel)} style={iconButtonStyle}><Settings2 size={18} /></button>
+                </div>
+                {showAddModel && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newModelName} onChange={e => setNewModelName(e.target.value)} style={inputStyle} /><button onClick={handleAddModel} style={{ ...iconButtonStyle, background: '#2563eb', color: '#fff' }}><Plus size={18}/></button></div>}
+                {showManageModel && <div style={{ marginTop: '8px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>{models.map(m => ( <div key={m} style={manageItemStyle}><span>{m}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteModel(m)} /></div> ))}</div>}
               </div>
-              {showAddModel && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newModelName} onChange={e => setNewModelName(e.target.value)} style={inputStyle} /><button onClick={handleAddModel} style={{ ...iconButtonStyle, background: '#2563eb', color: '#fff' }}><Plus size={18}/></button></div>}
-              {showManageModel && <div style={{ marginTop: '8px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>{models.map(m => ( <div key={m} style={manageItemStyle}><span>{m}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteModel(m)} /></div> ))}</div>}
             </div>
 
             <div>
@@ -238,12 +272,18 @@ const Consumables = () => {
               <textarea name="spec" value={formData.spec} onChange={handleChange} style={{ ...inputStyle, minHeight: '80px', resize: 'vertical' }} placeholder="請輸入詳細規格..." />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
               <div>
                 <label style={labelStyle}>單位 (Unit)</label>
-                <select name="unit" value={formData.unit} onChange={handleChange} style={inputStyle}>
-                  {UNIFIED_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
-                </select>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <select name="unit" value={formData.unit} onChange={handleChange} style={inputStyle}>
+                    {units.map(u => <option key={u} value={u}>{u}</option>)}
+                  </select>
+                  <button onClick={() => setShowAddUnit(!showAddUnit)} style={iconButtonStyle}><Plus size={18} /></button>
+                  <button onClick={() => setShowManageUnit(!showManageUnit)} style={iconButtonStyle}><Settings2 size={18} /></button>
+                </div>
+                {showAddUnit && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newUnitName} onChange={e => setNewUnitName(e.target.value)} style={inputStyle} /><button onClick={handleAddUnit} style={{ ...iconButtonStyle, background: '#2563eb', color: '#fff' }}><Plus size={18}/></button></div>}
+                {showManageUnit && <div style={{ marginTop: '8px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>{units.map(u => ( <div key={u} style={manageItemStyle}><span>{u}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteUnit(u)} /></div> ))}</div>}
               </div>
               <div>
                 <label style={labelStyle}>安全庫存 (Safety Stock)</label>

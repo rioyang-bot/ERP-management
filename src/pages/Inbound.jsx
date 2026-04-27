@@ -137,6 +137,9 @@ const Inbound = () => {
             'insertInboundItems', 
             [orderId, finalItemId, item.sn, item.qty, item.purchaseRecordId || null]
           );
+          // Update manual stock_qty in item_master
+          await window.electronAPI.namedQuery('updateStockQtyOnInbound', [item.qty, finalItemId]);
+
           if (item.purchaseRecordId) {
             await window.electronAPI.namedQuery('updatePurchaseRecordStatus', [item.qty, item.purchaseRecordId]);
           }

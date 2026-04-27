@@ -148,12 +148,16 @@ const HwList = () => {
   const statusPriority = { 'REPAIR': 1, 'ACTIVE': 2, 'SHIPPED': 3, 'SCRAPPED': 4 };
 
   const filteredNics = nics
-    .filter(n =>
-      (n.sn || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (n.brand || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (n.model || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (n.custom_attributes?.server_sn || '').toLowerCase().includes(searchTerm.toLowerCase())
-    )
+    .filter(n => {
+      const searchTerms = searchTerm.toLowerCase().split(/\s+/).filter(t => t);
+      if (searchTerms.length === 0) return true;
+      return searchTerms.every(term => 
+        (n.sn || '').toLowerCase().includes(term) ||
+        (n.brand || '').toLowerCase().includes(term) ||
+        (n.model || '').toLowerCase().includes(term) ||
+        (n.custom_attributes?.server_sn || '').toLowerCase().includes(term)
+      );
+    })
     .sort((a, b) => (statusPriority[a.status] || 99) - (statusPriority[b.status] || 99));
 
   const totalPages = Math.ceil(filteredNics.length / itemsPerPage);
@@ -186,7 +190,14 @@ const HwList = () => {
   };
 
   const handleCardClick = (st) => {
-    navigate(`?type=${encodeURIComponent(st.type)}`);
+    const target = `${st.brand} ${st.model}`;
+    if (searchTerm === target) {
+      setSearchTerm('');
+    } else {
+      navigate(`?type=${encodeURIComponent(st.type)}`);
+      setSearchTerm(target);
+    }
+    setCurrentPage(1);
   };
 
   const renderHeader = () => (
@@ -212,8 +223,11 @@ const HwList = () => {
 
   const renderStats = () => {
     const statsMap = filteredNics.reduce((acc, curr) => {
-      const key = `${curr.type} - ${curr.model}`;
-      if (!acc[key]) acc[key] = { key, type: curr.type, model: curr.model, active: 0, shipped: 0, repair: 0, scrapped: 0 };
+      const brandStr = curr.brand || '未知';
+      const typeStr = curr.type || '未分類';
+      const modelStr = curr.model || '未設定型號';
+      const key = `${brandStr} - ${typeStr} - ${modelStr}`;
+      if (!acc[key]) acc[key] = { key, brand: brandStr, type: typeStr, model: modelStr, active: 0, shipped: 0, repair: 0, scrapped: 0 };
       const status = curr.status || 'ACTIVE';
       if (status === 'ACTIVE') acc[key].active++;
       else if (status === 'SHIPPED') acc[key].shipped++;
@@ -227,8 +241,12 @@ const HwList = () => {
 
     // --- 過濾模式：卡片置頂靠左 ---
     if (filterType || searchTerm) {
+      const searchTerms = searchTerm.toLowerCase().split(/\s+/).filter(t => t);
       const activeStats = allKeys
-        .filter(k => k.toLowerCase().includes(searchTerm.toLowerCase()) && (!filterType || k.startsWith(filterType)))
+        .filter(k => {
+          const lk = k.toLowerCase();
+          return searchTerms.every(t => lk.includes(t));
+        })
         .map(k => statsMap[k]);
 
       return (
@@ -250,8 +268,9 @@ const HwList = () => {
                 justifyContent: 'space-between'
               }}
             >
-              <div style={{ fontSize: '13px', fontWeight: '900', color: '#1e293b', marginBottom: '8px', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
-                {st.type} <span style={{ color: '#64748b', fontSize: '11px', fontWeight: '500' }}>{st.model}</span>
+              <div style={{ fontSize: '11px', fontWeight: '900', color: '#1e293b', marginBottom: '8px', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
+                <Monitor size={12} color="#64748b" style={{ marginRight: '4px' }} />
+                {st.brand} <span style={{ color: '#64748b', fontSize: '10px', fontWeight: '500' }}>{st.type} - {st.model}</span>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span>在庫</span><span style={{ color: '#166534', fontWeight: '800' }}>{st.active}</span></div>
@@ -294,8 +313,9 @@ const HwList = () => {
             <div key={idx} onDragOver={handleSlotDragOver} onDrop={(e) => handleDropOnSlot(e, idx)} style={{ minHeight: '100px', borderRadius: '12px', border: draggingCardKey ? '1px dashed #cbd5e1' : '1px solid transparent', backgroundColor: draggingCardKey ? 'rgba(255,255,255,0.5)' : 'transparent', transition: 'all 0.2s' }}>
               {st && (
                 <div draggable onDragStart={(e) => handleCardDragStart(e, st.key)} onClick={() => handleCardClick(st)} style={{ backgroundColor: 'white', padding: '10px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.02)', cursor: 'pointer', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', opacity: draggingCardKey === st.key ? 0.3 : 1, transition: 'transform 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.03)'} onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}>
-                  <div style={{ fontSize: '12px', fontWeight: '900', color: '#1e293b', marginBottom: '6px', borderBottom: '1px solid #f1f5f9', paddingBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={st.key}>
-                    {st.type} <span style={{ color: '#64748b', fontSize: '10px', fontWeight: '500' }}>{st.model}</span>
+                  <div style={{ fontSize: '11px', fontWeight: '900', color: '#1e293b', marginBottom: '6px', borderBottom: '1px solid #f1f5f9', paddingBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={st.key}>
+                    <Monitor size={12} color="#64748b" style={{ marginRight: '4px' }} />
+                    {st.brand} <span style={{ color: '#64748b', fontSize: '10px', fontWeight: '500' }}>{st.type} - {st.model}</span>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span>在庫</span><span style={{ color: '#166534', fontWeight: '800' }}>{st.active}</span></div>

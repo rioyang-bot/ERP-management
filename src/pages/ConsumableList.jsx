@@ -1,6 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Search, Edit2, Trash2, X, Save, Box, Layers, MoreHorizontal } from 'lucide-react';
+import { Search, Edit2, Trash2, X, Save, MoreHorizontal, ArrowLeftRight, ClipboardList, ShoppingBag } from 'lucide-react';
+
+const editLabelStyle = { display: 'block', fontWeight: 800, fontSize: '13px', marginBottom: '6px', color: '#475569' };
+const editInputStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', outline: 'none', fontSize: '13px', boxSizing: 'border-box' };
+const modalOverlayStyle = { position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)', padding: '20px' };
+const modalContentStyle = { backgroundColor: 'white', width: '500px', padding: '32px', borderRadius: '16px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' };
 
 const ConsumableList = () => {
   const [items, setItems] = useState([]);
@@ -14,6 +19,18 @@ const ConsumableList = () => {
 
   const [editItem, setEditItem] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
+
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [transferData, setTransferData] = useState({ 
+    itemId: null, 
+    direction: 'TO_LAB', // 'TO_LAB' or 'TO_STOCK'
+    quantity: 1, 
+    deviceSn: '', 
+    note: '' 
+  });
+  const [labAssignments, setLabAssignments] = useState([]);
+  const [showAssignmentModal, setShowAssignmentModal] = useState(false);
+  const [activeItemName, setActiveItemName] = useState('');
 
   const fetchConsumables = useCallback(async () => {
     setLoading(true);
@@ -50,12 +67,76 @@ const ConsumableList = () => {
     if (res.success) { setShowEditModal(false); fetchConsumables(); }
   };
 
+  const handleTransferSubmit = async () => {
+    const { itemId, direction, quantity, deviceSn, note } = transferData;
+    if (quantity <= 0) return alert('請輸入大於 0 的數量');
+    
+    const targetItem = items.find(i => i.id === itemId);
+    if (!targetItem) return;
+
+    // 1. 檢查庫存是否足夠
+    if (direction === 'TO_LAB' && targetItem.stock_qty < quantity) {
+      return alert(`❌ Stock 庫存不足！\n目前庫存：${targetItem.stock_qty}\n欲移動數量：${quantity}`);
+    }
+    if (direction === 'TO_STOCK' && targetItem.lab_qty < quantity) {
+      return alert(`❌ LAB 庫存不足！\n目前 LAB 數量：${targetItem.lab_qty}\n欲移回數量：${quantity}`);
+    }
+
+    // 2. 檢查序號對應 (僅限移至 LAB 時)
+    let finalAssetId = null;
+    if (direction === 'TO_LAB') {
+      if (!deviceSn.trim()) {
+        return alert('⚠️ 請輸入欲對應的設備序號 (Device SN)');
+      }
+      
+      const assetRes = await window.electronAPI.namedQuery('findAssetBySn', [deviceSn.trim()]);
+      if (assetRes.success && assetRes.rows.length > 0) {
+        finalAssetId = assetRes.rows[0].id;
+      } else {
+        return alert(`❌ 無法移動：找不到序號為 [${deviceSn}] 的設備。\n請確認設備清單中存在該序號，或檢查輸入是否正確。`);
+      }
+    }
+
+    const query = direction === 'TO_LAB' ? 'transferStockToLab' : 'transferLabToStock';
+    const res = await window.electronAPI.namedQuery(query, [quantity, itemId]);
+    
+    if (res.success) {
+      if (direction === 'TO_LAB' || (direction === 'TO_STOCK' && note)) {
+        await window.electronAPI.namedQuery('insertLabAssignment', [
+          itemId, 
+          finalAssetId, 
+          direction === 'TO_LAB' ? quantity : -quantity, 
+          direction === 'TO_LAB' ? note : `(移回 Stock) ${note}`
+        ]);
+      }
+      setShowTransferModal(false);
+      fetchConsumables();
+    } else {
+      alert('移動失敗：' + res.error);
+    }
+  };
+
+  const viewAssignments = async (item) => {
+    setActiveItemName(`${item.brand} ${item.type} - ${item.model}`);
+    const res = await window.electronAPI.namedQuery('fetchLabAssignments', [item.id]);
+    if (res.success) {
+      setLabAssignments(res.rows);
+      setShowAssignmentModal(true);
+    }
+  };
+
+
+
   const filteredItems = items.filter(item => {
-    const s = searchTerm.toLowerCase();
-    return (item.specification || '').toLowerCase().includes(s) || 
-           (item.brand || '').toLowerCase().includes(s) || 
-           (item.model || '').toLowerCase().includes(s) || 
-           (item.type || '').toLowerCase().includes(s);
+    const searchTerms = searchTerm.toLowerCase().split(/\s+/).filter(t => t);
+    if (searchTerms.length === 0) return true;
+    
+    return searchTerms.every(term => 
+      (item.specification || '').toLowerCase().includes(term) || 
+      (item.brand || '').toLowerCase().includes(term) || 
+      (item.model || '').toLowerCase().includes(term) || 
+      (item.type || '').toLowerCase().includes(term)
+    );
   });
 
   const totalPages = Math.ceil(filteredItems.length / itemsPerPage);
@@ -63,8 +144,13 @@ const ConsumableList = () => {
 
   // --- 儀表板拖曳邏輯 ---
   const [layoutMap, setLayoutMap] = useState(() => {
-    const saved = localStorage.getItem('consumable_list_layout_map');
-    return saved ? JSON.parse(saved) : {};
+    try {
+      const saved = localStorage.getItem('consumable_list_layout_map');
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+      console.error('Failed to parse layoutMap:', e);
+      return {};
+    }
   });
   const [draggingCardKey, setDraggingCardKey] = useState(null);
 
@@ -84,13 +170,18 @@ const ConsumableList = () => {
     setDraggingCardKey(null);
   };
 
-  const handleCardClick = (st) => { setSearchTerm(st.model); setCurrentPage(1); };
+  const handleCardClick = (st) => {
+    const target = `${st.brand} ${st.model}`;
+    setSearchTerm(prev => prev === target ? '' : target);
+    setCurrentPage(1);
+  };
 
   const renderStats = () => {
     const statsMap = filteredItems.reduce((acc, curr) => {
-      const key = `${curr.type} - ${curr.model}`;
-      if (!acc[key]) acc[key] = { key, type: curr.type, model: curr.model, qty: 0, safety: 0 };
-      acc[key].qty += Number(curr.physical_qty || 0);
+      const brandStr = curr.brand || '未知';
+      const key = `${brandStr} - ${curr.type} - ${curr.model}`;
+      if (!acc[key]) acc[key] = { key, brand: brandStr, type: curr.type, model: curr.model, qty: 0, safety: 0 };
+      acc[key].qty += (Number(curr.stock_qty || 0) + Number(curr.lab_qty || 0));
       acc[key].safety = Number(curr.safety_stock || 0);
       return acc;
     }, {});
@@ -99,17 +190,23 @@ const ConsumableList = () => {
     if (allKeys.length === 0) return null;
 
     if (typeFilter || searchTerm) {
-      const activeStats = allKeys.filter(k => k.toLowerCase().includes(searchTerm.toLowerCase())).map(k => statsMap[k]);
+      const searchTerms = searchTerm.toLowerCase().split(/\s+/).filter(t => t);
+      const activeStats = allKeys
+        .filter(k => {
+          const lk = k.toLowerCase();
+          return searchTerms.every(t => lk.includes(t));
+        })
+        .map(k => statsMap[k]);
       return (
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '24px', padding: '16px', backgroundColor: '#f8fafc', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
           {activeStats.map(st => (
             <div key={st.key} onClick={() => handleCardClick(st)} style={{ backgroundColor: 'white', padding: '10px', borderRadius: '12px', border: '2px solid #2563eb', boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.1)', cursor: 'pointer', minWidth: '220px' }}>
-              <div style={{ fontSize: '13px', fontWeight: '900', color: '#1e293b', marginBottom: '8px', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
-                <Box size={12} color="#2563eb" style={{ marginRight: '4px' }} /> {st.type} <span style={{ color: '#64748b', fontSize: '11px', fontWeight: '500' }}>{st.model}</span>
+              <div style={{ fontSize: '11px', fontWeight: '900', color: '#1e293b', marginBottom: '8px', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
+                <ShoppingBag size={12} color="#2563eb" style={{ marginRight: '4px' }} /> {st.brand} <span style={{ color: '#64748b', fontSize: '10px', fontWeight: '500' }}>{st.type} - {st.model}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '11px', color: '#64748b' }}>現有庫存</span>
-                <span style={{ fontSize: '18px', fontWeight: '900', color: st.qty <= st.safety ? '#ef4444' : '#059669' }}>{st.qty}</span>
+                <span style={{ fontSize: '11px', color: '#64748b' }}>Total 庫存</span>
+                <span style={{ fontSize: '18px', fontWeight: '900', color: (st.qty) <= st.safety ? '#ef4444' : '#059669' }}>{st.qty}</span>
               </div>
             </div>
           ))}
@@ -140,11 +237,11 @@ const ConsumableList = () => {
             <div key={idx} onDragOver={handleSlotDragOver} onDrop={(e) => handleDropOnSlot(e, idx)} style={{ minHeight: '100px', borderRadius: '12px', border: draggingCardKey ? '1px dashed #cbd5e1' : '1px solid transparent', backgroundColor: draggingCardKey ? 'rgba(255,255,255,0.5)' : 'transparent' }}>
               {st && (
                 <div draggable onDragStart={(e) => handleCardDragStart(e, st.key)} onClick={() => handleCardClick(st)} style={{ backgroundColor: 'white', padding: '10px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.02)', cursor: 'pointer', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', opacity: draggingCardKey === st.key ? 0.3 : 1 }} onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'} onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}>
-                  <div style={{ fontSize: '12px', fontWeight: '900', color: '#1e293b', borderBottom: '1px solid #f1f5f9', paddingBottom: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    <Box size={12} color="#64748b" style={{ marginRight: '4px' }} /> {st.type} <span style={{ color: '#64748b', fontSize: '10px', fontWeight: '500' }}>{st.model}</span>
+                  <div style={{ fontSize: '11px', fontWeight: '900', color: '#1e293b', borderBottom: '1px solid #f1f5f9', paddingBottom: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={st.key}>
+                    <ShoppingBag size={12} color="#64748b" style={{ marginRight: '4px' }} /> {st.brand} <span style={{ color: '#64748b', fontSize: '10px', fontWeight: '500' }}>{st.type} - {st.model}</span>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '10px', color: '#94a3b8' }}>庫存量</div>
+                    <div style={{ fontSize: '10px', color: '#94a3b8' }}>Total</div>
                     <div style={{ fontSize: '18px', fontWeight: '900', color: st.qty <= st.safety ? '#ef4444' : '#059669' }}>{st.qty}</div>
                   </div>
                 </div>
@@ -188,9 +285,11 @@ const ConsumableList = () => {
                     <th style={thStyle}>型號 (Model)</th>
                     <th style={thStyle}>規格內容</th>
                     <th style={thStyle}>單位</th>
-                    <th style={{ ...thStyle, width: '100px' }}>目前庫存</th>
-                    <th style={{ ...thStyle, width: '100px' }}>安全庫存</th>
-                    <th style={{ ...thStyle, textAlign: 'center', width: '80px' }}>功能</th>
+                    <th style={{ ...thStyle, width: '80px', color: '#2563eb' }}>Stock</th>
+                    <th style={{ ...thStyle, width: '80px', color: '#7c3aed' }}>LAB</th>
+                    <th style={{ ...thStyle, width: '80px' }}>Total</th>
+                    <th style={{ ...thStyle, width: '80px' }}>安全庫存</th>
+                    <th style={{ ...thStyle, textAlign: 'center', width: '120px' }}>功能</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -200,12 +299,15 @@ const ConsumableList = () => {
                       <td style={{ ...tdStyle, fontWeight: 700 }}>{item.model}</td>
                       <td style={{ ...tdStyle, fontSize: '12px' }}>{item.specification}</td>
                       <td style={tdStyle}>{item.unit}</td>
-                      <td style={{ ...tdStyle, fontWeight: 800, color: Number(item.physical_qty) <= Number(item.safety_stock) ? '#ef4444' : '#059669' }}>{item.physical_qty || 0}</td>
+                      <td style={{ ...tdStyle, fontWeight: 700, color: '#2563eb' }}>{item.stock_qty || 0}</td>
+                      <td style={{ ...tdStyle, fontWeight: 700, color: '#7c3aed', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => viewAssignments(item)}>{item.lab_qty || 0}</td>
+                      <td style={{ ...tdStyle, fontWeight: 800, color: (Number(item.stock_qty)+Number(item.lab_qty)) <= Number(item.safety_stock) ? '#ef4444' : '#059669' }}>{(Number(item.stock_qty)||0) + (Number(item.lab_qty)||0)}</td>
                       <td style={{ ...tdStyle, color: '#64748b' }}>{item.safety_stock}</td>
                       <td style={{ ...tdStyle, textAlign: 'center' }}>
                         <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
-                          <button onClick={() => { setEditItem({ ...item }); setShowEditModal(true); }} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }}><Edit2 size={18} /></button>
-                          <button onClick={() => handleDelete(item.id, item.specification)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', opacity: 0.6 }}><Trash2 size={18} /></button>
+                          <button onClick={() => { setTransferData({ itemId: item.id, direction: 'TO_LAB', quantity: 1, deviceSn: '', note: '' }); setShowTransferModal(true); }} style={{ background: '#f1f5f9', border: 'none', color: '#475569', cursor: 'pointer', padding: '4px', borderRadius: '4px' }} title="庫存移動"><ArrowLeftRight size={16} /></button>
+                          <button onClick={() => { setEditItem({ ...item }); setShowEditModal(true); }} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }} title="修改"><Edit2 size={18} /></button>
+                          <button onClick={() => handleDelete(item.id, item.specification)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', opacity: 0.6 }} title="刪除"><Trash2 size={18} /></button>
                         </div>
                       </td>
                     </tr>
@@ -230,8 +332,8 @@ const ConsumableList = () => {
       </div>
 
       {showEditModal && editItem && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
-          <div style={{ backgroundColor: 'white', width: '500px', padding: '32px', borderRadius: '16px' }}>
+        <div style={modalOverlayStyle}>
+          <div style={modalContentStyle}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}><h2 style={{ fontSize: '20px', fontWeight: '900' }}>修改耗材資訊</h2><X size={24} style={{ cursor: 'pointer' }} onClick={() => setShowEditModal(false)} /></div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
@@ -252,11 +354,101 @@ const ConsumableList = () => {
           </div>
         </div>
       )}
+
+      {showTransferModal && (
+        <div style={modalOverlayStyle}>
+          <div style={modalContentStyle}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+              <h2 style={{ fontSize: '20px', fontWeight: '900' }}>庫存移動 (Stock ↔ LAB)</h2>
+              <X size={24} style={{ cursor: 'pointer' }} onClick={() => setShowTransferModal(false)} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label style={editLabelStyle}>移動方向</label>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <button onClick={() => setTransferData({...transferData, direction: 'TO_LAB'})} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', backgroundColor: transferData.direction === 'TO_LAB' ? '#2563eb' : 'white', color: transferData.direction === 'TO_LAB' ? 'white' : '#1e293b', fontWeight: 700, cursor: 'pointer' }}>移至 LAB</button>
+                  <button onClick={() => setTransferData({...transferData, direction: 'TO_STOCK'})} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', backgroundColor: transferData.direction === 'TO_STOCK' ? '#7c3aed' : 'white', color: transferData.direction === 'TO_STOCK' ? 'white' : '#1e293b', fontWeight: 700, cursor: 'pointer' }}>移回 Stock</button>
+                </div>
+              </div>
+              <div>
+                <label style={editLabelStyle}>數量 *</label>
+                <input type="number" value={transferData.quantity} onChange={(e) => setTransferData({...transferData, quantity: parseInt(e.target.value)||0})} style={editInputStyle} />
+              </div>
+              {transferData.direction === 'TO_LAB' && (
+                <div>
+                  <label style={editLabelStyle}>使用於 Device SN (自行輸入)</label>
+                  <input 
+                    type="text" 
+                    placeholder="例如：SN20260427..." 
+                    value={transferData.deviceSn} 
+                    onChange={(e) => setTransferData({...transferData, deviceSn: e.target.value})} 
+                    style={editInputStyle} 
+                  />
+                  <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>請輸入完整的設備序號以進行對應</div>
+                </div>
+              )}
+              <div>
+                <label style={editLabelStyle}>備註</label>
+                <input type="text" placeholder="例如：測試用途、維修領用" value={transferData.note} onChange={(e) => setTransferData({...transferData, note: e.target.value})} style={editInputStyle} />
+              </div>
+              <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
+                <button onClick={handleTransferSubmit} style={{ flex: 1, padding: '14px', backgroundColor: transferData.direction === 'TO_LAB' ? '#2563eb' : '#7c3aed', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 700, cursor: 'pointer' }}>確認移動</button>
+                <button onClick={() => setShowTransferModal(false)} style={{ padding: '14px 24px', backgroundColor: '#f1f5f9', border: 'none', borderRadius: '10px', cursor: 'pointer' }}>取消</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAssignmentModal && (
+        <div style={modalOverlayStyle}>
+          <div style={{ ...modalContentStyle, width: '600px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+              <h2 style={{ fontSize: '20px', fontWeight: '900' }}>LAB 使用紀錄: {activeItemName}</h2>
+              <X size={24} style={{ cursor: 'pointer' }} onClick={() => setShowAssignmentModal(false)} />
+            </div>
+            <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
+                    <th style={thStyle}>日期</th>
+                    <th style={thStyle}>Device</th>
+                    <th style={thStyle}>數量</th>
+                    <th style={thStyle}>備註</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {labAssignments.length === 0 ? (
+                    <tr><td colSpan="4" style={{ textAlign: 'center', padding: '20px', color: '#94a3b8' }}>尚無詳細使用紀錄</td></tr>
+                  ) : (
+                    labAssignments.map(la => (
+                      <tr key={la.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ ...tdStyle, fontSize: '11px' }}>{new Date(la.created_at).toLocaleString()}</td>
+                        <td style={tdStyle}>
+                          {la.sn ? (
+                            <div>
+                              {la.hostname && <div style={{ fontWeight: 800 }}>{la.hostname}</div>}
+                              <div style={{ fontSize: '11px', color: '#64748b', fontWeight: la.hostname ? 'normal' : '800' }}>{la.sn}</div>
+                            </div>
+                          ) : (
+                            <span style={{ color: '#94a3b8' }}>-</span>
+                          )}
+                        </td>
+                        <td style={{ ...tdStyle, fontWeight: 700, color: la.quantity > 0 ? '#7c3aed' : '#ef4444' }}>{la.quantity > 0 ? `+${la.quantity}` : la.quantity}</td>
+                        <td style={tdStyle}>{la.note || '-'}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <button onClick={() => setShowAssignmentModal(false)} style={{ width: '100%', marginTop: '24px', padding: '12px', backgroundColor: '#f1f5f9', border: 'none', borderRadius: '10px', fontWeight: 700, cursor: 'pointer' }}>關閉</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
-const editLabelStyle = { display: 'block', fontWeight: 800, fontSize: '13px', marginBottom: '6px', color: '#475569' };
-const editInputStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', outline: 'none', fontSize: '13px' };
 
 export default ConsumableList;

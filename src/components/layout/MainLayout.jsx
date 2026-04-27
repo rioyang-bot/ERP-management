@@ -56,7 +56,7 @@ const MainLayout = () => {
     { id: 'inbound', path: '/inbound', label: '進貨入庫 (Inbound)' },
     { id: 'outbound', path: '/outbound', label: '出貨進銷 (Cart)' },
     { id: 'review', path: '/review', label: '出貨審核 (Review)' },
-    { id: 'assets', path: '/devices', label: '設備管理 (Device Reg)' },
+    { id: 'assets', path: '/devices', label: '設備建檔 (Device Reg)' },
     { id: 'assetList', path: '/device-list', label: '設備列表 (Device List)', hasSub: true },
     { id: 'nic-registration', path: '/hw-registration', label: '硬體建檔 (HW Reg)' },
     { id: 'nic-list', path: '/hw-list', label: '硬體列表 (HW List)', hasSub: true },
