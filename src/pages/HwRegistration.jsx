@@ -341,19 +341,30 @@ const HwRegistration = () => {
       <div style={rightSectionStyle}>
         <div style={cardStyle}>
           <h3 style={{ fontSize: '16px', fontWeight: '800', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px', color: '#1e293b' }}>
-            <Clock size={18} color="#64748b" /> 最近建檔紀錄
+            <Clock size={18} color="#64748b" /> 最新 10 筆建檔記錄
           </h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {recentItems.length === 0 ? (
               <div style={{ textAlign: 'center', color: '#94a3b8', padding: '20px', fontSize: '13px' }}>尚無建檔紀錄</div>
             ) : (
               recentItems.map(item => (
-                <div key={item.id} style={{ padding: '14px', borderRadius: '12px', border: '1px solid #f1f5f9', backgroundColor: '#fcfcfc', transition: 'all 0.2s' }}>
-                  <div style={{ fontWeight: '800', fontSize: '14px', color: '#1e293b', marginBottom: '4px' }}>{item.brand} - {item.model}</div>
-                  <div style={{ fontSize: '12px', color: '#475569', display: 'flex', justifyContent: 'space-between' }}>
+                <div key={item.id} style={{ padding: '12px 16px', borderRadius: '12px', border: '1px solid #f1f5f9', backgroundColor: '#fcfcfc' }}>
+                  <div style={{ fontWeight: '800', fontSize: '13px', marginBottom: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <span style={{ color: '#2563eb' }}>{item.brand}</span>
+                    <span style={{ color: '#64748b', margin: '0 4px' }}>/</span>
+                    <span style={{ color: '#475569' }}>{item.type}</span>
+                    <span style={{ color: '#64748b', margin: '0 4px' }}>/</span>
+                    <span style={{ color: '#1e293b' }}>{item.model}</span>
+                  </div>
+                  <div style={{ color: '#64748b', fontSize: '12px', fontWeight: '500', marginBottom: '6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {(item.specification || '').replace(`${item.type} ${item.brand}`, '').trim().replace(/^\(|\)$/g, '') || '--'}
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#94a3b8', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span>SN: <span style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{item.sn || '--'}</span></span>
                     {item.custom_attributes?.server_sn && (
-                      <span style={{ color: '#2563eb', fontWeight: '700' }}>Host: {item.custom_attributes.server_sn}</span>
+                      <span style={{ backgroundColor: '#eff6ff', color: '#2563eb', padding: '1px 6px', borderRadius: '4px', fontWeight: '800', fontSize: '10px' }}>
+                        Host: {item.custom_attributes.server_sn}
+                      </span>
                     )}
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#94a3b8', marginTop: '8px', borderTop: '1px solid #f1f5f9', paddingTop: '6px' }}>

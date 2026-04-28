@@ -323,21 +323,24 @@ const Consumables = () => {
       {/* Right Section: Recent 10 Items */}
       <div style={rightSectionStyle}>
         <div style={cardStyle}>
-          <h3 style={{ fontSize: '16px', fontWeight: '700', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px', color: '#475569' }}>
-            <Clock size={18} /> 最新 10 筆建檔記錄
+          <h3 style={{ fontSize: '16px', fontWeight: '800', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px', color: '#1e293b' }}>
+            <Clock size={18} color="#64748b" /> 最新 10 筆建檔記錄
           </h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {items.map(item => (
-              <div key={item.id} style={{ padding: '16px', borderRadius: '12px', border: '1px solid #f1f5f9', backgroundColor: '#fafafa' }}>
-                <div style={{ fontWeight: '800', color: '#2563eb', fontSize: '14px', marginBottom: '4px' }}>
-                  {item.brand} - {item.model}
+              <div key={item.id} style={{ padding: '12px 16px', borderRadius: '12px', border: '1px solid #f1f5f9', backgroundColor: '#fafafa' }}>
+                <div style={{ fontWeight: '800', fontSize: '13px', marginBottom: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <span style={{ color: '#2563eb' }}>{item.brand}</span>
+                  <span style={{ color: '#64748b', margin: '0 4px' }}>/</span>
+                  <span style={{ color: '#475569' }}>{item.type}</span>
+                  <span style={{ color: '#64748b', margin: '0 4px' }}>/</span>
+                  <span style={{ color: '#1e293b' }}>{item.model}</span>
                 </div>
-                <div style={{ color: '#334155', fontSize: '13px', fontWeight: '600', marginBottom: '6px' }}>
-                  {item.specification.replace(`${item.type} ${item.brand}`, '').trim().replace(/^\(|\)$/g, '') || '通用規格'}
+                <div style={{ color: '#64748b', fontSize: '12px', fontWeight: '500', marginBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {(item.specification || '').replace(`${item.type} ${item.brand}`, '').trim().replace(/^\(|\)$/g, '') || '--'}
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#94a3b8' }}>
-                  <span style={{ backgroundColor: '#f1f5f9', padding: '2px 8px', borderRadius: '6px' }}>{item.type}</span>
-                  <span>單位: {item.unit} | 警報: {item.safety_stock}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: '#94a3b8' }}>
+                  <span>單位: {item.unit} | 安全庫存: {item.safety_stock}</span>
                 </div>
               </div>
             ))}

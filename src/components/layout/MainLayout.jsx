@@ -23,24 +23,48 @@ const MainLayout = () => {
   const [draggingMenuId, setDraggingMenuId] = useState(null);
 
   useEffect(() => {
-    const fetchDeviceBrands = async () => {
-      const res = await window.electronAPI.namedQuery('fetchMenuAssetBrands');
-      if (res.success) setDeviceBrands(res.rows.map(r => r.brand));
-    };
+    const fetchMenuData = async () => {
+      // 讀取汰舊狀態
+      const deviceRetired = JSON.parse(localStorage.getItem('device_list_retired_keys') || '[]');
+      const hwRetired = JSON.parse(localStorage.getItem('hw_list_retired_keys') || '[]');
+      const csmRetired = JSON.parse(localStorage.getItem('consumable_list_retired_keys') || '[]');
 
-    const fetchConsumableTypes = async () => {
-      const res = await window.electronAPI.namedQuery('fetchMenuConsumableTypes');
-      if (res.success) setConsumableTypes(res.rows.map(r => r.type));
-    };
+      // 1. 處理設備選單 (以 Brand 分類)
+      const devRes = await window.electronAPI.namedQuery('fetchFullDeviceStructure');
+      if (devRes.success) {
+        const brands = [...new Set(devRes.rows.map(r => r.brand))].sort();
+        const activeBrands = brands.filter(b => {
+          const items = devRes.rows.filter(r => r.brand === b);
+          // 只要有一款型號沒被汰舊，就顯示該品牌
+          return items.some(i => !deviceRetired.includes(`${i.brand} - ${i.type} - ${i.model}`));
+        });
+        setDeviceBrands(activeBrands);
+      }
 
-    const fetchNicTypes = async () => {
-      const res = await window.electronAPI.namedQuery('fetchMenuNicTypes');
-      if (res.success) setNicTypes(res.rows.map(r => r.type));
+      // 2. 處理耗材選單 (以 Type 分類)
+      const csmRes = await window.electronAPI.namedQuery('fetchFullConsumableStructure');
+      if (csmRes.success) {
+        const types = [...new Set(csmRes.rows.map(r => r.type))].sort();
+        const activeTypes = types.filter(t => {
+          const items = csmRes.rows.filter(r => r.type === t);
+          return items.some(i => !csmRetired.includes(`${i.brand} - ${i.type} - ${i.model}`));
+        });
+        setConsumableTypes(activeTypes);
+      }
+
+      // 3. 處理硬體選單 (以 Type 分類)
+      const hwRes = await window.electronAPI.namedQuery('fetchFullNicStructure');
+      if (hwRes.success) {
+        const types = [...new Set(hwRes.rows.map(r => r.type))].sort();
+        const activeTypes = types.filter(t => {
+          const items = hwRes.rows.filter(r => r.type === t);
+          return items.some(i => !hwRetired.includes(`${i.brand} - ${i.type} - ${i.model}`));
+        });
+        setNicTypes(activeTypes);
+      }
     };
     
-    fetchDeviceBrands();
-    fetchConsumableTypes();
-    fetchNicTypes();
+    fetchMenuData();
 
     // 根據路徑自動展開對應選單並收合其他
     if (location.pathname === '/device-list') {
@@ -57,13 +81,13 @@ const MainLayout = () => {
       setIsConsumableListExpanded(false);
     }
 
-    const handleDbUpdate = () => {
-      fetchDeviceBrands();
-      fetchConsumableTypes();
-      fetchNicTypes();
+    const handleUpdate = () => fetchMenuData();
+    window.addEventListener('db-update', handleUpdate);
+    window.addEventListener('retired-update', handleUpdate);
+    return () => {
+      window.removeEventListener('db-update', handleUpdate);
+      window.removeEventListener('retired-update', handleUpdate);
     };
-    window.addEventListener('db-update', handleDbUpdate);
-    return () => window.removeEventListener('db-update', handleDbUpdate);
   }, [location.pathname, location.search]);
 
   const allMenuItems = [

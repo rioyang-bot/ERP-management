@@ -42,6 +42,11 @@ export const queries = {
   fetchMenuConsumableTypes: `SELECT DISTINCT i.type FROM item_master i LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '辦公耗材' ORDER BY i.type ASC`,
   fetchMenuNicTypes: `SELECT DISTINCT i.type FROM item_master i LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '硬體' ORDER BY i.type ASC`,
   
+  // Detailed Menu Structure for Filtering Retired Items
+  fetchFullDeviceStructure: `SELECT DISTINCT i.brand, i.type, i.model FROM assets a JOIN item_master i ON a.item_master_id = i.id LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '資訊設備'`,
+  fetchFullConsumableStructure: `SELECT DISTINCT i.brand, i.type, i.model FROM item_master i LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '辦公耗材'`,
+  fetchFullNicStructure: `SELECT DISTINCT i.brand, i.type, i.model FROM item_master i LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '硬體'`,
+  
   // Dashboard / Misc
   getSystemSetting: `SELECT value FROM system_settings WHERE key = $1`,
   upsertSystemSetting: `INSERT INTO system_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,

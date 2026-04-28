@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Search, Edit2, X, Server, User, MapPin, MoreHorizontal, Trash2, ShoppingBag, AlertTriangle, CheckCircle, Save, Monitor, Settings, ShieldAlert } from 'lucide-react';
+import { Search, Edit2, X, Server, User, MapPin, MoreHorizontal, Trash2, ShoppingBag, AlertTriangle, CheckCircle, Save, Monitor, Settings, ShieldAlert, Archive, RotateCcw } from 'lucide-react';
 
 const HwList = () => {
   const location = useLocation();
@@ -143,6 +143,7 @@ const HwList = () => {
   const cardStyle = { backgroundColor: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' };
   const thStyle = { textAlign: 'left', padding: '14px', borderBottom: '2px solid #f1f5f9', color: '#1e293b', fontSize: '13px', fontWeight: '900', backgroundColor: '#f8fafc' };
   const tdStyle = { padding: '14px', borderBottom: '1px solid #f1f5f9', fontSize: '12px' };
+  const navBtnStyle = { padding: '8px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', backgroundColor: 'white', cursor: 'pointer', fontWeight: '700' };
   const menuButtonStyle = { display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', border: 'none', background: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: '#475569', borderRadius: '8px', textAlign: 'left' };
   const editLabelStyle = { display: 'block', fontWeight: '800', fontSize: '13px', marginBottom: '6px', color: '#475569' };
   const editInputStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', outline: 'none', fontSize: '13px' };
@@ -192,6 +193,22 @@ const HwList = () => {
     setLayoutMap(newMap);
     localStorage.setItem('hw_list_layout_map', JSON.stringify(newMap));
     setDraggingCardKey(null);
+  };
+
+  const [retiredKeys, setRetiredKeys] = useState(() => {
+    const saved = localStorage.getItem('hw_list_retired_keys');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const toggleRetire = (e, key) => {
+    e.stopPropagation();
+    const isRetired = retiredKeys.includes(key);
+    const newRetired = isRetired 
+      ? retiredKeys.filter(k => k !== key)
+      : [...retiredKeys, key];
+    setRetiredKeys(newRetired);
+    localStorage.setItem('hw_list_retired_keys', JSON.stringify(newRetired));
+    window.dispatchEvent(new CustomEvent('retired-update'));
   };
 
 
@@ -260,62 +277,115 @@ const HwList = () => {
     }, {});
 
     const allKeys = Object.keys(statsMap);
+    const displayKeys = allKeys.filter(k => {
+      if (!searchTerm) return true;
+      const lk = k.toLowerCase();
+      const terms = searchTerm.toLowerCase().split(/\s+/).filter(t => t);
+      return terms.every(t => lk.includes(t));
+    });
+
     if (allKeys.length === 0) return null;
+
+    const renderRetiredSection = (list) => {
+      if (list.length === 0) return null;
+      return (
+        <div style={{ marginTop: '32px', borderTop: '2px dashed #e2e8f0', paddingTop: '24px', gridColumn: 'span 6' }}>
+          <h3 style={{ fontSize: '16px', fontWeight: '900', color: '#64748b', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Archive size={18} /> 汰舊 / 停用區塊 (Retired Items)
+          </h3>
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            {list.map(st => (
+              <div key={st.key} onClick={() => handleCardClick(st)} style={{ backgroundColor: 'white', padding: '10px', borderRadius: '12px', border: '1px solid #e2e8f0', cursor: 'pointer', minWidth: '220px', opacity: 0.6, position: 'relative' }} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.6'}>
+                <button onClick={(e) => toggleRetire(e, st.key)} style={{ position: 'absolute', top: '8px', right: '8px', border: 'none', background: '#f1f5f9', color: '#64748b', borderRadius: '4px', padding: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center' }} title="復原此卡片">
+                  <RotateCcw size={14} />
+                </button>
+              <div style={{ marginBottom: '8px', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
+                <div style={{ fontSize: '12px', fontWeight: '900', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <Monitor size={12} color="#64748b" /> {st.brand}
+                </div>
+                <div style={{ color: '#64748b', fontSize: '10px', fontWeight: '500', marginTop: '2px', paddingLeft: '16px' }}>
+                  {st.type} - {st.model}
+                </div>
+              </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span>在庫</span><span style={{ color: '#166534', fontWeight: '800' }}>{st.active}</span></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span>出貨</span><span style={{ color: '#1e40af', fontWeight: '800' }}>{st.shipped}</span></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span>故障</span><span style={{ color: '#991b1b', fontWeight: '800' }}>{st.repair}</span></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span>報廢</span><span style={{ color: '#475569', fontWeight: '800' }}>{st.scrapped}</span></div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    };
 
     // --- 過濾模式：卡片置頂靠左 ---
     if (filterType || searchTerm) {
-      const searchTerms = searchTerm.toLowerCase().split(/\s+/).filter(t => t);
-      const activeStats = allKeys
-        .filter(k => {
-          const lk = k.toLowerCase();
-          return searchTerms.every(t => lk.includes(t));
-        })
-        .map(k => statsMap[k]);
+      const activeMatches = displayKeys.filter(k => !retiredKeys.includes(k)).map(k => statsMap[k]);
+      const retiredMatches = displayKeys.filter(k => retiredKeys.includes(k)).map(k => statsMap[k]);
 
       return (
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '24px', padding: '16px', backgroundColor: '#f8fafc', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-          {activeStats.map(st => (
-            <div 
-              key={st.key}
-              onClick={() => handleCardClick(st)}
-              style={{ 
-                backgroundColor: 'white', 
-                padding: '10px', 
-                borderRadius: '12px', 
-                border: '2px solid #2563eb', 
-                boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.1)',
-                cursor: 'pointer',
-                minWidth: '220px',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'space-between'
-              }}
-            >
-              <div style={{ fontSize: '11px', fontWeight: '900', color: '#1e293b', marginBottom: '8px', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
-                <Monitor size={12} color="#64748b" style={{ marginRight: '4px' }} />
-                {st.brand} <span style={{ color: '#64748b', fontSize: '10px', fontWeight: '500' }}>{st.type} - {st.model}</span>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span>在庫</span><span style={{ color: '#166534', fontWeight: '800' }}>{st.active}</span></div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span>出貨</span><span style={{ color: '#1e40af', fontWeight: '800' }}>{st.shipped}</span></div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span>故障</span><span style={{ color: '#991b1b', fontWeight: '800' }}>{st.repair}</span></div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span>報廢</span><span style={{ color: '#475569', fontWeight: '800' }}>{st.scrapped}</span></div>
-              </div>
-            </div>
-          ))}
+        <div style={{ position: 'relative' }}>
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '24px', padding: '16px', backgroundColor: '#f8fafc', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+            {activeMatches.map(st => {
+              const isSelected = searchTerm && (`${st.brand} ${st.model}`).toLowerCase() === searchTerm.toLowerCase();
+              return (
+                <div 
+                  key={st.key}
+                  onClick={() => handleCardClick(st)}
+                  style={{ 
+                    backgroundColor: 'white', 
+                    padding: '10px', 
+                    borderRadius: '12px', 
+                    border: isSelected ? '2px solid #2563eb' : '1px solid #e2e8f0', 
+                    boxShadow: isSelected ? '0 4px 6px -1px rgba(37, 99, 235, 0.2)' : '0 2px 4px rgba(0,0,0,0.02)',
+                    cursor: 'pointer',
+                    minWidth: '220px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    transition: 'all 0.2s',
+                    position: 'relative'
+                  }}
+                >
+                  <button onClick={(e) => toggleRetire(e, st.key)} style={{ position: 'absolute', top: '8px', right: '8px', border: 'none', background: 'none', color: '#cbd5e1', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }} title="將此卡片移至汰舊區">
+                    <Archive size={14} />
+                  </button>
+                  <div style={{ marginBottom: '8px', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
+                    <div style={{ fontSize: '13px', fontWeight: '900', color: isSelected ? '#2563eb' : '#1e293b', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Monitor size={12} color={isSelected ? '#2563eb' : '#64748b'} /> {st.brand}
+                    </div>
+                    <div style={{ color: isSelected ? '#3b82f6' : '#64748b', fontSize: '11px', fontWeight: '500', marginTop: '2px', paddingLeft: '16px' }}>
+                      {st.type} - {st.model}
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span>在庫</span><span style={{ color: '#166534', fontWeight: '800' }}>{st.active}</span></div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span>出貨</span><span style={{ color: '#1e40af', fontWeight: '800' }}>{st.shipped}</span></div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span>故障</span><span style={{ color: '#991b1b', fontWeight: '800' }}>{st.repair}</span></div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span>報廢</span><span style={{ color: '#475569', fontWeight: '800' }}>{st.scrapped}</span></div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {renderRetiredSection(retiredMatches)}
         </div>
       );
     }
 
-    // --- 首頁模式：自由位格 (手機桌面) ---
+    const activeKeys = allKeys.filter(k => !retiredKeys.includes(k));
+    const retiredList = allKeys.filter(k => retiredKeys.includes(k)).map(k => statsMap[k]);
+
     // 1. 自動清理佈局：移除已不存在的 Key
     const cleanedLayoutMap = {};
     Object.entries(layoutMap).forEach(([idx, key]) => {
-      if (allKeys.includes(key)) cleanedLayoutMap[idx] = key;
+      if (activeKeys.includes(key)) cleanedLayoutMap[idx] = key;
     });
 
     const assignedKeys = Object.values(cleanedLayoutMap);
-    const missingKeys = allKeys.filter(k => !assignedKeys.includes(k));
+    const missingKeys = activeKeys.filter(k => !assignedKeys.includes(k));
     if (missingKeys.length > 0 || Object.keys(cleanedLayoutMap).length !== Object.keys(layoutMap).length) {
       const updatedMap = { ...cleanedLayoutMap };
       let currentIdx = 0;
@@ -340,10 +410,17 @@ const HwList = () => {
           return (
             <div key={idx} onDragOver={handleSlotDragOver} onDrop={(e) => handleDropOnSlot(e, idx)} style={{ minHeight: '100px', borderRadius: '12px', border: draggingCardKey ? '1px dashed #cbd5e1' : '1px solid transparent', backgroundColor: draggingCardKey ? 'rgba(255,255,255,0.5)' : 'transparent', transition: 'all 0.2s' }}>
               {st && (
-                <div draggable onDragStart={(e) => handleCardDragStart(e, st.key)} onClick={() => handleCardClick(st)} style={{ backgroundColor: 'white', padding: '10px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.02)', cursor: 'pointer', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', opacity: draggingCardKey === st.key ? 0.3 : 1, transition: 'transform 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.03)'} onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}>
-                  <div style={{ fontSize: '11px', fontWeight: '900', color: '#1e293b', marginBottom: '6px', borderBottom: '1px solid #f1f5f9', paddingBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={st.key}>
-                    <Monitor size={12} color="#64748b" style={{ marginRight: '4px' }} />
-                    {st.brand} <span style={{ color: '#64748b', fontSize: '10px', fontWeight: '500' }}>{st.type} - {st.model}</span>
+                <div draggable onDragStart={(e) => handleCardDragStart(e, st.key)} onClick={() => handleCardClick(st)} style={{ backgroundColor: 'white', padding: '10px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.02)', cursor: 'pointer', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', opacity: draggingCardKey === st.key ? 0.3 : 1, transform: 'scale(1)', transition: 'transform 0.1s', position: 'relative' }} onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'} onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}>
+                  <button onClick={(e) => toggleRetire(e, st.key)} style={{ position: 'absolute', top: '8px', right: '8px', border: 'none', background: 'none', color: '#cbd5e1', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }} title="將此卡片移至汰舊區">
+                    <Archive size={14} />
+                  </button>
+                  <div style={{ marginBottom: '6px', borderBottom: '1px solid #f1f5f9', paddingBottom: '4px', overflow: 'hidden' }}>
+                    <div style={{ fontSize: '12px', fontWeight: '900', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                      <Monitor size={12} color="#64748b" /> {st.brand}
+                    </div>
+                    <div style={{ color: '#64748b', fontSize: '10px', fontWeight: '500', marginTop: '1px', paddingLeft: '16px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                      {st.type} - {st.model}
+                    </div>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span>在庫</span><span style={{ color: '#166534', fontWeight: '800' }}>{st.active}</span></div>
@@ -356,11 +433,10 @@ const HwList = () => {
             </div>
           );
         })}
-        </div>
+        {renderRetiredSection(retiredList)}
+      </div>
     );
   };
-
-  const navBtnStyle = { padding: '8px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', backgroundColor: 'white', cursor: 'pointer', fontWeight: '700' };
 
   const renderTable = () => (
     <div style={{ marginBottom: '20px' }}>
