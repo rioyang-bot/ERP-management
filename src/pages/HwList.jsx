@@ -14,6 +14,11 @@ const HwList = () => {
   const [activeMenuId, setActiveMenuId] = useState(null);
   const [showServerDetails, setShowServerDetails] = useState(true);
 
+  // 當側邊欄分類變動時，清除搜尋關鍵字
+  useEffect(() => {
+    setSearchTerm('');
+  }, [filterType]);
+
   const [showSyncConfig, setShowSyncConfig] = useState(false);
   const [availableFieldDefs, setAvailableFieldDefs] = useState([]);
   const [selectedSyncFields, setSelectedSyncFields] = useState(['hostname', 'os']);
@@ -189,29 +194,47 @@ const HwList = () => {
     setDraggingCardKey(null);
   };
 
+
   const handleCardClick = (st) => {
     const target = `${st.brand} ${st.model}`;
-    if (searchTerm === target) {
+    if (searchTerm === target && filterType === st.type) {
+      // 如果完全相同，則清除
       setSearchTerm('');
+      navigate('?');
     } else {
+      // 如果類別變更，先清空搜尋詞避免舊資料衝突
+      if (filterType !== st.type) {
+        setSearchTerm('');
+      }
       navigate(`?type=${encodeURIComponent(st.type)}`);
-      setSearchTerm(target);
+      // 稍微延遲設定搜尋詞，讓 useEffect 優先處理資料載入
+      setTimeout(() => setSearchTerm(target), 50);
     }
     setCurrentPage(1);
   };
 
   const renderHeader = () => (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-      <h2 style={{ fontSize: '24px', fontWeight: '900', color: '#1e293b', cursor: 'pointer' }} onClick={() => navigate('/')}>
-        {filterType ? `${filterType} - 硬體清單` : '硬體列表 (Hardware List)'}
-      </h2>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <h2 style={{ fontSize: '24px', fontWeight: '900', color: '#1e293b', cursor: 'pointer' }} onClick={() => { setSearchTerm(''); navigate('?'); }}>
+          {filterType ? `${filterType} - 硬體清單` : '硬體列表 (Hardware List)'}
+        </h2>
+        {(filterType || searchTerm) && (
+          <button 
+            onClick={() => { setSearchTerm(''); navigate('?'); }}
+            style={{ padding: '4px 12px', borderRadius: '20px', backgroundColor: '#f1f5f9', border: '1px solid #e2e8f0', color: '#64748b', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
+          >
+            清除所有篩選 ×
+          </button>
+        )}
+      </div>
       <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <input type="checkbox" id="showServerDetails" checked={showServerDetails} onChange={(e) => setShowServerDetails(e.target.checked)} style={{ cursor: 'pointer' }} />
           <label htmlFor="showServerDetails" style={{ fontSize: '13px', fontWeight: '700', color: '#64748b', cursor: 'pointer' }}>顯示伺服器同步資訊</label>
         </div>
         <button onClick={() => setShowSyncConfig(true)} style={{ padding: '10px 16px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', fontWeight: '700', color: '#475569', gap: '6px' }}>
-          <Settings size={16} /> 設定
+          <Settings size={16} /> 伺服器屬性顯示設定
         </button>
         <div style={{ position: 'relative' }}>
           <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
@@ -333,7 +356,7 @@ const HwList = () => {
             </div>
           );
         })}
-      </div>
+        </div>
     );
   };
 
@@ -350,7 +373,8 @@ const HwList = () => {
             <th style={{ ...thStyle, textAlign: 'left' }}>訂單日期</th>
             <th style={{ ...thStyle, textAlign: 'left' }}>對應伺服器</th>
             {showServerDetails && <th style={{ ...thStyle, textAlign: 'left' }}>伺服器屬性</th>}
-            <th style={{ ...thStyle, textAlign: 'left' }}>客戶名稱</th>
+            <th style={{ ...thStyle, textAlign: 'left' }}>客戶</th>
+            {showServerDetails && <th style={{ ...thStyle, textAlign: 'left' }}>位置</th>}
             <th style={{ ...thStyle, textAlign: 'left', width: '100px' }}>狀態</th>
             <th style={{ ...thStyle, textAlign: 'center', width: '80px' }}>功能</th>
           </tr>
@@ -376,30 +400,66 @@ const HwList = () => {
                 <td style={{ ...tdStyle, fontWeight: 800, fontFamily: 'monospace', color: '#2563eb', whiteSpace: 'nowrap' }}>{nic.sn || '(未設定)'}</td>
                 <td style={{ ...tdStyle, fontSize: '11px', color: '#64748b' }}>{nic.specification || '--'}</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{nic.custom_attributes?.order_date || '--'}</td>
-                <td style={tdStyle}><div style={{ color: '#6366f1', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}><Server size={12} /> {nic.custom_attributes?.server_sn || '--'}</div></td>
+                <td style={tdStyle}>
+                  <div style={{ color: '#6366f1', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <Server size={12} /> {nic.custom_attributes?.server_sn || '--'}
+                  </div>
+                  {nic.server_hostname && (
+                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px', paddingLeft: '16px' }}>
+                      HostName: <b style={{ color: '#1e293b' }}>{nic.server_hostname}</b>
+                    </div>
+                  )}
+                </td>
                 {showServerDetails && (
                   <td style={tdStyle}>
                     <div style={{ fontSize: '11px' }}>
-                      <div style={{ color: '#1e40af', fontWeight: 800 }}>{nic.server_location || '未設定'}</div>
                       {selectedSyncFields.map(id => {
-                        if (id === 'hostname' && nic.server_hostname) return <div key={id}>HostName: <b>{nic.server_hostname}</b></div>;
-                        if (id === 'os' && nic.server_os) return <div key={id}>OS: <b>{nic.server_os}</b></div>;
                         const def = availableFieldDefs.find(d => d.id === id);
-                        return serverAttrs[id] ? <div key={id} style={{ color: def?.color }}>{def?.label.split(' ')[0]}: <b>{serverAttrs[id]}</b></div> : null;
+                        // 如果是自訂欄位且找不到定義 (已被刪除)，則不顯示
+                        if (id !== 'hostname' && id !== 'os' && !def) return null;
+
+                        const label = id === 'hostname' ? 'HostName' : (id === 'os' ? 'OS' : (id === 'nic' ? 'FW' : def?.label.split(' ')[0]));
+                        let val = null;
+                        if (id === 'hostname') return null; // 已移至序號下方顯示
+                        else if (id === 'os') val = nic.server_os;
+                        else if (id === 'nic') val = nic.server_nic;
+                        else val = serverAttrs[id];
+
+                        if (!val) return null;
+                        return (
+                          <div key={id} style={{ display: 'flex', gap: '4px', marginBottom: '2px' }}>
+                            <span style={{ color: '#64748b', whiteSpace: 'nowrap' }}>{label}:</span>
+                            <span style={{ fontWeight: 600, color: def?.color || 'inherit' }}>{val}</span>
+                          </div>
+                        );
                       })}
+                      {selectedSyncFields.every(id => {
+                        if (id === 'hostname') return !nic.server_hostname;
+                        if (id === 'os') return !nic.server_os;
+                        return !serverAttrs[id];
+                      }) && <span style={{ color: '#cbd5e1' }}>--</span>}
                     </div>
                   </td>
                 )}
                 <td style={tdStyle}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                    <div style={{ fontWeight: 700, color: '#1e40af' }}>{nic.server_client || nic.client || '--'}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 700 }}>
+                      <User size={14} color="#64748b" /> {nic.server_client || nic.client || '--'}
+                    </div>
                     {(nic.partner_contact || nic.partner_phone) && (
-                      <div style={{ fontSize: '11px', color: '#64748b' }}>
+                      <div style={{ fontSize: '11px', color: '#64748b', paddingLeft: '18px' }}>
                         {nic.partner_contact} {nic.partner_phone}
                       </div>
                     )}
                   </div>
                 </td>
+                {showServerDetails && (
+                  <td style={tdStyle}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <MapPin size={14} color="#64748b" /> {nic.server_location || '--'}
+                    </div>
+                  </td>
+                )}
                 <td style={{ ...tdStyle, width: '100px' }}><span style={{ padding: '4px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: '800', backgroundColor: cfg.bgColor, color: cfg.color, border: `1px solid ${cfg.borderColor}`, whiteSpace: 'nowrap' }}>{cfg.label}</span></td>
                 <td style={{ ...tdStyle, textAlign: 'center', width: '80px', position: 'relative' }}>
                   <button onClick={() => setActiveMenuId(activeMenuId === nic.id ? null : nic.id)} style={{ border: 'none', background: 'none', color: '#64748b' }}><MoreHorizontal size={20} /></button>
@@ -454,12 +514,13 @@ const HwList = () => {
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
           <div style={{ backgroundColor: 'white', width: '450px', padding: '32px', borderRadius: '16px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-              <h2 style={{ fontSize: '18px', fontWeight: '900' }}>屬性同步設定</h2>
+              <h2 style={{ fontSize: '18px', fontWeight: '900' }}>伺服器屬性顯示設定</h2>
               <X size={20} style={{ cursor: 'pointer' }} onClick={() => setShowSyncConfig(false)} />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '400px', overflowY: 'auto' }}>
-              {['hostname', 'os', ...availableFieldDefs.filter(d => !d.isNative).map(d => d.id)].map(id => {
-                const label = id === 'hostname' ? '主機名稱 (HostName)' : (id === 'os' ? '作業系統 (OS)' : availableFieldDefs.find(d => d.id === id)?.label);
+              {availableFieldDefs.map(def => {
+                const id = def.id;
+                const label = def.label;
                 return (
                   <label key={id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', border: '1px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer' }}>
                     <input type="checkbox" checked={selectedSyncFields.includes(id)} onChange={() => toggleSyncField(id)} />

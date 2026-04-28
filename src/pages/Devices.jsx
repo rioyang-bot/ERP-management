@@ -343,7 +343,10 @@ const Devices = () => {
             {customFieldDefs.filter(f => isFieldVisible(formData.brand, f.id)).length > 0 && (
               <div style={{ padding: '16px', backgroundColor: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  {customFieldDefs.filter(f => isFieldVisible(formData.brand, f.id)).map(f => (
+                  {customFieldDefs
+                    .filter(f => isFieldVisible(formData.brand, f.id))
+                    .filter(f => !['sn', 'hostname', 'specification', 'client', 'location', 'installed_date', 'system_date', 'warranty_expire', 'customer_warranty_expire'].includes(f.id))
+                    .map(f => (
                     <div key={f.id}><label style={labelStyle}>{f.label}</label><input type="text" value={f.isNative ? formData[f.id] : (formData.custom_attributes[f.id] || '')} onChange={e => { if (f.isNative) setFormData({...formData, [f.id]:e.target.value}); else setFormData({...formData, custom_attributes:{...formData.custom_attributes, [f.id]:e.target.value}}); }} style={inputStyle} /></div>
                   ))}
                 </div>

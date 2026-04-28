@@ -10,10 +10,10 @@ const MainLayout = () => {
   const [deviceBrands, setDeviceBrands] = useState([]);
   const [consumableTypes, setConsumableTypes] = useState([]);
   const [nicTypes, setNicTypes] = useState([]);
-  const [isDeviceListExpanded, setIsDeviceListExpanded] = useState(true);
-  const [isConsumableListExpanded, setIsConsumableListExpanded] = useState(true);
-  const [isNicListExpanded, setIsNicListExpanded] = useState(true);
   const location = useLocation();
+  const [isDeviceListExpanded, setIsDeviceListExpanded] = useState(location.pathname === '/device-list');
+  const [isConsumableListExpanded, setIsConsumableListExpanded] = useState(location.pathname === '/consumable-list');
+  const [isNicListExpanded, setIsNicListExpanded] = useState(location.pathname === '/hw-list');
 
   // --- 選單排序邏輯 ---
   const [menuOrder, setMenuOrder] = useState(() => {
@@ -41,6 +41,21 @@ const MainLayout = () => {
     fetchDeviceBrands();
     fetchConsumableTypes();
     fetchNicTypes();
+
+    // 根據路徑自動展開對應選單並收合其他
+    if (location.pathname === '/device-list') {
+      setIsDeviceListExpanded(true);
+      setIsConsumableListExpanded(false);
+      setIsNicListExpanded(false);
+    } else if (location.pathname === '/consumable-list') {
+      setIsConsumableListExpanded(true);
+      setIsDeviceListExpanded(false);
+      setIsNicListExpanded(false);
+    } else if (location.pathname === '/hw-list') {
+      setIsNicListExpanded(true);
+      setIsDeviceListExpanded(false);
+      setIsConsumableListExpanded(false);
+    }
 
     const handleDbUpdate = () => {
       fetchDeviceBrands();
@@ -144,8 +159,19 @@ const MainLayout = () => {
             >
               {item.id === 'assetList' ? (
                 <>
-                  <div onClick={() => setIsDeviceListExpanded(!isDeviceListExpanded)} className={`nav-item ${location.pathname === '/device-list' ? 'active' : ''}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
-                    <NavLink to="/device-list" onClick={(e) => e.stopPropagation()} style={{ flex: 1, color: 'inherit', textDecoration: 'none' }}>{item.label}</NavLink>
+                  <div onClick={() => {
+                    const next = !isDeviceListExpanded;
+                    setIsDeviceListExpanded(next);
+                    if (next) { setIsConsumableListExpanded(false); setIsNicListExpanded(false); }
+                  }} className={`nav-item ${location.pathname === '/device-list' ? 'active' : ''}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
+                    <NavLink to="/device-list" onClick={(e) => {
+                      e.stopPropagation();
+                      if (!isDeviceListExpanded) {
+                        setIsDeviceListExpanded(true);
+                        setIsConsumableListExpanded(false);
+                        setIsNicListExpanded(false);
+                      }
+                    }} style={{ flex: 1, color: 'inherit', textDecoration: 'none' }}>{item.label}</NavLink>
                     {isDeviceListExpanded ? <ChevronDown size={16} opacity={0.5} /> : <ChevronRight size={16} opacity={0.5} />}
                   </div>
                   {isDeviceListExpanded && (
@@ -158,8 +184,19 @@ const MainLayout = () => {
                 </>
               ) : item.id === 'consumableList' ? (
                 <>
-                  <div onClick={() => setIsConsumableListExpanded(!isConsumableListExpanded)} className={`nav-item ${location.pathname === '/consumable-list' ? 'active' : ''}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
-                    <NavLink to="/consumable-list" onClick={(e) => e.stopPropagation()} style={{ flex: 1, color: 'inherit', textDecoration: 'none' }}>{item.label}</NavLink>
+                  <div onClick={() => {
+                    const next = !isConsumableListExpanded;
+                    setIsConsumableListExpanded(next);
+                    if (next) { setIsDeviceListExpanded(false); setIsNicListExpanded(false); }
+                  }} className={`nav-item ${location.pathname === '/consumable-list' ? 'active' : ''}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
+                    <NavLink to="/consumable-list" onClick={(e) => {
+                      e.stopPropagation();
+                      if (!isConsumableListExpanded) {
+                        setIsConsumableListExpanded(true);
+                        setIsDeviceListExpanded(false);
+                        setIsNicListExpanded(false);
+                      }
+                    }} style={{ flex: 1, color: 'inherit', textDecoration: 'none' }}>{item.label}</NavLink>
                     {isConsumableListExpanded ? <ChevronDown size={16} opacity={0.5} /> : <ChevronRight size={16} opacity={0.5} />}
                   </div>
                   {isConsumableListExpanded && (
@@ -172,8 +209,19 @@ const MainLayout = () => {
                 </>
               ) : item.id === 'nic-list' ? (
                 <>
-                  <div onClick={() => setIsNicListExpanded(!isNicListExpanded)} className={`nav-item ${location.pathname === '/hw-list' ? 'active' : ''}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
-                    <NavLink to="/hw-list" onClick={(e) => e.stopPropagation()} style={{ flex: 1, color: 'inherit', textDecoration: 'none' }}>{item.label}</NavLink>
+                  <div onClick={() => {
+                    const next = !isNicListExpanded;
+                    setIsNicListExpanded(next);
+                    if (next) { setIsDeviceListExpanded(false); setIsConsumableListExpanded(false); }
+                  }} className={`nav-item ${location.pathname === '/hw-list' ? 'active' : ''}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
+                    <NavLink to="/hw-list" onClick={(e) => {
+                      e.stopPropagation();
+                      if (!isNicListExpanded) {
+                        setIsNicListExpanded(true);
+                        setIsDeviceListExpanded(false);
+                        setIsConsumableListExpanded(false);
+                      }
+                    }} style={{ flex: 1, color: 'inherit', textDecoration: 'none' }}>{item.label}</NavLink>
                     {isNicListExpanded ? <ChevronDown size={16} opacity={0.5} /> : <ChevronRight size={16} opacity={0.5} />}
                   </div>
                   {isNicListExpanded && (

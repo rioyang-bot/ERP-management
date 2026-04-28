@@ -14,6 +14,11 @@ const ConsumableList = () => {
   const [searchParams] = useSearchParams();
   const typeFilter = searchParams.get('type');
   
+  // 當側邊欄分類變動時，清除搜尋關鍵字
+  useEffect(() => {
+    setSearchTerm('');
+  }, [typeFilter]);
+  
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
@@ -61,7 +66,7 @@ const ConsumableList = () => {
   };
 
   const handleUpdate = async () => {
-    if (!editItem.specification || !editItem.model) return alert('請填寫必填欄位');
+    if (!editItem.model) return alert('請填寫型號 (必填)');
     const res = await window.electronAPI.namedQuery('updateConsumableMaster', [
         editItem.brand, editItem.type, editItem.model, 
         editItem.specification, editItem.unit, editItem.safety_stock,
@@ -194,6 +199,7 @@ const ConsumableList = () => {
     setDraggingCardKey(null);
   };
 
+
   const handleCardClick = (st) => {
     const target = `${st.brand} ${st.model}`;
     setSearchTerm(prev => prev === target ? '' : target);
@@ -224,7 +230,7 @@ const ConsumableList = () => {
       return (
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '24px', padding: '16px', backgroundColor: '#f8fafc', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
           {activeStats.map(st => (
-            <div key={st.key} onClick={() => handleCardClick(st)} style={{ backgroundColor: 'white', padding: '10px', borderRadius: '12px', border: '2px solid #2563eb', boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.1)', cursor: 'pointer', minWidth: '220px', position: 'relative' }}>
+            <div key={st.key} onClick={() => handleCardClick(st)} style={{ backgroundColor: 'white', padding: '10px', borderRadius: '12px', border: '2px solid #2563eb', boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.1)', cursor: 'pointer', minWidth: '220px' }}>
               {st.qty <= st.safety && (
                 <div style={{ position: 'absolute', top: '8px', right: '8px' }}>
                   <AlertTriangle size={18} color="#ef4444" fill="white" />
@@ -266,30 +272,30 @@ const ConsumableList = () => {
 
     return (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '12px', marginBottom: '24px', padding: '16px', backgroundColor: '#f8fafc', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-        {slots.map((_, idx) => {
-          const st = statsMap[layoutMap[idx]];
-          return (
-            <div key={idx} onDragOver={handleSlotDragOver} onDrop={(e) => handleDropOnSlot(e, idx)} style={{ minHeight: '100px', borderRadius: '12px', border: draggingCardKey ? '1px dashed #cbd5e1' : '1px solid transparent', backgroundColor: draggingCardKey ? 'rgba(255,255,255,0.5)' : 'transparent' }}>
-              {st && (
-                <div draggable onDragStart={(e) => handleCardDragStart(e, st.key)} onClick={() => handleCardClick(st)} style={{ backgroundColor: 'white', padding: '10px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.02)', cursor: 'pointer', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', opacity: draggingCardKey === st.key ? 0.3 : 1, position: 'relative' }} onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'} onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}>
-                  {st.qty <= st.safety && (
-                    <div style={{ position: 'absolute', top: '8px', right: '8px' }}>
-                      <AlertTriangle size={16} color="#ef4444" fill="white" />
+          {slots.map((_, idx) => {
+            const st = statsMap[layoutMap[idx]];
+            return (
+              <div key={idx} onDragOver={handleSlotDragOver} onDrop={(e) => handleDropOnSlot(e, idx)} style={{ minHeight: '100px', borderRadius: '12px', border: draggingCardKey ? '1px dashed #cbd5e1' : '1px solid transparent', backgroundColor: draggingCardKey ? 'rgba(255,255,255,0.5)' : 'transparent' }}>
+                {st && (
+                  <div draggable onDragStart={(e) => handleCardDragStart(e, st.key)} onClick={() => handleCardClick(st)} style={{ backgroundColor: 'white', padding: '10px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.02)', cursor: 'pointer', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', opacity: draggingCardKey === st.key ? 0.3 : 1 }} onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'} onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}>
+                    {st.qty <= st.safety && (
+                      <div style={{ position: 'absolute', top: '8px', right: '8px' }}>
+                        <AlertTriangle size={16} color="#ef4444" fill="white" />
+                      </div>
+                    )}
+                    <div style={{ fontSize: '11px', fontWeight: '900', color: '#1e293b', borderBottom: '1px solid #f1f5f9', paddingBottom: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={st.key}>
+                      <ShoppingBag size={12} color="#64748b" style={{ marginRight: '4px' }} /> {st.brand} <span style={{ color: '#64748b', fontSize: '10px', fontWeight: '500' }}>{st.type} - {st.model}</span>
                     </div>
-                  )}
-                  <div style={{ fontSize: '11px', fontWeight: '900', color: '#1e293b', borderBottom: '1px solid #f1f5f9', paddingBottom: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={st.key}>
-                    <ShoppingBag size={12} color="#64748b" style={{ marginRight: '4px' }} /> {st.brand} <span style={{ color: '#64748b', fontSize: '10px', fontWeight: '500' }}>{st.type} - {st.model}</span>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: '10px', color: '#64748b' }}>Total</div>
+                      <div style={{ fontSize: '18px', fontWeight: '900', color: st.qty <= st.safety ? '#ef4444' : '#059669' }}>{st.qty}</div>
+                    </div>
                   </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '10px', color: '#64748b' }}>Total</div>
-                    <div style={{ fontSize: '18px', fontWeight: '900', color: st.qty <= st.safety ? '#ef4444' : '#059669' }}>{st.qty}</div>
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
     );
   };
 
@@ -407,7 +413,7 @@ const ConsumableList = () => {
               </div>
               
               <div>
-                <label style={editLabelStyle}>規格內容 *</label>
+                <label style={editLabelStyle}>規格內容</label>
                 <textarea value={editItem.specification} onChange={(e) => setEditItem({...editItem, specification: e.target.value})} style={{ ...editInputStyle, minHeight: '80px', lineHeight: '1.5' }} />
               </div>
 

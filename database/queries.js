@@ -198,5 +198,6 @@ export const queries = {
       ORDER BY a.id DESC`,
   updateNicDetails: `UPDATE assets SET sn = $1, client = $2, location = $3, custom_attributes = COALESCE(custom_attributes, '{}'::jsonb) || jsonb_build_object('server_sn', $4::text, 'order_date', $5::text), hostname = $6 WHERE id = $7`,
   updateNicSn: `UPDATE assets SET sn = $1 WHERE id = $2`,
-  findAssetBySn: `SELECT id FROM assets WHERE TRIM(LOWER(sn)) = TRIM(LOWER($1))`
+  findAssetBySn: `SELECT id FROM assets WHERE TRIM(LOWER(sn)) = TRIM(LOWER($1))`,
+  deleteCustomAttributeKey: `UPDATE assets SET custom_attributes = custom_attributes - $1 WHERE custom_attributes ? $1`
 };

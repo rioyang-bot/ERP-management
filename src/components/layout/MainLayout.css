@@ -57,7 +57,24 @@ body {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 0 16px;
+  padding: 0 16px 24px 16px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* 側邊欄捲動條美化 */
+.sidebar-nav::-webkit-scrollbar {
+  width: 4px;
+}
+.sidebar-nav::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sidebar-nav::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+}
+.sidebar-nav::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4);
 }
 
 .nav-item {
@@ -76,33 +93,32 @@ body {
 }
 
 .nav-item.active {
-  background-color: var(--accent-color);
-  font-weight: 500;
+  background-color: rgba(255, 255, 255, 0.15);
+  font-weight: 700;
+  border-left: 3px solid #FFD700;
+  border-radius: 0 var(--border-radius-md) var(--border-radius-md) 0;
 }
 
 /* 子選單項目 */
 .nav-sub-item {
   display: block;
-  padding: 8px 16px;
-  color: #FFD700; /* 金黃色，比純黃更有質感 */
+  padding: 8px 20px;
+  color: rgba(255, 255, 255, 0.7);
   text-decoration: none;
   font-size: 0.88rem;
   border-radius: var(--border-radius-md);
   transition: all 0.2s ease;
-  opacity: 0.85;
 }
 
 .nav-sub-item:hover {
-  color: #FFFF00;
-  background-color: rgba(255, 255, 255, 0.1);
-  opacity: 1;
+  color: white;
+  background-color: rgba(255, 255, 255, 0.05);
 }
 
 .nav-sub-item.active {
-  color: #FFFF00;
-  background-color: rgba(255, 255, 255, 0.15);
+  color: #FFD700 !important; /* 金黃色，確保高亮 */
+  background-color: rgba(255, 255, 255, 0.1);
   font-weight: 700;
-  opacity: 1;
 }
 
 /* 主內容區域 */
