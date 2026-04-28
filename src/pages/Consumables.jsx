@@ -19,7 +19,7 @@ const Consumables = () => {
   const [newUnitName, setNewUnitName] = useState('');
   const [models, setModels] = useState([]);
   const [units, setUnits] = useState(['個', '台', '盒', '包', '支', '組', '瓶', '卷', '張', '份']);
-  const [formData, setFormData] = useState({ type: '', brand: '', model: '', spec: '', unit: '個', safety_stock: 0 });
+  const [formData, setFormData] = useState({ type: '', brand: '', model: '', spec: '', unit: '個', safety_stock: 0, stock_qty: 0 });
   const [formKey, setFormKey] = useState(0); // 用於強制重整表單區域
 
   const validateAndSanitize = (val, fieldName = '欄位') => {
@@ -194,14 +194,34 @@ const Consumables = () => {
   };
 
   const handleAddConsumable = async () => {
-    if (!formData.type || !formData.brand || !formData.model) return alert('請填寫必填欄位 (型號為必填)');
-    const fullSpec = `${formData.type} ${formData.brand} ${formData.spec ? `(${formData.spec})` : ''}`.trim();
-    const res = await window.electronAPI.namedQuery('insertConsumableMaster', [fullSpec, formData.type, formData.brand, formData.model, formData.unit, formData.safety_stock || 0, '辦公耗材']);
+    if (!formData.type || !formData.brand || !formData.model) return alert('請填寫必填欄位 (廠牌、類型、型號為必填)');
+    
+    const res = await window.electronAPI.namedQuery('insertConsumableMaster', [
+      formData.spec || '', 
+      formData.type, 
+      formData.brand, 
+      formData.model, 
+      formData.unit, 
+      Number(formData.safety_stock || 0), 
+      Number(formData.stock_qty || 0), 
+      '辦公耗材'
+    ]);
+    
     if (res.success) {
       alert('耗材建檔成功！');
       fetchConsumables();
-      setFormData({ type: types[0] || '', brand: brands[0] || '', model: '', spec: '', unit: '個', safety_stock: 0 });
+      // 重置欄位，保留廠牌/類型/單位，方便連續建檔
+      setFormData(prev => ({ 
+        ...prev, 
+        model: '', 
+        spec: '', 
+        stock_qty: 0 
+      }));
       setFormKey(prev => prev + 1);
+    } else {
+      // 遵循規範 2：避免直接輸出系統預設錯誤訊息或除錯日誌
+      console.error('Registration Error:', res.error);
+      alert('⚠️ 儲存失敗：請確認輸入格式無誤，或聯繫技術人員。');
     }
   };
 
@@ -267,9 +287,9 @@ const Consumables = () => {
               </div>
             </div>
 
-            <div>
-              <label style={labelStyle}>規格內容 (Specification)</label>
-              <textarea name="spec" value={formData.spec} onChange={handleChange} style={{ ...inputStyle, minHeight: '80px', resize: 'vertical' }} placeholder="請輸入詳細規格..." />
+            <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '16px' }}>
+              <div><label style={labelStyle}>規格內容 (Specification)</label><input type="text" name="spec" value={formData.spec} onChange={handleChange} style={inputStyle} placeholder="請輸入詳細規格..." /></div>
+              <div><label style={labelStyle}>初始庫存數量 (Initial Stock)</label><input type="number" name="stock_qty" value={formData.stock_qty} onChange={handleChange} style={inputStyle} placeholder="0" /></div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>

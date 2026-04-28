@@ -211,11 +211,18 @@ const DeviceList = () => {
       );
     }
 
-    const assignedKeys = Object.values(layoutMap);
+    // 1. 自動清理佈局：移除已不存在於 allKeys 的幽靈 Key
+    const cleanedLayoutMap = {};
+    Object.entries(layoutMap).forEach(([idx, key]) => {
+      if (allKeys.includes(key)) cleanedLayoutMap[idx] = key;
+    });
+
+    // 2. 檢查是否有漏掉的新 Key 需要加入
+    const assignedKeys = Object.values(cleanedLayoutMap);
     const missingKeys = allKeys.filter(k => !assignedKeys.includes(k));
     
-    if (missingKeys.length > 0) {
-      const updatedMap = { ...layoutMap };
+    if (missingKeys.length > 0 || Object.keys(cleanedLayoutMap).length !== Object.keys(layoutMap).length) {
+      const updatedMap = { ...cleanedLayoutMap };
       let currentIdx = 0;
       missingKeys.forEach(key => {
         while (updatedMap[currentIdx]) currentIdx++;
@@ -225,9 +232,9 @@ const DeviceList = () => {
       localStorage.setItem('device_list_layout_map', JSON.stringify(updatedMap));
     }
 
-    const maxOccupiedIdx = Object.keys(layoutMap).reduce((max, current) => Math.max(max, parseInt(current)), -1);
-    const baseCount = Math.max(maxOccupiedIdx + 1, allKeys.length);
-    const rows = Math.max(2, Math.ceil(baseCount / 6) + 1);
+    // 3. 根據清理後的佈局計算實際需要的行數
+    const maxOccupiedIdx = Object.keys(cleanedLayoutMap).reduce((max, current) => Math.max(max, parseInt(current)), -1);
+    const rows = Math.max(1, Math.ceil((maxOccupiedIdx + 1) / 6) + (draggingCardKey ? 1 : 0));
     const SLOTS_COUNT = rows * 6;
     const slots = Array.from({ length: SLOTS_COUNT });
 
@@ -264,7 +271,7 @@ const DeviceList = () => {
   const editLabelStyle = { display: 'block', fontWeight: 800, fontSize: '13px', marginBottom: '6px', color: '#475569' };
   const editInputStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', outline: 'none', fontSize: '13px' };
   const navBtnStyle = { padding: '8px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', backgroundColor: 'white', cursor: 'pointer', fontWeight: '700' };
-  const thStyle = { padding: '14px', fontSize: '12px', color: '#64748b', fontWeight: '700' };
+  const thStyle = { padding: '14px', fontSize: '12px', color: '#1e293b', fontWeight: '900' };
   const tdStyle = { padding: '14px', fontSize: '13px' };
 
   return (
@@ -297,8 +304,8 @@ const DeviceList = () => {
                   <div style={{ marginBottom: '20px' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
                       <thead>
-                        <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
-                          <th style={{ ...thStyle, textAlign: 'left' }}>品牌/型號</th>
+                        <tr style={{ borderBottom: '2px solid #f1f5f9', backgroundColor: '#f8fafc' }}>
+                          <th style={{ ...thStyle, textAlign: 'left', width: '200px' }}>廠牌 / 型號 / 類型</th>
                           <th style={{ ...thStyle, textAlign: 'left' }}>序號 (SN)</th>
                           <th style={{ ...thStyle, textAlign: 'left' }}>規格 (Spec)</th>
                           <th style={{ ...thStyle, textAlign: 'left' }}>主機名稱</th>
@@ -324,7 +331,7 @@ const DeviceList = () => {
                             <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9', backgroundColor: item.status === 'SCRAPPED' ? '#fff1f0' : 'transparent' }}>
                               <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                                 <div style={{ fontWeight: 800, color: '#1e293b' }}>{item.brand}</div>
-                                <div style={{ fontSize: '11px', color: '#64748b' }}>{item.model}</div>
+                                <div style={{ fontSize: '11px', color: '#64748b' }}>{item.type} - {item.model}</div>
                               </td>
                               <td style={{ ...tdStyle, fontWeight: 800, fontFamily: 'monospace', color: '#2563eb', whiteSpace: 'nowrap' }}>
                                 {item.sn}
@@ -412,7 +419,7 @@ const DeviceList = () => {
                                       <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '4px', paddingLeft: '4px', borderLeft: '2px solid #ddd6fe' }}>
                                         {item.lab_consumables.map((cons, idx) => (
                                           <div key={idx} style={{ fontSize: '10px', color: '#6d28d9', fontWeight: 'normal' }}>
-                                            • {cons.specification} <span style={{ fontWeight: '800' }}>x{cons.quantity}</span>
+                                            • {cons.brand} {cons.model} <span style={{ fontWeight: '800' }}>x{cons.quantity}</span>
                                           </div>
                                         ))}
                                       </div>
@@ -511,22 +518,25 @@ const DeviceList = () => {
               <X size={24} style={{ cursor: 'pointer' }} onClick={() => setShowEditModal(false)} />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                <div><label style={editLabelStyle}>序號 / SN</label><input type="text" value={editItem.sn || ''} onChange={(e) => setEditItem({...editItem, sn: e.target.value})} style={editInputStyle} /></div>
-                <div><label style={editLabelStyle}>廠牌 / 類型 / 型號</label>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <input type="text" value={editItem.brand || ''} readOnly style={{ ...editInputStyle, backgroundColor: '#f8fafc', width: '30%', color: '#94a3b8' }} />
-                    <input type="text" value={editItem.type || ''} readOnly style={{ ...editInputStyle, backgroundColor: '#f8fafc', width: '30%', color: '#94a3b8' }} />
-                    <input type="text" value={editItem.model || ''} onChange={(e) => setEditItem({...editItem, model: e.target.value})} style={{ ...editInputStyle, flex: 1 }} />
-                  </div>
+              <div>
+                <label style={editLabelStyle}>廠牌 / 類型 / 型號 (鎖定)</label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input type="text" value={editItem.brand || ''} disabled style={{ ...editInputStyle, backgroundColor: '#f1f5f9', width: '30%', cursor: 'not-allowed' }} />
+                  <input type="text" value={editItem.type || ''} disabled style={{ ...editInputStyle, backgroundColor: '#f1f5f9', width: '30%', cursor: 'not-allowed' }} />
+                  <input type="text" value={editItem.model || ''} disabled style={{ ...editInputStyle, backgroundColor: '#f1f5f9', flex: 1, cursor: 'not-allowed' }} />
                 </div>
               </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div><label style={editLabelStyle}>序號 / SN</label><input type="text" value={editItem.sn || ''} onChange={(e) => setEditItem({...editItem, sn: e.target.value})} style={editInputStyle} /></div>
+                <div><label style={editLabelStyle}>主機名稱 (HostName)</label><input type="text" value={editItem.hostname || ''} onChange={(e) => setEditItem({...editItem, hostname: e.target.value})} style={editInputStyle} /></div>
+              </div>
+
               <div><label style={editLabelStyle}>規格 (Specification)</label><textarea value={editItem.specification} onChange={(e) => setEditItem({...editItem, specification: e.target.value})} style={{ ...editInputStyle, minHeight: '80px', lineHeight: '1.5' }} /></div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                 <div><label style={editLabelStyle}>客戶名稱</label><select value={editItem.client || ''} onChange={(e) => setEditItem({...editItem, client: e.target.value})} style={editInputStyle}>{customers.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-                <div><label style={editLabelStyle}>主機名稱 (HostName)</label><input type="text" value={editItem.hostname || ''} onChange={(e) => setEditItem({...editItem, hostname: e.target.value})} style={editInputStyle} /></div>
+                <div><label style={editLabelStyle}>放置位置 (Location)</label><input type="text" value={editItem.location || ''} onChange={(e) => setEditItem({...editItem, location: e.target.value})} style={editInputStyle} /></div>
               </div>
-              <div><label style={editLabelStyle}>放置位置 (Location)</label><input type="text" value={editItem.location || ''} onChange={(e) => setEditItem({...editItem, location: e.target.value})} style={editInputStyle} /></div>
               <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                 <div><label style={editLabelStyle}>安裝日期 (Project Date)</label><input type="date" value={editItem.installed_date || ''} onChange={(e) => setEditItem({...editItem, installed_date: e.target.value})} style={editInputStyle} /></div>
                 <div><label style={editLabelStyle}>系統日期 (System Date)</label><input type="date" value={editItem.system_date || ''} onChange={(e) => setEditItem({...editItem, system_date: e.target.value})} style={editInputStyle} /></div>

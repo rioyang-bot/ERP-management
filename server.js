@@ -16,9 +16,23 @@ const PORT = 3000;
 
 // 優化後的安全性處理：針對 Named Query 不再暴力濾除
 // 因為 Named Query 使用參數化查詢 ($1, $2)，本身即具備防禦 SQL Injection 能力
+// 依照 SECURITY_GUIDELINES.md 實作的安全性過濾函式
 function sanitizeParams(params) {
   if (!Array.isArray(params)) return [];
-  return params; // 參數化查詢不需要手動濾除引號，手動濾除反而會破壞資料
+  return params.map(val => {
+    if (typeof val !== 'string') return val;
+    
+    // 1. 濾除規範要求的特殊字元列表
+    // | & ; $ % @ ' " \ ( ) + CR LF ,
+    // 注意：為了不破壞規格描述，我們採取較溫和的替換方式
+    let s = val.replace(/[|&;$%@'"\\()+\r\n]/g, ''); 
+    
+    // 2. 濾除 Mass SQL Injection 強制要求的關鍵字
+    const sqlKeywords = /\b(Select|Insert|Dbo|Declare|Cast|Drop|Union|Exec|Nvarchar)\b/gi;
+    s = s.replace(sqlKeywords, '');
+    
+    return s.trim();
+  });
 }
 
 const pool = new Pool({
@@ -57,8 +71,11 @@ app.post('/api/namedQuery', async (req, res) => {
   const sql = namedQueries[queryName];
   
   try {
-    // 處理 JSON 物件
-    const processedParams = params.map(p => 
+    // 1. 安全性過濾 (符合 SECURITY_GUIDELINES)
+    const sanitized = sanitizeParams(params);
+    
+    // 2. 處理 JSON 物件 (針對 JSONB 欄位)
+    const processedParams = sanitized.map(p => 
       (typeof p === 'object' && p !== null) ? JSON.stringify(p) : p
     );
     
@@ -66,7 +83,8 @@ app.post('/api/namedQuery', async (req, res) => {
     res.json({ success: true, rows: result.rows });
   } catch (error) {
     console.error(`[DB Error] ${queryName}:`, error.message);
-    res.status(500).json({ success: false, error: `資料庫錯誤: ${error.message}` });
+    // 遵循規範 2：遮蔽原始錯誤碼，不將系統詳情洩漏給前端
+    res.status(500).json({ success: false, error: '資料庫執行異常，請聯絡管理員。' });
   }
 });
 

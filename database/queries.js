@@ -83,12 +83,21 @@ export const queries = {
   transferStockToLab: `UPDATE item_master SET stock_qty = stock_qty - $1, lab_qty = lab_qty + $1 WHERE id = $2`,
   transferLabToStock: `UPDATE item_master SET stock_qty = stock_qty + $1, lab_qty = lab_qty - $1 WHERE id = $2`,
   insertLabAssignment: `INSERT INTO item_lab_assignments (item_master_id, asset_id, quantity, note) VALUES ($1, $2, $3, $4)`,
+  fetchCurrentLabUsage: `
+    SELECT a.id as asset_id, a.sn, a.hostname, i.brand, i.model, SUM(la.quantity) as current_qty
+    FROM item_lab_assignments la
+    JOIN assets a ON la.asset_id = a.id
+    JOIN item_master i ON a.item_master_id = i.id
+    WHERE la.item_master_id = $1
+    GROUP BY a.id, a.sn, a.hostname, i.brand, i.model
+    HAVING SUM(la.quantity) > 0
+  `,
   fetchLabAssignments: `SELECT la.*, a.sn, a.hostname FROM item_lab_assignments la LEFT JOIN assets a ON la.asset_id = a.id WHERE la.item_master_id = $1 ORDER BY la.created_at DESC`,
   fetchAllAssetsForSelect: `SELECT a.id, a.sn, a.hostname, i.brand, i.model FROM assets a JOIN item_master i ON a.item_master_id = i.id ORDER BY a.hostname ASC, a.sn ASC`,
 
   // Consumables.jsx
   fetchRecentConsumables: `SELECT i.* FROM item_master i LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '辦公耗材' ORDER BY i.id DESC LIMIT 10`,
-  insertConsumableMaster: `INSERT INTO item_master (specification, type, brand, model, unit, safety_stock, category_id, purchase_price) VALUES ($1, $2, $3, $4, $5, $6, (SELECT id FROM categories WHERE name = $7), 0)`,
+  insertConsumableMaster: `INSERT INTO item_master (specification, type, brand, model, unit, safety_stock, stock_qty, category_id, purchase_price) VALUES ($1, $2, $3, $4, $5, $6, $7, (SELECT id FROM categories WHERE name = $8), 0)`,
   fetchConsumableModelsByBrandType: `
       SELECT m.name FROM item_models m JOIN item_types t ON m.type_id = t.id JOIN item_brands b ON t.brand_id = b.id
       WHERE b.name = $1 AND t.name = $2 AND b.category_id = (SELECT id FROM categories WHERE name = '辦公耗材') AND t.category_id = (SELECT id FROM categories WHERE name = '辦公耗材') ORDER BY m.name ASC`,
