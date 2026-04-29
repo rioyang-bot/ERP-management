@@ -40,7 +40,7 @@ const Login = ({ setAuthUser }) => {
         if (user.password_hash === hashedContent) {
           const { password_hash: _password_hash, ...sessionUser } = user;
           setAuthUser(sessionUser);
-          navigate('/inventory');
+          navigate('/device-list');
         } else {
           setError('帳號或密碼錯誤');
         }

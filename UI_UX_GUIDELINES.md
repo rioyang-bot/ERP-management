@@ -131,3 +131,23 @@
 
 ---
 **開發備備註**：新模組開發前，請先參考 `HwList.jsx` 或 `ConsumableList.jsx` 的實作。
+## 6. 出貨單建檔規範 (Delivery Note Registration Standards)
+針對 ERP 核心的「單據建檔」作業（如 D/N Reg），應遵循以下高密度專業佈局規範：
+
+*   **雙面板非對稱佈局 (Asymmetric Dual-Panel)**：
+    *   **左側輸入區 (Input Panel)**：固定寬度 **360px**。包含單據標頭（Header）、序號搜尋（S/N Scan）與品項快選（Quick Pick）。
+    *   **右側清單區 (List Panel)**：採用 **Flex: 1** 填滿剩餘空間。以高密度表格（High-density Table）顯示待出貨清單。
+*   **高密度視覺控制 (High-Density UI Scaling)**：
+    *   **字體級距**：內文與表格統一使用 **0.85rem**；單據標題為 **1.25rem**；標籤（Labels）為 **0.75rem**。
+    *   **間距控制**：卡片內距（Padding）縮減至 **12px-16px**，輸入框高度調降以增加垂直資訊量。
+*   **序號與關聯硬體自動化 (Automated Serialized Logic)**：
+    *   **一鍵導出**：輸入 S/N 透過 `fetchAssetDetailBySN` 查詢時，必須自動帶出廠牌、型號與規格。
+    *   **組合包機制 (Bundled Items)**：若設備具備「搭載硬體」（Linked by server_sn），系統必須**自動識別並成組加入**。
+    *   **巢狀顯示規範**：主設備顯示於 Main Row，搭載硬體顯示於緊鄰的 Sub Row，並配有縮排圖示（如 ChevronRight）與「搭載硬體」標籤。
+*   **耗材快選器 (Consumable Picker)**：
+    *   **搜尋觸發機制**：預設狀態隱藏品項，僅在搜尋框有內容時才顯示匹配卡片，以應對未來數百種品項的擴展。
+    *   **操作流**：點擊卡片即加入清單，清單內提供數字輸入框（qty-input-small）進行數量微調。
+*   **單據草稿持久化 (Draft Persistence)**：
+    *   **自動同步**：所有標頭欄位與清單異動必須即時同步至 **localStorage**（例如：`dn_draft_items`）。
+    *   **狀態還原**：使用者切換選單或重新載入頁面後，系統必須自動從快取還原草稿，確保操作不中斷。
+    *   **提交清理**：僅在執行「送出單據」並確認成功後，才可清除對應的 localStorage 快取。

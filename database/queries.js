@@ -52,7 +52,7 @@ export const queries = {
   upsertSystemSetting: `INSERT INTO system_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
   
   // Dashboard / Misc
-  fetchCustomers: `SELECT name FROM partners WHERE partner_type = 'CUSTOMER' ORDER BY name ASC`,
+  fetchCustomers: `SELECT name, contact_person as contact, phone FROM partners WHERE partner_type = 'CUSTOMER' AND COALESCE(is_active, TRUE) = true ORDER BY name ASC`,
   
   // Assets.jsx
   fetchRecentAssets: `
@@ -146,13 +146,9 @@ export const queries = {
   updateStockQtyOnInbound: `UPDATE item_master SET stock_qty = stock_qty + $1 WHERE id = $2`,
   updatePurchaseRecordStatus: `UPDATE purchase_records SET received_quantity = COALESCE(received_quantity, 0) + $1, status = CASE WHEN COALESCE(received_quantity, 0) + $1 >= quantity THEN 'COMPLETED' ELSE 'PARTIAL' END, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
 
-  // MainLayout.jsx
-  fetchMenuAssetBrands: `SELECT DISTINCT i.brand FROM assets a JOIN item_master i ON a.item_master_id = i.id JOIN categories c ON i.category_id = c.id WHERE c.name = '資訊設備' ORDER BY i.brand ASC`,
-  fetchMenuConsumableTypes: `SELECT DISTINCT i.type FROM item_master i JOIN categories c ON i.category_id = c.id WHERE c.name = '辦公耗材' ORDER BY i.type ASC`,
-  fetchMenuNicTypes: `SELECT DISTINCT i.type FROM assets a JOIN item_master i ON a.item_master_id = i.id JOIN categories c ON i.category_id = c.id WHERE c.name = '硬體' ORDER BY i.type ASC`,
+  // MainLayout.jsx (使用上方已定義的同名查詢)
 
   // Inventory.jsx
-  fetchInventorySummary: `SELECT item_id as id, master_sn as sn, item_name as name, safety_stock, physical_qty, locked_qty, available_qty FROM v_inventory_summary`,
 
   // Partners.jsx
   fetchPartners: `SELECT id, partner_type as type, name, contact_person as contact, phone, COALESCE(is_active, TRUE) as is_active FROM partners ORDER BY id DESC`,
@@ -165,10 +161,10 @@ export const queries = {
 
   // Settings.jsx
   fetchUsers: `SELECT id, username, role, full_name, is_active, menu_access FROM users ORDER BY id ASC`,
-  insertUser: `INSERT INTO users (username, password_hash, role, full_name, menu_access) VALUES ($1, $2, $3, $4, $5)`,
+  insertUser: `INSERT INTO users (username, password_hash, role, full_name, menu_access) VALUES ($1, $2, $3, $4, $5::jsonb)`,
   updateUserActive: `UPDATE users SET is_active = $1 WHERE id = $2`,
   deleteUser: `DELETE FROM users WHERE id = $1`,
-  updateUserAccess: `UPDATE users SET menu_access = $1 WHERE id = $2`,
+  updateUserAccess: `UPDATE users SET menu_access = $1::jsonb WHERE id = $2`,
 
   // NIC Registration & List
   fetchNicBrands: `SELECT id, name FROM item_brands WHERE category_id = (SELECT id FROM categories WHERE name = '硬體') ORDER BY name ASC`,
@@ -204,5 +200,43 @@ export const queries = {
   updateNicDetails: `UPDATE assets SET sn = $1, client = $2, location = $3, custom_attributes = COALESCE(custom_attributes, '{}'::jsonb) || jsonb_build_object('server_sn', $4::text, 'order_date', $5::text), hostname = $6 WHERE id = $7`,
   updateNicSn: `UPDATE assets SET sn = $1 WHERE id = $2`,
   findAssetBySn: `SELECT id FROM assets WHERE TRIM(LOWER(sn)) = TRIM(LOWER($1))`,
-  deleteCustomAttributeKey: `UPDATE assets SET custom_attributes = custom_attributes - $1 WHERE custom_attributes ? $1`
+  deleteCustomAttributeKey: `UPDATE assets SET custom_attributes = custom_attributes - $1 WHERE custom_attributes ? $1`,
+  fetchAssetDetailBySN: `
+    SELECT a.*, i.specification, i.type, i.brand, i.model, i.unit, c.name as category_name,
+    (SELECT json_agg(json_build_object(
+        'item_master_id', ha.item_master_id, 
+        'brand', hi.brand, 
+        'model', hi.model, 
+        'sn', ha.sn, 
+        'type', hi.type, 
+        'specification', hi.specification
+      )) 
+     FROM assets ha JOIN item_master hi ON ha.item_master_id = hi.id 
+     WHERE ha.custom_attributes->>'server_sn' IS NOT NULL 
+     AND TRIM(ha.custom_attributes->>'server_sn') = TRIM(a.sn)) as components
+    FROM assets a 
+    JOIN item_master i ON a.item_master_id = i.id 
+    LEFT JOIN categories c ON i.category_id = c.id 
+    WHERE TRIM(LOWER(a.sn)) = TRIM(LOWER($1))
+  `,
+  
+  // Outbound Workflow
+  countOutboundRequests: `SELECT COUNT(*) as count FROM outbound_requests WHERE request_no LIKE $1`,
+  insertOutboundRequest: `INSERT INTO outbound_requests (request_no, customer, location, shipping_date, status, creator_id, contact_info) VALUES ($1, $2, $3, $4, 'PENDING', $5, $6) RETURNING id`,
+  insertOutboundItem: `INSERT INTO outbound_items (request_id, item_id, sn, quantity) VALUES ($1, $2, $3, $4)`,
+  fetchDNList: `
+    SELECT r.*, u.full_name as creator_name, 
+           (SELECT COUNT(*) FROM outbound_items WHERE request_id = r.id) as item_count
+    FROM outbound_requests r
+    LEFT JOIN users u ON r.creator_id = u.id
+    ORDER BY r.created_at DESC
+  `,
+  fetchDNItems: `
+    SELECT oi.*, i.brand, i.model, i.specification, i.type, i.unit
+    FROM outbound_items oi
+    JOIN item_master i ON oi.item_id = i.id
+    WHERE oi.request_id = $1
+    ORDER BY oi.id ASC
+  `,
+  deleteOutboundRequest: `DELETE FROM outbound_requests WHERE id = $1`
 };

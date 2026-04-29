@@ -109,19 +109,24 @@ CREATE TABLE IF NOT EXISTS inbound_items (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 預留：出庫申請單 (Outbound Requests) -> 用於計算鎖定數量
+-- 出庫申請單 (Outbound Requests)
 CREATE TABLE IF NOT EXISTS outbound_requests (
     id SERIAL PRIMARY KEY,
     request_no VARCHAR(50) UNIQUE NOT NULL,
+    customer VARCHAR(100),
+    location TEXT,
+    shipping_date DATE DEFAULT CURRENT_DATE,
     status VARCHAR(20) DEFAULT 'PENDING', -- PENDING (鎖定中), SHIPPED (已出貨)
+    creator_id INTEGER REFERENCES users(id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 預留：出庫申請明細
+-- 出庫申請明細 (Outbound Items)
 CREATE TABLE IF NOT EXISTS outbound_items (
     id SERIAL PRIMARY KEY,
     request_id INTEGER REFERENCES outbound_requests(id) ON DELETE CASCADE,
     item_id INTEGER REFERENCES item_master(id) ON DELETE CASCADE,
+    sn VARCHAR(100), -- 記錄出貨的序號
     quantity INTEGER NOT NULL DEFAULT 1
 );
 
@@ -161,12 +166,12 @@ SELECT
     i.purchase_price,
     i.currency,
     i.image_path,
-    -- 實體庫存 (Physical Qty) = 總進貨 - 總出貨
-    COALESCE(inbound.total_in, 0) - COALESCE(outbound.total_shipped, 0) AS physical_qty,
+    -- 實體庫存 (Physical Qty) 直接採用 item_master 內的 stock_qty
+    COALESCE(i.stock_qty, 0) AS physical_qty,
     -- 鎖定數量 (Locked Qty) = 申請中但尚未出貨
     COALESCE(outbound.total_locked, 0) AS locked_qty,
-    -- 可用庫存 (Available Qty) = 實體庫存 - 鎖定數量
-    (COALESCE(inbound.total_in, 0) - COALESCE(outbound.total_shipped, 0)) - COALESCE(outbound.total_locked, 0) AS available_qty
+    -- 可用庫存 (Available Qty) = 目前庫存 - 鎖定數量
+    COALESCE(i.stock_qty, 0) - COALESCE(outbound.total_locked, 0) AS available_qty
 FROM item_master i
 LEFT JOIN (
     SELECT item_id, SUM(quantity) as total_in 

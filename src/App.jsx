@@ -2,13 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { RoleContext } from './context/RoleContext';
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import MainLayout from './components/layout/MainLayout';
-import Inventory from './pages/Inventory';
 import Inbound from './pages/Inbound';
 import Devices from './pages/Devices';
 import DeviceList from './pages/DeviceList';
 import Partners from './pages/Partners';
 import Settings from './pages/Settings';
-import ITOutbound from './pages/ITOutbound';
+import Outbound from './pages/Outbound';
+import DNList from './pages/DNList';
 import WarehouseReview from './pages/WarehouseReview';
 import Reports from './pages/Reports';
 import Login from './pages/Login';
@@ -50,10 +50,10 @@ function App() {
         <Routes>
           <Route path="/login" element={<Login setAuthUser={setAuthUser} />} />
           <Route path="/" element={authUser ? <MainLayout /> : <Navigate to="/login" replace />}>
-            <Route index element={<Navigate to="/inventory" replace />} />
-            <Route path="inventory" element={<Inventory />} />
+            <Route index element={<Navigate to="/device-list" replace />} />
             <Route path="inbound" element={<Inbound />} />
-            <Route path="outbound" element={<ITOutbound />} />
+            <Route path="outbound" element={<Outbound />} />
+            <Route path="dn-list" element={<DNList />} />
             <Route path="review" element={<WarehouseReview />} />
             <Route path="devices" element={<Devices />} />
             <Route path="device-list" element={<DeviceList />} />

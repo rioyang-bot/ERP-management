@@ -4,9 +4,9 @@ import { hashPassword } from '../utils/auth';
 import { Shield, User, Settings as SettingsIcon, CheckSquare, Square, X, Save, Key } from 'lucide-react';
 
 const MENU_OPTIONS = [
-  { id: 'inventory', label: '庫存查閱 (Inventory)' },
   { id: 'inbound', label: '進貨入庫 (Inbound)' },
-  { id: 'outbound', label: '出貨進銷 (Cart)' },
+  { id: 'outbound', label: '出貨建檔 (D/N Reg)' },
+  { id: 'dnList', label: '出貨單列表 (D/N List)' },
   { id: 'review', label: '出貨審核 (Review)' },
   { id: 'assets', label: '設備管理 (Device Reg)' },
   { id: 'assetList', label: '設備列表 (Device List)' },
@@ -59,14 +59,14 @@ const Settings = () => {
       
       // 根據角色給予預設權限
       const defaultAccess = 
-        newUser.role === 'IT' ? { inventory: true, outbound: true, reports: true } :
-        (newUser.role === 'WAREHOUSE' ? { inventory: true, review: true, inbound: true, assets: true, assetList: true, consumables: true, consumableList: true, partners: true, reports: true } :
-        (newUser.role === 'PURCHASING' ? { inventory: true, purchasing: true, reports: true } : 
-        { settings: true, inventory: true, inbound: true, outbound: true, review: true, assets: true, assetList: true, consumables: true, consumableList: true, purchasing: true, procurementList: true, partners: true, reports: true }));
+        newUser.role === 'IT' ? { outbound: true, dnList: true, reports: true } :
+        (newUser.role === 'WAREHOUSE' ? { review: true, inbound: true, assets: true, assetList: true, consumables: true, consumableList: true, partners: true, reports: true } :
+        (newUser.role === 'PURCHASING' ? { purchasing: true, reports: true } : 
+        { settings: true, inbound: true, outbound: true, dnList: true, review: true, assets: true, assetList: true, consumables: true, consumableList: true, purchasing: true, procurementList: true, partners: true, reports: true }));
 
       const res = await window.electronAPI.namedQuery(
         'insertUser',
-        [newUser.username, hashedPassword, newUser.role, newUser.full_name, JSON.stringify(defaultAccess)]
+        [newUser.username, hashedPassword, newUser.role, newUser.full_name, defaultAccess]
       );
 
       if (res.success) {
@@ -119,7 +119,7 @@ const Settings = () => {
   const handleSavePermissions = async () => {
     const res = await window.electronAPI.namedQuery(
       'updateUserAccess',
-      [JSON.stringify(editingUser.menu_access), editingUser.id]
+      [editingUser.menu_access, editingUser.id]
     );
 
     if (res.success) {

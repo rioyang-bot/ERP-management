@@ -14,6 +14,25 @@ const MainLayout = () => {
   const [isDeviceListExpanded, setIsDeviceListExpanded] = useState(location.pathname === '/device-list');
   const [isConsumableListExpanded, setIsConsumableListExpanded] = useState(location.pathname === '/consumable-list');
   const [isNicListExpanded, setIsNicListExpanded] = useState(location.pathname === '/hw-list');
+  const [prevPath, setPrevPath] = useState(location.pathname);
+
+  // --- 選單自動同步邏輯 (在渲染期間處理，避免 useEffect 連鎖渲染) ---
+  if (location.pathname !== prevPath) {
+    setPrevPath(location.pathname);
+    if (location.pathname === '/device-list') {
+      setIsDeviceListExpanded(true);
+      setIsConsumableListExpanded(false);
+      setIsNicListExpanded(false);
+    } else if (location.pathname === '/consumable-list') {
+      setIsConsumableListExpanded(true);
+      setIsDeviceListExpanded(false);
+      setIsNicListExpanded(false);
+    } else if (location.pathname === '/hw-list') {
+      setIsNicListExpanded(true);
+      setIsDeviceListExpanded(false);
+      setIsConsumableListExpanded(false);
+    }
+  }
 
   // --- 選單排序邏輯 ---
   const [menuOrder, setMenuOrder] = useState(() => {
@@ -66,21 +85,6 @@ const MainLayout = () => {
     
     fetchMenuData();
 
-    // 根據路徑自動展開對應選單並收合其他
-    if (location.pathname === '/device-list') {
-      setIsDeviceListExpanded(true);
-      setIsConsumableListExpanded(false);
-      setIsNicListExpanded(false);
-    } else if (location.pathname === '/consumable-list') {
-      setIsConsumableListExpanded(true);
-      setIsDeviceListExpanded(false);
-      setIsNicListExpanded(false);
-    } else if (location.pathname === '/hw-list') {
-      setIsNicListExpanded(true);
-      setIsDeviceListExpanded(false);
-      setIsConsumableListExpanded(false);
-    }
-
     const handleUpdate = () => fetchMenuData();
     window.addEventListener('db-update', handleUpdate);
     window.addEventListener('retired-update', handleUpdate);
@@ -88,12 +92,13 @@ const MainLayout = () => {
       window.removeEventListener('db-update', handleUpdate);
       window.removeEventListener('retired-update', handleUpdate);
     };
-  }, [location.pathname, location.search]);
+  }, [location.pathname]); // 僅在路徑變動時執行資料獲取與狀態同步
+
 
   const allMenuItems = [
-    { id: 'inventory', path: '/inventory', label: '庫存查閱 (Inventory)' },
     { id: 'inbound', path: '/inbound', label: '進貨入庫 (Inbound)' },
-    { id: 'outbound', path: '/outbound', label: '出貨進銷 (Cart)' },
+    { id: 'outbound', path: '/outbound', label: '出貨建檔 (D/N Reg)' },
+    { id: 'dnList', path: '/dn-list', label: '出貨單列表 (D/N List)' },
     { id: 'review', path: '/review', label: '出貨審核 (Review)' },
     { id: 'assets', path: '/devices', label: '設備建檔 (Device Reg)' },
     { id: 'assetList', path: '/device-list', label: '設備列表 (Device List)', hasSub: true },
