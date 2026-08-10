@@ -22,6 +22,7 @@ const DeviceList = () => {
   const [editItem, setEditItem] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
+  const [confirmModal, setConfirmModal] = useState({ show: false, msg: '', onConfirm: null });
   const [brandFieldConfigs, setBrandFieldConfigs] = useState({});
   const [customFieldDefs, setCustomFieldDefs] = useState([]);
   const [originalFieldIds, setOriginalFieldIds] = useState([]);
@@ -48,7 +49,7 @@ const DeviceList = () => {
 
   const fetchCustomers = useCallback(async () => {
     const res = await window.electronAPI.namedQuery('fetchCustomers');
-    if (res.success) setCustomers(res.rows.map(r => r.name));
+    if (res.success) setCustomers(res.rows);
   }, []);
 
   const fetchSettings = useCallback(async () => {
@@ -79,6 +80,11 @@ const DeviceList = () => {
         try { f[k] = new Date(f[k]).toISOString().split('T')[0]; } catch { f[k] = ''; }
       } else { f[k] = ''; }
     });
+    let attrs = {};
+    try { attrs = typeof f.custom_attributes === 'string' ? JSON.parse(f.custom_attributes) : (f.custom_attributes || {}); } catch { attrs = {}; }
+    f.custom_attributes = attrs;
+    f.contact_person = attrs.contact_person || f.partner_contact || '';
+    f.contact_phone = attrs.contact_phone || f.partner_phone || '';
     setEditItem(f);
     setShowEditModal(true);
     setActiveMenuId(null);
@@ -93,15 +99,34 @@ const DeviceList = () => {
   const handleUpdateStatus = async (id, sn, newStatus, label) => {
     if (!window.confirm(`確定要變更為「${label}」嗎？`)) return;
     const res = await window.electronAPI.namedQuery('updateAssetStatus', [newStatus, id]);
-    if (res.success) { setActiveMenuId(null); fetchAssets(); }
+    if (res.success) {
+      if (sn && (newStatus === 'ACTIVE' || newStatus === 'SHIPPED')) {
+        const hwStatusMap = {
+          'ACTIVE': 'ACTIVE',
+          'SHIPPED': 'SHIPPED'
+        };
+        const targetHwStatus = hwStatusMap[newStatus];
+        if (targetHwStatus) {
+          await window.electronAPI.namedQuery('updateMountedHardwareStatus', [targetHwStatus, sn]);
+        }
+      }
+      window.dispatchEvent(new CustomEvent('db-update'));
+      setActiveMenuId(null);
+      fetchAssets();
+    }
   };
 
   const handleUpdate = async () => {
     await window.electronAPI.namedQuery('updateItemMasterSpecs', [editItem.specification || '', editItem.model, editItem.item_master_id]);
+    const updatedCustomAttributes = {
+      ...(editItem.custom_attributes || {}),
+      contact_person: editItem.contact_person || '',
+      contact_phone: editItem.contact_phone || ''
+    };
     const res = await window.electronAPI.namedQuery('updateAssetDetails', [
         editItem.sn, editItem.client, editItem.hostname, editItem.location, editItem.installed_date || null,
         editItem.customer_warranty_expire || null, editItem.system_date || null, editItem.warranty_expire || null,
-        editItem.os, editItem.nic, editItem.custom_attributes || null, editItem.id
+        editItem.os, editItem.nic, updatedCustomAttributes, editItem.id
     ]);
     if (res.success) { setShowEditModal(false); fetchAssets(); }
   };
@@ -154,13 +179,21 @@ const DeviceList = () => {
   const toggleRetire = (e, key) => {
     e.stopPropagation();
     const isRetired = retiredKeys.includes(key);
-    const newRetired = isRetired 
-      ? retiredKeys.filter(k => k !== key)
-      : [...retiredKeys, key];
-    setRetiredKeys(newRetired);
-    localStorage.setItem('device_list_retired_keys', JSON.stringify(newRetired));
-    // 通知側邊欄更新
-    window.dispatchEvent(new CustomEvent('retired-update'));
+    const msg = isRetired ? `確定要將此卡片從汰舊區復原嗎？` : `確定要將此卡片移至汰舊區嗎？`;
+    
+    setConfirmModal({
+      show: true,
+      msg,
+      onConfirm: () => {
+        const newRetired = isRetired 
+          ? retiredKeys.filter(k => k !== key)
+          : [...retiredKeys, key];
+        setRetiredKeys(newRetired);
+        localStorage.setItem('device_list_retired_keys', JSON.stringify(newRetired));
+        window.dispatchEvent(new CustomEvent('retired-update'));
+        setConfirmModal({ show: false, msg: '', onConfirm: null });
+      }
+    });
   };
 
 
@@ -325,7 +358,7 @@ const DeviceList = () => {
   const renderRetiredSection = (list) => {
     if (list.length === 0) return null;
     return (
-      <div style={{ marginTop: '32px', borderTop: '2px dashed #e2e8f0', paddingTop: '24px', gridColumn: 'span 6' }}>
+      <div style={{ marginTop: '24px', borderTop: '2px dashed #e2e8f0', paddingTop: '24px', marginBottom: '32px', gridColumn: 'span 6' }}>
         <h3 style={{ fontSize: '16px', fontWeight: '900', color: '#64748b', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Archive size={18} /> 汰舊 / 停用區塊 (Retired Items)
         </h3>
@@ -370,7 +403,7 @@ const DeviceList = () => {
       <div style={cardStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <h1 style={{ fontSize: '24px', fontWeight: '900', color: '#1e293b', cursor: 'pointer' }} onClick={() => { setSearchTerm(''); setSearchParams({}); }}>
+            <h1 style={{ fontSize: '24px', fontWeight: '900', color: '#1e293b' }}>
               {brandFilter ? `${brandFilter} - 設備清單` : '設備列表 (Device List)'}
             </h1>
             {(brandFilter || searchTerm) && (
@@ -646,8 +679,72 @@ const DeviceList = () => {
               </div>
 
               <div><label style={editLabelStyle}>規格 (Specification)</label><textarea value={editItem.specification} onChange={(e) => setEditItem({...editItem, specification: e.target.value})} style={{ ...editInputStyle, minHeight: '80px', lineHeight: '1.5' }} /></div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                <div><label style={editLabelStyle}>客戶名稱</label><select value={editItem.client || ''} onChange={(e) => setEditItem({...editItem, client: e.target.value})} style={editInputStyle}>{customers.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+                <div>
+                  <label htmlFor="edit-client-select" style={editLabelStyle}>客戶名稱</label>
+                  <select 
+                    id="edit-client-select"
+                    value={editItem.client || ''} 
+                    onChange={(e) => {
+                      const newClient = e.target.value;
+                      const matches = customers.filter(c => c.name === newClient);
+                      const contactPerson = matches.length === 1 ? (matches[0].contact || '') : '';
+                      const contactPhone = matches.length === 1 ? (matches[0].phone || '') : '';
+                      setEditItem({
+                        ...editItem,
+                        client: newClient,
+                        contact_person: contactPerson,
+                        contact_phone: contactPhone
+                      });
+                    }} 
+                    style={editInputStyle}
+                  >
+                    <option value="">請選擇</option>
+                    {Array.from(new Set(customers.map(c => c.name))).map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="edit-contact-select" style={editLabelStyle}>聯絡人</label>
+                  {(() => {
+                    const matches = customers.filter(c => c.name === editItem.client);
+                    if (matches.length > 1) {
+                      return (
+                        <select 
+                          id="edit-contact-select"
+                          value={editItem.contact_person || ''} 
+                          onChange={(e) => {
+                            const contactVal = e.target.value;
+                            const found = matches.find(m => m.contact === contactVal);
+                            setEditItem({
+                              ...editItem,
+                              contact_person: contactVal,
+                              contact_phone: found ? (found.phone || '') : ''
+                            });
+                          }} 
+                          style={editInputStyle}
+                        >
+                          <option value="">請選擇聯絡人</option>
+                          {matches.map((m, idx) => (
+                            <option key={idx} value={m.contact || ''}>
+                              {m.contact || '無姓名'} ({m.phone || '無電話'})
+                            </option>
+                          ))}
+                        </select>
+                      );
+                    } else {
+                      return (
+                        <input 
+                          id="edit-contact-select"
+                          type="text" 
+                          value={editItem.contact_person || ''} 
+                          onChange={(e) => setEditItem({ ...editItem, contact_person: e.target.value })}
+                          placeholder="聯絡人姓名"
+                          style={editInputStyle}
+                        />
+                      );
+                    }
+                  })()}
+                </div>
                 <div><label style={editLabelStyle}>放置位置 (Location)</label><input type="text" value={editItem.location || ''} onChange={(e) => setEditItem({...editItem, location: e.target.value})} style={editInputStyle} /></div>
               </div>
               <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
@@ -768,6 +865,28 @@ const DeviceList = () => {
                 fetchSettings();
               }} style={{ flex: 1, padding: '14px', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 700 }}>儲存設定</button>
               <button onClick={() => setShowConfigModal(false)} style={{ padding: '14px 24px', backgroundColor: '#f1f5f9', border: 'none', borderRadius: '10px' }}>取消</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmModal.show && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 11000, animation: 'fadeIn 0.2s' }}>
+          <div style={{ backgroundColor: 'white', width: '320px', padding: '24px', borderRadius: '20px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)', textAlign: 'center' }}>
+            <div style={{ marginBottom: '20px', fontSize: '15px', fontWeight: '700', color: '#1e293b', lineHeight: '1.5' }}>{confirmModal.msg}</div>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button 
+                onClick={() => setConfirmModal({ show: false, msg: '', onConfirm: null })}
+                style={{ flex: 1, padding: '10px', backgroundColor: '#f1f5f9', border: 'none', borderRadius: '30px', color: '#64748b', fontWeight: '700', cursor: 'pointer', fontSize: '13px' }}
+              >
+                取消
+              </button>
+              <button 
+                onClick={confirmModal.onConfirm}
+                style={{ flex: 1, padding: '10px', background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', border: 'none', borderRadius: '30px', color: 'white', fontWeight: '700', cursor: 'pointer', fontSize: '13px', boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.3)' }}
+              >
+                確定
+              </button>
             </div>
           </div>
         </div>

@@ -25,6 +25,7 @@ const HwList = () => {
 
   const [showEditModal, setShowEditModal] = useState(false);
   const [editItem, setEditItem] = useState(null);
+  const [confirmModal, setConfirmModal] = useState({ show: false, msg: '', onConfirm: null });
 
   useEffect(() => {
     let isMounted = true;
@@ -203,12 +204,21 @@ const HwList = () => {
   const toggleRetire = (e, key) => {
     e.stopPropagation();
     const isRetired = retiredKeys.includes(key);
-    const newRetired = isRetired 
-      ? retiredKeys.filter(k => k !== key)
-      : [...retiredKeys, key];
-    setRetiredKeys(newRetired);
-    localStorage.setItem('hw_list_retired_keys', JSON.stringify(newRetired));
-    window.dispatchEvent(new CustomEvent('retired-update'));
+    const msg = isRetired ? `確定要將此卡片從汰舊區復原嗎？` : `確定要將此卡片移至汰舊區嗎？`;
+    
+    setConfirmModal({
+      show: true,
+      msg,
+      onConfirm: () => {
+        const newRetired = isRetired 
+          ? retiredKeys.filter(k => k !== key)
+          : [...retiredKeys, key];
+        setRetiredKeys(newRetired);
+        localStorage.setItem('hw_list_retired_keys', JSON.stringify(newRetired));
+        window.dispatchEvent(new CustomEvent('retired-update'));
+        setConfirmModal({ show: false, msg: '', onConfirm: null });
+      }
+    });
   };
 
 
@@ -233,7 +243,7 @@ const HwList = () => {
   const renderHeader = () => (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        <h2 style={{ fontSize: '24px', fontWeight: '900', color: '#1e293b', cursor: 'pointer' }} onClick={() => { setSearchTerm(''); navigate('?'); }}>
+        <h2 style={{ fontSize: '24px', fontWeight: '900', color: '#1e293b' }}>
           {filterType ? `${filterType} - 硬體清單` : '硬體列表 (Hardware List)'}
         </h2>
         {(filterType || searchTerm) && (
@@ -289,7 +299,7 @@ const HwList = () => {
     const renderRetiredSection = (list) => {
       if (list.length === 0) return null;
       return (
-        <div style={{ marginTop: '32px', borderTop: '2px dashed #e2e8f0', paddingTop: '24px', gridColumn: 'span 6' }}>
+        <div style={{ marginTop: '24px', borderTop: '2px dashed #e2e8f0', paddingTop: '24px', marginBottom: '32px', gridColumn: 'span 6' }}>
           <h3 style={{ fontSize: '16px', fontWeight: '900', color: '#64748b', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Archive size={18} /> 汰舊 / 停用區塊 (Retired Items)
           </h3>
@@ -658,6 +668,28 @@ const HwList = () => {
                 <button onClick={handleSave} style={{ flex: 1, padding: '14px', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 700, cursor: 'pointer' }}>儲存變更</button>
                 <button onClick={() => setShowEditModal(false)} style={{ padding: '14px 24px', backgroundColor: '#f1f5f9', border: 'none', borderRadius: '10px', cursor: 'pointer' }}>取消</button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmModal.show && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 11000 }}>
+          <div style={{ backgroundColor: 'white', width: '320px', padding: '24px', borderRadius: '20px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)', textAlign: 'center' }}>
+            <div style={{ marginBottom: '20px', fontSize: '15px', fontWeight: '700', color: '#1e293b', lineHeight: '1.5' }}>{confirmModal.msg}</div>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button 
+                onClick={() => setConfirmModal({ show: false, msg: '', onConfirm: null })}
+                style={{ flex: 1, padding: '10px', backgroundColor: '#f1f5f9', border: 'none', borderRadius: '30px', color: '#64748b', fontWeight: '700', cursor: 'pointer', fontSize: '13px' }}
+              >
+                取消
+              </button>
+              <button 
+                onClick={confirmModal.onConfirm}
+                style={{ flex: 1, padding: '10px', background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', border: 'none', borderRadius: '30px', color: 'white', fontWeight: '700', cursor: 'pointer', fontSize: '13px', boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.3)' }}
+              >
+                確定
+              </button>
             </div>
           </div>
         </div>

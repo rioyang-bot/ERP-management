@@ -44,6 +44,7 @@ const Settings = () => {
   }, []);
 
   useEffect(() => {
+    // 使用 Promise.resolve() 將 setState 推遲到微任務隊列，避免同步觸發連鎖渲染
     Promise.resolve().then(() => fetchUsers());
   }, [fetchUsers]);
 
@@ -58,11 +59,18 @@ const Settings = () => {
       const hashedPassword = await hashPassword(newUser.password);
       
       // 根據角色給予預設權限
-      const defaultAccess = 
-        newUser.role === 'IT' ? { outbound: true, dnList: true, reports: true } :
-        (newUser.role === 'WAREHOUSE' ? { review: true, inbound: true, assets: true, assetList: true, consumables: true, consumableList: true, partners: true, reports: true } :
-        (newUser.role === 'PURCHASING' ? { purchasing: true, reports: true } : 
-        { settings: true, inbound: true, outbound: true, dnList: true, review: true, assets: true, assetList: true, consumables: true, consumableList: true, purchasing: true, procurementList: true, partners: true, reports: true }));
+      let defaultAccess = {};
+      if (newUser.role === 'ADMIN') {
+        MENU_OPTIONS.forEach(opt => {
+          defaultAccess[opt.id] = true;
+        });
+      } else if (newUser.role === 'IT') {
+        defaultAccess = { outbound: true, dnList: true, reports: true };
+      } else if (newUser.role === 'WAREHOUSE') {
+        defaultAccess = { review: true, inbound: true, assets: true, assetList: true, consumables: true, consumableList: true, partners: true, reports: true };
+      } else if (newUser.role === 'PURCHASING') {
+        defaultAccess = { purchasing: true, reports: true };
+      }
 
       const res = await window.electronAPI.namedQuery(
         'insertUser',
@@ -89,7 +97,7 @@ const Settings = () => {
   };
 
   const handleDeleteUser = async (id, username) => {
-    if (username === 'admin') return alert('系統管理員帳號不可刪除'); 
+    if (username === 'METECH') return alert('系統管理員帳號不可刪除'); 
     if (window.confirm(`確定要永久刪除帳號 [${username}] 嗎？此動作無法復原。`)) {
       const res = await window.electronAPI.namedQuery('deleteUser', [id]);
       if (res.success) {
@@ -99,14 +107,23 @@ const Settings = () => {
   };
 
   const handleOpenPermissions = (user) => {
+    const access = { ...(user.menu_access || {}) };
+    if (user.role === 'ADMIN') {
+      MENU_OPTIONS.forEach(opt => {
+        access[opt.id] = true;
+      });
+    }
     setEditingUser({
       ...user,
-      menu_access: user.menu_access || {}
+      menu_access: access
     });
     setShowPermissionModal(true);
   };
 
   const handleTogglePermission = (menuId) => {
+    if (editingUser.role === 'ADMIN') {
+      return;
+    }
     setEditingUser(prev => ({
       ...prev,
       menu_access: {
@@ -117,9 +134,15 @@ const Settings = () => {
   };
 
   const handleSavePermissions = async () => {
+    const updatedAccess = { ...editingUser.menu_access };
+    if (editingUser.role === 'ADMIN') {
+      MENU_OPTIONS.forEach(opt => {
+        updatedAccess[opt.id] = true;
+      });
+    }
     const res = await window.electronAPI.namedQuery(
       'updateUserAccess',
-      [editingUser.menu_access, editingUser.id]
+      [updatedAccess, editingUser.id]
     );
 
     if (res.success) {
@@ -129,7 +152,7 @@ const Settings = () => {
       if (editingUser.id === authUser.id) {
         setAuthUser({
           ...authUser,
-          menu_access: editingUser.menu_access
+          menu_access: updatedAccess
         });
       }
 
@@ -263,21 +286,29 @@ const Settings = () => {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '32px' }}>
-              {MENU_OPTIONS.map(opt => (
-                <div 
-                  key={opt.id} 
-                  onClick={() => handleTogglePermission(opt.id)}
-                  style={{ 
-                    display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', 
-                    borderRadius: '8px', border: '1px solid #eee', cursor: 'pointer',
-                    backgroundColor: editingUser.menu_access[opt.id] ? '#f0f7ff' : '#fff',
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  {editingUser.menu_access[opt.id] ? <CheckSquare size={18} color="var(--primary-color)" /> : <Square size={18} color="#ccc" />}
-                  <span style={{ fontSize: '0.9rem', fontWeight: editingUser.menu_access[opt.id] ? 600 : 400 }}>{opt.label}</span>
-                </div>
-              ))}
+              {MENU_OPTIONS.map(opt => {
+                const isAdminUser = editingUser.role === 'ADMIN';
+                const isChecked = isAdminUser ? true : !!editingUser.menu_access[opt.id];
+                return (
+                  <div 
+                    key={opt.id} 
+                    onClick={() => {
+                      if (!isAdminUser) handleTogglePermission(opt.id);
+                    }}
+                    style={{ 
+                      display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', 
+                      borderRadius: '8px', border: '1px solid #eee', 
+                      cursor: isAdminUser ? 'not-allowed' : 'pointer',
+                      backgroundColor: isChecked ? '#f0f7ff' : '#fff',
+                      opacity: isAdminUser ? 0.75 : 1,
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    {isChecked ? <CheckSquare size={18} color="var(--primary-color)" /> : <Square size={18} color="#ccc" />}
+                    <span style={{ fontSize: '0.9rem', fontWeight: isChecked ? 600 : 400 }}>{opt.label}</span>
+                  </div>
+                );
+              })}
             </div>
 
             <div style={{ display: 'flex', gap: '12px' }}>

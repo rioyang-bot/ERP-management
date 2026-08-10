@@ -125,7 +125,7 @@ const MainLayout = () => {
       return idxA - idxB;
     });
   }
-  const menuItems = sortedAllItems.filter(item => authUser?.menu_access?.[item.id]);
+  const menuItems = sortedAllItems.filter(item => authUser?.role === 'ADMIN' || authUser?.menu_access?.[item.id]);
 
   // --- 選單拖曳事件 ---
   const handleMenuDragStart = (e, id) => {

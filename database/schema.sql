@@ -20,15 +20,6 @@ CREATE TABLE IF NOT EXISTS categories (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 品項類型 (Item Types - 例如：筆電, 伺服器, 文具)
-CREATE TABLE IF NOT EXISTS item_types (
-    id SERIAL PRIMARY KEY,
-    category_id INTEGER REFERENCES categories(id) ON DELETE CASCADE,
-    name VARCHAR(100) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(category_id, name)
-);
-
 -- 品項廠牌 (Item Brands - 例如：Apple, Dell, Double A)
 CREATE TABLE IF NOT EXISTS item_brands (
     id SERIAL PRIMARY KEY,
@@ -37,6 +28,25 @@ CREATE TABLE IF NOT EXISTS item_brands (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(category_id, name)
 );
+
+-- 品項類型 (Item Types - 例如：筆電, 伺服器, 文具)
+CREATE TABLE IF NOT EXISTS item_types (
+    id SERIAL PRIMARY KEY,
+    category_id INTEGER REFERENCES categories(id) ON DELETE CASCADE,
+    brand_id INTEGER REFERENCES item_brands(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(category_id, brand_id, name)
+);
+
+-- 品項型號 (Item Models)
+CREATE TABLE IF NOT EXISTS item_models (
+    id SERIAL PRIMARY KEY,
+    type_id INTEGER REFERENCES item_types(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(type_id, name)
+); 
 
 -- 客戶與供應商主檔
 CREATE TABLE IF NOT EXISTS partners (
@@ -51,6 +61,23 @@ CREATE TABLE IF NOT EXISTS partners (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 系統使用者表
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(100) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(20) NOT NULL CHECK (role IN ('IT', 'WAREHOUSE', 'ADMIN')),
+    full_name VARCHAR(100),
+    is_active BOOLEAN DEFAULT TRUE,
+    menu_access JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 初始化預設系統管理員 (ADMIN)
+INSERT INTO users (username, password_hash, role, full_name) 
+VALUES ('METECH', 'admin_hash_placeholder', 'ADMIN', '系統與帳號管理員')
+ON CONFLICT (username) DO NOTHING;
+
 -- 品項主檔 (SKU Master)
 CREATE TABLE IF NOT EXISTS item_master (
     id SERIAL PRIMARY KEY,
@@ -61,6 +88,8 @@ CREATE TABLE IF NOT EXISTS item_master (
     model VARCHAR(100),              -- 型號
     custodian VARCHAR(100),          -- 保管人
     unit VARCHAR(20) DEFAULT '個',    -- 單位
+    stock_qty INTEGER DEFAULT 0,     -- 實體庫存
+    lab_qty INTEGER DEFAULT 0,       -- 實驗室庫存
     safety_stock INTEGER DEFAULT 0,  -- 安全水位
     purchase_price DECIMAL(15, 2),   -- 採購單價
     currency VARCHAR(10) DEFAULT 'TWD', -- 幣別
@@ -73,7 +102,7 @@ CREATE TABLE IF NOT EXISTS item_master (
 CREATE TABLE IF NOT EXISTS assets (
     id SERIAL PRIMARY KEY,
     item_master_id INTEGER REFERENCES item_master(id) ON DELETE CASCADE,
-    sn VARCHAR(100) UNIQUE NOT NULL, -- 序號 (唯一列管)
+    sn VARCHAR(100) UNIQUE, -- 序號 (唯一列管，為支援無SN設備可為空)
     hostname VARCHAR(100),           -- 主機名稱
     client VARCHAR(100),             -- 客戶
     location VARCHAR(100),           -- 地點
@@ -82,6 +111,20 @@ CREATE TABLE IF NOT EXISTS assets (
     system_date DATE,                -- 系統日期
     warranty_expire DATE,            -- 保固到期
     customer_warranty_expire DATE,   -- 客戶保固到期
+    os VARCHAR(255),                 -- 作業系統
+    nic VARCHAR(255),                -- 網卡類型/IP
+    custom_attributes JSONB DEFAULT '{}'::jsonb, -- 動態屬性 (例如MAC、其他外掛設備)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 實驗室耗材借用 (Item Lab Assignments)
+CREATE TABLE IF NOT EXISTS item_lab_assignments (
+    id SERIAL PRIMARY KEY,
+    item_master_id INTEGER REFERENCES item_master(id) ON DELETE CASCADE,
+    asset_id INTEGER REFERENCES assets(id) ON DELETE CASCADE,
+    quantity INTEGER NOT NULL CHECK (quantity > 0),
+    note TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -118,6 +161,7 @@ CREATE TABLE IF NOT EXISTS outbound_requests (
     shipping_date DATE DEFAULT CURRENT_DATE,
     status VARCHAR(20) DEFAULT 'PENDING', -- PENDING (鎖定中), SHIPPED (已出貨)
     creator_id INTEGER REFERENCES users(id),
+    contact_info VARCHAR(255),            -- 聯絡人資訊
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -201,22 +245,14 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 系統使用者表
-CREATE TABLE IF NOT EXISTS users (
-    id SERIAL PRIMARY KEY,
-    username VARCHAR(100) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
-    role VARCHAR(20) NOT NULL CHECK (role IN ('IT', 'WAREHOUSE', 'ADMIN')),
-    full_name VARCHAR(100),
-    is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
 
--- 初始化預設系統管理員 (ADMIN)
-INSERT INTO users (username, password_hash, role, full_name) 
-VALUES ('admin', 'admin_hash_placeholder', 'ADMIN', '系統與帳號管理員')
-ON CONFLICT (username) DO NOTHING;
 
+-- 初始化基礎類別
+INSERT INTO categories (name, description) VALUES 
+('資訊設備', '需要序號列管的IT資產'),
+('辦公耗材', '免序號的消耗性質物品'),
+('硬體', '搭載在資訊設備上的零組件網卡等')
+ON CONFLICT (name) DO NOTHING;
 
 -- 初始化常用資產類型
 INSERT INTO item_types (category_id, name)

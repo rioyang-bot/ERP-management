@@ -10,12 +10,17 @@
 
 ### 1.1 強制單元測試 (Mandatory Testing)
 *   **必須撰寫測試**：每次新增功能或修改現有程式邏輯後，**必須同步撰寫或更新對應的單元測試 (Unit Tests)**。
-*   **必須執行測試**：所有程式碼在提交前，**必須跑過一遍完整的單元測試集**。若測試未通過，則視為未完工。
+*   **必須執行測試**：所有程式碼在提交前，**必須跑過一遍完整的單元測試集**（此動作由 AI 助理在回報前自動完成）。若測試未通過，則視為未完工。
+*   **強制編譯檢查**：每次完成新功能寫入或邏輯修改後，**必須執行 `npm run build`**，確保代碼在生產環境下編譯正常，杜絕語法錯誤或引用失效（此動作由 AI 助理在回報前自動完成）。
 *   **回歸測試**：確保新的修改不會影響到既有的系統邏輯。
 
 ### 1.2 強制規範參考 (Mandatory Guidelines Reference)
 *   **UI/UX 一致性**：每次撰寫前端介面程式時，**必須參考 [UI_UX_GUIDELINES.md](file:///c:/Users/RIO/Desktop/AI%20project%20management/ERP-management/UI_UX_GUIDELINES.md)**，確保配色、間距、按鈕樣式與資訊層次符合系統美學標準。
 *   **安全性考量**：每次涉及資料庫存取、使用者輸入或 API 調用時，**必須參考 [SECURITY_GUIDELINES.md](file:///c:/Users/RIO/Desktop/AI%20project%20management/ERP-management/SECURITY_GUIDELINES.md)**，嚴格執行參數化查詢與資料過濾，防止 SQL 注入與 XSS 攻擊。
+
+### 1.3 模組同步與一致性 (Module Synchronization & Consistency)
+*   **跨模組同步**：針對「統計卡片 (Stats Cards)」或「清單列表」進行設計變更或功能調整時（如：間距調整、二次確認彈窗、排序邏輯等），**必須同時處理「設備、硬體、耗材」三個核心清單模組**。
+*   **禁止片段式更新**：嚴禁僅修改單一模組而導致其他相似模組出現體驗差異，確保全系統操作手感與視覺規範高度一致。
 
 ---
 

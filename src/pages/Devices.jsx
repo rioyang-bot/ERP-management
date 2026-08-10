@@ -20,7 +20,8 @@ const Devices = () => {
     type: '', brand: '', model: '', sn: '', specification: '', client: '', 
     hostname: '', location: '', installed_date: '', 
     customer_warranty_expire: '', system_date: '', warranty_expire: '',
-    os: '', nic: '', custom_attributes: {}
+    os: '', nic: '', custom_attributes: {},
+    contact_person: '', contact_phone: ''
   });
   const [isBulkMode, setIsBulkMode] = useState(false);
   const [bulkSns, setBulkSns] = useState('');
@@ -85,7 +86,7 @@ const Devices = () => {
 
   const fetchCustomers = useCallback(async () => {
     const res = await window.electronAPI.namedQuery('fetchCustomers');
-    if (res.success) setCustomers(res.rows.map(r => r.name));
+    if (res.success) setCustomers(res.rows);
   }, []);
 
   const fetchSettings = useCallback(async () => {
@@ -183,6 +184,23 @@ const Devices = () => {
       else setModels([]);
     } else if (name === 'type') {
       await fetchModels(formData.brand, value);
+    } else if (name === 'client') {
+      const matches = customers.filter(c => c.name === value);
+      if (matches.length === 1) {
+        setFormData(prev => ({
+          ...prev,
+          client: value,
+          contact_person: matches[0].contact || '',
+          contact_phone: matches[0].phone || ''
+        }));
+      } else {
+        setFormData(prev => ({
+          ...prev,
+          client: value,
+          contact_person: '',
+          contact_phone: ''
+        }));
+      }
     }
   };
 
@@ -214,10 +232,15 @@ const Devices = () => {
 
       let successCount = 0;
       for (const sn of snList) {
+        const updatedCustomAttributes = {
+          ...formData.custom_attributes,
+          contact_person: formData.contact_person || '',
+          contact_phone: formData.contact_phone || ''
+        };
         const res = await window.electronAPI.namedQuery('insertAssetRecord', [
             masterId, sn || null, formData.client, formData.hostname, formData.location, formData.installed_date || null,
             formData.customer_warranty_expire || null, formData.system_date || null, formData.warranty_expire || null,
-            formData.os, formData.nic, formData.custom_attributes
+            formData.os, formData.nic, updatedCustomAttributes
         ]);
         if (res.success) successCount++;
       }
@@ -227,7 +250,8 @@ const Devices = () => {
       setFormData({ 
         sn: '', specification: '', type: '', brand: brands[0]?.name || '', model: '', client: '', 
         hostname: '', location: '', installed_date: '', customer_warranty_expire: '', system_date: '', warranty_expire: '',
-        os: '', nic: '', custom_attributes: {}
+        os: '', nic: '', custom_attributes: {},
+        contact_person: '', contact_phone: ''
       });
       if (isBulkMode) setBulkSns('');
       setFormKey(prev => prev + 1);
@@ -334,8 +358,58 @@ const Devices = () => {
               {isBulkMode && <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>已偵測: <b>{bulkSns.split('\n').filter(s => s.trim()).length}</b> 個序號</div>}
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-              <div><label style={labelStyle}>客戶名稱 (Customer)</label><select name="client" value={formData.client} onChange={handleChange} style={inputStyle}><option value="">請選擇</option>{customers.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+              <div>
+                <label htmlFor="client-select" style={labelStyle}>客戶名稱 (Customer)</label>
+                <select id="client-select" name="client" value={formData.client} onChange={handleChange} style={inputStyle}>
+                  <option value="">請選擇</option>
+                  {Array.from(new Set(customers.map(c => c.name))).map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="contact-select" style={labelStyle}>聯絡人 (Contact Person)</label>
+                {(() => {
+                  const matches = customers.filter(c => c.name === formData.client);
+                  if (matches.length > 1) {
+                    return (
+                      <select 
+                        id="contact-select"
+                        name="contact_person" 
+                        value={formData.contact_person} 
+                        onChange={(e) => {
+                          const contactVal = e.target.value;
+                          const found = matches.find(m => m.contact === contactVal);
+                          setFormData(prev => ({
+                            ...prev,
+                            contact_person: contactVal,
+                            contact_phone: found ? (found.phone || '') : ''
+                          }));
+                        }} 
+                        style={inputStyle}
+                      >
+                        <option value="">請選擇聯絡人</option>
+                        {matches.map((m, idx) => (
+                          <option key={idx} value={m.contact || ''}>
+                            {m.contact || '無姓名'} ({m.phone || '無電話'})
+                          </option>
+                        ))}
+                      </select>
+                    );
+                  } else {
+                    return (
+                      <input 
+                        id="contact-select"
+                        type="text" 
+                        name="contact_person" 
+                        value={formData.contact_person} 
+                        onChange={(e) => setFormData(prev => ({ ...prev, contact_person: e.target.value }))}
+                        placeholder="聯絡人姓名"
+                        style={inputStyle}
+                      />
+                    );
+                  }
+                })()}
+              </div>
               <div><label style={labelStyle}>放置位置 (Location)</label><input type="text" name="location" value={formData.location} onChange={handleChange} style={inputStyle} /></div>
             </div>
 

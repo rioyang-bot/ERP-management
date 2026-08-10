@@ -1,7 +1,8 @@
 export const queries = {
   // AssetList.jsx
   fetchAssetsList: `SELECT a.*, a.id as id, i.id as item_master_id, i.specification, i.type, i.brand, i.model, i.unit, c.name as category_name,
-      p.contact_person as partner_contact, p.phone as partner_phone,
+      COALESCE(a.custom_attributes->>'contact_person', p.contact_person) as partner_contact,
+      COALESCE(a.custom_attributes->>'contact_phone', p.phone) as partner_phone,
       (SELECT json_agg(json_build_object('brand', hi.brand, 'model', hi.model, 'sn', ha.sn)) 
        FROM assets ha JOIN item_master hi ON ha.item_master_id = hi.id 
        WHERE ha.custom_attributes->>'server_sn' IS NOT NULL AND ha.custom_attributes->>'server_sn' != '' 
@@ -14,10 +15,16 @@ export const queries = {
       FROM assets a 
       JOIN item_master i ON a.item_master_id = i.id 
       LEFT JOIN categories c ON i.category_id = c.id 
-      LEFT JOIN partners p ON a.client = p.name
+      LEFT JOIN partners p ON a.client = p.name AND (
+        (a.custom_attributes->>'contact_person' IS NOT NULL AND p.contact_person = a.custom_attributes->>'contact_person') OR
+        (a.custom_attributes->>'contact_person' IS NULL AND p.id = (
+             SELECT MIN(id) FROM partners WHERE name = a.client
+        ))
+      )
       WHERE c.name = '資訊設備' ORDER BY i.id DESC`,
   fetchAssetsListByBrand: `SELECT a.*, a.id as id, i.id as item_master_id, i.specification, i.type, i.brand, i.model, i.unit, c.name as category_name,
-      p.contact_person as partner_contact, p.phone as partner_phone,
+      COALESCE(a.custom_attributes->>'contact_person', p.contact_person) as partner_contact,
+      COALESCE(a.custom_attributes->>'contact_phone', p.phone) as partner_phone,
       (SELECT json_agg(json_build_object('brand', hi.brand, 'model', hi.model, 'sn', ha.sn)) 
        FROM assets ha JOIN item_master hi ON ha.item_master_id = hi.id 
        WHERE ha.custom_attributes->>'server_sn' IS NOT NULL AND ha.custom_attributes->>'server_sn' != '' 
@@ -30,10 +37,16 @@ export const queries = {
       FROM assets a 
       JOIN item_master i ON a.item_master_id = i.id 
       LEFT JOIN categories c ON i.category_id = c.id 
-      LEFT JOIN partners p ON a.client = p.name
+      LEFT JOIN partners p ON a.client = p.name AND (
+        (a.custom_attributes->>'contact_person' IS NOT NULL AND p.contact_person = a.custom_attributes->>'contact_person') OR
+        (a.custom_attributes->>'contact_person' IS NULL AND p.id = (
+             SELECT MIN(id) FROM partners WHERE name = a.client
+        ))
+      )
       WHERE c.name = '資訊設備' AND i.brand = $1 ORDER BY i.id DESC`,
   deleteAsset: `DELETE FROM assets WHERE id = $1`,
   updateAssetStatus: `UPDATE assets SET status = $1 WHERE id = $2`,
+  updateMountedHardwareStatus: `UPDATE assets SET status = $1 WHERE custom_attributes->>'server_sn' = $2`,
   updateItemMasterSpecs: `UPDATE item_master SET specification = $1, model = $2 WHERE id = $3`,
   updateAssetDetails: `UPDATE assets SET sn = $1, client = $2, hostname = $3, location = $4, installed_date = $5, customer_warranty_expire = $6, system_date = $7, warranty_expire = $8, os = $9, nic = $10, custom_attributes = $11 WHERE id = $12`,
   
@@ -57,11 +70,17 @@ export const queries = {
   // Assets.jsx
   fetchRecentAssets: `
       SELECT a.*, i.specification, i.type, i.brand, i.model, i.unit, c.name as category_name,
-             p.contact_person as partner_contact, p.phone as partner_phone
+             COALESCE(a.custom_attributes->>'contact_person', p.contact_person) as partner_contact,
+             COALESCE(a.custom_attributes->>'contact_phone', p.phone) as partner_phone
       FROM assets a 
       JOIN item_master i ON a.item_master_id = i.id 
       LEFT JOIN categories c ON i.category_id = c.id 
-      LEFT JOIN partners p ON a.client = p.name
+      LEFT JOIN partners p ON a.client = p.name AND (
+        (a.custom_attributes->>'contact_person' IS NOT NULL AND p.contact_person = a.custom_attributes->>'contact_person') OR
+        (a.custom_attributes->>'contact_person' IS NULL AND p.id = (
+             SELECT MIN(id) FROM partners WHERE name = a.client
+        ))
+      )
       WHERE c.name = '資訊設備' ORDER BY a.id DESC LIMIT 10`,
   fetchModelsByBrandType: `
       SELECT m.name FROM item_models m JOIN item_types t ON m.type_id = t.id JOIN item_brands b ON t.brand_id = b.id
@@ -156,7 +175,7 @@ export const queries = {
   updatePartner: `UPDATE partners SET partner_type = $1, name = $2, contact_person = $3, phone = $4 WHERE id = $5`,
   updatePartnerActive: `UPDATE partners SET is_active = $1 WHERE id = $2`,
   deletePartner: `DELETE FROM partners WHERE id = $1`,
-  migratePartnersActive: `ALTER TABLE partners ADD COLUMN is_active BOOLEAN DEFAULT TRUE`,
+  migratePartnersActive: `ALTER TABLE partners ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE`,
   initPartnersActive: `UPDATE partners SET is_active = TRUE WHERE is_active IS NULL`,
 
   // Settings.jsx
@@ -178,11 +197,17 @@ export const queries = {
              s.client as server_client, s.location as server_location,
              s.hostname as server_hostname, s.os as server_os, s.nic as server_nic,
              s.custom_attributes as server_custom_attributes,
-             p.contact_person as partner_contact, p.phone as partner_phone
+             COALESCE(a.custom_attributes->>'contact_person', p.contact_person) as partner_contact,
+             COALESCE(a.custom_attributes->>'contact_phone', p.phone) as partner_phone
       FROM assets a 
       JOIN item_master i ON a.item_master_id = i.id 
       LEFT JOIN assets s ON (a.custom_attributes->>'server_sn' = s.sn AND s.sn IS NOT NULL AND s.sn != '')
-      LEFT JOIN partners p ON a.client = p.name
+      LEFT JOIN partners p ON a.client = p.name AND (
+        (a.custom_attributes->>'contact_person' IS NOT NULL AND p.contact_person = a.custom_attributes->>'contact_person') OR
+        (a.custom_attributes->>'contact_person' IS NULL AND p.id = (
+             SELECT MIN(id) FROM partners WHERE name = a.client
+        ))
+      )
       WHERE i.category_id = (SELECT id FROM categories WHERE name = '硬體') AND i.type = $1
       ORDER BY a.id DESC`,
   fetchNicList: `
@@ -190,11 +215,17 @@ export const queries = {
              s.client as server_client, s.location as server_location,
              s.hostname as server_hostname, s.os as server_os, s.nic as server_nic,
              s.custom_attributes as server_custom_attributes,
-             p.contact_person as partner_contact, p.phone as partner_phone
+             COALESCE(a.custom_attributes->>'contact_person', p.contact_person) as partner_contact,
+             COALESCE(a.custom_attributes->>'contact_phone', p.phone) as partner_phone
       FROM assets a 
       JOIN item_master i ON a.item_master_id = i.id 
       LEFT JOIN assets s ON (a.custom_attributes->>'server_sn' = s.sn AND s.sn IS NOT NULL AND s.sn != '')
-      LEFT JOIN partners p ON a.client = p.name
+      LEFT JOIN partners p ON a.client = p.name AND (
+        (a.custom_attributes->>'contact_person' IS NOT NULL AND p.contact_person = a.custom_attributes->>'contact_person') OR
+        (a.custom_attributes->>'contact_person' IS NULL AND p.id = (
+             SELECT MIN(id) FROM partners WHERE name = a.client
+        ))
+      )
       WHERE i.category_id = (SELECT id FROM categories WHERE name = '硬體')
       ORDER BY a.id DESC`,
   updateNicDetails: `UPDATE assets SET sn = $1, client = $2, location = $3, custom_attributes = COALESCE(custom_attributes, '{}'::jsonb) || jsonb_build_object('server_sn', $4::text, 'order_date', $5::text), hostname = $6 WHERE id = $7`,
