@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Search, FileText, ShoppingCart, Filter, Calendar, ExternalLink, ChevronDown, ChevronRight, Package, Truck, CheckCircle2, Trash2, Edit2, X, Save } from 'lucide-react';
+import ProcurementRegistration from './Purchasing';
 
 const ProcurementList = () => {
   const [purchaseRecords, setPurchaseRecords] = useState([]);
@@ -32,40 +33,29 @@ const ProcurementList = () => {
   };
 
   const handleDeleteOrder = async (orderNo) => {
-    if (!confirm(`確定要刪除整個採購單 ${orderNo} 嗎？此操作不可還原。`)) return;
-    
-    const res = await window.electronAPI.namedQuery(
-      "deletePurchaseRecordList",
-      [orderNo]
-    );
-    
-    if (res.success) {
-      alert('刪除成功');
-      fetchRecords();
-    } else {
-      alert('刪除失敗：' + res.error);
+    try {
+      if (!window.confirm(`確定要刪除整個採購單 ${orderNo} 嗎？此操作不可還原。`)) return;
+      
+      const res = await window.electronAPI.namedQuery(
+        "deletePurchaseRecordList",
+        [orderNo]
+      );
+      
+      if (res.success) {
+        alert('刪除成功');
+        fetchRecords();
+      } else {
+        alert('刪除失敗：' + res.error);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('刪除操作發生錯誤：' + err.message);
     }
   };
 
   const handleEditOrder = (order) => {
-    setEditingOrder(JSON.parse(JSON.stringify(order))); // Deep copy
+    setEditingOrder(JSON.parse(JSON.stringify(order))); 
     setShowEditModal(true);
-  };
-
-  const handleUpdateOrder = async () => {
-    try {
-      for (const item of editingOrder.items) {
-        const res = await window.electronAPI.namedQuery('updatePurchaseRecordList', [item.quantity, item.specification, item.model, item.item_type, item.brand, item.id]);
-        
-        if (!res.success) throw new Error(res.error);
-      }
-      
-      alert('修改成功');
-      setShowEditModal(false);
-      fetchRecords();
-    } catch (err) {
-      alert('修改失敗：' + err.message);
-    }
   };
 
   // Group records by PO Number
@@ -76,6 +66,7 @@ const ProcurementList = () => {
         partner_name: record.partner_name,
         purchaser_name: record.purchaser_name,
         created_at: record.created_at,
+        project_name: record.project_name,
         items: [],
         totalQty: 0,
         receivedQty: 0,
@@ -106,9 +97,11 @@ const ProcurementList = () => {
     const search = searchTerm.toLowerCase();
     const orderNo = (order.order_no || '').toLowerCase();
     const partner = (order.partner_name || '').toLowerCase();
+    const project = (order.project_name || '').toLowerCase();
     
     return orderNo.includes(search) ||
            partner.includes(search) ||
+           project.includes(search) ||
            order.items.some(item => {
              const spec = (item.specification || '').toLowerCase();
              const model = (item.model || '').toLowerCase();
@@ -210,7 +203,14 @@ const ProcurementList = () => {
                         {expandedOrders.has(order.order_no) ? <ChevronDown size={20} color="#666" /> : <ChevronRight size={20} color="#666" />}
                       </td>
                       <td style={{ padding: '16px 24px' }}>
-                        <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--primary-color)' }}>{order.order_no}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--primary-color)' }}>{order.order_no}</span>
+                          {order.project_name && (
+                            <span style={{ backgroundColor: '#ebfbee', color: '#2b8a3e', fontSize: '0.75rem', padding: '2px 8px', borderRadius: '4px', fontWeight: 600 }}>
+                              {order.project_name}
+                            </span>
+                          )}
+                        </div>
                         <div style={{ fontSize: '0.75rem', color: '#aaa', marginTop: '2px' }}>{new Date(order.created_at).toLocaleDateString()} {new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                       </td>
                       <td style={{ padding: '16px 24px' }}>
@@ -311,84 +311,15 @@ const ProcurementList = () => {
 
       {showEditModal && editingOrder && (
         <div style={modalOverlayStyle}>
-          <div className="card-surface" style={modalContentStyle}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 800 }}>修改採購單 - {editingOrder.order_no}</h2>
-              <X size={24} style={{ cursor: 'pointer', color: '#999' }} onClick={() => setShowEditModal(false)} />
-            </div>
-
-            <div style={{ maxHeight: '60vh', overflowY: 'auto', marginBottom: '24px' }}>
-              {editingOrder.items.map((item, idx) => (
-                <div key={item.id} style={{ padding: '20px', border: '1px solid #eee', borderRadius: '12px', marginBottom: '16px', backgroundColor: '#fafafa' }}>
-                  <div style={{ fontWeight: 700, color: 'var(--primary-color)', marginBottom: '12px' }}>品項 #{idx + 1}</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', marginBottom: '12px' }}>
-                    <div>
-                      <label style={labelStyle}>規格內容 (Specification)</label>
-                      <input 
-                        type="text" 
-                        value={item.specification} 
-                        onChange={(e) => {
-                          const newItems = [...editingOrder.items];
-                          newItems[idx].specification = e.target.value;
-                          setEditingOrder({ ...editingOrder, items: newItems });
-                        }}
-                        style={inputStyle}
-                      />
-                    </div>
-                    <div>
-                      <label style={labelStyle}>數量 (Qty)</label>
-                      <input 
-                        type="number" 
-                        value={item.quantity} 
-                        onChange={(e) => {
-                          const newItems = [...editingOrder.items];
-                          newItems[idx].quantity = parseInt(e.target.value) || 0;
-                          setEditingOrder({ ...editingOrder, items: newItems });
-                        }}
-                        style={inputStyle}
-                      />
-                    </div>
-                    <div>
-                      <label style={labelStyle}>單位 (Unit)</label>
-                      <input type="text" readOnly value={item.unit} style={{ ...inputStyle, backgroundColor: '#eee' }} />
-                    </div>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
-                     <div>
-                       <label style={labelStyle}>廠牌 (Brand)</label>
-                       <input type="text" value={item.brand || ''} onChange={(e) => {
-                          const newItems = [...editingOrder.items];
-                          newItems[idx].brand = e.target.value;
-                          setEditingOrder({ ...editingOrder, items: newItems });
-                       }} style={inputStyle} />
-                     </div>
-                     <div>
-                       <label style={labelStyle}>類型 (Type)</label>
-                       <input type="text" value={item.item_type || ''} onChange={(e) => {
-                          const newItems = [...editingOrder.items];
-                          newItems[idx].item_type = e.target.value;
-                          setEditingOrder({ ...editingOrder, items: newItems });
-                       }} style={inputStyle} />
-                     </div>
-                     <div>
-                       <label style={labelStyle}>型號 (Model)</label>
-                       <input type="text" value={item.model || ''} onChange={(e) => {
-                          const newItems = [...editingOrder.items];
-                          newItems[idx].model = e.target.value;
-                          setEditingOrder({ ...editingOrder, items: newItems });
-                       }} style={inputStyle} />
-                     </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <button onClick={handleUpdateOrder} className="btn-primary" style={{ flex: 1, padding: '12px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                <Save size={18} /> 儲存變更
-              </button>
-              <button onClick={() => setShowEditModal(false)} className="btn-secondary" style={{ padding: '12px 24px', borderRadius: '10px' }}>取消</button>
-            </div>
+          <div className="card-surface" style={{ ...modalContentStyle, width: '90vw', padding: '24px 32px' }}>
+            <ProcurementRegistration 
+              editMode={true} 
+              initOrderNo={editingOrder.order_no} 
+              onClose={() => { 
+                setShowEditModal(false); 
+                fetchRecords(); 
+              }} 
+            />
           </div>
         </div>
       )}

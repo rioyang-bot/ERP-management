@@ -21,7 +21,8 @@ const Devices = () => {
     hostname: '', location: '', installed_date: '', 
     customer_warranty_expire: '', system_date: '', warranty_expire: '',
     os: '', nic: '', custom_attributes: {},
-    contact_person: '', contact_phone: ''
+    os: '', nic: '', custom_attributes: {},
+    contact_person: '', contact_phone: '', project_name: ''
   });
   const [isBulkMode, setIsBulkMode] = useState(false);
   const [bulkSns, setBulkSns] = useState('');
@@ -117,7 +118,7 @@ const Devices = () => {
   const handleAddType = async () => {
     const name = validateAndSanitize(newTypeName, '類型名稱');
     if (!name || !formData.brand) return;
-    const res = await window.electronAPI.namedQuery('insertDeviceType', ['資訊設備', formData.brand, name]);
+    const res = await window.electronAPI.namedQuery('insertDeviceType', ['設備', formData.brand, name]);
     if (res.success) {
       setFormData(prev => ({ ...prev, type: name }));
       await fetchTypes(formData.brand, name);
@@ -127,7 +128,7 @@ const Devices = () => {
 
   const handleDeleteType = async (typeName) => {
     if (!confirm(`確定要刪除「${typeName}」嗎？`)) return;
-    const res = await window.electronAPI.namedQuery('deleteDeviceType', [typeName, '資訊設備', formData.brand]);
+    const res = await window.electronAPI.namedQuery('deleteDeviceType', [typeName, '設備', formData.brand]);
     if (res.success) {
       await fetchTypes(formData.brand, formData.type);
       if (formData.type === typeName) setFormData(prev => ({ ...prev, type: '' }));
@@ -137,7 +138,7 @@ const Devices = () => {
   const handleAddModel = async () => {
     const name = validateAndSanitize(newModelName, '型號名稱');
     if (!name || !formData.brand || !formData.type) return;
-    const res = await window.electronAPI.namedQuery('insertDeviceModel', [formData.brand, formData.type, '資訊設備', name]);
+    const res = await window.electronAPI.namedQuery('insertDeviceModel', [formData.brand, formData.type, '設備', name]);
     if (res.success) {
       if (res.rowCount === 0) return alert('失敗：關聯錯誤');
       setFormData(prev => ({ ...prev, model: name }));
@@ -148,7 +149,7 @@ const Devices = () => {
 
   const handleDeleteModel = async (modelName) => {
     if (!confirm(`確定要刪除「${modelName}」嗎？`)) return;
-    const res = await window.electronAPI.namedQuery('deleteDeviceModel', [modelName, formData.brand, formData.type, '資訊設備']);
+    const res = await window.electronAPI.namedQuery('deleteDeviceModel', [modelName, formData.brand, formData.type, '設備']);
     if (res.success) {
       await fetchModels(formData.brand, formData.type);
       if (formData.model === modelName) setFormData(prev => ({ ...prev, model: '' }));
@@ -158,7 +159,7 @@ const Devices = () => {
   const handleAddBrand = async () => {
     const name = validateAndSanitize(newBrandName, '廠牌名稱');
     if (!name) return;
-    const res = await window.electronAPI.namedQuery('insertDeviceBrand', ['資訊設備', name]);
+    const res = await window.electronAPI.namedQuery('insertDeviceBrand', ['設備', name]);
     if (res.success) {
       setFormData(prev => ({ ...prev, brand: name }));
       await fetchBrands(); await fetchTypes(name);
@@ -168,7 +169,7 @@ const Devices = () => {
 
   const handleDeleteBrand = async (brandName) => {
     if (!confirm(`確定要刪除「${brandName}」嗎？`)) return;
-    const res = await window.electronAPI.namedQuery('deleteDeviceBrand', [brandName, '資訊設備']);
+    const res = await window.electronAPI.namedQuery('deleteDeviceBrand', [brandName, '設備']);
     if (res.success) {
       await fetchBrands();
       if (formData.brand === brandName) setFormData(prev => ({ ...prev, brand: '' }));
@@ -225,7 +226,7 @@ const Devices = () => {
       if (findRes.success && findRes.rows.length > 0) {
         masterId = findRes.rows[0].id;
       } else {
-        const res = await window.electronAPI.namedQuery('insertItemMaster', [formData.specification || '', formData.type, formData.brand, formData.model, '台', '資訊設備']);
+        const res = await window.electronAPI.namedQuery('insertItemMaster', [formData.specification || '', formData.type, formData.brand, formData.model, '台', '設備']);
         if (res.success) masterId = res.rows[0].id;
       }
       if (!masterId) throw new Error('建立物料主檔失敗');
@@ -235,7 +236,8 @@ const Devices = () => {
         const updatedCustomAttributes = {
           ...formData.custom_attributes,
           contact_person: formData.contact_person || '',
-          contact_phone: formData.contact_phone || ''
+          contact_phone: formData.contact_phone || '',
+          project_name: formData.project_name || ''
         };
         const res = await window.electronAPI.namedQuery('insertAssetRecord', [
             masterId, sn || null, formData.client, formData.hostname, formData.location, formData.installed_date || null,
@@ -251,7 +253,8 @@ const Devices = () => {
         sn: '', specification: '', type: '', brand: brands[0]?.name || '', model: '', client: '', 
         hostname: '', location: '', installed_date: '', customer_warranty_expire: '', system_date: '', warranty_expire: '',
         os: '', nic: '', custom_attributes: {},
-        contact_person: '', contact_phone: ''
+        os: '', nic: '', custom_attributes: {},
+        contact_person: '', contact_phone: '', project_name: ''
       });
       if (isBulkMode) setBulkSns('');
       setFormKey(prev => prev + 1);
@@ -326,8 +329,9 @@ const Devices = () => {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 1.5fr) 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 1.5fr) 1fr 1fr', gap: '16px' }}>
               <div><label style={labelStyle}>規格 (Specification)</label><input type="text" name="specification" value={formData.specification} onChange={handleChange} style={inputStyle} /></div>
+              <div><label style={labelStyle}>專案名稱 (Project)</label><input type="text" name="project_name" value={formData.project_name} onChange={handleChange} style={inputStyle} placeholder="選填" /></div>
               <div>
                 <label style={labelStyle}>建檔模式</label>
                 <div style={{ display: 'flex', gap: '4px', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>

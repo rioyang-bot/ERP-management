@@ -4,14 +4,14 @@ import { Plus, Trash2, Save, FileText, ShoppingBag, Layers, AlertCircle } from '
 const Inbound = () => {
   const [availableItems, setAvailableItems] = useState([]);
   const [pendingPurchases, setPendingPurchases] = useState([]);
-  const [orderNo] = useState(() => `IN-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${Math.floor(Math.random()*1000)}`);
-  const [items, setItems] = useState([{ id: 1, itemId: '', purchaseRecordId: '', type: '', unit: '', sn: '', qty: 1 }]);
+  const [orderNo, setOrderNo] = useState('');
+  const [items, setItems] = useState([{ id: 1, selectedOrderNo: '', itemId: '', purchaseRecordId: '', cat_name: '', unit: '', sn: '', qty: 1 }]);
   const [invoiceNo, setInvoiceNo] = useState('');
   const [partnerId, setPartnerId] = useState('');
   const [partners, setPartners] = useState([]);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [quickAddData, setQuickAddData] = useState({ 
-    name: '', type_cat: 'ASSET', type: '', brand: '', 
+    name: '', type_cat: '設備', type: '', brand: '', 
     custodian: '', spec: '', unit: '個' 
   });
   const UNIFIED_UNITS = ['個', '台', '盒', '包', '支', '組', '瓶', '卷', '張', '份'];
@@ -28,12 +28,17 @@ const Inbound = () => {
       if (itemsRes.success) {
         setAvailableItems(itemsRes.rows.map(i => ({
           ...i,
-          name: i.specification,
-          type: i.cat_name === '資訊設備' ? 'ASSET' : 'CONSUMABLE'
+          name: [i.brand, i.model, i.specification].filter(Boolean).join(' ') || i.specification || '未命名'
         })));
       }
       if (partnersRes.success) setPartners(partnersRes.rows);
       if (purchasesRes.success) setPendingPurchases(purchasesRes.rows);
+
+      const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const countRes = await window.electronAPI.namedQuery('countInboundOrders', [`IN-${today}-`]);
+      const nextNum = countRes.success ? Number(countRes.rows[0].count) : 1;
+      const paddedNum = nextNum.toString().padStart(2, '0');
+      setOrderNo(prev => prev || `IN-${today}-${paddedNum}`);
     } catch (err) {
       console.error("Inbound Fetch Error:", err);
     }
@@ -44,8 +49,14 @@ const Inbound = () => {
   }, [fetchData]);
 
   const handleAddItem = () => {
-    setItems([...items, { id: Date.now(), itemId: '', purchaseRecordId: '', type: '', unit: '', sn: '', qty: 1 }]);
+    setItems([...items, { id: Date.now(), selectedOrderNo: '', itemId: '', purchaseRecordId: '', cat_name: '', unit: '', sn: '', qty: 1 }]);
   };
+
+  useEffect(() => {
+    if (items.every(i => !i.purchaseRecordId)) {
+      setPartnerId('');
+    }
+  }, [items]);
 
   const handleRemove = (id) => {
     setItems(items.filter(item => item.id !== id));
@@ -53,7 +64,7 @@ const Inbound = () => {
 
   const handleExpandRow = (rowId) => {
     const row = items.find(r => r.id === rowId);
-    if (!row || row.qty <= 1 || row.type !== 'ASSET') return;
+    if (!row || row.qty <= 1 || !(row.cat_name === '設備' || row.cat_name === '硬體')) return;
     if (!window.confirm(`確定要將此項目展開為 ${row.qty} 筆獨立設備以分別輸入序號嗎？`)) return;
     const newRows = [];
     for (let i = 0; i < row.qty; i++) {
@@ -75,21 +86,41 @@ const Inbound = () => {
     setItems(items.map(row => row.id === rowId ? { 
       ...row, 
       itemId: value, 
-      type: selected?.type || '',
+      cat_name: selected?.cat_name || '',
       unit: selected?.unit || '個'
     } : row));
   };
 
   const handlePurchaseSelect = (rowId, poId) => {
+    if (!poId) {
+      setItems(items.map(row => row.id === rowId ? { ...row, purchaseRecordId: '', itemId: '', cat_name: '', qty: 1 } : row));
+      return;
+    }
     const po = pendingPurchases.find(p => p.id.toString() === poId.toString());
     if (!po) return;
+
+    if (partnerId && partnerId.toString() !== po.partner_id.toString()) {
+      alert('此品項所屬的供應商與本進貨單目前綁定的供應商不符。\n(建議將不同供應商的進貨分開建立以免帳務混亂)');
+      setItems(items.map(row => row.id === rowId ? { ...row, purchaseRecordId: '', itemId: '', cat_name: '', qty: 1 } : row));
+      return;
+    }
+
     if (!partnerId) setPartnerId(po.partner_id.toString());
-    const existingItem = availableItems.find(i => i.specification === po.specification);
+    
+    let existingItem = availableItems.find(i => 
+      (i.specification || '') === (po.specification || '') &&
+      (i.brand || '') === (po.brand || '') &&
+      (i.model || '') === (po.model || '')
+    );
+    if (!existingItem) {
+      existingItem = availableItems.find(i => i.specification === po.specification);
+    }
+    
     setItems(items.map(row => row.id === rowId ? {
       ...row,
       purchaseRecordId: poId,
       itemId: existingItem ? existingItem.id : '',
-      type: po.category_name === '資訊設備' ? 'ASSET' : 'CONSUMABLE',
+      cat_name: po.category_name || (existingItem ? existingItem.cat_name : ''),
       unit: po.unit,
       qty: po.quantity - (po.received_quantity || 0)
     } : row));
@@ -104,38 +135,57 @@ const Inbound = () => {
     const fullSpec = `${quickAddData.name} ${quickAddData.spec ? `(${quickAddData.spec})` : ''}`.trim();
     const res = await window.electronAPI.namedQuery(
       'insertInboundItemMaster',
-      [fullSpec, quickAddData.type, quickAddData.brand, quickAddData.unit, quickAddData.type_cat === 'ASSET' ? '資訊設備' : '辦公耗材']
+      [fullSpec, quickAddData.type, quickAddData.brand, quickAddData.unit, quickAddData.type_cat]
     );
     if (res.success) {
       const newId = res.rows[0].id;
       await fetchData();
-      setItems(items.map(row => row.id === activeRowId ? { ...row, itemId: newId, type: quickAddData.type_cat === 'ASSET' ? 'ASSET' : 'CONSUMABLE', unit: quickAddData.unit } : row));
+      setItems(items.map(row => row.id === activeRowId ? { ...row, itemId: newId, cat_name: quickAddData.type_cat, unit: quickAddData.unit } : row));
       setShowQuickAdd(false);
-      setQuickAddData({ name: '', type_cat: 'ASSET', type: '', brand: '', custodian: '', spec: '', unit: '個' });
+      setQuickAddData({ name: '', type_cat: '設備', type: '', brand: '', custodian: '', spec: '', unit: '個' });
     } else {
       alert('新增失敗：' + res.error);
     }
   };
 
   const handleSubmit = async () => {
-    if (!partnerId) return alert('請選擇供應商');
-    if (items.some(i => !i.itemId)) return alert('請確認所有明細均已連結至庫存品項');
-    if (items.some(i => i.type === 'ASSET' && !i.sn)) return alert('設備類別必須輸入序號。');
+    if (!partnerId) return alert('請先選擇對應的採購單以帶入供應商資訊');
+    if (items.some(i => !i.itemId && !i.purchaseRecordId)) return alert('請確認所有明細均已選擇入庫品項');
+    // SN validation removed to make it optional
     if (window.confirm('確認將此單據入庫？')) {
       const orderRes = await window.electronAPI.namedQuery('insertInboundOrder', [orderNo, partnerId, invoiceNo, 'COMPLETED']);
       if (orderRes.success) {
         const orderId = orderRes.rows[0].id;
         for (const item of items) {
           let finalItemId = item.itemId;
-          if (item.type === 'ASSET') {
-            await window.electronAPI.namedQuery(
-              'insertInboundAssets', 
-              [item.sn, finalItemId]
-            );
+
+          if (!finalItemId && item.purchaseRecordId) {
+             const po = pendingPurchases.find(p => p.id.toString() === item.purchaseRecordId.toString());
+             if (po) {
+                const fullSpec = [po.brand, po.model, po.specification].filter(Boolean).join(' ') || po.specification || '未命名';
+                const created = await window.electronAPI.namedQuery('insertInboundItemMaster', [
+                   fullSpec, po.item_type || '', po.brand || '', po.unit || '個', po.category_name
+                ]);
+                if (created.success) finalItemId = created.rows[0].id;
+             }
+          }
+
+          if (!finalItemId) continue;
+
+          if (item.cat_name === '設備' || item.cat_name === '硬體') {
+            const currentPo = item.purchaseRecordId ? pendingPurchases.find(p => p.id.toString() === item.purchaseRecordId.toString()) : null;
+            const itemProjectName = (currentPo && currentPo.project_name) ? currentPo.project_name : '';
+            const qty = parseInt(item.qty, 10) || 1;
+            for (let i = 0; i < qty; i++) {
+              await window.electronAPI.namedQuery(
+                'insertInboundAssets', 
+                [item.sn || null, finalItemId, itemProjectName]
+              );
+            }
           }
           await window.electronAPI.namedQuery(
             'insertInboundItems', 
-            [orderId, finalItemId, item.sn, item.qty, item.purchaseRecordId || null]
+            [orderId, finalItemId, item.sn || null, item.qty, item.purchaseRecordId || null]
           );
           // Update manual stock_qty in item_master
           await window.electronAPI.namedQuery('updateStockQtyOnInbound', [item.qty, finalItemId]);
@@ -145,12 +195,41 @@ const Inbound = () => {
           }
         }
         alert('進貨入庫成功！');
-        setItems([{ id: Date.now(), itemId: '', purchaseRecordId: '', type: '', unit: '', sn: '', qty: 1 }]);
+        setItems([{ id: Date.now(), selectedOrderNo: '', itemId: '', purchaseRecordId: '', cat_name: '', unit: '', sn: '', qty: 1 }]);
         setInvoiceNo('');
+        setOrderNo(''); // Reset to generate new order no
         fetchData();
       } else { alert('入庫失敗：' + orderRes.error); }
     }
   };
+
+  const uniqueOrderNos = Array.from(new Set(pendingPurchases.map(p => p.order_no)));
+
+  const handleOrderNoChange = (rowId, orderNo) => {
+    if (orderNo && partnerId) {
+       const poFromOrder = pendingPurchases.find(p => p.order_no === orderNo);
+       if (poFromOrder && poFromOrder.partner_id.toString() !== partnerId.toString()) {
+          alert('您選擇的採購單的供應商與本進貨單不符！\n(系統考量帳務一致性，進貨單不支援混搭不同供應商。)');
+          return;
+       }
+    }
+
+    setItems(items.map(row => row.id === rowId ? {
+      ...row,
+      selectedOrderNo: orderNo,
+      purchaseRecordId: '',
+      itemId: '',
+      cat_name: '',
+      qty: 1
+    } : row));
+  };
+
+  const selectedPOOrderNo = items.find(i => i.selectedOrderNo)?.selectedOrderNo;
+  let currProjectName = '請於下方選擇採購單';
+  if (selectedPOOrderNo) {
+    const po = pendingPurchases.find(p => p.order_no === selectedPOOrderNo);
+    currProjectName = (po && po.project_name) ? po.project_name : '無專案名稱';
+  }
 
   return (
     <div className="card-surface">
@@ -167,18 +246,20 @@ const Inbound = () => {
           <FileText size={40} color="#ffb300" style={{ opacity: 0.3 }} />
         </div>
       )}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '32px', paddingBottom: '32px', borderBottom: '1px solid #eee' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '20px', marginBottom: '32px', paddingBottom: '32px', borderBottom: '1px solid #eee' }}>
         <div><label style={labelStyle}>進貨單號 (系統生成)</label><input disabled value={orderNo} style={{ ...inputStyle, backgroundColor: '#f5f5f5', color: '#999' }} /></div>
-        <div><label style={labelStyle}>供應商名稱 *</label><select value={partnerId} onChange={(e) => setPartnerId(e.target.value)} style={inputStyle}><option value="">請選擇供應商</option>{partners.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
+        <div><label style={labelStyle}>供應商名稱 (自動帶入)</label><input disabled value={partners.find(p => p.id.toString() === partnerId?.toString())?.name || '請於下方選擇採購單'} style={{ ...inputStyle, backgroundColor: '#f5f5f5', color: '#999' }} /></div>
+        <div><label style={labelStyle}>專案名稱 (自動帶入)</label><input disabled value={currProjectName} style={{ ...inputStyle, backgroundColor: '#f5f5f5', color: '#999' }} /></div>
         <div><label style={labelStyle}>發票號碼 (Invoice No.)</label><input type="text" value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} style={inputStyle} placeholder="請輸入紙本發票號碼" /></div>
         <div><label style={labelStyle}>進貨/到貨日期</label><input type="date" defaultValue={new Date().toISOString().slice(0,10)} style={inputStyle} /></div>
       </div>
       <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '20px' }}>
         <thead>
           <tr style={{ backgroundColor: '#f8f9fa', textAlign: 'left' }}>
-            <th style={thStyle}>對應採購單</th>
-            <th style={thStyle}>入庫品項範本</th>
-            <th style={thStyle}>設備序號 (SN)</th>
+            <th style={thStyle}>對應採購單號</th>
+            <th style={thStyle}>入庫設備項目</th>
+            <th style={{ ...thStyle, width: '80px' }}>類別</th>
+            <th style={thStyle}>序號(SN)</th>
             <th style={thStyle}>數量</th>
             <th style={{ ...thStyle, textAlign: 'center' }}>移除</th>
           </tr>
@@ -186,9 +267,30 @@ const Inbound = () => {
         <tbody>
           {items.map(row => (
             <tr key={row.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
-              <td style={tdStyle}><select value={row.purchaseRecordId} onChange={(e) => handlePurchaseSelect(row.id, e.target.value)} style={{ ...inputStyle, backgroundColor: row.purchaseRecordId ? '#fff8e1' : '#fff' }}><option value="">-- 非採購單入庫 --</option>{pendingPurchases.map(p => <option key={p.id} value={p.id}>[{p.order_no}] {p.specification}</option>)}</select></td>
-              <td style={tdStyle}><select value={row.itemId} onChange={(e) => handleItemSelect(row.id, e.target.value)} style={{ ...inputStyle, backgroundColor: row.itemId ? '#e8f5e9' : '#fff' }}><option value="">選取庫存品項</option>{availableItems.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}<option value="NEW_ITEM" style={{ fontWeight: 800, color: 'var(--primary-color)' }}>+ 快速新增品項</option></select></td>
-              <td style={tdStyle}>{row.type === 'CONSUMABLE' ? <span style={{ color: '#aaa', fontSize: '0.8rem' }}>耗材無需序號</span> : <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><input placeholder="SN / 序號" value={row.sn} onChange={(e) => handleRowChange(row.id, 'sn', e.target.value)} style={{ ...inputStyle, border: !row.sn ? '1px solid #ffccc7' : '1px solid #ddd' }} />{row.qty > 1 && <button onClick={() => handleExpandRow(row.id)} title="展開為獨立序號" style={expandButtonStyle}><Layers size={16} /></button>}</div>}</td>
+              <td style={tdStyle}>
+                <select value={row.selectedOrderNo || ''} onChange={(e) => handleOrderNoChange(row.id, e.target.value)} style={{ ...inputStyle, backgroundColor: row.selectedOrderNo ? '#fff8e1' : '#fff' }}>
+                  <option value="">-- 非採購單入庫 --</option>
+                  {uniqueOrderNos.map(orderNo => <option key={orderNo} value={orderNo}>{orderNo}</option>)}
+                </select>
+              </td>
+              <td style={tdStyle}>
+                {row.selectedOrderNo ? (
+                  <select value={row.purchaseRecordId} onChange={(e) => handlePurchaseSelect(row.id, e.target.value)} style={{ ...inputStyle, backgroundColor: row.purchaseRecordId ? '#e8f5e9' : '#fff' }}>
+                    <option value="">-- 請選擇採購品項 --</option>
+                    {pendingPurchases.filter(p => p.order_no === row.selectedOrderNo).map(p => <option key={p.id} value={p.id}>{[p.brand, p.model, p.specification].filter(Boolean).join(' ')} (未入庫 {p.quantity - (p.received_quantity || 0)})</option>)}
+                  </select>
+                ) : (
+                  <select value={row.itemId} onChange={(e) => handleItemSelect(row.id, e.target.value)} style={{ ...inputStyle, backgroundColor: row.itemId ? '#e8f5e9' : '#fff' }}>
+                    <option value="">選取庫存品項</option>
+                    {availableItems.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                    <option value="NEW_ITEM" style={{ fontWeight: 800, color: 'var(--primary-color)' }}>+ 快速新增品項</option>
+                  </select>
+                )}
+              </td>
+              <td style={tdStyle}>
+                {row.cat_name ? <span style={{ padding: '4px 10px', backgroundColor: '#f0f0f0', borderRadius: '6px', fontSize: '0.8rem', color: '#555', fontWeight: 600 }}>{row.cat_name}</span> : <span style={{ color: '#ccc', fontSize: '0.8rem' }}>--</span>}
+              </td>
+              <td style={tdStyle}>{(row.cat_name === '設備' || row.cat_name === '硬體') ? <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><input placeholder="SN / 序號" value={row.sn} onChange={(e) => handleRowChange(row.id, 'sn', e.target.value)} style={{ ...inputStyle, border: '1px solid #ddd' }} />{row.qty > 1 && <button onClick={() => handleExpandRow(row.id)} title="展開為獨立序號" style={expandButtonStyle}><Layers size={16} /></button>}</div> : <span style={{ color: '#aaa', fontSize: '0.8rem' }}>耗材無需序號</span>}</td>
               <td style={tdStyle}><div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><input type="number" value={row.qty} onChange={(e) => handleRowChange(row.id,'qty', parseInt(e.target.value)||0)} style={{ ...inputStyle, width: '70px' }} /><span style={{ fontSize: '0.85rem', color: '#666' }}>{row.unit || '個'}</span></div></td>
               <td style={{ ...tdStyle, textAlign: 'center' }}><button onClick={() => handleRemove(row.id)} style={deleteButtonStyle}><Trash2 size={20} /></button></td>
             </tr>
@@ -206,7 +308,7 @@ const Inbound = () => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div><label style={labelStyle}>品項名稱 *</label><input type="text" value={quickAddData.name} onChange={(e) => setQuickAddData({...quickAddData, name: e.target.value})} style={inputStyle} /></div>
               <div style={{ display: 'flex', gap: '16px' }}>
-                <div style={{ flex: 1 }}><label style={labelStyle}>類別</label><div style={{ display: 'flex', gap: '16px', marginTop: '8px' }}><label style={radioLabelStyle}><input type="radio" checked={quickAddData.type_cat === 'ASSET'} onChange={() => setQuickAddData({...quickAddData, type_cat: 'ASSET'})} /> 設備</label><label style={radioLabelStyle}><input type="radio" checked={quickAddData.type_cat === 'CONSUMABLE'} onChange={() => setQuickAddData({...quickAddData, type_cat: 'CONSUMABLE'})} /> 耗材</label></div></div>
+                <div style={{ flex: 1 }}><label style={labelStyle}>類別</label><div style={{ display: 'flex', gap: '16px', marginTop: '8px' }}><label style={radioLabelStyle}><input type="radio" checked={quickAddData.type_cat === '設備'} onChange={() => setQuickAddData({...quickAddData, type_cat: '設備'})} /> 設備</label><label style={radioLabelStyle}><input type="radio" checked={quickAddData.type_cat === '硬體'} onChange={() => setQuickAddData({...quickAddData, type_cat: '硬體'})} /> 硬體</label><label style={radioLabelStyle}><input type="radio" checked={quickAddData.type_cat === '耗材'} onChange={() => setQuickAddData({...quickAddData, type_cat: '耗材'})} /> 耗材</label></div></div>
                 <div><label style={labelStyle}>單位</label><select value={quickAddData.unit} onChange={(e) => setQuickAddData({...quickAddData, unit: e.target.value})} style={inputStyle}>{UNIFIED_UNITS.map(u => <option key={u} value={u}>{u}</option>)}</select></div>
               </div>
             </div>

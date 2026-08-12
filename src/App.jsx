@@ -9,7 +9,6 @@ import Partners from './pages/Partners';
 import Settings from './pages/Settings';
 import Outbound from './pages/Outbound';
 import DNList from './pages/DNList';
-import WarehouseReview from './pages/WarehouseReview';
 import Reports from './pages/Reports';
 import Login from './pages/Login';
 import Consumables from './pages/Consumables';
@@ -54,7 +53,6 @@ function App() {
             <Route path="inbound" element={<Inbound />} />
             <Route path="outbound" element={<Outbound />} />
             <Route path="dn-list" element={<DNList />} />
-            <Route path="review" element={<WarehouseReview />} />
             <Route path="devices" element={<Devices />} />
             <Route path="device-list" element={<DeviceList />} />
             <Route path="consumables" element={<Consumables />} />

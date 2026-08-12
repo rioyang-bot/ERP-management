@@ -445,10 +445,10 @@ const DeviceList = () => {
                           <th style={{ ...thStyle, textAlign: 'left', width: '200px' }}>廠牌 / 型號 / 類型</th>
                           <th style={{ ...thStyle, textAlign: 'left' }}>序號 (SN)</th>
                           <th style={{ ...thStyle, textAlign: 'left' }}>規格 (Spec)</th>
+                          <th style={{ ...thStyle, textAlign: 'left' }}>專案名稱 (Project)</th>
                           <th style={{ ...thStyle, textAlign: 'left' }}>主機名稱</th>
                           <th style={{ ...thStyle, textAlign: 'left' }}>自訂設備屬性</th>
                           <th style={{ ...thStyle, textAlign: 'left' }}>搭載硬體</th>
-                          <th style={{ ...thStyle, textAlign: 'left' }}>LAB 耗材</th>
                           <th style={{ ...thStyle, textAlign: 'left' }}>客戶</th>
                           <th style={{ ...thStyle, textAlign: 'left' }}>位置</th>
                           <th style={{ ...thStyle, textAlign: 'left' }}>保固資訊 (P/S/W/C)</th>
@@ -472,6 +472,7 @@ const DeviceList = () => {
                                 {item.sn}
                               </td>
                               <td style={{ ...tdStyle, fontSize: '11px', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.specification}>{item.specification || '--'}</td>
+                              <td style={{ ...tdStyle, fontWeight: 700, color: '#334155' }}>{attrs.project_name || '--'}</td>
                               <td style={tdStyle}>{item.hostname || '--'}</td>
                               <td style={{ ...tdStyle, fontSize: '11px', minWidth: '120px' }}>
                                 {customFieldDefs.filter(f => isFieldVisible(brandFilter, f.id)).map(f => {
@@ -527,47 +528,6 @@ const DeviceList = () => {
                                   <span style={{ color: '#cbd5e1', fontSize: '11px' }}>-</span>
                                 )}
                               </td>
-
-                              <td style={tdStyle}>
-                                {item.lab_consumables && item.lab_consumables.length > 0 ? (
-                                  <>
-                                    <button 
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setExpandedLabItems(prev => ({ ...prev, [item.id]: !prev[item.id] }));
-                                      }}
-                                      style={{ 
-                                        fontSize: '10px', 
-                                        color: '#7c3aed', 
-                                        backgroundColor: '#f5f3ff', 
-                                        border: '1px solid #ddd6fe', 
-                                        borderRadius: '4px', 
-                                        padding: '2px 6px', 
-                                        cursor: 'pointer',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '4px',
-                                        fontWeight: 'bold',
-                                        outline: 'none'
-                                      }}
-                                    >
-                                      <ShoppingBag size={10} /> LAB 耗材 ({item.lab_consumables.length})
-                                    </button>
-                                    {expandedLabItems[item.id] && (
-                                      <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '4px', paddingLeft: '4px', borderLeft: '2px solid #ddd6fe' }}>
-                                        {item.lab_consumables.map((cons, idx) => (
-                                          <div key={idx} style={{ fontSize: '10px', color: '#6d28d9', fontWeight: 'normal' }}>
-                                            • {cons.brand} {cons.model} <span style={{ fontWeight: '800' }}>x{cons.quantity}</span>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    )}
-                                  </>
-                                ) : (
-                                  <span style={{ color: '#cbd5e1', fontSize: '11px' }}>無號材</span>
-                                )}
-                              </td>
-
                               <td style={tdStyle}>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 700 }}>
@@ -673,8 +633,9 @@ const DeviceList = () => {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 1fr) 1fr 1fr', gap: '16px' }}>
                 <div><label style={editLabelStyle}>序號 / SN</label><input type="text" value={editItem.sn || ''} onChange={(e) => setEditItem({...editItem, sn: e.target.value})} style={editInputStyle} /></div>
+                <div><label style={editLabelStyle}>專案名稱 (Project)</label><input type="text" value={(editItem.custom_attributes && editItem.custom_attributes.project_name) || ''} onChange={(e) => setEditItem({...editItem, custom_attributes: {...editItem.custom_attributes, project_name: e.target.value}})} style={editInputStyle} /></div>
                 <div><label style={editLabelStyle}>主機名稱 (HostName)</label><input type="text" value={editItem.hostname || ''} onChange={(e) => setEditItem({...editItem, hostname: e.target.value})} style={editInputStyle} /></div>
               </div>
 

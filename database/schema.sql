@@ -177,19 +177,21 @@ CREATE TABLE IF NOT EXISTS outbound_items (
 -- 採購紀錄表 (Purchase Records)
 CREATE TABLE IF NOT EXISTS purchase_records (
     id SERIAL PRIMARY KEY,
-    order_no VARCHAR(50) UNIQUE NOT NULL, -- 採購單號
+    order_no VARCHAR(50) NOT NULL, -- 採購單號
     partner_id INTEGER REFERENCES partners(id), -- 供應商
     category_id INTEGER REFERENCES categories(id), -- 資產或耗材
+    project_name VARCHAR(100),           -- 專案名稱
     item_type VARCHAR(100),              -- 類型 (Type)
     brand VARCHAR(100),                  -- 廠牌 (Brand)
     model VARCHAR(100),                  -- 型號 (Model)
-    specification TEXT NOT NULL,         -- 規格 (Specification)
+    specification TEXT,                  -- 規格 (Specification)
     unit VARCHAR(20),                    -- 單位 (Unit)
     unit_price DECIMAL(15, 2) NOT NULL,    -- 採購單價
     quantity INTEGER NOT NULL DEFAULT 1,   -- 採購數量
     received_quantity INTEGER DEFAULT 0,  -- 已入庫數量
     status VARCHAR(20) DEFAULT 'ORDERED', -- ORDERED, PARTIAL, COMPLETED
     purchaser_id INTEGER REFERENCES users(id), -- 採購人員
+    remarks TEXT,                        -- 備註
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -249,9 +251,9 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 
 -- 初始化基礎類別
 INSERT INTO categories (name, description) VALUES 
-('資訊設備', '需要序號列管的IT資產'),
-('辦公耗材', '免序號的消耗性質物品'),
-('硬體', '搭載在資訊設備上的零組件網卡等')
+('設備', '需要序號列管的IT資產'),
+('耗材', '免序號的消耗性質物品'),
+('硬體', '搭載在設備上的零組件網卡等')
 ON CONFLICT (name) DO NOTHING;
 
 -- 初始化常用資產類型
@@ -266,7 +268,7 @@ CROSS JOIN (
     SELECT '周邊設備' UNION ALL
     SELECT '其他'
 ) t
-WHERE c.name = '資訊設備'
+WHERE c.name = '設備'
 ON CONFLICT DO NOTHING;
 
 -- 初始化常用耗材類型
@@ -279,7 +281,7 @@ CROSS JOIN (
     SELECT '清潔用品' UNION ALL
     SELECT '其他'
 ) t
-WHERE c.name = '辦公耗材'
+WHERE c.name = '耗材'
 ON CONFLICT DO NOTHING;
 
 -- 初始化常用資產廠牌
@@ -297,7 +299,7 @@ CROSS JOIN (
     SELECT 'Logi' UNION ALL
     SELECT '其他'
 ) t
-WHERE c.name = '資訊設備'
+WHERE c.name = '設備'
 ON CONFLICT DO NOTHING;
 
 -- 初始化常用耗材廠牌
@@ -313,5 +315,5 @@ CROSS JOIN (
     SELECT 'Pentel' UNION ALL
     SELECT '其他'
 ) t
-WHERE c.name = '辦公耗材'
+WHERE c.name = '耗材'
 ON CONFLICT DO NOTHING;

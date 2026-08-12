@@ -21,8 +21,14 @@ const Outbound = () => {
   });
 
   // --- 搜尋與列表狀態 (從 localStorage 初始化) ---
-  const [snInput, setSnInput] = useState('');
+  const [deviceSnInput, setDeviceSnInput] = useState('');
+  const [hwSnInput, setHwSnInput] = useState('');
   const [isSearching, setIsSearching] = useState(false);
+  
+  // 自動補全相關狀態
+  const [activeAssets, setActiveAssets] = useState([]);
+  const [showDeviceDropdown, setShowDeviceDropdown] = useState(false);
+  const [showHwDropdown, setShowHwDropdown] = useState(false);
   const [outboundItems, setOutboundItems] = useState(() => {
     const saved = localStorage.getItem('dn_draft_items');
     return saved ? JSON.parse(saved) : [];
@@ -50,25 +56,38 @@ const Outbound = () => {
       // 獲取耗材清單
       const csmRes = await window.electronAPI.namedQuery('fetchConsumablesList');
       if (csmRes.success) setConsumables(csmRes.rows);
+
+      // 獲取所有啟用中的資產以便提供即時搜尋選項
+      const assetRes = await window.electronAPI.namedQuery('searchActiveAssetSNs');
+      if (assetRes.success) setActiveAssets(assetRes.rows);
     };
     initData();
   }, []);
 
   // --- 序號查詢邏輯 ---
-  const handleSnSearch = async (e) => {
+  const handleSnSearch = async (e, type) => {
     if (e) e.preventDefault();
-    if (!snInput.trim()) return;
+    const inputVal = type === 'device' ? deviceSnInput : hwSnInput;
+    if (!inputVal.trim()) return;
 
     setIsSearching(true);
     try {
-      const res = await window.electronAPI.namedQuery('fetchAssetDetailBySN', [snInput.trim()]);
+      const res = await window.electronAPI.namedQuery('fetchAssetDetailBySN', [inputVal.trim()]);
       if (res.success && res.rows.length > 0) {
         const item = res.rows[0];
         
+        // 分類驗證
+        const categoryMatch = (type === 'device' && item.category_name === '設備') || (type === 'hw' && item.category_name === '硬體');
+        
+        if (!categoryMatch) {
+            alert(type === 'device' ? '此序號屬於「硬體」，請改用下方的硬體搜尋列！' : '此序號屬於「設備」，請改用上方的設備搜尋列！');
+            return;
+        }
+
         // 檢查是否已在清單中
         if (outboundItems.some(i => i.sn === item.sn)) {
           alert('此序號已在出貨清單中');
-          setSnInput('');
+          if (type === 'device') setDeviceSnInput(''); else setHwSnInput('');
           return;
         }
 
@@ -82,9 +101,15 @@ const Outbound = () => {
         };
 
         setOutboundItems(prev => [...prev, newItem]);
-        setSnInput('');
+        if (type === 'device') {
+          setDeviceSnInput('');
+          setShowDeviceDropdown(false);
+        } else {
+          setHwSnInput('');
+          setShowHwDropdown(false);
+        }
       } else {
-        alert('找不到該序號的設備或硬體');
+        alert('找不到該序號的資產');
       }
     } catch (err) {
       console.error('Search error:', err);
@@ -129,9 +154,9 @@ const Outbound = () => {
     try {
       // 1. 產生 D/N 單號 (DN-YYYYMMDD-XX)
       const dateStr = header.date.replace(/-/g, '');
-      const prefix = `DN-${dateStr}-%`;
+      const prefix = `DN-${dateStr}-`;
       const countRes = await window.electronAPI.namedQuery('countOutboundRequests', [prefix]);
-      const nextNum = (parseInt(countRes.rows[0].count) + 1).toString().padStart(2, '0');
+      const nextNum = (parseInt(countRes.rows[0].count) || 1).toString().padStart(2, '0');
       const dnNumber = `DN-${dateStr}-${nextNum}`;
 
       // 2. 建立出貨單標頭 (Outbound Request)
@@ -199,6 +224,21 @@ const Outbound = () => {
     const brand = (c.brand || '').toLowerCase();
     return name.includes(search) || model.includes(search) || brand.includes(search);
   });
+
+  // 幫助過濾的函式
+  const getDeviceSuggestions = () => {
+    if (!deviceSnInput.trim()) return [];
+    return activeAssets
+      .filter(a => a.category_name === '設備' && a.sn.toLowerCase().includes(deviceSnInput.toLowerCase()))
+      .slice(0, 5);
+  };
+
+  const getHwSuggestions = () => {
+    if (!hwSnInput.trim()) return [];
+    return activeAssets
+      .filter(a => a.category_name === '硬體' && a.sn.toLowerCase().includes(hwSnInput.toLowerCase()))
+      .slice(0, 5);
+  };
 
   return (
     <div className="outbound-registration-container">
@@ -283,25 +323,79 @@ const Outbound = () => {
               </div>
             </div>
           </div>
-
-          {/* 設備序號搜尋 */}
+          {/* 資產序號搜尋 */}
           <div className="dn-card">
             <div className="dn-card-header">
-              <Cpu size={18} /> <span>設備/硬體序號匯入 (S/N Scan)</span>
+              <Cpu size={18} /> <span>資產序號匯入 (S/N Scan)</span>
             </div>
-            <form className="sn-search-box" onSubmit={handleSnSearch}>
+            
+            <form className="sn-search-box" style={{ marginBottom: '12px', position: 'relative' }} onSubmit={(e) => handleSnSearch(e, 'device')}>
               <input 
                 type="text" 
-                placeholder="輸入設備或硬體序號"
-                value={snInput}
-                onChange={e => setSnInput(e.target.value)}
+                placeholder="輸入設備序號 (Device S/N)"
+                value={deviceSnInput}
+                onChange={e => {
+                  setDeviceSnInput(e.target.value);
+                  setShowDeviceDropdown(true);
+                }}
+                onFocus={() => setShowDeviceDropdown(true)}
+                onBlur={() => setTimeout(() => setShowDeviceDropdown(false), 200)}
               />
               <button type="submit" disabled={isSearching}>
                 {isSearching ? <Loader2 className="spinner" size={14} /> : <Search size={14} />}
-                搜尋並加入
+                加入設備
               </button>
+              
+              {showDeviceDropdown && getDeviceSuggestions().length > 0 && (
+                <div className="autocomplete-dropdown">
+                  {getDeviceSuggestions().map(suggestion => (
+                    <div 
+                      key={suggestion.sn} 
+                      className="autocomplete-item"
+                      onClick={() => setDeviceSnInput(suggestion.sn)}
+                    >
+                      <span className="ac-sn">{suggestion.sn}</span>
+                      <span className="ac-desc">{suggestion.brand} {suggestion.model}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </form>
-            <p className="dn-hint">系統會自動識別資產類別並帶出型號、規格與搭載元件</p>
+
+            <form className="sn-search-box" style={{ position: 'relative' }} onSubmit={(e) => handleSnSearch(e, 'hw')}>
+              <input 
+                type="text" 
+                placeholder="輸入硬體序號 (Hardware S/N)"
+                value={hwSnInput}
+                onChange={e => {
+                  setHwSnInput(e.target.value);
+                  setShowHwDropdown(true);
+                }}
+                onFocus={() => setShowHwDropdown(true)}
+                onBlur={() => setTimeout(() => setShowHwDropdown(false), 200)}
+              />
+              <button type="submit" disabled={isSearching}>
+                {isSearching ? <Loader2 className="spinner" size={14} /> : <Search size={14} />}
+                加入硬體
+              </button>
+
+              {showHwDropdown && getHwSuggestions().length > 0 && (
+                <div className="autocomplete-dropdown">
+                  {getHwSuggestions().map(suggestion => (
+                    <div 
+                      key={suggestion.sn} 
+                      className="autocomplete-item"
+                      onClick={() => setHwSnInput(suggestion.sn)}
+                    >
+                      <span className="ac-sn">{suggestion.sn}</span>
+                      <span className="ac-desc">{suggestion.brand} {suggestion.model}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </form>
+            
+            <p className="dn-hint" style={{ marginTop: '12px' }}>系統會識別資產類別並自動帶出型號、規格與搭載硬體</p>
           </div>
 
           {/* 耗材快選 (AI 設計) */}

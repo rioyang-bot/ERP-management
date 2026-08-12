@@ -73,7 +73,8 @@ const HwList = () => {
     setEditItem({
       ...nic,
       temp_server_sn: nic.custom_attributes?.server_sn || '',
-      temp_order_date: nic.custom_attributes?.order_date || ''
+      temp_order_date: nic.custom_attributes?.order_date || '',
+      temp_project_name: nic.custom_attributes?.project_name || ''
     });
     setShowEditModal(true);
     setActiveMenuId(null);
@@ -97,7 +98,8 @@ const HwList = () => {
       editItem.temp_server_sn ? editItem.temp_server_sn.trim() : null,
       editItem.temp_order_date || null,
       editItem.hostname || null,
-      parseInt(editItem.id, 10)
+      parseInt(editItem.id, 10),
+      editItem.temp_project_name || null
     ]);
     if (res.success) { 
       setShowEditModal(false); 
@@ -456,6 +458,7 @@ const HwList = () => {
             <th style={{ ...thStyle, textAlign: 'left', width: '200px' }}>廠牌 / 型號 / 類型</th>
             <th style={{ ...thStyle, textAlign: 'left' }}>序號 (SN)</th>
             <th style={{ ...thStyle, textAlign: 'left' }}>規格 (Spec)</th>
+            <th style={{ ...thStyle, textAlign: 'left' }}>專案名稱 (Project)</th>
             <th style={{ ...thStyle, textAlign: 'left' }}>訂單日期</th>
             <th style={{ ...thStyle, textAlign: 'left' }}>對應伺服器</th>
             {showServerDetails && <th style={{ ...thStyle, textAlign: 'left' }}>伺服器屬性</th>}
@@ -485,6 +488,7 @@ const HwList = () => {
                 </td>
                 <td style={{ ...tdStyle, fontWeight: 800, fontFamily: 'monospace', color: '#2563eb', whiteSpace: 'nowrap' }}>{nic.sn || '(未設定)'}</td>
                 <td style={{ ...tdStyle, fontSize: '11px', color: '#64748b' }}>{nic.specification || '--'}</td>
+                <td style={{ ...tdStyle, fontWeight: 700, color: '#334155' }}>{nic.custom_attributes?.project_name || '--'}</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{nic.custom_attributes?.order_date || '--'}</td>
                 <td style={tdStyle}>
                   <div style={{ color: '#6366f1', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -659,8 +663,9 @@ const HwList = () => {
                 <label style={editLabelStyle}>放置位置 (Location)<input type="text" value={editItem.location || ''} onChange={(e) => setEditItem({ ...editItem, location: e.target.value })} style={editInputStyle} /></label>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(150px, 1fr) 1fr 1fr', gap: '16px' }}>
                 <label style={editLabelStyle}>對應伺服器 SN<input type="text" value={editItem.temp_server_sn || ''} onChange={(e) => setEditItem({ ...editItem, temp_server_sn: e.target.value })} style={editInputStyle} /></label>
+                <label style={editLabelStyle}>專案名稱 (Project)<input type="text" value={editItem.temp_project_name || ''} onChange={(e) => setEditItem({ ...editItem, temp_project_name: e.target.value })} style={editInputStyle} /></label>
                 <label style={editLabelStyle}>訂單日期<input type="date" value={editItem.temp_order_date || ''} onChange={(e) => setEditItem({ ...editItem, temp_order_date: e.target.value })} style={editInputStyle} /></label>
               </div>
 

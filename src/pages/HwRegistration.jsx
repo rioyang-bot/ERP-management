@@ -20,7 +20,7 @@ const HwRegistration = () => {
 
   const [formData, setFormData] = useState({
     brand: '', type: '', model: '', specification: '', sn: '',
-    order_date: '', server_sn: ''
+    order_date: '', server_sn: '', project_name: ''
   });
 
   const validateAndSanitize = (val, fieldName = '欄位') => {
@@ -173,7 +173,8 @@ const HwRegistration = () => {
       for (const sn of snList) {
         const custom_attributes = { 
           order_date: formData.order_date, 
-          server_sn: safeServerSn 
+          server_sn: safeServerSn,
+          project_name: formData.project_name || ''
         };
 
         const res = await window.electronAPI.namedQuery('insertAssetRecord', [
@@ -188,8 +189,7 @@ const HwRegistration = () => {
 
       if (successCount > 0) {
         alert(`成功建檔 ${successCount} 筆資料${failCount > 0 ? `，失敗 ${failCount} 筆` : ''}。`);
-        // 重置表單
-        setFormData({ ...formData, sn: '', server_sn: '' });
+        setFormData({ ...formData, sn: '', server_sn: '', project_name: '' });
         setBulkSns('');
         fetchRecentItems();
         window.dispatchEvent(new CustomEvent('db-update'));
@@ -315,10 +315,14 @@ const HwRegistration = () => {
               {isBulkMode && <div style={{ fontSize: '12px', color: '#64748b', marginTop: '6px' }}>已輸入: <b>{bulkSns.split('\n').filter(s => s.trim()).length}</b> 個序號</div>}
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' }}>
               <div>
                 <label style={labelStyle}>訂單日期 (Order Date)</label>
                 <input type="date" name="order_date" value={formData.order_date} onChange={handleChange} style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>專案名稱 (Project)</label>
+                <input type="text" name="project_name" value={formData.project_name} onChange={handleChange} style={inputStyle} placeholder="選填" />
               </div>
               <div>
                 <label style={labelStyle}>對應 Server SN</label>

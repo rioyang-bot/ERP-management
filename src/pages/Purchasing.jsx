@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useContext } from 'react';
 import { Plus, Search, FileText, ShoppingCart, CheckCircle, Clock, AlertCircle, Trash2, DollarSign, Package, Tag, Filter, X, Save, Settings2, Trash } from 'lucide-react';
 import { RoleContext } from '../context/RoleContext';
 
-const ProcurementRegistration = () => {
+const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose = null }) => {
   const { authUser } = useContext(RoleContext);
   const [purchaseRecords, setPurchaseRecords] = useState([]);
   const [partners, setPartners] = useState([]);
@@ -19,12 +19,12 @@ const ProcurementRegistration = () => {
 
   // PO Header states
   const [orderNo, setOrderNo] = useState('');
-  const [partnerId, setPartnerId] = useState('');
+  const [projectName, setProjectName] = useState('');
   const [remarks, setRemarks] = useState('');
 
   // Items in this PO
   const [items, setItems] = useState([
-    { id: 'initial-row', category_id: '', item_type: '', brand: '', model: '', specification: '', unit: '個', unit_price: '', quantity: 1 }
+    { id: 'initial-row', category_id: '', partner_id: '', item_type: '', brand: '', model: '', specification: '', unit: '個', unit_price: '', quantity: 1 }
   ]);
 
   // Quick Add UI states
@@ -47,7 +47,7 @@ const ProcurementRegistration = () => {
     }));
   }, []);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (forceNewOrderNo = false) => {
     setLoading(true);
     try {
       const [recordsRes, partnersRes, catsRes] = await Promise.all([
@@ -64,23 +64,49 @@ const ProcurementRegistration = () => {
           await fetchOptions(cat.id);
         }
         
-        // Generate initial PO status if empty
-        const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-        const poCountRes = await window.electronAPI.namedQuery(
-          "countPurchaseOrders",
-          [`PO-${today}-%`]
-        );
-        const nextNum = (poCountRes.success ? Number(poCountRes.rows[0].count) : 0) + 1;
-        const paddedNum = nextNum.toString().padStart(2, '0');
-        setOrderNo(prev => prev || `PO-${today}-${paddedNum}`);
-
-        // Only init items if they are empty
-        setItems(prev => {
-          if (prev.length === 0 || (prev.length === 1 && !prev[0].specification)) {
-             return [{ id: Date.now(), category_id: catsRes.rows[0].id.toString(), item_type: '', brand: '', model: '', specification: '', unit: '個', quantity: 1 }];
+        if (editMode && initOrderNo) {
+          setOrderNo(initOrderNo);
+          const detailRes = await window.electronAPI.namedQuery('fetchPurchaseRecordsByOrder', [initOrderNo]);
+          if (detailRes.success && detailRes.rows.length > 0) {
+             setProjectName(detailRes.rows[0].project_name || '');
+             setRemarks(detailRes.rows[0].remarks || '');
+             setItems(detailRes.rows.map(r => ({
+               id: r.id, 
+               category_id: r.category_id.toString(),
+               partner_id: r.partner_id ? r.partner_id.toString() : '',
+               item_type: r.item_type || '',
+               brand: r.brand || '',
+               model: r.model || '',
+               specification: r.specification || '',
+               unit: r.unit || '個',
+               quantity: r.quantity,
+               status: r.status
+             })));
           }
-          return prev;
-        });
+        } else {
+          // Generate initial PO status if empty
+          const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+          const poCountRes = await window.electronAPI.namedQuery(
+            "countPurchaseOrders",
+            [`PO-${today}-`]
+          );
+          const nextNum = poCountRes.success ? Number(poCountRes.rows[0].count) : 1;
+          const paddedNum = nextNum.toString().padStart(2, '0');
+          
+          if (forceNewOrderNo) {
+            setOrderNo(`PO-${today}-${paddedNum}`);
+          } else {
+            setOrderNo(prev => prev || `PO-${today}-${paddedNum}`);
+          }
+  
+          // Only init items if they are empty
+          setItems(prev => {
+            if (prev.length === 0 || (prev.length === 1 && !prev[0].specification)) {
+               return [{ id: Date.now(), category_id: catsRes.rows[0].id.toString(), partner_id: '', item_type: '', brand: '', model: '', specification: '', unit: '個', quantity: 1 }];
+            }
+            return prev;
+          });
+        }
       }
     } catch (err) {
       console.error("Fetch Data Error:", err);
@@ -102,6 +128,7 @@ const ProcurementRegistration = () => {
       { 
         id: Date.now(), 
         category_id: lastItem?.category_id || categories[0]?.id.toString() || '', 
+        partner_id: lastItem?.partner_id || '',
         item_type: '', 
         brand: '', 
         model: '', 
@@ -174,37 +201,60 @@ const ProcurementRegistration = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!partnerId) return alert('請選擇供應商');
-    if (items.some(i => !i.category_id || !i.specification || !i.quantity)) {
-      return alert('請填寫完整的品項資訊');
+    if (items.some(i => !i.category_id || String(i.quantity).trim() === '' || Number(i.quantity) <= 0)) {
+      return alert('請填寫完整的品項資訊且數量需大於0');
     }
 
     setLoading(true);
     try {
-      for (const item of items) {
-        const res = await window.electronAPI.namedQuery('insertPurchaseRecord',
-          [
-            orderNo, partnerId, item.category_id, item.item_type, item.brand, item.model,
-            item.specification, item.unit, item.quantity, authUser?.id, 'ORDERED', remarks
-          ]
-        );
-        if (!res.success) {
-          throw new Error(`品項 ${item.specification} 儲存失敗: ${res.error}`);
-        }
+      if (editMode && initOrderNo) {
+         const existRes = await window.electronAPI.namedQuery('fetchPurchaseRecordsByOrder', [initOrderNo]);
+         if (!existRes.success) throw new Error('獲取原始訂單失敗');
+         
+         const existingIds = existRes.rows.map(r => r.id);
+         const currentIds = items.map(i => i.id).filter(id => id < 1000000000000); 
+         
+         for (const exId of existingIds) {
+           if (!currentIds.includes(exId)) {
+              await window.electronAPI.namedQuery('deletePurchaseRecordById', [exId]);
+           }
+         }
+         
+         for (const item of items) {
+           if (item.id > 1000000000000) {
+             const res = await window.electronAPI.namedQuery('insertPurchaseRecord',
+               [initOrderNo, item.partner_id ? parseInt(item.partner_id) : null, parseInt(item.category_id), item.item_type, item.brand, item.model, item.specification || null, item.unit, parseInt(item.quantity), authUser?.id, 'ORDERED', remarks, projectName]
+             );
+             if (!res.success) throw new Error(`新增品項失敗: ${res.error}`);
+           } else {
+             const res = await window.electronAPI.namedQuery('updatePurchaseRecordFull',
+               [item.partner_id ? parseInt(item.partner_id) : null, parseInt(item.category_id), item.item_type, item.brand, item.model, item.specification || null, item.unit, parseInt(item.quantity), remarks, projectName, item.id]
+             );
+             if (!res.success) throw new Error(`更新品項失敗: ${res.error}`);
+           }
+         }
+         alert('採購單修改成功！');
+         if (onClose) onClose();
+      } else {
+         for (const item of items) {
+           const res = await window.electronAPI.namedQuery('insertPurchaseRecord',
+             [
+               orderNo, item.partner_id ? parseInt(item.partner_id) : null, item.category_id, item.item_type, item.brand, item.model,
+               item.specification || null, item.unit, item.quantity, authUser?.id, 'ORDERED', remarks, projectName
+             ]
+           );
+           if (!res.success) throw new Error(`品項 ${item.model || '未指定型號'} 儲存失敗: ${res.error}`);
+         }
+   
+         alert('採購建檔成功！');
+         setRemarks('');
+         setProjectName('');
+         setItems([]); 
+         await fetchData(true);
       }
-
-      alert('採購建檔成功！');
-      
-      // Reset form properly
-      setOrderNo(''); 
-      setRemarks('');
-      setPartnerId('');
-      setItems([]); // Clear items so fetchData can re-init
-      
-      await fetchData();
     } catch (err) {
       console.error("Submit Error:", err);
-      alert('採購建檔失敗：' + err.message);
+      alert('儲存失敗：' + err.message);
     } finally {
       setLoading(false);
     }
@@ -219,24 +269,26 @@ const ProcurementRegistration = () => {
   const UNIFIED_UNITS = ['個', '台', '盒', '包', '支', '組', '瓶', '卷', '張', '份'];
 
   return (
-    <div className="purchasing-container">
-      <div className="card-surface">
-        <h1 className="page-title">採購建檔 (Procurement Registration)</h1>
+    <div className={`purchasing-container ${editMode ? 'edit-mode' : ''}`}>
+      <div className={editMode ? '' : 'card-surface'}>
+        {!editMode && <h1 className="page-title">採購建檔 (Procurement Registration)</h1>}
 
         <form onSubmit={handleSubmit}>
           {/* Header Section */}
           <div className="card-surface" style={{ backgroundColor: '#f8f9fa', marginBottom: '24px', padding: '24px', border: '1px solid #eee' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '24px', marginBottom: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px', marginBottom: '16px' }}>
               <div>
                 <label style={labelStyle}>採購單號 (PO No.)</label>
                 <input value={orderNo} readOnly style={{ ...inputStyle, backgroundColor: '#eee', fontWeight: 'bold' }} />
               </div>
               <div>
-                <label style={labelStyle}>供應商 (Supplier) *</label>
-                <select value={partnerId} onChange={e => setPartnerId(e.target.value)} style={inputStyle}>
-                  <option value="">請選擇供應商</option>
-                  {partners.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
+                <label style={labelStyle}>專案名稱 (Project Name)</label>
+                <input 
+                  value={projectName} 
+                  onChange={e => setProjectName(e.target.value)} 
+                  placeholder="請輸入專案名稱..." 
+                  style={inputStyle} 
+                />
               </div>
               <div>
                 <label style={labelStyle}>採購人員 (Purchaser)</label>
@@ -260,6 +312,7 @@ const ProcurementRegistration = () => {
               <thead>
                 <tr style={{ backgroundColor: '#f1f3f4', textAlign: 'left' }}>
                   <th style={{ ...thStyle, width: '130px' }}>類別</th>
+                  <th style={{ ...thStyle, width: '180px' }}>供應商</th>
                   <th style={{ ...thStyle, width: '230px' }}>廠牌 / 類型</th>
                   <th style={{ ...thStyle, width: '230px' }}>型號</th>
                   <th style={{ ...thStyle, width: '220px' }}>規格 (Specification)</th>
@@ -269,15 +322,29 @@ const ProcurementRegistration = () => {
                 </tr>
               </thead>
               <tbody>
-                {items.map((row) => (
+                {items.map((row) => {
+                  const isReadonly = row.status && row.status !== 'ORDERED';
+                  return (
                   <tr key={row.id} style={{ borderBottom: '1px solid #eee' }}>
                     <td style={tdStyle}>
                       <select 
                         value={row.category_id} 
                         onChange={e => handleItemChange(row.id, 'category_id', e.target.value)}
                         style={inputStyle}
+                        disabled={isReadonly}
                       >
                         {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                    </td>
+                    <td style={tdStyle}>
+                      <select 
+                        value={row.partner_id || ''} 
+                        onChange={e => handleItemChange(row.id, 'partner_id', e.target.value)}
+                        style={inputStyle}
+                        disabled={isReadonly}
+                      >
+                        <option value="">(選填供應商)</option>
+                        {partners.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                       </select>
                     </td>
                     <td style={tdStyle}>
@@ -286,7 +353,7 @@ const ProcurementRegistration = () => {
                           value={row.brand} 
                           onChange={e => handleItemChange(row.id, 'brand', e.target.value)}
                           style={{ ...inputStyle, fontSize: '0.8rem', padding: '6px' }}
-                          disabled={!!row.model}
+                          disabled={!!row.model || isReadonly}
                         >
                           <option value="">(廠牌)</option>
                           {(options.brands[row.category_id] || []).map(b => <option key={b} value={b}>{b}</option>)}
@@ -295,7 +362,7 @@ const ProcurementRegistration = () => {
                           value={row.item_type} 
                           onChange={e => handleItemChange(row.id, 'item_type', e.target.value)}
                           style={{ ...inputStyle, fontSize: '0.8rem', padding: '6px' }}
-                          disabled={!!row.model}
+                          disabled={!!row.model || isReadonly}
                         >
                           <option value="">(類型)</option>
                           {Array.from(new Set(
@@ -311,6 +378,7 @@ const ProcurementRegistration = () => {
                         value={row.model || ''} 
                         onChange={e => handleItemChange(row.id, 'model', e.target.value)}
                         style={inputStyle}
+                        disabled={isReadonly}
                       >
                         <option value="">(選擇型號)</option>
                         {Array.from(new Set(
@@ -328,6 +396,7 @@ const ProcurementRegistration = () => {
                         onChange={e => handleItemChange(row.id, 'specification', e.target.value)}
                         style={inputStyle}
                         placeholder="詳細規格說明"
+                        disabled={isReadonly}
                       />
                     </td>
                     <td style={tdStyle}>
@@ -335,6 +404,7 @@ const ProcurementRegistration = () => {
                         value={row.unit} 
                         onChange={e => handleItemChange(row.id, 'unit', e.target.value)}
                         style={inputStyle}
+                        disabled={isReadonly}
                       >
                         {UNIFIED_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
                       </select>
@@ -346,15 +416,20 @@ const ProcurementRegistration = () => {
                         onChange={e => handleItemChange(row.id, 'quantity', e.target.value)}
                         style={inputStyle}
                         min="1"
+                        disabled={isReadonly}
                       />
                     </td>
                     <td style={{ ...tdStyle, textAlign: 'center' }}>
-                      <button type="button" onClick={() => handleRemoveItem(row.id)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#ff4d4f' }}>
-                        <Trash2 size={18} />
-                      </button>
+                      {!isReadonly ? (
+                        <button type="button" onClick={() => handleRemoveItem(row.id)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#ff4d4f' }}>
+                          <Trash2 size={18} />
+                        </button>
+                      ) : (
+                        <span style={{ fontSize: '0.7rem', color: '#ccc', display: 'block', lineHeight: 1.2 }}>已入庫<br/>鎖定</span>
+                      )}
                     </td>
                   </tr>
-                ))}
+                )})}
               </tbody>
             </table>
             
@@ -374,18 +449,35 @@ const ProcurementRegistration = () => {
           </div>
 
           <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end', gap: '16px' }}>
-            <button type="button" onClick={fetchData} style={{ 
-              padding: '14px 32px', backgroundColor: '#fff', border: '1px solid #ddd', borderRadius: '10px', fontWeight: 600, cursor: 'pointer' 
-            }}>取消並重設</button>
-            <button type="submit" disabled={loading} className="btn-primary" style={{ 
-              padding: '14px 48px', borderRadius: '10px', fontSize: '1.1rem', fontWeight: 700, boxShadow: '0 4px 12px rgba(27, 54, 93, 0.2)'
-            }}>
-              {loading ? '儲存中...' : '確認提交採購單'}
-            </button>
+            {editMode ? (
+              <>
+                <button type="button" onClick={onClose} style={{ 
+                  padding: '14px 32px', backgroundColor: '#fff', border: '1px solid #ddd', borderRadius: '10px', fontWeight: 600, cursor: 'pointer' 
+                }}>取消編輯</button>
+                <button type="submit" disabled={loading} className="btn-primary" style={{ 
+                  padding: '14px 48px', borderRadius: '10px', fontSize: '1.1rem', fontWeight: 700, boxShadow: '0 4px 12px rgba(27, 54, 93, 0.2)'
+                }}>
+                  {loading ? '儲存中...' : '儲存修改'}
+                </button>
+              </>
+            ) : (
+              <>
+                <button type="button" onClick={() => fetchData(false)} style={{ 
+                  padding: '14px 32px', backgroundColor: '#fff', border: '1px solid #ddd', borderRadius: '10px', fontWeight: 600, cursor: 'pointer' 
+                }}>取消並重設</button>
+                <button type="submit" disabled={loading} className="btn-primary" style={{ 
+                  padding: '14px 48px', borderRadius: '10px', fontSize: '1.1rem', fontWeight: 700, boxShadow: '0 4px 12px rgba(27, 54, 93, 0.2)'
+                }}>
+                  {loading ? '儲存中...' : '確認提交採購單'}
+                </button>
+              </>
+            )}
           </div>
         </form>
 
-        <hr style={{ margin: '40px 0', border: 'none', borderTop: '1px solid #eee' }} />
+        {!editMode && (
+          <>
+            <hr style={{ margin: '40px 0', border: 'none', borderTop: '1px solid #eee' }} />
 
         {/* Recently Added List */}
         <div>
@@ -415,6 +507,11 @@ const ProcurementRegistration = () => {
                     <span style={{ color: '#888' }}>{record.partner_name}</span> · 
                     <span style={{ fontWeight: 700, color: '#444' }}>{record.quantity} {record.unit}</span>
                   </div>
+                  {record.project_name && (
+                    <div style={{ marginTop: '4px', fontSize: '0.8rem', color: 'var(--primary-color)', fontWeight: 600 }}>
+                      專案: {record.project_name}
+                    </div>
+                  )}
                   {record.remarks && (
                     <div style={{ marginTop: '8px', padding: '4px 8px', backgroundColor: '#f9f9f9', borderRadius: '4px', fontSize: '0.75rem', color: '#777', borderLeft: '3px solid #ddd' }}>
                       備註: {record.remarks}
@@ -425,9 +522,11 @@ const ProcurementRegistration = () => {
                   </div>
                 </div>
               ))
-            )}
+              )}
+            </div>
           </div>
-        </div>
+          </>
+        )}
       </div>
 
       {/* Quick Add Popover/Modal */}
@@ -453,7 +552,8 @@ const ProcurementRegistration = () => {
       )}
 
       <style>{`
-        .purchasing-container { max-width: 1200px; margin: 0 auto; }
+        .purchasing-container.edit-mode { max-width: 100%; padding: 0; }
+        .purchasing-container:not(.edit-mode) { max-width: 1200px; margin: 0 auto; }
       `}</style>
     </div>
   );

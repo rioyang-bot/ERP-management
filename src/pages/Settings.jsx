@@ -7,7 +7,6 @@ const MENU_OPTIONS = [
   { id: 'inbound', label: '進貨入庫 (Inbound)' },
   { id: 'outbound', label: '出貨建檔 (D/N Reg)' },
   { id: 'dnList', label: '出貨單列表 (D/N List)' },
-  { id: 'review', label: '出貨審核 (Review)' },
   { id: 'assets', label: '設備管理 (Device Reg)' },
   { id: 'assetList', label: '設備列表 (Device List)' },
   { id: 'nic-registration', label: '硬體建檔 (HW Reg)' },
