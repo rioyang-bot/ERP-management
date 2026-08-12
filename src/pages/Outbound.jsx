@@ -1,9 +1,5 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { 
-  ClipboardList, Search, Plus, Trash2, Send, 
-  Calendar, MapPin, User, Package, Cpu, 
-  ChevronRight, AlertCircle, Loader2
-} from 'lucide-react';
+import { ClipboardList, Search, Plus, Trash2, Send, Calendar, MapPin, User, Package, Cpu, ChevronRight, AlertCircle, Loader2, Truck } from 'lucide-react';
 import { RoleContext } from '../context/RoleContext';
 import './Outbound.css';
 
@@ -91,12 +87,23 @@ const Outbound = () => {
           return;
         }
 
+        // 專案混用阻斷邏輯 (Prevent mixed projects)
+        const incomingProject = item.custom_attributes?.project_name;
+        if (incomingProject) {
+           const existingProjects = [...new Set(outboundItems.map(i => i.custom_attributes?.project_name).filter(Boolean))];
+           if (existingProjects.length > 0 && !existingProjects.includes(incomingProject)) {
+              alert(`此出貨單已包含專案【${existingProjects[0]}】的設備。\n禁止混入專案【${incomingProject}】的設備！\n請您針對該專案另外建立新的出貨單。`);
+              return;
+           }
+        }
+
         // 建立主品項
         const newItem = {
           ...item,
           tempId: Date.now(),
           qty: 1,
           isSerialized: true,
+          location: header.location,
           components: item.components || [] // 搭載的硬體
         };
 
@@ -132,6 +139,7 @@ const Outbound = () => {
         tempId: Date.now(),
         qty: 1,
         isSerialized: false,
+        location: header.location,
         sn: ''
       }]);
     }
@@ -144,6 +152,12 @@ const Outbound = () => {
   const updateQty = (tempId, newQty) => {
     setOutboundItems(prev => prev.map(i => 
       i.tempId === tempId ? { ...i, qty: Math.max(1, newQty) } : i
+    ));
+  };
+
+  const updateLocation = (tempId, newLoc) => {
+    setOutboundItems(prev => prev.map(i => 
+      i.tempId === tempId ? { ...i, location: newLoc } : i
     ));
   };
 
@@ -180,7 +194,8 @@ const Outbound = () => {
             requestId,
             item.item_id || item.item_master_id,
             item.sn,
-            item.qty
+            item.qty,
+            item.location || header.location
           ]);
 
           // 如果有搭載硬體，也要一併加入明細
@@ -190,7 +205,8 @@ const Outbound = () => {
                 requestId,
                 comp.item_master_id, 
                 comp.sn,
-                1
+                1,
+                item.location || header.location
               ]);
             }
           }
@@ -244,15 +260,10 @@ const Outbound = () => {
     <div className="outbound-registration-container">
       {/* 1. 頁面標題 */}
       <div className="dn-header-main">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div className="icon-box-dn">
-            <ClipboardList size={24} color="white" />
-          </div>
-          <div>
-            <h1 className="dn-title">出貨單建檔 (Delivery Note Registration)</h1>
-            <p className="dn-subtitle">建立新的出貨申請單，支援設備序號自動導出與耗材選取</p>
-          </div>
-        </div>
+        <h1 style={{ fontSize: '24px', fontWeight: '900', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
+          <Truck size={26} color="#2563eb" /> 出貨單建檔 (Delivery Note Registration)
+        </h1>
+        <p className="dn-subtitle" style={{ marginLeft: '36px' }}>建立新的出貨申請單，支援設備序號自動導出與耗材選取</p>
       </div>
 
       <div className="dn-content-layout">
@@ -460,6 +471,7 @@ const Outbound = () => {
                       <th>廠牌 / 型號</th>
                       <th>序號 (S/N)</th>
                       <th>數量</th>
+                      <th>發送位置</th>
                       <th>操作</th>
                     </tr>
                   </thead>
@@ -490,6 +502,17 @@ const Outbound = () => {
                               />
                             )}
                           </td>
+                          <td className="col-loc">
+                             {item.isSerialized && (
+                                <input 
+                                  type="text"
+                                  value={item.location || ''}
+                                  onChange={e => updateLocation(item.tempId, e.target.value)}
+                                  style={{ width: '120px', padding: '6px', fontSize: '0.8rem', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+                                  placeholder="未指定"
+                                />
+                             )}
+                          </td>
                           <td className="col-actions">
                             <button onClick={() => removeItem(item.tempId)} className="btn-remove">
                               <Trash2 size={16} />
@@ -498,14 +521,13 @@ const Outbound = () => {
                         </tr>
                         {/* 搭載元件顯示 */}
                         {item.components && item.components.length > 0 && item.components.map(comp => (
-                          <tr key={comp.sn} className="sub-row">
-                            <td colSpan="2" className="col-sub-info">
-                              <ChevronRight size={14} className="sub-arrow" />
-                              <span className="sub-label">搭載硬體</span>
-                              <span className="sub-model">{comp.brand} {comp.model} ({comp.type})</span>
-                            </td>
-                            <td className="col-sn"><code>{comp.sn}</code></td>
-                            <td colSpan="2" className="col-sub-note">系統自動帶出</td>
+                          <tr key={`${item.tempId}-${comp.sn}`} className="sub-row">
+                            <td><div className="sub-line"></div></td>
+                            <td><span className="type-badge sub">{comp.type}</span> {comp.brand} {comp.model}</td>
+                            <td><code>{comp.sn}</code></td>
+                            <td>1</td>
+                            <td style={{ fontSize: '0.75rem', color: '#94a3b8' }}>同上</td>
+                            <td></td>
                           </tr>
                         ))}
                       </React.Fragment>

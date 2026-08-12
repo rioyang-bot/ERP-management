@@ -119,7 +119,9 @@ const ProcurementList = () => {
     <div className="procurement-list-container">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
         <div>
-          <h1 className="page-title" style={{ marginBottom: '8px' }}>採購列表 (Procurement Overview)</h1>
+          <h1 style={{ fontSize: '24px', fontWeight: '900', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
+            <ShoppingCart size={26} color="#2563eb" /> 採購列表 (Procurement Overview)
+          </h1>
           <p style={{ color: '#666', fontSize: '0.95rem' }}>管理所有採購單 (PO) 的品項分佈與入庫進度。</p>
         </div>
         

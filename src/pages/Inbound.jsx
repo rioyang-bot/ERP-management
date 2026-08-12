@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Trash2, Save, FileText, ShoppingBag, Layers, AlertCircle } from 'lucide-react';
+import { Plus, Trash2, Save, FileText, ShoppingBag, Layers, AlertCircle, ArrowDownToLine } from 'lucide-react';
 
 const Inbound = () => {
   const [availableItems, setAvailableItems] = useState([]);
@@ -233,7 +233,9 @@ const Inbound = () => {
 
   return (
     <div className="card-surface">
-      <h1 className="page-title">進貨入庫 (Inbound Receipt)</h1>
+          <h1 style={{ fontSize: '24px', fontWeight: '900', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
+            <ArrowDownToLine size={26} color="#2563eb" /> 進貨入庫 (Inbound Receipt)
+          </h1>
       {pendingPurchases.length > 0 && (
         <div style={alertContainerStyle}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>

@@ -271,7 +271,11 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
   return (
     <div className={`purchasing-container ${editMode ? 'edit-mode' : ''}`}>
       <div className={editMode ? '' : 'card-surface'}>
-        {!editMode && <h1 className="page-title">採購建檔 (Procurement Registration)</h1>}
+          {!editMode && (
+          <h1 style={{ fontSize: '24px', fontWeight: '900', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
+            <ShoppingCart size={26} color="#2563eb" /> 採購建檔 (Procurement Registration)
+          </h1>
+          )}
 
         <form onSubmit={handleSubmit}>
           {/* Header Section */}

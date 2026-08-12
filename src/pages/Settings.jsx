@@ -168,7 +168,9 @@ const Settings = () => {
       {/* 帳號權限管理 */}
       <div className="card-surface" style={{ padding: '32px' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', marginBottom: '8px' }}>
-          <h1 className="page-title" style={{ margin: 0 }}>帳號權限管理</h1>
+          <h1 style={{ fontSize: '24px', fontWeight: '900', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
+            <SettingsIcon size={26} color="#2563eb" /> 帳號權限管理
+          </h1>
           <span style={{ fontSize: '0.9rem', color: '#888' }}>(User Access Control)</span>
         </div>
         <p style={{ color: 'var(--text-muted)', marginBottom: '32px' }}>管理人員可在此新增帳號，並透過「權限設定」針對每個使用者單獨開啟或關閉選單功能。</p>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { UserPlus, Trash2, Edit2, Search, X, Save, UserCheck, Truck } from 'lucide-react';
+import { UserPlus, Trash2, Edit2, Search, X, Save, UserCheck, Truck, Users } from 'lucide-react';
 
 const Partners = () => {
   const [partners, setPartners] = useState([]);
@@ -133,7 +133,9 @@ const Partners = () => {
       <div style={cardStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
           <div>
-            <h1 style={{ fontSize: '24px', fontWeight: '900', color: '#1e293b', margin: 0 }}>客戶/廠商管理 (Partners)</h1>
+          <h1 style={{ fontSize: '24px', fontWeight: '900', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
+            <Users size={26} color="#2563eb" /> 客戶/廠商管理 (Partners)
+          </h1>
             <p style={{ color: '#64748b', fontSize: '13px', marginTop: '4px' }}>管理合作夥伴的基本資料，以便在進出貨時快速帶入功能。</p>
           </div>
           <div style={{ position: 'relative' }}>

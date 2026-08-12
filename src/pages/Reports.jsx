@@ -1,5 +1,5 @@
 import React, { useContext, useState } from 'react';
-import { Download, FileText, Filter, FileSpreadsheet, Lock } from 'lucide-react';
+import { Download, FileText, Filter, FileSpreadsheet, Lock, BarChart2 } from 'lucide-react';
 import { RoleContext } from '../context/RoleContext';
 
 const Reports = () => {
@@ -27,7 +27,9 @@ const Reports = () => {
 
   return (
     <div>
-      <h1 className="page-title" style={{ marginBottom: '24px' }}>報表與分析中心 (Reports)</h1>
+          <h1 style={{ fontSize: '24px', fontWeight: '900', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
+            <BarChart2 size={26} color="#2563eb" /> 報表與分析中心 (Reports)
+          </h1>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 1fr) 2fr', gap: '24px' }}>
         

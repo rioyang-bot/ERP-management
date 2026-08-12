@@ -262,7 +262,7 @@ export const queries = {
   // Outbound Workflow
   countOutboundRequests: `WITH seqs AS (SELECT CAST(SUBSTRING(request_no FROM '-([0-9]+)$') AS INTEGER) as sq FROM outbound_requests WHERE request_no LIKE $1 || '%') SELECT s.val as count FROM generate_series(1, 1000) as s(val) WHERE NOT EXISTS (SELECT 1 FROM seqs WHERE seqs.sq = s.val) ORDER BY s.val ASC LIMIT 1`,
   insertOutboundRequest: `INSERT INTO outbound_requests (request_no, customer, location, shipping_date, status, creator_id, contact_info) VALUES ($1, $2, $3, $4, 'PENDING', $5, $6) RETURNING id`,
-  insertOutboundItem: `INSERT INTO outbound_items (request_id, item_id, sn, quantity) VALUES ($1, $2, $3, $4)`,
+  insertOutboundItem: `INSERT INTO outbound_items (request_id, item_id, sn, quantity, location) VALUES ($1, $2, $3, $4, $5)`,
   searchActiveAssetSNs: `
     SELECT a.sn, c.name as category_name, i.brand, i.model 
     FROM assets a 
@@ -273,17 +273,28 @@ export const queries = {
   `,
   fetchDNList: `
     SELECT r.*, u.full_name as creator_name, 
-           (SELECT COUNT(*) FROM outbound_items WHERE request_id = r.id) as item_count
+           (SELECT COUNT(*) FROM outbound_items WHERE request_id = r.id) as item_count,
+           (SELECT a.custom_attributes->>'project_name' 
+            FROM outbound_items oi 
+            JOIN assets a ON oi.sn = a.sn 
+            WHERE oi.request_id = r.id AND a.custom_attributes->>'project_name' IS NOT NULL 
+            LIMIT 1) as project_name
     FROM outbound_requests r
     LEFT JOIN users u ON r.creator_id = u.id
     ORDER BY r.created_at DESC
   `,
   fetchDNItems: `
-    SELECT oi.*, i.brand, i.model, i.specification, i.type, i.unit
+    SELECT oi.*, i.brand, i.model, i.specification, i.type, i.unit, c.name as category_name
     FROM outbound_items oi
     JOIN item_master i ON oi.item_id = i.id
+    LEFT JOIN categories c ON i.category_id = c.id
     WHERE oi.request_id = $1
     ORDER BY oi.id ASC
   `,
+  checkItemStock: `SELECT stock_qty FROM item_master WHERE id = $1`,
+  checkAssetActive: `SELECT status FROM assets WHERE sn = $1`,
+  updateStockQtyOnOutbound: `UPDATE item_master SET stock_qty = stock_qty - $1 WHERE id = $2 AND stock_qty >= $1`,
+  updateAssetStatusAndLocationBySn: `UPDATE assets SET status = $1, location = $2 WHERE sn = $3`,
+  updateOutboundRequestStatus: `UPDATE outbound_requests SET status = $1 WHERE id = $2`,
   deleteOutboundRequest: `DELETE FROM outbound_requests WHERE id = $1`
 };

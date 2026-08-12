@@ -11,6 +11,7 @@ const DNList = () => {
   const [dnItems, setDnItems] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
+  const [isConfirming, setIsConfirming] = useState(false);
 
   const fetchRecords = useCallback(async () => {
     setLoading(true);
@@ -70,6 +71,66 @@ const DNList = () => {
     }
   };
 
+  const handleConfirmDelivery = async () => {
+    if (!selectedDN || !dnItems.length) return;
+    if (!window.confirm(`確認要將出貨單 [${selectedDN.request_no}] 狀態設定為已出貨並扣除庫存嗎？`)) return;
+
+    setIsConfirming(true);
+    try {
+      // 階段一：事前驗證 (Pre-check)
+      for (const item of dnItems) {
+        if (item.category_name === '耗材') {
+          const res = await window.electronAPI.namedQuery('checkItemStock', [item.item_id]);
+          if (!res.success || !res.rows.length) {
+            throw new Error(`【${item.brand} ${item.model}】查無庫存資料，無法作業。`);
+          }
+          const currentStock = res.rows[0].stock_qty;
+          if (currentStock < item.quantity) {
+            throw new Error(`【${item.brand} ${item.model}】數量不足無法扣除 (目前庫存: ${currentStock}, 需要: ${item.quantity})。`);
+          }
+        } else if (item.category_name === '硬體' || item.category_name === '設備') {
+          if (!item.sn) {
+            throw new Error(`【${item.brand} ${item.model}】沒有對應的序號，無法出貨。`);
+          }
+          const res = await window.electronAPI.namedQuery('checkAssetActive', [item.sn]);
+          if (!res.success || !res.rows.length) {
+            throw new Error(`【${item.brand} ${item.model}】序號 ${item.sn} 查不到有效資料。`);
+          }
+          if (res.rows[0].status !== 'ACTIVE') {
+            throw new Error(`【${item.brand} ${item.model}】序號 ${item.sn} 狀態為 ${res.rows[0].status}，非可用(ACTIVE)狀態。`);
+          }
+        }
+      }
+
+      // 階段二：正式變更 (Commit)
+      for (const item of dnItems) {
+        if (item.category_name === '耗材') {
+           const res = await window.electronAPI.namedQuery('updateStockQtyOnOutbound', [item.quantity, item.item_id]);
+           if (!res.success) throw new Error(`扣除耗材 [${item.brand} ${item.model}] 庫存時發生錯誤。`);
+        } else if (item.category_name === '硬體' || item.category_name === '設備') {
+           const destLocation = item.location || selectedDN.location;
+           const res = await window.electronAPI.namedQuery('updateAssetStatusAndLocationBySn', ['SHIPPED', destLocation, item.sn]);
+           if (!res.success) throw new Error(`變更序號 [${item.sn}] 狀態時發生錯誤。`);
+        }
+      }
+
+      // 更新出貨單狀態
+      const finalRes = await window.electronAPI.namedQuery('updateOutboundRequestStatus', ['SHIPPED', selectedDN.id]);
+      if (!finalRes.success) throw new Error('變更出貨單主檔狀態時發生錯誤。');
+
+      alert('出貨成功！狀態已變更且相關庫存已扣除。');
+      setIsModalOpen(false);
+      fetchRecords();
+
+    } catch (err) {
+      console.error('Confirm delivery error:', err);
+      // Fallback 秀出告警視窗 (透過原生 alert, 未來可更換為自訂 Modal)
+      alert('⚠️ 異常告警\n\n確認出貨失敗：\n' + err.message);
+    } finally {
+      setIsConfirming(false);
+    }
+  };
+
   useEffect(() => {
     fetchRecords();
   }, [fetchRecords]);
@@ -82,9 +143,10 @@ const DNList = () => {
   return (
     <div className="page-container">
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <FileText size={24} color="var(--primary-color)" />
-          <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#333' }}>出貨單列表 (D/N List)</h1>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
+            <FileText size={26} color="#2563eb" /> 出貨單列表 (D/N List)
+          </h1>
         </div>
         <button onClick={fetchRecords} className="btn-refresh-vibrant">
           <RefreshCw size={18} className={loading ? 'spinner' : ''} /> 重新整理
@@ -122,6 +184,7 @@ const DNList = () => {
                 <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>D/N 單號</th>
                 <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>出貨日期</th>
                 <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>客戶/對象</th>
+                <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>所屬專案</th>
                 <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>項目數</th>
                 <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>建立者</th>
                 <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>狀態</th>
@@ -130,9 +193,9 @@ const DNList = () => {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan="7" style={{ textAlign: 'center', padding: '40px', color: '#999' }}>讀取中...</td></tr>
+                <tr><td colSpan="8" style={{ textAlign: 'center', padding: '40px', color: '#999' }}>讀取中...</td></tr>
               ) : filteredRecords.length === 0 ? (
-                <tr><td colSpan="7" style={{ textAlign: 'center', padding: '40px', color: '#999' }}>目前尚無出貨單資料</td></tr>
+                <tr><td colSpan="8" style={{ textAlign: 'center', padding: '40px', color: '#999' }}>目前尚無出貨單資料</td></tr>
               ) : filteredRecords.map(dn => (
                 <tr key={dn.id} className="row-hover" style={{ borderBottom: '1px solid #f5f5f5' }}>
                   <td style={{ padding: '12px', fontWeight: 600 }}>{dn.request_no}</td>
@@ -146,6 +209,13 @@ const DNList = () => {
                         </span>
                       )}
                     </div>
+                  </td>
+                  <td style={{ padding: '12px' }}>
+                     {dn.project_name ? (
+                        <span style={{ fontWeight: 600, color: '#4338ca', backgroundColor: '#e0e7ff', padding: '4px 8px', borderRadius: '4px', fontSize: '0.85rem' }}>
+                          {dn.project_name}
+                        </span>
+                     ) : <span style={{ color: '#999', fontSize: '0.85rem' }}>-</span>}
                   </td>
                   <td style={{ padding: '12px' }}>
                     <span style={{ fontWeight: 600, color: 'var(--primary-color)' }}>{dn.item_count}</span> 項
@@ -232,6 +302,7 @@ const DNList = () => {
                         <th style={{ padding: '8px 12px', fontSize: '0.75rem', color: '#64748b' }}>項目詳情</th>
                         <th style={{ padding: '8px 12px', fontSize: '0.75rem', color: '#64748b' }}>序號 (S/N)</th>
                         <th style={{ padding: '8px 12px', fontSize: '0.75rem', color: '#64748b', textAlign: 'center' }}>數量</th>
+                        <th style={{ padding: '8px 12px', fontSize: '0.75rem', color: '#64748b' }}>發送位置</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -256,6 +327,9 @@ const DNList = () => {
                           <td style={{ padding: '6px 12px', textAlign: 'center' }}>
                             <span style={{ fontWeight: 800, fontSize: '0.85rem' }}>{item.quantity}</span> <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{item.unit}</span>
                           </td>
+                          <td style={{ padding: '6px 12px', fontSize: '0.8rem', color: '#475569' }}>
+                            {item.location || '-'}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -266,7 +340,14 @@ const DNList = () => {
 
             {selectedDN.status === 'PENDING' && (
               <div className="modal-footer" style={{ padding: '12px 20px', borderTop: '1px solid #e2e8f0', backgroundColor: '#f8fafc', display: 'flex', justifyContent: 'flex-end' }}>
-                <button className="btn-primary" style={{ padding: '8px 24px' }}>確認出貨 (尚未實作)</button>
+                <button 
+                  className="btn-primary" 
+                  onClick={handleConfirmDelivery}
+                  disabled={isConfirming}
+                  style={{ padding: '8px 24px', opacity: isConfirming ? 0.7 : 1 }}
+                >
+                  {isConfirming ? '處理中...' : '確認出貨'}
+                </button>
               </div>
             )}
           </div>
