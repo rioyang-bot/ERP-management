@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useContext } from 'react';
 import { RoleContext } from '../context/RoleContext';
-import { hashPassword } from '../utils/auth';
-import { Shield, User, Settings as SettingsIcon, CheckSquare, Square, X, Save, Key } from 'lucide-react';
+import { hashPassword, validatePassword } from '../utils/auth';
+import { Shield, User, Settings as SettingsIcon, CheckSquare, Square, X, Save, Key, Lock } from 'lucide-react';
 
 const MENU_OPTIONS = [
   { id: 'inbound', label: '進貨入庫 (Inbound)' },
@@ -14,7 +14,7 @@ const MENU_OPTIONS = [
   { id: 'consumables', label: '耗材建檔 (CSM Reg)' },
   { id: 'consumableList', label: '耗材列表 (CSM List)' },
   { id: 'purchasing', label: '採購建檔 (Procurement)' },
-  { id: 'procurementList', label: '採購列表 (Procurement list)' },
+  { id: 'procurementList', label: '採購單列表 (P/O List)' },
   { id: 'partners', label: '客戶/廠商管理 (Partners)' },
   { id: 'reports', label: '報表匯出 (Reports)' },
   { id: 'settings', label: '系統管理 (Accounts)' },
@@ -32,6 +32,23 @@ const Settings = () => {
   // Permission Modal State
   const [editingUser, setEditingUser] = useState(null);
   const [showPermissionModal, setShowPermissionModal] = useState(false);
+  
+  // Admin Reset Password State
+  const [resetUser, setResetUser] = useState(null);
+  const [adminResetPwd, setAdminResetPwd] = useState('');
+  const [isResetting, setIsResetting] = useState(false);
+
+  // Password Policy State
+  const defaultPolicy = { enabled: false, minLength: 8, requireUppercase: true, requireLowercase: true, requireNumber: true, requireSpecialChar: true };
+  const [passwordPolicy, setPasswordPolicy] = useState(defaultPolicy);
+  const [isSavingPolicy, setIsSavingPolicy] = useState(false);
+
+  const fetchSettings = useCallback(async () => {
+    const res = await window.electronAPI.namedQuery('getSystemSetting', ['password_policy']);
+    if (res.success && res.rows.length > 0) {
+      setPasswordPolicy(res.rows[0].value || defaultPolicy);
+    }
+  }, []);
 
   const fetchUsers = useCallback(async () => {
     setLoadingUsers(true);
@@ -43,9 +60,11 @@ const Settings = () => {
   }, []);
 
   useEffect(() => {
-    // 使用 Promise.resolve() 將 setState 推遲到微任務隊列，避免同步觸發連鎖渲染
-    Promise.resolve().then(() => fetchUsers());
-  }, [fetchUsers]);
+    Promise.resolve().then(() => {
+      fetchSettings();
+      fetchUsers();
+    });
+  }, [fetchUsers, fetchSettings]);
 
   const handleUserChange = (e) => {
     setNewUser({ ...newUser, [e.target.name]: e.target.value });
@@ -54,6 +73,11 @@ const Settings = () => {
   const handleAddUser = async () => {
     if (!newUser.username || !newUser.password) return alert('帳號密碼為必填');
     
+    if (passwordPolicy.enabled) {
+      const { isValid, message } = validatePassword(newUser.password, passwordPolicy);
+      if (!isValid) return alert('密碼不符合安全性原則：\n' + message);
+    }
+
     try {
       const hashedPassword = await hashPassword(newUser.password);
       
@@ -162,18 +186,62 @@ const Settings = () => {
     }
   };
 
+  const handleAdminResetPassword = async () => {
+    if (!adminResetPwd) return alert('新密碼不能為空');
+    
+    if (passwordPolicy.enabled) {
+      const { isValid, message } = validatePassword(adminResetPwd, passwordPolicy);
+      if (!isValid) return alert('密碼不符合安全性原則：\n' + message);
+    }
+    
+    setIsResetting(true);
+    try {
+      const hashedNew = await hashPassword(adminResetPwd);
+      const updateRes = await window.electronAPI.namedQuery('updateUserPassword', [hashedNew, resetUser.id]);
+      if (updateRes.success) {
+        alert(`已經成功將使用者 [${resetUser.username}] 的密碼重設！`);
+        setResetUser(null);
+        setAdminResetPwd('');
+      } else {
+        alert('變更密碼失敗：' + updateRes.error);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('處理失敗：' + err.message);
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
+  const togglePolicy = (field) => {
+    setPasswordPolicy(prev => ({ ...prev, [field]: !prev[field] }));
+  };
+  
+  const savePolicy = async () => {
+    setIsSavingPolicy(true);
+    try {
+      await window.electronAPI.namedQuery('upsertSystemSetting', ['password_policy', passwordPolicy]);
+      alert('密碼安全原則已儲存');
+    } catch(err) {
+      alert('儲存失敗');
+    }
+    setIsSavingPolicy(false);
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '32px', paddingBottom: '60px' }}>
       
       {/* 帳號權限管理 */}
       <div className="card-surface" style={{ padding: '32px' }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', marginBottom: '8px' }}>
-          <h1 style={{ fontSize: '24px', fontWeight: '900', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
-            <SettingsIcon size={26} color="#2563eb" /> 帳號權限管理
-          </h1>
-          <span style={{ fontSize: '0.9rem', color: '#888' }}>(User Access Control)</span>
+        <div style={{ marginBottom: '32px' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
+            <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
+              <SettingsIcon size={26} color="#2563eb" /> 帳號權限管理
+            </h1>
+            <span style={{ fontSize: '0.9rem', color: '#888' }}>(User Access Control)</span>
+          </div>
+          <p style={{ color: '#64748b', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>管理人員可在此新增帳號，並針對每個使用者單獨開啟或關閉各模組功能。</p>
         </div>
-        <p style={{ color: 'var(--text-muted)', marginBottom: '32px' }}>管理人員可在此新增帳號，並透過「權限設定」針對每個使用者單獨開啟或關閉選單功能。</p>
 
         <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '32px' }}>
           {/* 新增帳號表單 */}
@@ -260,6 +328,9 @@ const Settings = () => {
                           <button onClick={() => handleToggleActive(u.id, u.is_active)} className="btn-icon">
                             {u.is_active ? '停用' : '啟用'}
                           </button>
+                          <button onClick={() => setResetUser(u)} className="btn-icon">
+                            重設密碼
+                          </button>
                           <button onClick={() => handleDeleteUser(u.id, u.username)} className="btn-icon-danger">
                             刪除
                           </button>
@@ -269,6 +340,60 @@ const Settings = () => {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      {/* 密碼安全原則設定 */}
+      <div className="card-surface" style={{ padding: '32px' }}>
+        <div style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <h2 style={{ fontSize: '1.25rem', color: '#1e293b', margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}><Lock size={22} color="#059669" /> 密碼安全原則設定</h2>
+          <span style={{ fontSize: '0.9rem', color: '#888' }}>(強制套用於新帳號建立與密碼變更作業)</span>
+        </div>
+        
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '600px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '8px', fontWeight: 600, fontSize: '1rem' }}>
+              <input type="checkbox" checked={passwordPolicy.enabled} onChange={() => togglePolicy('enabled')} style={{ transform: 'scale(1.2)' }} />
+              啟用複雜密碼檢查
+            </label>
+          </div>
+          
+          <div style={{ padding: '20px', border: '1px solid #e2e8f0', borderRadius: '12px', backgroundColor: passwordPolicy.enabled ? '#fff' : '#f8fafc', opacity: passwordPolicy.enabled ? 1 : 0.6, pointerEvents: passwordPolicy.enabled ? 'auto' : 'none', transition: 'all 0.3s' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
+              <label style={{ fontWeight: 600, fontSize: '0.9rem', width: '120px' }}>最少字元長度</label>
+              <input type="number" min="4" max="32" value={passwordPolicy.minLength} onChange={e => setPasswordPolicy(prev => ({ ...prev, minLength: parseInt(e.target.value) || 8 }))} className="settings-input" style={{ width: '80px', padding: '6px 10px' }} />
+            </div>
+            
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '24px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '6px', fontSize: '0.9rem' }}>
+                <input type="checkbox" checked={passwordPolicy.requireUppercase} onChange={() => togglePolicy('requireUppercase')} />
+                必須包含大寫英文字母
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '6px', fontSize: '0.9rem' }}>
+                <input type="checkbox" checked={passwordPolicy.requireLowercase} onChange={() => togglePolicy('requireLowercase')} />
+                必須包含小寫英文字母
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '6px', fontSize: '0.9rem' }}>
+                <input type="checkbox" checked={passwordPolicy.requireNumber} onChange={() => togglePolicy('requireNumber')} />
+                必須包含數字
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '6px', fontSize: '0.9rem' }}>
+                <input type="checkbox" checked={passwordPolicy.requireSpecialChar} onChange={() => togglePolicy('requireSpecialChar')} />
+                必須包含特殊符號
+              </label>
+            </div>
+            
+            <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
+              <button 
+                onClick={savePolicy} 
+                disabled={isSavingPolicy}
+                className="btn-primary" 
+                style={{ padding: '8px 24px', backgroundColor: '#059669', display: 'flex', alignItems: 'center', gap: '8px' }}
+              >
+                <Save size={16} /> {isSavingPolicy ? '儲存中...' : '儲存安全原則'}
+              </button>
             </div>
           </div>
         </div>
@@ -318,6 +443,52 @@ const Settings = () => {
               </button>
               <button onClick={() => setShowPermissionModal(false)} className="btn-secondary" style={{ padding: '12px 24px' }}>
                 取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 重設密碼 Modal (管理者強制) */}
+      {resetUser && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
+          <div className="card-surface" style={{ width: '400px', padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h2 style={{ fontSize: '1.25rem', color: '#1e293b', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}><Key size={20} color="#eab308" /> 強制重設密碼</h2>
+              <X size={20} style={{ cursor: 'pointer', color: '#999' }} onClick={() => { setResetUser(null); setAdminResetPwd(''); }} />
+            </div>
+            
+            <p style={{ fontSize: '0.9rem', color: '#64748b', marginBottom: '16px' }}>
+              即將為使用者 <strong style={{ color: '#000' }}>{resetUser.full_name || resetUser.username}</strong> 重新設定密碼。<br/>
+              如果啟用了密碼安全原則，新設定密碼仍需受到原則規範限制。
+            </p>
+
+            <div style={{ marginBottom: '24px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.9rem', fontWeight: 600, color: '#334155' }}>新密碼設定</label>
+              <input 
+                type="text" 
+                value={adminResetPwd} 
+                onChange={e => setAdminResetPwd(e.target.value)} 
+                className="settings-input" 
+                placeholder="請為此帳號輸入欲設定的新密碼..." 
+              />
+            </div>
+            
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button 
+                onClick={() => { setResetUser(null); setAdminResetPwd(''); }} 
+                className="btn-secondary" 
+                style={{ padding: '8px 16px' }}
+              >
+                取消
+              </button>
+              <button 
+                onClick={handleAdminResetPassword} 
+                disabled={isResetting}
+                className="btn-primary" 
+                style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                {isResetting ? '儲存中...' : '確認變更'}
               </button>
             </div>
           </div>

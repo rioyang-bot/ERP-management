@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Search, Edit2, X, Save, MoreHorizontal, MoreVertical, MapPin, User, Trash2, CheckCircle, ShoppingBag, Wrench, ShieldAlert, Cpu, Archive, RotateCcw, Server } from 'lucide-react';
 
-const DeviceList = () => {
+const DeviceList = ({ isSplitMode = false }) => {
+  const navigate = useNavigate();
   const [items, setItems] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
@@ -403,9 +404,25 @@ const DeviceList = () => {
       <div style={cardStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <h1 style={{ fontSize: '24px', fontWeight: '900', color: '#1e293b' }}>
-              {brandFilter ? `${brandFilter} - 設備清單` : '設備列表 (Device List)'}
-            </h1>
+            <div>
+              <h1 style={{ fontSize: '24px', fontWeight: '900', color: '#1e293b', margin: 0 }}>
+                {brandFilter ? `${brandFilter} - 設備清單` : '設備列表 (Device List)'}
+              </h1>
+              <p style={{ color: '#64748b', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>檢視全系統的獨立設備資產狀態、出入庫歷程及硬體搭載情況。</p>
+            </div>
+            {!isSplitMode && (
+              <div style={{ display: 'flex', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>
+                <button onClick={() => navigate('/devices')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: '#64748b', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
+                  📝 建檔
+                </button>
+                <button onClick={() => navigate('/device-split')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: '#64748b', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
+                  ◫ 雙開
+                </button>
+                <button style={{ padding: '6px 14px', backgroundColor: '#ffffff', color: '#2563eb', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '800', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', cursor: 'default' }}>
+                  📋 清單
+                </button>
+              </div>
+            )}
             {(brandFilter || searchTerm) && (
               <button 
                 onClick={() => { setSearchTerm(''); setSearchParams({}); }}

@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { ClipboardList, Search, Plus, Trash2, Send, Calendar, MapPin, User, Package, Cpu, ChevronRight, AlertCircle, Loader2, Truck } from 'lucide-react';
 import { RoleContext } from '../context/RoleContext';
+import { useNavigate } from 'react-router-dom';
 import './Outbound.css';
 
-const Outbound = () => {
+const Outbound = ({ isSplitMode = false }) => {
   const { authUser } = useContext(RoleContext);
+  const navigate = useNavigate();
   // --- 單據標頭狀態 (從 localStorage 初始化) ---
   const [header, setHeader] = useState(() => {
     const saved = localStorage.getItem('dn_draft_header');
@@ -32,6 +34,9 @@ const Outbound = () => {
   const [customers, setCustomers] = useState([]);
   const [consumables, setConsumables] = useState([]);
   const [csmSearchTerm, setCsmSearchTerm] = useState('');
+  const [csmFilterBrand, setCsmFilterBrand] = useState('');
+  const [csmFilterType, setCsmFilterType] = useState('');
+  const [csmFilterModel, setCsmFilterModel] = useState('');
 
   // --- 持久化同步 ---
   useEffect(() => {
@@ -234,12 +239,23 @@ const Outbound = () => {
   };
 
   const filteredConsumables = consumables.filter(c => {
-    const search = csmSearchTerm.toLowerCase();
-    const name = (c.item_name || '').toLowerCase();
-    const model = (c.model || '').toLowerCase();
-    const brand = (c.brand || '').toLowerCase();
-    return name.includes(search) || model.includes(search) || brand.includes(search);
+    if (csmFilterBrand && (c.brand || '') !== csmFilterBrand) return false;
+    if (csmFilterType && (c.type || '') !== csmFilterType) return false;
+    if (csmFilterModel && (c.model || '') !== csmFilterModel) return false;
+    if (csmSearchTerm) {
+      const search = csmSearchTerm.toLowerCase();
+      const name = (c.item_name || '').toLowerCase();
+      const model = (c.model || '').toLowerCase();
+      const brand = (c.brand || '').toLowerCase();
+      return name.includes(search) || model.includes(search) || brand.includes(search);
+    }
+    return true;
   });
+
+  // 動態篩選選項 (後項根據前項過濾)
+  const csmBrands = [...new Set(consumables.map(c => c.brand).filter(Boolean))].sort();
+  const csmTypes = [...new Set(consumables.filter(c => !csmFilterBrand || c.brand === csmFilterBrand).map(c => c.type).filter(Boolean))].sort();
+  const csmModels = [...new Set(consumables.filter(c => (!csmFilterBrand || c.brand === csmFilterBrand) && (!csmFilterType || c.type === csmFilterType)).map(c => c.model).filter(Boolean))].sort();
 
   // 幫助過濾的函式
   const getDeviceSuggestions = () => {
@@ -259,11 +275,26 @@ const Outbound = () => {
   return (
     <div className="outbound-registration-container">
       {/* 1. 頁面標題 */}
-      <div className="dn-header-main">
-        <h1 style={{ fontSize: '24px', fontWeight: '900', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
-          <Truck size={26} color="#2563eb" /> 出貨單建檔 (Delivery Note Registration)
-        </h1>
-        <p className="dn-subtitle" style={{ marginLeft: '36px' }}>建立新的出貨申請單，支援設備序號自動導出與耗材選取</p>
+      <div className="dn-header-main" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+        <div>
+          <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
+            <Truck size={26} color="#2563eb" /> 出貨單建檔 (Delivery Note Registration)
+          </h1>
+          <p style={{ color: '#64748b', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>建立新的出貨申請單，支援設備序號自動導出與耗材選取。</p>
+        </div>
+        {!isSplitMode && (
+          <div style={{ display: 'flex', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>
+            <button style={{ padding: '6px 14px', backgroundColor: '#ffffff', color: '#2563eb', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '800', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', cursor: 'default' }}>
+              📝 建檔
+            </button>
+            <button onClick={() => navigate('/outbound-split')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: '#64748b', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
+              ◫ 雙開
+            </button>
+            <button onClick={() => navigate('/dn-list')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: '#64748b', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
+              📋 清單
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="dn-content-layout">
@@ -414,24 +445,46 @@ const Outbound = () => {
             <div className="dn-card-header">
               <Package size={18} /> <span>耗材品項快選 (Consumables)</span>
             </div>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '10px', flexWrap: 'wrap' }}>
+              <select
+                value={csmFilterBrand}
+                onChange={e => { setCsmFilterBrand(e.target.value); setCsmFilterType(''); setCsmFilterModel(''); }}
+                style={{ flex: 1, minWidth: '100px', padding: '7px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.85rem', outline: 'none', backgroundColor: '#fff' }}
+              >
+                <option value="">全部廠牌</option>
+                {csmBrands.map(b => <option key={b} value={b}>{b}</option>)}
+              </select>
+              <select
+                value={csmFilterType}
+                onChange={e => { setCsmFilterType(e.target.value); setCsmFilterModel(''); }}
+                style={{ flex: 1, minWidth: '100px', padding: '7px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.85rem', outline: 'none', backgroundColor: '#fff' }}
+              >
+                <option value="">全部類型</option>
+                {csmTypes.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+              <select
+                value={csmFilterModel}
+                onChange={e => setCsmFilterModel(e.target.value)}
+                style={{ flex: 1, minWidth: '100px', padding: '7px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.85rem', outline: 'none', backgroundColor: '#fff' }}
+              >
+                <option value="">全部型號</option>
+                {csmModels.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
             <div className="csm-search-mini">
               <Search size={14} />
               <input 
                 type="text" 
-                placeholder="快速過濾品項..." 
+                placeholder="快速搜尋品名..." 
                 value={csmSearchTerm}
                 onChange={e => setCsmSearchTerm(e.target.value)}
               />
             </div>
             <div className="csm-fast-grid">
-              {!csmSearchTerm ? (
+              {filteredConsumables.length === 0 ? (
                 <div className="csm-empty-hint">
                   <Package size={24} opacity={0.3} />
-                  <span>輸入關鍵字搜尋耗材...</span>
-                </div>
-              ) : filteredConsumables.length === 0 ? (
-                <div className="csm-empty-hint">
-                  <span>找不到匹配的品項</span>
+                  <span>{(!csmFilterBrand && !csmFilterType && !csmFilterModel && !csmSearchTerm) ? '請選擇篩選條件或輸入關鍵字...' : '找不到匹配的品項'}</span>
                 </div>
               ) : (
                 filteredConsumables.slice(0, 20).map(c => (
@@ -471,7 +524,7 @@ const Outbound = () => {
                       <th>廠牌 / 型號</th>
                       <th>序號 (S/N)</th>
                       <th>數量</th>
-                      <th>發送位置</th>
+                      <th>出貨位置</th>
                       <th>操作</th>
                     </tr>
                   </thead>

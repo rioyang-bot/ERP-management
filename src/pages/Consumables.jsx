@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Save, Settings2, Trash2, X, Package, Clock } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
-const Consumables = () => {
+const Consumables = ({ isSplitMode = false }) => {
+  const navigate = useNavigate();
   const [items, setItems] = useState([]);
   const [types, setTypes] = useState([]);
   const [brands, setBrands] = useState([]);
@@ -195,27 +197,27 @@ const Consumables = () => {
 
   const handleAddConsumable = async () => {
     if (!formData.type || !formData.brand || !formData.model) return alert('請填寫必填欄位 (廠牌、類型、型號為必填)');
-    
+
     const res = await window.electronAPI.namedQuery('insertConsumableMaster', [
-      formData.spec || '', 
-      formData.type, 
-      formData.brand, 
-      formData.model, 
-      formData.unit, 
-      Number(formData.safety_stock || 0), 
-      Number(formData.stock_qty || 0), 
+      formData.spec || '',
+      formData.type,
+      formData.brand,
+      formData.model,
+      formData.unit,
+      Number(formData.safety_stock || 0),
+      Number(formData.stock_qty || 0),
       '耗材'
     ]);
-    
+
     if (res.success) {
       alert('耗材建檔成功！');
       fetchConsumables();
       // 重置欄位，保留廠牌/類型/單位，方便連續建檔
-      setFormData(prev => ({ 
-        ...prev, 
-        model: '', 
-        spec: '', 
-        stock_qty: 0 
+      setFormData(prev => ({
+        ...prev,
+        model: '',
+        spec: '',
+        stock_qty: 0
       }));
       setFormKey(prev => prev + 1);
     } else {
@@ -239,9 +241,27 @@ const Consumables = () => {
     <div style={containerStyle}>
       <div style={leftSectionStyle}>
         <div style={cardStyle}>
-          <h2 style={{ fontSize: '20px', fontWeight: '800', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Package size={24} color="#2563eb" /> 耗材建檔 (Consumables Registration)
-          </h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+            <div>
+              <h2 style={{ fontSize: '24px', fontWeight: '800', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Package size={24} color="#2563eb" /> 耗材建檔 (Consumables Registration)
+              </h2>
+              <p style={{ color: '#64748b', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>用於登錄無獨立序號的批次性耗材，統一管理數量與規格。</p>
+            </div>
+            {!isSplitMode && (
+              <div style={{ display: 'flex', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>
+                <button style={{ padding: '6px 14px', backgroundColor: '#ffffff', color: '#2563eb', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '800', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', cursor: 'default' }}>
+                  📝 建檔
+                </button>
+                <button onClick={() => navigate('/consumable-split')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: '#64748b', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
+                  ◫ 雙開
+                </button>
+                <button onClick={() => navigate('/consumable-list')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: '#64748b', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
+                  📋 清單
+                </button>
+              </div>
+            )}
+          </div>
 
           <div key={formKey} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
@@ -255,8 +275,8 @@ const Consumables = () => {
                   <button onClick={() => setShowAddBrand(!showAddBrand)} style={iconButtonStyle}><Plus size={18} /></button>
                   <button onClick={() => setShowManageBrand(!showManageBrand)} style={iconButtonStyle}><Settings2 size={18} /></button>
                 </div>
-                {showAddBrand && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newBrandName} onChange={e => setNewBrandName(e.target.value)} style={inputStyle} /><button onClick={handleAddBrand} style={{ ...iconButtonStyle, background: '#2563eb', color: '#fff' }}><Plus size={18}/></button></div>}
-                {showManageBrand && <div style={{ marginTop: '8px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>{brands.map(b => ( <div key={b.id} style={manageItemStyle}><span>{b.name}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteBrand(b.name)} /></div> ))}</div>}
+                {showAddBrand && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newBrandName} onChange={e => setNewBrandName(e.target.value)} style={inputStyle} /><button onClick={handleAddBrand} style={{ ...iconButtonStyle, background: '#2563eb', color: '#fff' }}><Plus size={18} /></button></div>}
+                {showManageBrand && <div style={{ marginTop: '8px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>{brands.map(b => (<div key={b.id} style={manageItemStyle}><span>{b.name}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteBrand(b.name)} /></div>))}</div>}
               </div>
 
               <div>
@@ -268,8 +288,8 @@ const Consumables = () => {
                   <button onClick={() => setShowAddType(!showAddType)} style={iconButtonStyle}><Plus size={18} /></button>
                   <button onClick={() => setShowManageType(!showManageType)} style={iconButtonStyle}><Settings2 size={18} /></button>
                 </div>
-                {showAddType && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newTypeName} onChange={e => setNewTypeName(e.target.value)} style={inputStyle} /><button onClick={handleAddType} style={{ ...iconButtonStyle, background: '#2563eb', color: '#fff' }}><Plus size={18}/></button></div>}
-                {showManageType && <div style={{ marginTop: '8px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>{types.map(t => ( <div key={t} style={manageItemStyle}><span>{t}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteType(t)} /></div> ))}</div>}
+                {showAddType && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newTypeName} onChange={e => setNewTypeName(e.target.value)} style={inputStyle} /><button onClick={handleAddType} style={{ ...iconButtonStyle, background: '#2563eb', color: '#fff' }}><Plus size={18} /></button></div>}
+                {showManageType && <div style={{ marginTop: '8px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>{types.map(t => (<div key={t} style={manageItemStyle}><span>{t}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteType(t)} /></div>))}</div>}
               </div>
 
               <div>
@@ -282,8 +302,8 @@ const Consumables = () => {
                   <button onClick={() => setShowAddModel(!showAddModel)} style={iconButtonStyle}><Plus size={18} /></button>
                   <button onClick={() => setShowManageModel(!showManageModel)} style={iconButtonStyle}><Settings2 size={18} /></button>
                 </div>
-                {showAddModel && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newModelName} onChange={e => setNewModelName(e.target.value)} style={inputStyle} /><button onClick={handleAddModel} style={{ ...iconButtonStyle, background: '#2563eb', color: '#fff' }}><Plus size={18}/></button></div>}
-                {showManageModel && <div style={{ marginTop: '8px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>{models.map(m => ( <div key={m} style={manageItemStyle}><span>{m}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteModel(m)} /></div> ))}</div>}
+                {showAddModel && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newModelName} onChange={e => setNewModelName(e.target.value)} style={inputStyle} /><button onClick={handleAddModel} style={{ ...iconButtonStyle, background: '#2563eb', color: '#fff' }}><Plus size={18} /></button></div>}
+                {showManageModel && <div style={{ marginTop: '8px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>{models.map(m => (<div key={m} style={manageItemStyle}><span>{m}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteModel(m)} /></div>))}</div>}
               </div>
             </div>
 
@@ -302,8 +322,8 @@ const Consumables = () => {
                   <button onClick={() => setShowAddUnit(!showAddUnit)} style={iconButtonStyle}><Plus size={18} /></button>
                   <button onClick={() => setShowManageUnit(!showManageUnit)} style={iconButtonStyle}><Settings2 size={18} /></button>
                 </div>
-                {showAddUnit && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newUnitName} onChange={e => setNewUnitName(e.target.value)} style={inputStyle} /><button onClick={handleAddUnit} style={{ ...iconButtonStyle, background: '#2563eb', color: '#fff' }}><Plus size={18}/></button></div>}
-                {showManageUnit && <div style={{ marginTop: '8px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>{units.map(u => ( <div key={u} style={manageItemStyle}><span>{u}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteUnit(u)} /></div> ))}</div>}
+                {showAddUnit && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newUnitName} onChange={e => setNewUnitName(e.target.value)} style={inputStyle} /><button onClick={handleAddUnit} style={{ ...iconButtonStyle, background: '#2563eb', color: '#fff' }}><Plus size={18} /></button></div>}
+                {showManageUnit && <div style={{ marginTop: '8px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>{units.map(u => (<div key={u} style={manageItemStyle}><span>{u}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteUnit(u)} /></div>))}</div>}
               </div>
               <div>
                 <label style={labelStyle}>安全庫存 (Safety Stock)</label>

@@ -23,3 +23,35 @@ export async function hashPassword(message) {
   // 回退至純 JavaScript 實作 (可用於 HTTP 或舊版瀏覽器)
   return sha256(message);
 }
+
+/**
+ * 根據自訂策略驗證密碼強度
+ * @param {string} password 
+ * @param {object} policy - { enabled, minLength, requireUppercase, requireLowercase, requireNumber, requireSpecialChar }
+ * @returns { {isValid: boolean, message: string} }
+ */
+export function validatePassword(password, policy) {
+  if (!policy || !policy.enabled) return { isValid: true, message: '' };
+  
+  if (policy.minLength && password.length < policy.minLength) {
+    return { isValid: false, message: `密碼長度至少需要 ${policy.minLength} 個字元` };
+  }
+  
+  if (policy.requireUppercase && !/[A-Z]/.test(password)) {
+    return { isValid: false, message: '密碼必須包含至少一個大寫英文字母' };
+  }
+  
+  if (policy.requireLowercase && !/[a-z]/.test(password)) {
+    return { isValid: false, message: '密碼必須包含至少一個小寫英文字母' };
+  }
+  
+  if (policy.requireNumber && !/[0-9]/.test(password)) {
+    return { isValid: false, message: '密碼必須包含至少一個數字' };
+  }
+  
+  if (policy.requireSpecialChar && !/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]+/.test(password)) {
+    return { isValid: false, message: '密碼必須包含至少一個特殊符號' };
+  }
+  
+  return { isValid: true, message: '驗證通過' };
+}

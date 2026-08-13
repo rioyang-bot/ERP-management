@@ -27,9 +27,12 @@ const Reports = () => {
 
   return (
     <div>
-          <h1 style={{ fontSize: '24px', fontWeight: '900', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
+        <div style={{ marginBottom: '24px' }}>
+          <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
             <BarChart2 size={26} color="#2563eb" /> 報表與分析中心 (Reports)
           </h1>
+          <p style={{ color: '#64748b', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>根據系統的歷史資料，產生指定時間與專案格式的報表文件。</p>
+        </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 1fr) 2fr', gap: '24px' }}>
         

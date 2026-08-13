@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Save, Settings2, Trash2, X, Monitor, Clock, User, MapPin, ListFilter, Layers, Server } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
-const Devices = () => {
+const Devices = ({ isSplitMode = false }) => {
+  const navigate = useNavigate();
   const [items, setItems] = useState([]);
   const [types, setTypes] = useState([]);
   const [brands, setBrands] = useState([]);
@@ -16,9 +18,9 @@ const Devices = () => {
   const [newBrandName, setNewBrandName] = useState('');
   const [newModelName, setNewModelName] = useState('');
   const [models, setModels] = useState([]);
-  const [formData, setFormData] = useState({ 
-    type: '', brand: '', model: '', sn: '', specification: '', client: '', 
-    hostname: '', location: '', installed_date: '', 
+  const [formData, setFormData] = useState({
+    type: '', brand: '', model: '', sn: '', specification: '', client: '',
+    hostname: '', location: '', installed_date: '',
     customer_warranty_expire: '', system_date: '', warranty_expire: '',
     os: '', nic: '', custom_attributes: {},
     os: '', nic: '', custom_attributes: {},
@@ -207,7 +209,7 @@ const Devices = () => {
 
   const handleAddAsset = async () => {
     if (!formData.brand || !formData.type) return alert('請填寫必填欄位 (廠牌與類型)');
-    
+
     // 解析序號清單
     let snList = [];
     if (isBulkMode) {
@@ -240,17 +242,17 @@ const Devices = () => {
           project_name: formData.project_name || ''
         };
         const res = await window.electronAPI.namedQuery('insertAssetRecord', [
-            masterId, sn || null, formData.client, formData.hostname, formData.location, formData.installed_date || null,
-            formData.customer_warranty_expire || null, formData.system_date || null, formData.warranty_expire || null,
-            formData.os, formData.nic, updatedCustomAttributes
+          masterId, sn || null, formData.client, formData.hostname, formData.location, formData.installed_date || null,
+          formData.customer_warranty_expire || null, formData.system_date || null, formData.warranty_expire || null,
+          formData.os, formData.nic, updatedCustomAttributes
         ]);
         if (res.success) successCount++;
       }
 
       alert(isBulkMode ? `批次建檔完成！成功建立 ${successCount} 筆設備紀錄。` : '設備建檔成功！');
       fetchAssets();
-      setFormData({ 
-        sn: '', specification: '', type: '', brand: brands[0]?.name || '', model: '', client: '', 
+      setFormData({
+        sn: '', specification: '', type: '', brand: brands[0]?.name || '', model: '', client: '',
         hostname: '', location: '', installed_date: '', customer_warranty_expire: '', system_date: '', warranty_expire: '',
         os: '', nic: '', custom_attributes: {},
         os: '', nic: '', custom_attributes: {},
@@ -273,8 +275,8 @@ const Devices = () => {
   const iconButtonStyle = { padding: '8px', border: '1px solid #e2e8f0', borderRadius: '8px', backgroundColor: '#fff', cursor: 'pointer' };
   const manageItemStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', fontSize: '13px', borderBottom: '1px solid #f1f5f9' };
   const modeBtnStyle = (active) => ({
-    flex: 1, padding: '10px', borderRadius: '8px', border: 'none', 
-    backgroundColor: active ? '#2563eb' : '#f1f5f9', 
+    flex: 1, padding: '10px', borderRadius: '8px', border: 'none',
+    backgroundColor: active ? '#2563eb' : '#f1f5f9',
     color: active ? '#fff' : '#475569',
     fontWeight: '700', fontSize: '13px', cursor: 'pointer', transition: 'all 0.2s',
     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
@@ -284,9 +286,27 @@ const Devices = () => {
     <div style={containerStyle}>
       <div style={leftSectionStyle}>
         <div style={cardStyle}>
-          <h2 style={{ fontSize: '20px', fontWeight: '800', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Monitor size={24} color="#2563eb" /> 設備建檔 (Device Registration)
-          </h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+            <div>
+              <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
+                <Monitor size={26} color="#2563eb" /> 設備建檔 (Device Registration)
+              </h1>
+              <p style={{ color: '#64748b', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>新增具備獨立序號配置的主硬體設備，並提供序號追蹤管理。</p>
+            </div>
+            {!isSplitMode && (
+              <div style={{ display: 'flex', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>
+                <button style={{ padding: '6px 14px', backgroundColor: '#ffffff', color: '#2563eb', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '800', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', cursor: 'default' }}>
+                  📝 建檔
+                </button>
+                <button onClick={() => navigate('/device-split')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: '#64748b', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
+                  ◫ 雙開
+                </button>
+                <button onClick={() => navigate('/device-list')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: '#64748b', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
+                  📋 清單
+                </button>
+              </div>
+            )}
+          </div>
           <div key={formKey} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
               <div>
@@ -299,8 +319,8 @@ const Devices = () => {
                   <button onClick={() => setShowAddBrand(!showAddBrand)} style={iconButtonStyle}><Plus size={18} /></button>
                   <button onClick={() => setShowManageBrand(!showManageBrand)} style={iconButtonStyle}><Settings2 size={18} /></button>
                 </div>
-                {showAddBrand && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newBrandName} onChange={e => setNewBrandName(e.target.value)} style={inputStyle} /><button onClick={handleAddBrand} style={{ ...iconButtonStyle, background: '#2563eb', color: '#fff' }}><Plus size={18}/></button></div>}
-                {showManageBrand && <div style={{ marginTop: '8px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>{brands.map(b => ( <div key={b.id} style={manageItemStyle}><span>{b.name}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteBrand(b.name)} /></div> ))}</div>}
+                {showAddBrand && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newBrandName} onChange={e => setNewBrandName(e.target.value)} style={inputStyle} /><button onClick={handleAddBrand} style={{ ...iconButtonStyle, background: '#2563eb', color: '#fff' }}><Plus size={18} /></button></div>}
+                {showManageBrand && <div style={{ marginTop: '8px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>{brands.map(b => (<div key={b.id} style={manageItemStyle}><span>{b.name}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteBrand(b.name)} /></div>))}</div>}
               </div>
               <div>
                 <label style={labelStyle}>類型 (Type) <span style={{ color: '#ef4444' }}>*</span></label>
@@ -311,8 +331,8 @@ const Devices = () => {
                   <button onClick={() => setShowAddType(!showAddType)} style={iconButtonStyle}><Plus size={18} /></button>
                   <button onClick={() => setShowManageType(!showManageType)} style={iconButtonStyle}><Settings2 size={18} /></button>
                 </div>
-                {showAddType && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newTypeName} onChange={e => setNewTypeName(e.target.value)} style={inputStyle} /><button onClick={handleAddType} style={{ ...iconButtonStyle, background: '#2563eb', color: '#fff' }}><Plus size={18}/></button></div>}
-                {showManageType && <div style={{ marginTop: '8px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>{types.map(t => ( <div key={t} style={manageItemStyle}><span>{t}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteType(t)} /></div> ))}</div>}
+                {showAddType && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newTypeName} onChange={e => setNewTypeName(e.target.value)} style={inputStyle} /><button onClick={handleAddType} style={{ ...iconButtonStyle, background: '#2563eb', color: '#fff' }}><Plus size={18} /></button></div>}
+                {showManageType && <div style={{ marginTop: '8px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>{types.map(t => (<div key={t} style={manageItemStyle}><span>{t}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteType(t)} /></div>))}</div>}
               </div>
               <div>
                 <label style={labelStyle}>型號 (Model) <span style={{ color: '#ef4444' }}>*</span></label>
@@ -324,8 +344,8 @@ const Devices = () => {
                   <button onClick={() => setShowAddModel(!showAddModel)} style={iconButtonStyle}><Plus size={18} /></button>
                   <button onClick={() => setShowManageModel(!showManageModel)} style={iconButtonStyle}><Settings2 size={18} /></button>
                 </div>
-                {showAddModel && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newModelName} onChange={e => setNewModelName(e.target.value)} style={inputStyle} /><button onClick={handleAddModel} style={{ ...iconButtonStyle, background: '#2563eb', color: '#fff' }}><Plus size={18}/></button></div>}
-                {showManageModel && <div style={{ marginTop: '8px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>{models.map(m => ( <div key={m} style={manageItemStyle}><span>{m}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteModel(m)} /></div> ))}</div>}
+                {showAddModel && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newModelName} onChange={e => setNewModelName(e.target.value)} style={inputStyle} /><button onClick={handleAddModel} style={{ ...iconButtonStyle, background: '#2563eb', color: '#fff' }}><Plus size={18} /></button></div>}
+                {showManageModel && <div style={{ marginTop: '8px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>{models.map(m => (<div key={m} style={manageItemStyle}><span>{m}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteModel(m)} /></div>))}</div>}
               </div>
             </div>
 
@@ -335,8 +355,8 @@ const Devices = () => {
               <div>
                 <label style={labelStyle}>建檔模式</label>
                 <div style={{ display: 'flex', gap: '4px', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>
-                   <button type="button" onClick={() => setIsBulkMode(false)} style={modeBtnStyle(!isBulkMode)}><ListFilter size={14}/> 單筆</button>
-                   <button type="button" onClick={() => setIsBulkMode(true)} style={modeBtnStyle(isBulkMode)}><Layers size={14}/> 多筆</button>
+                  <button type="button" onClick={() => setIsBulkMode(false)} style={modeBtnStyle(!isBulkMode)}><ListFilter size={14} /> 單筆</button>
+                  <button type="button" onClick={() => setIsBulkMode(true)} style={modeBtnStyle(isBulkMode)}><Layers size={14} /> 多筆</button>
                 </div>
               </div>
             </div>
@@ -350,10 +370,10 @@ const Devices = () => {
                 )}
               </label>
               {isBulkMode ? (
-                <textarea 
-                  value={bulkSns} 
-                  onChange={e => setBulkSns(e.target.value)} 
-                  style={{ ...inputStyle, minHeight: '120px', fontFamily: 'monospace' }} 
+                <textarea
+                  value={bulkSns}
+                  onChange={e => setBulkSns(e.target.value)}
+                  style={{ ...inputStyle, minHeight: '120px', fontFamily: 'monospace' }}
                   placeholder="請在此處貼上多個序號..."
                 />
               ) : (
@@ -376,10 +396,10 @@ const Devices = () => {
                   const matches = customers.filter(c => c.name === formData.client);
                   if (matches.length > 1) {
                     return (
-                      <select 
+                      <select
                         id="contact-select"
-                        name="contact_person" 
-                        value={formData.contact_person} 
+                        name="contact_person"
+                        value={formData.contact_person}
                         onChange={(e) => {
                           const contactVal = e.target.value;
                           const found = matches.find(m => m.contact === contactVal);
@@ -388,7 +408,7 @@ const Devices = () => {
                             contact_person: contactVal,
                             contact_phone: found ? (found.phone || '') : ''
                           }));
-                        }} 
+                        }}
                         style={inputStyle}
                       >
                         <option value="">請選擇聯絡人</option>
@@ -401,11 +421,11 @@ const Devices = () => {
                     );
                   } else {
                     return (
-                      <input 
+                      <input
                         id="contact-select"
-                        type="text" 
-                        name="contact_person" 
-                        value={formData.contact_person} 
+                        type="text"
+                        name="contact_person"
+                        value={formData.contact_person}
                         onChange={(e) => setFormData(prev => ({ ...prev, contact_person: e.target.value }))}
                         placeholder="聯絡人姓名"
                         style={inputStyle}
@@ -425,8 +445,8 @@ const Devices = () => {
                     .filter(f => isFieldVisible(formData.brand, f.id))
                     .filter(f => !['sn', 'hostname', 'specification', 'client', 'location', 'installed_date', 'system_date', 'warranty_expire', 'customer_warranty_expire'].includes(f.id))
                     .map(f => (
-                    <div key={f.id}><label style={labelStyle}>{f.label}</label><input type="text" value={f.isNative ? formData[f.id] : (formData.custom_attributes[f.id] || '')} onChange={e => { if (f.isNative) setFormData({...formData, [f.id]:e.target.value}); else setFormData({...formData, custom_attributes:{...formData.custom_attributes, [f.id]:e.target.value}}); }} style={inputStyle} /></div>
-                  ))}
+                      <div key={f.id}><label style={labelStyle}>{f.label}</label><input type="text" value={f.isNative ? formData[f.id] : (formData.custom_attributes[f.id] || '')} onChange={e => { if (f.isNative) setFormData({ ...formData, [f.id]: e.target.value }); else setFormData({ ...formData, custom_attributes: { ...formData.custom_attributes, [f.id]: e.target.value } }); }} style={inputStyle} /></div>
+                    ))}
                 </div>
               </div>
             )}
@@ -457,12 +477,12 @@ const Devices = () => {
                 <div style={{ fontSize: '12px', color: '#334155', fontWeight: '600' }}>SN: {item.sn || '無序號'}</div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#94a3b8' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><User size={12}/> {item.client || '--'}</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><User size={12} /> {item.client || '--'}</span>
                     {(item.partner_contact || item.partner_phone) && (
                       <span style={{ fontSize: '11px', color: '#64748b', paddingLeft: '16px' }}>{item.partner_contact} {item.partner_phone}</span>
                     )}
                   </div>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><MapPin size={12}/> {item.location || '--'}</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><MapPin size={12} /> {item.location || '--'}</span>
                 </div>
               </div>
             ))}

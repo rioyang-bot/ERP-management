@@ -64,7 +64,7 @@ describe('採購建檔品項下拉選單與型號自動帶出測試', () => {
 
     // 1. 等待採購建檔頁面載入，檢查標題與供應商
     await waitFor(() => {
-      expect(screen.getByText('採購建檔 (Procurement Registration)')).toBeInTheDocument();
+      expect(screen.getByText('採購建檔 (P/O Reg)')).toBeInTheDocument();
     });
 
     // 2. 找到廠牌下拉選單 (brand)

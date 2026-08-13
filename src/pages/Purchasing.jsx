@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useCallback, useContext } from 'react';
 import { Plus, Search, FileText, ShoppingCart, CheckCircle, Clock, AlertCircle, Trash2, DollarSign, Package, Tag, Filter, X, Save, Settings2, Trash } from 'lucide-react';
 import { RoleContext } from '../context/RoleContext';
+import { useNavigate } from 'react-router-dom';
 
-const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose = null }) => {
+const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose = null, isSplitMode = false }) => {
   const { authUser } = useContext(RoleContext);
+  const navigate = useNavigate();
   const [purchaseRecords, setPurchaseRecords] = useState([]);
   const [partners, setPartners] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -272,9 +274,27 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
     <div className={`purchasing-container ${editMode ? 'edit-mode' : ''}`}>
       <div className={editMode ? '' : 'card-surface'}>
           {!editMode && (
-          <h1 style={{ fontSize: '24px', fontWeight: '900', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
-            <ShoppingCart size={26} color="#2563eb" /> 採購建檔 (Procurement Registration)
-          </h1>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+              <div>
+                <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
+                  <ShoppingCart size={26} color="#2563eb" /> 採購建檔 (P/O Reg)
+                </h1>
+                <p style={{ color: '#64748b', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>建立與申請新的採購單，設定專案與供應商訂購細節。</p>
+              </div>
+              {!isSplitMode && (
+                <div style={{ display: 'flex', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>
+                  <button style={{ padding: '6px 14px', backgroundColor: '#ffffff', color: '#2563eb', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '800', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', cursor: 'default' }}>
+                    📝 建檔
+                  </button>
+                  <button onClick={() => navigate('/procurement-split')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: '#64748b', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
+                    ◫ 雙開
+                  </button>
+                  <button onClick={() => navigate('/procurement-list')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: '#64748b', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
+                    📋 清單
+                  </button>
+                </div>
+              )}
+            </div>
           )}
 
         <form onSubmit={handleSubmit}>

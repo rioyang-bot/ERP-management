@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Plus, Save, Trash2, Cpu, Settings2, X, Server, Clock, User, MapPin, Layers, ListFilter } from 'lucide-react';
 
-const HwRegistration = () => {
+const HwRegistration = ({ isSplitMode = false }) => {
+  const navigate = useNavigate();
   const [brands, setBrands] = useState([]);
   const [types, setTypes] = useState([]);
   const [models, setModels] = useState([]);
   const [recentItems, setRecentItems] = useState([]);
-  
+
   const [activeMgmt, setActiveMgmt] = useState(null);
   const [activeAdd, setActiveAdd] = useState(null);
 
@@ -125,7 +127,7 @@ const HwRegistration = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     // 取得基本資訊
     const safeBrand = validateAndSanitize(formData.brand, '廠牌');
     const safeType = validateAndSanitize(formData.type, '類型');
@@ -154,7 +156,7 @@ const HwRegistration = () => {
       // 1. 處理 Item Master
       let itemMasterId;
       const findRes = await window.electronAPI.namedQuery('findItemMaster', [safeSpec, safeType, safeBrand, safeModel]);
-      
+
       if (findRes.success && findRes.rows.length > 0) {
         itemMasterId = findRes.rows[0].id;
       } else {
@@ -171,15 +173,15 @@ const HwRegistration = () => {
       let failCount = 0;
 
       for (const sn of snList) {
-        const custom_attributes = { 
-          order_date: formData.order_date, 
+        const custom_attributes = {
+          order_date: formData.order_date,
           server_sn: safeServerSn,
           project_name: formData.project_name || ''
         };
 
         const res = await window.electronAPI.namedQuery('insertAssetRecord', [
-          itemMasterId, sn || null, '', '', '', 
-          null, null, null, null, '', '', 
+          itemMasterId, sn || null, '', '', '',
+          null, null, null, null, '', '',
           custom_attributes
         ]);
 
@@ -208,10 +210,10 @@ const HwRegistration = () => {
   const labelStyle = { display: 'block', fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' };
   const inputStyle = { width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '14px', outline: 'none' };
   const iconBtnStyle = { padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', backgroundColor: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center' };
-  
+
   const modeBtnStyle = (active) => ({
-    flex: 1, padding: '10px', borderRadius: '8px', border: 'none', 
-    backgroundColor: active ? '#2563eb' : '#f1f5f9', 
+    flex: 1, padding: '10px', borderRadius: '8px', border: 'none',
+    backgroundColor: active ? '#2563eb' : '#f1f5f9',
     color: active ? '#fff' : '#475569',
     fontWeight: '700', fontSize: '13px', cursor: 'pointer', transition: 'all 0.2s',
     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
@@ -238,9 +240,27 @@ const HwRegistration = () => {
     <div style={containerStyle}>
       <div style={leftSectionStyle}>
         <div style={cardStyle}>
-          <h2 style={{ fontSize: '20px', fontWeight: '900', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
-            <Cpu size={26} color="#2563eb" /> 硬體建檔 (Hardware Registration)
-          </h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+            <div>
+              <h2 style={{ fontSize: '24px', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b', margin: 0 }}>
+                <Cpu size={26} color="#2563eb" /> 硬體建檔 (Hardware Registration)
+              </h2>
+              <p style={{ color: '#64748b', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>新增硬體元件（如網卡、記憶體等）並建立獨立序號進行管理。</p>
+            </div>
+            {!isSplitMode && (
+              <div style={{ display: 'flex', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>
+                <button style={{ padding: '6px 14px', backgroundColor: '#ffffff', color: '#2563eb', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '800', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', cursor: 'default' }}>
+                  📝 建檔
+                </button>
+                <button onClick={() => navigate('/hw-split')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: '#64748b', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
+                  ◫ 雙開
+                </button>
+                <button onClick={() => navigate('/hw-list')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: '#64748b', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
+                  📋 清單
+                </button>
+              </div>
+            )}
+          </div>
           <form onSubmit={handleSubmit}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' }}>
               <div>
@@ -250,10 +270,10 @@ const HwRegistration = () => {
                     <option value="">選擇廠牌</option>
                     {brands.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}
                   </select>
-                  <button type="button" onClick={() => setActiveAdd(activeAdd === 'brand' ? null : 'brand')} style={iconBtnStyle}><Plus size={18}/></button>
-                  <button type="button" onClick={() => setActiveMgmt(activeMgmt === 'brand' ? null : 'brand')} style={iconBtnStyle}><Settings2 size={18}/></button>
+                  <button type="button" onClick={() => setActiveAdd(activeAdd === 'brand' ? null : 'brand')} style={iconBtnStyle}><Plus size={18} /></button>
+                  <button type="button" onClick={() => setActiveMgmt(activeMgmt === 'brand' ? null : 'brand')} style={iconBtnStyle}><Settings2 size={18} /></button>
                 </div>
-                {activeAdd === 'brand' && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newBrandName} onChange={e => setNewBrandName(e.target.value)} placeholder="新廠牌" style={inputStyle} /><button type="button" onClick={handleAddBrand} style={{ ...iconBtnStyle, background: '#2563eb', color: '#fff' }}><Plus size={18}/></button></div>}
+                {activeAdd === 'brand' && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newBrandName} onChange={e => setNewBrandName(e.target.value)} placeholder="新廠牌" style={inputStyle} /><button type="button" onClick={handleAddBrand} style={{ ...iconBtnStyle, background: '#2563eb', color: '#fff' }}><Plus size={18} /></button></div>}
                 {activeMgmt === 'brand' && <RenderInlineMgmt title="廠牌" items={brands} onDelete={handleDeleteBrand} />}
               </div>
 
@@ -264,10 +284,10 @@ const HwRegistration = () => {
                     <option value="">選擇類型</option>
                     {types.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
-                  <button type="button" onClick={() => setActiveAdd(activeAdd === 'type' ? null : 'type')} style={iconBtnStyle} disabled={!formData.brand}><Plus size={18}/></button>
-                  <button type="button" onClick={() => setActiveMgmt(activeMgmt === 'type' ? null : 'type')} style={iconBtnStyle} disabled={!formData.brand}><Settings2 size={18}/></button>
+                  <button type="button" onClick={() => setActiveAdd(activeAdd === 'type' ? null : 'type')} style={iconBtnStyle} disabled={!formData.brand}><Plus size={18} /></button>
+                  <button type="button" onClick={() => setActiveMgmt(activeMgmt === 'type' ? null : 'type')} style={iconBtnStyle} disabled={!formData.brand}><Settings2 size={18} /></button>
                 </div>
-                {activeAdd === 'type' && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newTypeName} onChange={e => setNewTypeName(e.target.value)} placeholder="新類型" style={inputStyle} /><button type="button" onClick={handleAddType} style={{ ...iconBtnStyle, background: '#2563eb', color: '#fff' }}><Plus size={18}/></button></div>}
+                {activeAdd === 'type' && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newTypeName} onChange={e => setNewTypeName(e.target.value)} placeholder="新類型" style={inputStyle} /><button type="button" onClick={handleAddType} style={{ ...iconBtnStyle, background: '#2563eb', color: '#fff' }}><Plus size={18} /></button></div>}
                 {activeMgmt === 'type' && <RenderInlineMgmt title="類型" items={types.map(t => ({ name: t }))} onDelete={handleDeleteType} />}
               </div>
 
@@ -278,10 +298,10 @@ const HwRegistration = () => {
                     <option value="">選擇型號</option>
                     {models.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
-                  <button type="button" onClick={() => setActiveAdd(activeAdd === 'model' ? null : 'model')} style={iconBtnStyle} disabled={!formData.type}><Plus size={18}/></button>
-                  <button type="button" onClick={() => setActiveMgmt(activeMgmt === 'model' ? null : 'model')} style={iconBtnStyle} disabled={!formData.type}><Settings2 size={18}/></button>
+                  <button type="button" onClick={() => setActiveAdd(activeAdd === 'model' ? null : 'model')} style={iconBtnStyle} disabled={!formData.type}><Plus size={18} /></button>
+                  <button type="button" onClick={() => setActiveMgmt(activeMgmt === 'model' ? null : 'model')} style={iconBtnStyle} disabled={!formData.type}><Settings2 size={18} /></button>
                 </div>
-                {activeAdd === 'model' && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newModelName} onChange={e => setNewModelName(e.target.value)} placeholder="新型號" style={inputStyle} /><button type="button" onClick={handleAddModel} style={{ ...iconBtnStyle, background: '#2563eb', color: '#fff' }}><Plus size={18}/></button></div>}
+                {activeAdd === 'model' && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newModelName} onChange={e => setNewModelName(e.target.value)} placeholder="新型號" style={inputStyle} /><button type="button" onClick={handleAddModel} style={{ ...iconBtnStyle, background: '#2563eb', color: '#fff' }}><Plus size={18} /></button></div>}
                 {activeMgmt === 'model' && <RenderInlineMgmt title="型號" items={models.map(m => ({ name: m }))} onDelete={handleDeleteModel} />}
               </div>
             </div>
@@ -294,8 +314,8 @@ const HwRegistration = () => {
               <div>
                 <label style={labelStyle}>建檔模式</label>
                 <div style={{ display: 'flex', gap: '4px', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>
-                   <button type="button" onClick={() => setIsBulkMode(false)} style={modeBtnStyle(!isBulkMode)}><ListFilter size={14}/> 單筆</button>
-                   <button type="button" onClick={() => setIsBulkMode(true)} style={modeBtnStyle(isBulkMode)}><Layers size={14}/> 多筆</button>
+                  <button type="button" onClick={() => setIsBulkMode(false)} style={modeBtnStyle(!isBulkMode)}><ListFilter size={14} /> 單筆</button>
+                  <button type="button" onClick={() => setIsBulkMode(true)} style={modeBtnStyle(isBulkMode)}><Layers size={14} /> 多筆</button>
                 </div>
               </div>
             </div>
@@ -303,10 +323,10 @@ const HwRegistration = () => {
             <div style={{ marginBottom: '24px' }}>
               <label style={labelStyle}>{isBulkMode ? '硬體序號清單 (每行一個序號)' : '硬體序號 (SN)'}</label>
               {isBulkMode ? (
-                <textarea 
-                  value={bulkSns} 
-                  onChange={e => setBulkSns(e.target.value)} 
-                  style={{ ...inputStyle, minHeight: '160px', fontFamily: 'monospace', lineHeight: '1.6' }} 
+                <textarea
+                  value={bulkSns}
+                  onChange={e => setBulkSns(e.target.value)}
+                  style={{ ...inputStyle, minHeight: '160px', fontFamily: 'monospace', lineHeight: '1.6' }}
                   placeholder="請在此處貼上或掃描多個序號..."
                 />
               ) : (
@@ -373,12 +393,12 @@ const HwRegistration = () => {
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#94a3b8', marginTop: '8px', borderTop: '1px solid #f1f5f9', paddingTop: '6px' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><User size={12}/> {item.server_client || item.client || '--'}</span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><User size={12} /> {item.server_client || item.client || '--'}</span>
                       {(item.partner_contact || item.partner_phone) && (
                         <span style={{ fontSize: '10px', color: '#64748b', paddingLeft: '16px' }}>{item.partner_contact} {item.partner_phone}</span>
                       )}
                     </div>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><MapPin size={12}/> {item.server_location || '--'}</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><MapPin size={12} /> {item.server_location || '--'}</span>
                   </div>
                 </div>
               ))

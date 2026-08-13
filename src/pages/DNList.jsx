@@ -1,8 +1,21 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { FileText, Search, Filter, Eye, RefreshCw, AlertCircle, Trash2 } from 'lucide-react';
+import { FileText, Search, Filter, Eye, RefreshCw, AlertCircle, Trash2, Calendar } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
-const DNList = () => {
+const DNList = ({ isSplitMode = false }) => {
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
+  const [searchField, setSearchField] = useState('all');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+
+  const searchOptions = [
+    { value: 'all', label: '全部欄位' },
+    { value: 'request_no', label: 'D/N 單號' },
+    { value: 'customer', label: '客戶名稱' },
+    { value: 'project', label: '專案名稱' }
+  ];
+
   const [dnRecords, setDnRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -12,6 +25,11 @@ const DNList = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, searchField, startDate, endDate]);
 
   const fetchRecords = useCallback(async () => {
     setLoading(true);
@@ -135,50 +153,145 @@ const DNList = () => {
     fetchRecords();
   }, [fetchRecords]);
 
-  const filteredRecords = dnRecords.filter(dn => 
-    dn.request_no.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (dn.customer && dn.customer.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  const filteredRecords = dnRecords.filter(dn => {
+    const search = searchTerm.toLowerCase();
+    
+    let matchSearch = true;
+    if (searchField === 'all') {
+      matchSearch = (dn.request_no || '').toLowerCase().includes(search) ||
+             (dn.customer || '').toLowerCase().includes(search) ||
+             (dn.project_name || '').toLowerCase().includes(search);
+    } else if (searchField === 'request_no') {
+      matchSearch = (dn.request_no || '').toLowerCase().includes(search);
+    } else if (searchField === 'customer') {
+      matchSearch = (dn.customer || '').toLowerCase().includes(search);
+    } else if (searchField === 'project') {
+      matchSearch = (dn.project_name || '').toLowerCase().includes(search);
+    }
+
+    if (!matchSearch) return false;
+
+    if (startDate || endDate) {
+      const dnDate = new Date(dn.created_at || dn.shipping_date);
+      dnDate.setHours(0,0,0,0);
+      if (startDate) {
+        const start = new Date(startDate);
+        start.setHours(0,0,0,0);
+        if (dnDate < start) return false;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(0,0,0,0);
+        if (dnDate > end) return false;
+      }
+    }
+    return true;
+  });
+
+  const sortedAndFiltered = [...filteredRecords].sort((a, b) => {
+    const aIncomplete = a.status !== 'SHIPPED';
+    const bIncomplete = b.status !== 'SHIPPED';
+    if (aIncomplete && !bIncomplete) return -1;
+    if (!aIncomplete && bIncomplete) return 1;
+    return new Date(b.shipping_date) - new Date(a.shipping_date);
+  });
+
+  const ITEMS_PER_PAGE = 10;
+  const totalPages = Math.ceil(sortedAndFiltered.length / ITEMS_PER_PAGE) || 1;
+  const currentRecords = sortedAndFiltered.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+
+  const pendingCount = dnRecords.filter(dn => dn.status !== 'SHIPPED').length;
 
   return (
     <div className="page-container">
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center' }}>
-          <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
-            <FileText size={26} color="#2563eb" /> 出貨單列表 (D/N List)
-          </h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div>
+            <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
+              <FileText size={26} color="#2563eb" /> 出貨單列表 (D/N List)
+            </h1>
+            <p style={{ color: '#64748b', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>檢視所有出貨紀錄、追蹤出單進度並執行扣庫存作業。</p>
+          </div>
+          {!isSplitMode && (
+            <div style={{ display: 'flex', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>
+              <button onClick={() => navigate('/outbound')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: '#64748b', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
+                📝 建檔
+              </button>
+              <button onClick={() => navigate('/outbound-split')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: '#64748b', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
+                ◫ 雙開
+              </button>
+              <button style={{ padding: '6px 14px', backgroundColor: '#ffffff', color: '#2563eb', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '800', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', cursor: 'default' }}>
+                📋 清單
+              </button>
+            </div>
+          )}
         </div>
-        <button onClick={fetchRecords} className="btn-refresh-vibrant">
-          <RefreshCw size={18} className={loading ? 'spinner' : ''} /> 重新整理
-        </button>
+        <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+           <div style={{ backgroundColor: '#fff', padding: '12px 24px', borderRadius: '12px', border: '1px solid #eee', display: 'flex', gap: '24px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+              <div>
+                <div style={{ fontSize: '0.75rem', color: '#aaa', fontWeight: 600 }}>待處理出貨單</div>
+                <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#e65100' }}>
+                  {pendingCount} <span style={{ fontSize: '0.8rem', fontWeight: 400, opacity: 0.8 }}>單</span>
+                </div>
+              </div>
+
+           </div>
+           <button onClick={fetchRecords} className="btn-refresh-vibrant">
+             <RefreshCw size={18} className={loading ? 'spinner' : ''} /> 重新整理
+           </button>
+        </div>
       </div>
 
-      <div className="card-surface" style={{ padding: '24px' }}>
-        <div style={{ display: 'flex', gap: '16px', marginBottom: '24px' }}>
-          <div style={{ flex: 1, position: 'relative' }}>
-            <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
-            <input 
-              type="text" 
-              placeholder="搜尋 D/N 單號或客戶..." 
-              style={{ width: '100%', padding: '10px 10px 10px 40px', borderRadius: '10px', border: '1px solid #e2e8f0', outline: 'none', fontSize: '0.9rem' }}
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
+      <div className="card-surface" style={{ padding: '0', overflow: 'hidden' }}>
+        <div style={{ padding: '20px 24px', borderBottom: '1px solid #eee', display: 'flex', gap: '16px', alignItems: 'center', backgroundColor: '#fafafa' }}>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flex: 1 }}>
+            <select 
+              value={searchField} 
+              onChange={e => setSearchField(e.target.value)}
+              style={{ padding: '10px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', outline: 'none', fontSize: '0.9rem', backgroundColor: '#fff', cursor: 'pointer', minWidth: '130px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}
+            >
+              {searchOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+            </select>
+            <div style={{ position: 'relative', width: '320px' }}>
+              <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+              <input 
+                type="text" 
+                placeholder={`搜尋${searchOptions.find(o => o.value === searchField)?.label}...`} 
+                style={{ width: '100%', padding: '10px 10px 10px 40px', borderRadius: '10px', border: '1px solid #e2e8f0', outline: 'none', fontSize: '0.9rem', boxSizing: 'border-box', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+            
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '10px', border: '1px solid #e2e8f0', backgroundColor: '#fff', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+              <Calendar size={18} color="#94a3b8" />
+              <input 
+                type="date" 
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                style={{ border: 'none', outline: 'none', fontSize: '0.9rem', color: '#475569', background: 'transparent' }} 
+              />
+              <span style={{ color: '#cbd5e1' }}>-</span>
+              <input 
+                type="date" 
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                style={{ border: 'none', outline: 'none', fontSize: '0.9rem', color: '#475569', background: 'transparent' }} 
+              />
+            </div>
           </div>
-          <button className="btn-filter-vibrant">
-            <Filter size={18} /> 篩選
-          </button>
         </div>
 
-        {error && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '16px', backgroundColor: '#fff5f5', color: '#d32f2f', borderRadius: '8px', marginBottom: '20px' }}>
-            <AlertCircle size={20} />
-            <span>{error}</span>
-          </div>
-        )}
+        <div style={{ padding: '24px' }}>
+          {error && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '16px', backgroundColor: '#fff5f5', color: '#d32f2f', borderRadius: '8px', marginBottom: '20px' }}>
+              <AlertCircle size={20} />
+              <span>{error}</span>
+            </div>
+          )}
 
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ textAlign: 'left', borderBottom: '2px solid #334155' }}>
                 <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>D/N 單號</th>
@@ -194,9 +307,9 @@ const DNList = () => {
             <tbody>
               {loading ? (
                 <tr><td colSpan="8" style={{ textAlign: 'center', padding: '40px', color: '#999' }}>讀取中...</td></tr>
-              ) : filteredRecords.length === 0 ? (
+              ) : currentRecords.length === 0 ? (
                 <tr><td colSpan="8" style={{ textAlign: 'center', padding: '40px', color: '#999' }}>目前尚無出貨單資料</td></tr>
-              ) : filteredRecords.map(dn => (
+              ) : currentRecords.map(dn => (
                 <tr key={dn.id} className="row-hover" style={{ borderBottom: '1px solid #f5f5f5' }}>
                   <td style={{ padding: '12px', fontWeight: 600 }}>{dn.request_no}</td>
                   <td style={{ padding: '12px' }}>{new Date(dn.shipping_date).toLocaleDateString()}</td>
@@ -255,6 +368,30 @@ const DNList = () => {
               ))}
             </tbody>
           </table>
+          
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '16px', gap: '12px', borderTop: '1px solid #eee', backgroundColor: '#fafafa' }}>
+              <button 
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                style={{ padding: '6px 14px', border: '1px solid #ddd', borderRadius: '6px', backgroundColor: currentPage === 1 ? '#f5f5f5' : '#fff', color: currentPage === 1 ? '#aaa' : '#333', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
+              >
+                上一頁
+              </button>
+              <span style={{ fontSize: '0.9rem', color: '#555', fontWeight: 600 }}>
+                {currentPage} <span style={{ color: '#aaa', margin: '0 4px' }}>/</span> {totalPages}
+              </span>
+              <button 
+                disabled={currentPage === totalPages}
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                style={{ padding: '6px 14px', border: '1px solid #ddd', borderRadius: '6px', backgroundColor: currentPage === totalPages ? '#f5f5f5' : '#fff', color: currentPage === totalPages ? '#aaa' : '#333', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
+              >
+                下一頁
+              </button>
+            </div>
+          )}
+        </div>
         </div>
       </div>
 
@@ -393,41 +530,6 @@ const DNList = () => {
           color: white;
           transform: translateY(-2px) scale(1.05);
           box-shadow: 0 4px 6px -1px rgba(185, 28, 28, 0.3);
-        }
-
-        .btn-refresh-vibrant, .btn-filter-vibrant {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          padding: 8px 18px;
-          border-radius: 50px;
-          font-weight: 700;
-          font-size: 0.9rem;
-          border: none;
-          cursor: pointer;
-          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-          color: white;
-          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-        }
-
-        .btn-refresh-vibrant {
-          background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-        }
-
-        .btn-refresh-vibrant:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 6px 12px -2px rgba(16, 185, 129, 0.4);
-          filter: brightness(1.1);
-        }
-
-        .btn-filter-vibrant {
-          background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-        }
-
-        .btn-filter-vibrant:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 6px 12px -2px rgba(245, 158, 11, 0.4);
-          filter: brightness(1.1);
         }
 
         .btn-primary, .btn-secondary {

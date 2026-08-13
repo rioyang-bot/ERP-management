@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Search, Edit2, X, Server, User, MapPin, MoreHorizontal, Trash2, ShoppingBag, AlertTriangle, CheckCircle, Save, Monitor, Settings, ShieldAlert, Archive, RotateCcw, Cpu } from 'lucide-react';
 
-const HwList = () => {
+const HwList = ({ isSplitMode = false }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const queryParams = new URLSearchParams(location.search);
@@ -244,10 +244,27 @@ const HwList = () => {
 
   const renderHeader = () => (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        <h2 style={{ fontSize: '24px', fontWeight: '900', color: '#1e293b' }}>
-          {filterType ? `${filterType} - 硬體清單` : '硬體列表 (Hardware List)'}
-        </h2>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div>
+          <h2 style={{ fontSize: '24px', fontWeight: '900', color: '#1e293b', margin: 0 }}>
+            {filterType ? `${filterType} - 硬體清單` : '硬體列表 (Hardware List)'}
+          </h2>
+          <p style={{ color: '#64748b', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>管理硬體零組件庫存、搭載狀態及進出貨歷史紀錄。</p>
+        </div>
+        
+        {!isSplitMode && (
+          <div style={{ display: 'flex', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>
+            <button onClick={() => navigate('/hw-registration')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: '#64748b', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
+              📝 建檔
+            </button>
+            <button onClick={() => navigate('/hw-split')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: '#64748b', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
+              ◫ 雙開
+            </button>
+            <button style={{ padding: '6px 14px', backgroundColor: '#ffffff', color: '#2563eb', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '800', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', cursor: 'default' }}>
+              📋 清單
+            </button>
+          </div>
+        )}
         {(filterType || searchTerm) && (
           <button 
             onClick={() => { setSearchTerm(''); navigate('?'); }}

@@ -52,11 +52,7 @@ const Inbound = () => {
     setItems([...items, { id: Date.now(), selectedOrderNo: '', itemId: '', purchaseRecordId: '', cat_name: '', unit: '', sn: '', qty: 1 }]);
   };
 
-  useEffect(() => {
-    if (items.every(i => !i.purchaseRecordId)) {
-      setPartnerId('');
-    }
-  }, [items]);
+
 
   const handleRemove = (id) => {
     setItems(items.filter(item => item.id !== id));
@@ -99,13 +95,16 @@ const Inbound = () => {
     const po = pendingPurchases.find(p => p.id.toString() === poId.toString());
     if (!po) return;
 
-    if (partnerId && partnerId.toString() !== po.partner_id.toString()) {
+    const hasAnyOtherPO = items.some(i => i.id !== rowId && !!i.purchaseRecordId);
+    if (hasAnyOtherPO && partnerId && partnerId.toString() !== po.partner_id.toString()) {
       alert('此品項所屬的供應商與本進貨單目前綁定的供應商不符。\n(建議將不同供應商的進貨分開建立以免帳務混亂)');
       setItems(items.map(row => row.id === rowId ? { ...row, purchaseRecordId: '', itemId: '', cat_name: '', qty: 1 } : row));
       return;
     }
 
-    if (!partnerId) setPartnerId(po.partner_id.toString());
+    if (!hasAnyOtherPO || !partnerId) {
+      setPartnerId(po.partner_id.toString());
+    }
     
     let existingItem = availableItems.find(i => 
       (i.specification || '') === (po.specification || '') &&
@@ -151,7 +150,26 @@ const Inbound = () => {
   const handleSubmit = async () => {
     if (!partnerId) return alert('請先選擇對應的採購單以帶入供應商資訊');
     if (items.some(i => !i.itemId && !i.purchaseRecordId)) return alert('請確認所有明細均已選擇入庫品項');
-    // SN validation removed to make it optional
+    
+    // 檢查進貨數量是否超過採購單剩餘數量 (Aggregate by PO to prevent duplicate row bypassing)
+    const qtyByPO = {};
+    for (const item of items) {
+      if (item.purchaseRecordId) {
+        qtyByPO[item.purchaseRecordId] = (qtyByPO[item.purchaseRecordId] || 0) + (parseInt(item.qty, 10) || 1);
+      }
+    }
+    
+    for (const [poId, requestedQty] of Object.entries(qtyByPO)) {
+      const po = pendingPurchases.find(p => p.id.toString() === poId.toString());
+      if (po) {
+        const remaining = po.quantity - (po.received_quantity || 0);
+        if (requestedQty > remaining) {
+          const specLabel = [po.brand, po.model, po.specification].filter(Boolean).join(' ') || '未命名項目';
+          return alert(`⚠️ 數量異常\n\n採購項目 [${specLabel}] 本次總計入庫數量 (${requestedQty}) 超過剩餘可入庫的額度 (${remaining})！\n\n請檢查是否有重複選擇相同的採購單或是數量輸入錯誤。`);
+        }
+      }
+    }
+
     if (window.confirm('確認將此單據入庫？')) {
       const orderRes = await window.electronAPI.namedQuery('insertInboundOrder', [orderNo, partnerId, invoiceNo, 'COMPLETED']);
       if (orderRes.success) {
@@ -206,7 +224,8 @@ const Inbound = () => {
   const uniqueOrderNos = Array.from(new Set(pendingPurchases.map(p => p.order_no)));
 
   const handleOrderNoChange = (rowId, orderNo) => {
-    if (orderNo && partnerId) {
+    const hasAnyOtherPO = items.some(i => i.id !== rowId && !!i.selectedOrderNo);
+    if (hasAnyOtherPO && orderNo && partnerId) {
        const poFromOrder = pendingPurchases.find(p => p.order_no === orderNo);
        if (poFromOrder && poFromOrder.partner_id.toString() !== partnerId.toString()) {
           alert('您選擇的採購單的供應商與本進貨單不符！\n(系統考量帳務一致性，進貨單不支援混搭不同供應商。)');
@@ -231,11 +250,16 @@ const Inbound = () => {
     currProjectName = (po && po.project_name) ? po.project_name : '無專案名稱';
   }
 
+  const hasPOSelected = items.some(i => !!i.selectedOrderNo || !!i.purchaseRecordId);
+
   return (
     <div className="card-surface">
-          <h1 style={{ fontSize: '24px', fontWeight: '900', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
+        <div style={{ marginBottom: '24px' }}>
+          <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
             <ArrowDownToLine size={26} color="#2563eb" /> 進貨入庫 (Inbound Receipt)
           </h1>
+          <p style={{ color: '#64748b', fontSize: '13px', marginTop: '4px' }}>管理並登記從供應商收到的實體物品與物料，入庫並增加庫存量。</p>
+        </div>
       {pendingPurchases.length > 0 && (
         <div style={alertContainerStyle}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
@@ -250,7 +274,19 @@ const Inbound = () => {
       )}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '20px', marginBottom: '32px', paddingBottom: '32px', borderBottom: '1px solid #eee' }}>
         <div><label style={labelStyle}>進貨單號 (系統生成)</label><input disabled value={orderNo} style={{ ...inputStyle, backgroundColor: '#f5f5f5', color: '#999' }} /></div>
-        <div><label style={labelStyle}>供應商名稱 (自動帶入)</label><input disabled value={partners.find(p => p.id.toString() === partnerId?.toString())?.name || '請於下方選擇採購單'} style={{ ...inputStyle, backgroundColor: '#f5f5f5', color: '#999' }} /></div>
+        <div>
+          <label style={labelStyle}>供應商名稱 {hasPOSelected ? '(自動帶入)' : '(必填)'}</label>
+          {hasPOSelected ? (
+            <input disabled value={partners.find(p => p.id.toString() === partnerId?.toString())?.name || '請於下方選擇採購單'} style={{ ...inputStyle, backgroundColor: '#f5f5f5', color: '#999' }} />
+          ) : (
+            <select value={partnerId || ''} onChange={(e) => setPartnerId(e.target.value)} style={{ ...inputStyle, backgroundColor: '#fff' }}>
+              <option value="">-- 請選擇供應商 --</option>
+              {partners.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          )}
+        </div>
         <div><label style={labelStyle}>專案名稱 (自動帶入)</label><input disabled value={currProjectName} style={{ ...inputStyle, backgroundColor: '#f5f5f5', color: '#999' }} /></div>
         <div><label style={labelStyle}>發票號碼 (Invoice No.)</label><input type="text" value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} style={inputStyle} placeholder="請輸入紙本發票號碼" /></div>
         <div><label style={labelStyle}>進貨/到貨日期</label><input type="date" defaultValue={new Date().toISOString().slice(0,10)} style={inputStyle} /></div>

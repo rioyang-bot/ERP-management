@@ -171,6 +171,14 @@ export const queries = {
   insertInboundItems: `INSERT INTO inbound_items (inbound_order_id, item_id, sn, quantity, purchase_record_id, unit_price) VALUES ($1, $2, $3, $4, $5, 0)`,
   updateStockQtyOnInbound: `UPDATE item_master SET stock_qty = stock_qty + $1 WHERE id = $2`,
   updatePurchaseRecordStatus: `UPDATE purchase_records SET received_quantity = COALESCE(received_quantity, 0) + $1, status = CASE WHEN COALESCE(received_quantity, 0) + $1 >= quantity THEN 'COMPLETED' ELSE 'PARTIAL' END, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+  fetchInboundList: `SELECT io.*, p.name as partner_name FROM inbound_orders io LEFT JOIN partners p ON io.partner_id = p.id ORDER BY io.created_at DESC`,
+  fetchInboundItems: `
+      SELECT ii.*, im.specification, im.brand, im.model, c.name as category_name, pr.order_no as po_order_no
+      FROM inbound_items ii 
+      LEFT JOIN item_master im ON ii.item_id = im.id 
+      LEFT JOIN categories c ON im.category_id = c.id 
+      LEFT JOIN purchase_records pr ON ii.purchase_record_id = pr.id
+      WHERE ii.inbound_order_id = $1`,
 
   // MainLayout.jsx (使用上方已定義的同名查詢)
 
@@ -191,6 +199,7 @@ export const queries = {
   updateUserActive: `UPDATE users SET is_active = $1 WHERE id = $2`,
   deleteUser: `DELETE FROM users WHERE id = $1`,
   updateUserAccess: `UPDATE users SET menu_access = $1::jsonb WHERE id = $2`,
+  updateUserPassword: `UPDATE users SET password_hash = $1 WHERE id = $2`,
 
   // NIC Registration & List
   fetchNicBrands: `SELECT id, name FROM item_brands WHERE category_id = (SELECT id FROM categories WHERE name = '硬體') ORDER BY name ASC`,

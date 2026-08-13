@@ -7,6 +7,7 @@ import Devices from './pages/Devices';
 import DeviceList from './pages/DeviceList';
 import Partners from './pages/Partners';
 import Settings from './pages/Settings';
+import InboundList from './pages/InboundList';
 import Outbound from './pages/Outbound';
 import DNList from './pages/DNList';
 import Reports from './pages/Reports';
@@ -17,6 +18,11 @@ import ProcurementList from './pages/ProcurementList';
 import ConsumableList from './pages/ConsumableList';
 import HwRegistration from './pages/HwRegistration';
 import HwList from './pages/HwList';
+import HwSplitView from './pages/HwSplitView';
+import DeviceSplitView from './pages/DeviceSplitView';
+import ConsumableSplitView from './pages/ConsumableSplitView';
+import OutboundSplitView from './pages/OutboundSplitView';
+import ProcurementSplitView from './pages/ProcurementSplitView';
 import './index.css';
 
 function App() {
@@ -51,18 +57,24 @@ function App() {
           <Route path="/" element={authUser ? <MainLayout /> : <Navigate to="/login" replace />}>
             <Route index element={<Navigate to="/device-list" replace />} />
             <Route path="inbound" element={<Inbound />} />
+            <Route path="inbound-list" element={<InboundList />} />
             <Route path="outbound" element={<Outbound />} />
+            <Route path="outbound-split" element={<OutboundSplitView />} />
             <Route path="dn-list" element={<DNList />} />
             <Route path="devices" element={<Devices />} />
             <Route path="device-list" element={<DeviceList />} />
+            <Route path="device-split" element={<DeviceSplitView />} />
             <Route path="consumables" element={<Consumables />} />
             <Route path="partners" element={<Partners />} />
             <Route path="reports" element={<Reports />} />
             <Route path="purchasing" element={<Purchasing />} />
             <Route path="procurement-list" element={<ProcurementList />} />
+            <Route path="procurement-split" element={<ProcurementSplitView />} />
             <Route path="consumable-list" element={<ConsumableList />} />
+            <Route path="consumable-split" element={<ConsumableSplitView />} />
             <Route path="hw-registration" element={<HwRegistration />} />
             <Route path="hw-list" element={<HwList />} />
+            <Route path="hw-split" element={<HwSplitView />} />
             <Route path="settings" element={<Settings />} />
           </Route>
         </Routes>
