@@ -8,6 +8,7 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
   const navigate = useNavigate();
   const [purchaseRecords, setPurchaseRecords] = useState([]);
   const [partners, setPartners] = useState([]);
+  const [projects, setProjects] = useState([]);
   const [categories, setCategories] = useState([]);
   
   // Options state for selects
@@ -52,14 +53,16 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
   const fetchData = useCallback(async (forceNewOrderNo = false) => {
     setLoading(true);
     try {
-      const [recordsRes, partnersRes, catsRes] = await Promise.all([
+      const [recordsRes, partnersRes, catsRes, projectsRes] = await Promise.all([
         window.electronAPI.namedQuery('fetchPurchasingRecords'),
         window.electronAPI.namedQuery('fetchSuppliers'),
-        window.electronAPI.namedQuery('fetchCategories')
+        window.electronAPI.namedQuery('fetchCategories'),
+        window.electronAPI.namedQuery('fetchActiveProjects')
       ]);
 
       if (recordsRes.success) setPurchaseRecords(recordsRes.rows);
       if (partnersRes.success) setPartners(partnersRes.rows);
+      if (projectsRes.success) setProjects(projectsRes.rows);
       if (catsRes.success) {
         setCategories(catsRes.rows);
         for (const cat of catsRes.rows) {
@@ -270,14 +273,20 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
 
   const UNIFIED_UNITS = ['個', '台', '盒', '包', '支', '組', '瓶', '卷', '張', '份'];
 
+  const containerStyle = editMode ? { padding: 0 } : { padding: '24px', backgroundColor: '#f1f5f9', minHeight: '100vh', display: 'flex', flexDirection: isSplitMode ? 'column' : 'row', gap: '24px' };
+  const leftSectionStyle = editMode ? { width: '100%' } : (isSplitMode ? { width: '100%' } : { flex: '0 0 60%' });
+  const rightSectionStyle = isSplitMode ? { width: '100%' } : { flex: '1' };
+  const cardStyle = editMode ? {} : { backgroundColor: '#ffffff', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', marginBottom: '24px' };
+
   return (
-    <div className={`purchasing-container ${editMode ? 'edit-mode' : ''}`}>
-      <div className={editMode ? '' : 'card-surface'}>
+    <div style={containerStyle}>
+      <div style={leftSectionStyle}>
+        <div style={cardStyle}>
           {!editMode && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
               <div>
                 <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
-                  <ShoppingCart size={26} color="#2563eb" /> 採購建檔 (P/O Reg)
+                  <ShoppingCart size={26} color="#2563eb" /> 採購建檔(Purchase Order Registration )
                 </h1>
                 <p style={{ color: '#64748b', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>建立與申請新的採購單，設定專案與供應商訂購細節。</p>
               </div>
@@ -307,12 +316,18 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
               </div>
               <div>
                 <label style={labelStyle}>專案名稱 (Project Name)</label>
-                <input 
+                <select 
                   value={projectName} 
                   onChange={e => setProjectName(e.target.value)} 
-                  placeholder="請輸入專案名稱..." 
-                  style={inputStyle} 
-                />
+                  style={inputStyle}
+                >
+                  <option value="">(無專案)</option>
+                  {projects.map(proj => (
+                    <option key={proj.project_no} value={`${proj.project_no} ${proj.project_name}`}>
+                      [{proj.project_no}] {proj.project_name}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label style={labelStyle}>採購人員 (Purchaser)</label>
@@ -498,65 +513,64 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
             )}
           </div>
         </form>
+        </div>
+      </div>
 
-        {!editMode && (
-          <>
-            <hr style={{ margin: '40px 0', border: 'none', borderTop: '1px solid #eee' }} />
-
-        {/* Recently Added List */}
-        <div>
-          <h3 style={{ marginBottom: '20px', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Clock size={20} color="#666" /> 最近採購紀錄 (最新 10 筆)
-          </h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-            {loading && purchaseRecords.length === 0 ? (
-              <p style={{ color: '#aaa', gridColumn: '1 / span 2', textAlign: 'center' }}>載入中...</p>
-            ) : purchaseRecords.length === 0 ? (
-              <p style={{ color: '#aaa', gridColumn: '1 / span 2', textAlign: 'center' }}>尚無採購紀錄</p>
-            ) : (
-              purchaseRecords.map(record => (
-                <div key={record.id} style={{ display: 'flex', flexDirection: 'column', padding: '16px', border: '1px solid #eee', borderRadius: '12px', backgroundColor: '#fff' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                    <span style={{ fontWeight: 700, color: 'var(--primary-color)', fontSize: '0.9rem' }}>{record.order_no}</span>
-                    <span style={{ 
-                      padding: '2px 8px', borderRadius: '12px', fontSize: '0.7rem', fontWeight: 600,
-                      backgroundColor: statusColors[record.status]?.bg, color: statusColors[record.status]?.color
-                    }}>{statusColors[record.status]?.label}</span>
-                  </div>
-                  <div style={{ fontWeight: 600, fontSize: '1rem', color: '#333' }}>
-                    {record.specification}
-                    {record.model && <span style={{ fontSize: '0.8rem', color: '#666', fontWeight: 400, marginLeft: '6px' }}>({record.model})</span>}
-                  </div>
-                  <div style={{ fontSize: '0.85rem', color: '#666', marginTop: '4px' }}>
-                    <span style={{ color: '#888' }}>{record.partner_name}</span> · 
-                    <span style={{ fontWeight: 700, color: '#444' }}>{record.quantity} {record.unit}</span>
-                  </div>
-                  {record.project_name && (
-                    <div style={{ marginTop: '4px', fontSize: '0.8rem', color: 'var(--primary-color)', fontWeight: 600 }}>
-                      專案: {record.project_name}
+      {!editMode && (
+        <div style={rightSectionStyle}>
+          <div style={cardStyle}>
+            <h3 style={{ fontSize: '16px', fontWeight: '800', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px', color: '#1e293b' }}>
+              <Clock size={18} color="#64748b" /> 最新 10 筆建檔記錄
+            </h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {loading && purchaseRecords.length === 0 ? (
+                <p style={{ color: '#aaa', textAlign: 'center', padding: '20px' }}>載入中...</p>
+              ) : purchaseRecords.length === 0 ? (
+                <p style={{ color: '#aaa', textAlign: 'center', padding: '20px' }}>尚無採購紀錄</p>
+              ) : (
+                purchaseRecords.map(record => (
+                  <div key={record.id} style={{ padding: '12px 16px', borderRadius: '12px', border: '1px solid #f1f5f9', backgroundColor: '#fafafa' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                      <span style={{ fontWeight: 700, color: 'var(--primary-color)', fontSize: '13px' }}>{record.order_no}</span>
+                      <span style={{ 
+                        padding: '2px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600,
+                        backgroundColor: statusColors[record.status]?.bg, color: statusColors[record.status]?.color
+                      }}>{statusColors[record.status]?.label}</span>
                     </div>
-                  )}
-                  {record.remarks && (
-                    <div style={{ marginTop: '8px', padding: '4px 8px', backgroundColor: '#f9f9f9', borderRadius: '4px', fontSize: '0.75rem', color: '#777', borderLeft: '3px solid #ddd' }}>
-                      備註: {record.remarks}
+                    <div style={{ fontWeight: '800', fontSize: '13px', color: '#333', marginBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {record.specification}
+                      {record.model && <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 500, marginLeft: '6px' }}>({record.model})</span>}
                     </div>
-                  )}
-                  <div style={{ marginTop: '12px', textAlign: 'right', fontSize: '0.7rem', color: '#aaa', borderTop: '1px solid #fafafa', paddingTop: '8px' }}>
-                    採購人: {record.purchaser_name || '--'} · {new Date(record.created_at).toLocaleString()}
+                    <div style={{ fontSize: '12px', color: '#475569', marginBottom: '6px' }}>
+                      <span style={{ color: '#94a3b8' }}>{record.partner_name}</span> · 
+                      <span style={{ fontWeight: 700, color: '#1e293b' }}>{record.quantity} {record.unit}</span>
+                    </div>
+                    {record.project_name && (
+                      <div style={{ marginBottom: '4px', fontSize: '12px', color: 'var(--primary-color)', fontWeight: 600 }}>
+                        專案: {record.project_name}
+                      </div>
+                    )}
+                    {record.remarks && (
+                      <div style={{ marginBottom: '8px', padding: '4px 8px', backgroundColor: '#fff', borderRadius: '4px', fontSize: '11px', color: '#64748b', borderLeft: '3px solid #e2e8f0' }}>
+                        備註: {record.remarks}
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#94a3b8', borderTop: '1px solid #f1f5f9', paddingTop: '8px' }}>
+                      <span>採購人: {record.purchaser_name || '--'}</span>
+                      <span>{new Date(record.created_at).toLocaleString()}</span>
+                    </div>
                   </div>
-                </div>
-              ))
+                ))
               )}
             </div>
           </div>
-          </>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Quick Add Popover/Modal */}
       {quickAdd.show && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
-          <div className="card-surface" style={{ width: '360px', padding: '24px' }}>
+          <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', width: '360px', padding: '24px' }}>
             <h3 style={{ marginBottom: '16px' }}>新增{quickAdd.type === 'type' ? '類型' : '廠牌'}</h3>
             <p style={{ fontSize: '0.8rem', color: '#666', marginBottom: '16px' }}>類別: {categories.find(c => c.id.toString() === quickAdd.catId.toString())?.name}</p>
             <input 
@@ -574,11 +588,6 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
           </div>
         </div>
       )}
-
-      <style>{`
-        .purchasing-container.edit-mode { max-width: 100%; padding: 0; }
-        .purchasing-container:not(.edit-mode) { max-width: 1200px; margin: 0 auto; }
-      `}</style>
     </div>
   );
 };

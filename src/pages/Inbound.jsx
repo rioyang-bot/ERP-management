@@ -256,7 +256,7 @@ const Inbound = () => {
     <div className="card-surface">
         <div style={{ marginBottom: '24px' }}>
           <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
-            <ArrowDownToLine size={26} color="#2563eb" /> 進貨入庫 (Inbound Receipt)
+            <ArrowDownToLine size={26} color="#2563eb" /> 進貨入庫(Stock in Registration)
           </h1>
           <p style={{ color: '#64748b', fontSize: '13px', marginTop: '4px' }}>管理並登記從供應商收到的實體物品與物料，入庫並增加庫存量。</p>
         </div>

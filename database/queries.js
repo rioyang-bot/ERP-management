@@ -171,7 +171,7 @@ export const queries = {
   insertInboundItems: `INSERT INTO inbound_items (inbound_order_id, item_id, sn, quantity, purchase_record_id, unit_price) VALUES ($1, $2, $3, $4, $5, 0)`,
   updateStockQtyOnInbound: `UPDATE item_master SET stock_qty = stock_qty + $1 WHERE id = $2`,
   updatePurchaseRecordStatus: `UPDATE purchase_records SET received_quantity = COALESCE(received_quantity, 0) + $1, status = CASE WHEN COALESCE(received_quantity, 0) + $1 >= quantity THEN 'COMPLETED' ELSE 'PARTIAL' END, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
-  fetchInboundList: `SELECT io.*, p.name as partner_name FROM inbound_orders io LEFT JOIN partners p ON io.partner_id = p.id ORDER BY io.created_at DESC`,
+  fetchInboundList: `SELECT io.*, p.name as partner_name, (SELECT pr.project_name FROM inbound_items ii JOIN purchase_records pr ON ii.purchase_record_id = pr.id WHERE ii.inbound_order_id = io.id AND pr.project_name IS NOT NULL LIMIT 1) as project_name FROM inbound_orders io LEFT JOIN partners p ON io.partner_id = p.id ORDER BY io.created_at DESC`,
   fetchInboundItems: `
       SELECT ii.*, im.specification, im.brand, im.model, c.name as category_name, pr.order_no as po_order_no
       FROM inbound_items ii 
@@ -280,6 +280,25 @@ export const queries = {
     WHERE a.status = 'ACTIVE' AND a.sn IS NOT NULL AND a.sn != '' 
     ORDER BY a.sn ASC
   `,
+  fetchActiveProjects: `SELECT project_no, name as project_name FROM projects WHERE status = 'IN_PROGRESS' ORDER BY created_at DESC`,
+  fetchAssetsByProject: `
+    SELECT a.*, i.specification, i.type, i.brand, i.model, i.unit, c.name as category_name,
+    (SELECT json_agg(json_build_object(
+        'item_master_id', ha.item_master_id, 
+        'brand', hi.brand, 
+        'model', hi.model, 
+        'sn', ha.sn, 
+        'type', hi.type, 
+        'specification', hi.specification
+      )) 
+     FROM assets ha JOIN item_master hi ON ha.item_master_id = hi.id 
+     WHERE ha.custom_attributes->>'server_sn' IS NOT NULL 
+     AND TRIM(ha.custom_attributes->>'server_sn') = TRIM(a.sn)) as components
+    FROM assets a 
+    JOIN item_master i ON a.item_master_id = i.id 
+    LEFT JOIN categories c ON i.category_id = c.id 
+    WHERE a.status = 'ACTIVE' AND a.custom_attributes->>'project_name' = $1
+  `,
   fetchDNList: `
     SELECT r.*, u.full_name as creator_name, 
            (SELECT COUNT(*) FROM outbound_items WHERE request_id = r.id) as item_count,
@@ -305,5 +324,112 @@ export const queries = {
   updateStockQtyOnOutbound: `UPDATE item_master SET stock_qty = stock_qty - $1 WHERE id = $2 AND stock_qty >= $1`,
   updateAssetStatusAndLocationBySn: `UPDATE assets SET status = $1, location = $2 WHERE sn = $3`,
   updateOutboundRequestStatus: `UPDATE outbound_requests SET status = $1 WHERE id = $2`,
-  deleteOutboundRequest: `DELETE FROM outbound_requests WHERE id = $1`
+  deleteOutboundRequest: `DELETE FROM outbound_requests WHERE id = $1`,
+  
+  // --- Projects ---
+  fetchProjects: `SELECT * FROM projects ORDER BY created_at DESC`,
+  createProject: `INSERT INTO projects (project_no, customer_name, customer_contact, name, start_date, end_date, remarks, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+  updateProject: `UPDATE projects SET customer_name = $1, customer_contact = $2, name = $3, start_date = $4, end_date = $5, remarks = $6, status = $7, documents = $8, updated_at = CURRENT_TIMESTAMP WHERE id = $9 RETURNING *`,
+  deleteProject: `DELETE FROM projects WHERE id = $1`,
+
+  // --- PJ Report (專案進出報表) ---
+  fetchPJReportData: `
+    SELECT 
+      pr.id,
+      pr.order_no,
+      pr.project_name,
+      pr.item_type,
+      pr.brand,
+      pr.model,
+      pr.specification,
+      pr.unit,
+      pr.unit_price,
+      pr.quantity as po_quantity,
+      COALESCE(pr.received_quantity, 0) as inbound_quantity,
+      (pr.quantity - COALESCE(pr.received_quantity, 0)) as pending_inbound_quantity,
+      pr.status as po_status,
+      pr.remarks,
+      pr.created_at,
+      p.name as partner_name,
+      c.name as category_name,
+      u.full_name as purchaser_name,
+      proj.project_no,
+      proj.customer_name as project_customer,
+      proj.customer_contact as project_contact,
+      proj.status as project_status,
+      COALESCE((
+        SELECT SUM(oi.quantity)
+        FROM outbound_items oi
+        JOIN outbound_requests o ON oi.request_id = o.id
+        WHERE o.status = 'SHIPPED'
+        AND (
+          (oi.sn IS NOT NULL AND oi.sn != '' AND oi.sn IN (
+            SELECT sn FROM inbound_items WHERE purchase_record_id = pr.id AND sn IS NOT NULL AND sn != ''
+          ))
+          OR
+          (
+            pr.project_name IS NOT NULL AND pr.project_name != '' AND
+            EXISTS (
+              SELECT 1 FROM assets a 
+              WHERE a.sn = oi.sn 
+              AND a.custom_attributes->>'project_name' = pr.project_name
+              AND a.item_master_id = oi.item_id
+              AND oi.item_id IN (SELECT item_id FROM inbound_items WHERE purchase_record_id = pr.id)
+            )
+          )
+        )
+      ), 0) as outbound_quantity,
+      (
+        SELECT json_agg(json_build_object(
+          'inbound_order_no', io.order_no,
+          'order_date', io.order_date,
+          'quantity', ii.quantity,
+          'sn', ii.sn,
+          'status', io.status
+        ))
+        FROM inbound_items ii
+        JOIN inbound_orders io ON ii.inbound_order_id = io.id
+        WHERE ii.purchase_record_id = pr.id
+      ) as inbound_history,
+      (
+        SELECT json_agg(json_build_object(
+          'request_no', o.request_no,
+          'customer', o.customer,
+          'shipping_date', o.shipping_date,
+          'status', o.status,
+          'sn', oi.sn,
+          'quantity', oi.quantity
+        ))
+        FROM outbound_items oi
+        JOIN outbound_requests o ON oi.request_id = o.id
+        WHERE (
+          (oi.sn IS NOT NULL AND oi.sn != '' AND oi.sn IN (
+            SELECT sn FROM inbound_items WHERE purchase_record_id = pr.id AND sn IS NOT NULL AND sn != ''
+          ))
+          OR
+          (
+            pr.project_name IS NOT NULL AND pr.project_name != '' AND
+            EXISTS (
+              SELECT 1 FROM assets a 
+              WHERE a.sn = oi.sn 
+              AND a.custom_attributes->>'project_name' = pr.project_name
+              AND a.item_master_id = oi.item_id
+              AND oi.item_id IN (SELECT item_id FROM inbound_items WHERE purchase_record_id = pr.id)
+            )
+          )
+        )
+      ) as outbound_history
+    FROM purchase_records pr
+    LEFT JOIN partners p ON pr.partner_id = p.id
+    LEFT JOIN categories c ON pr.category_id = c.id
+    LEFT JOIN users u ON pr.purchaser_id = u.id
+    LEFT JOIN projects proj ON (
+      pr.project_name IS NOT NULL AND (
+        pr.project_name = proj.name OR 
+        pr.project_name = proj.project_no || ' ' || proj.name OR
+        pr.project_name LIKE '%' || proj.project_no || '%'
+      )
+    )
+    ORDER BY pr.created_at DESC
+  `
 };

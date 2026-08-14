@@ -16,7 +16,8 @@ const MENU_OPTIONS = [
   { id: 'purchasing', label: '採購建檔 (Procurement)' },
   { id: 'procurementList', label: '採購單列表 (P/O List)' },
   { id: 'partners', label: '客戶/廠商管理 (Partners)' },
-  { id: 'reports', label: '報表匯出 (Reports)' },
+  { id: 'projects', label: '專案列表 (Project List)' },
+  { id: 'reports', label: '報表中心 (Reports)' },
   { id: 'settings', label: '系統管理 (Accounts)' },
 ];
 

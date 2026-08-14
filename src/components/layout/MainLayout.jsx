@@ -15,6 +15,7 @@ const MainLayout = () => {
   const [isDeviceListExpanded, setIsDeviceListExpanded] = useState(location.pathname === '/device-list');
   const [isConsumableListExpanded, setIsConsumableListExpanded] = useState(location.pathname === '/consumable-list');
   const [isNicListExpanded, setIsNicListExpanded] = useState(location.pathname === '/hw-list');
+  const [isReportsExpanded, setIsReportsExpanded] = useState(location.pathname === '/reports' || location.pathname === '/pj-report');
   const [prevPath, setPrevPath] = useState(location.pathname);
 
   // --- 變更密碼 (Change Password) ---
@@ -110,6 +111,8 @@ const MainLayout = () => {
       setIsNicListExpanded(true);
       setIsDeviceListExpanded(false);
       setIsConsumableListExpanded(false);
+    } else if (location.pathname === '/reports' || location.pathname === '/pj-report') {
+      setIsReportsExpanded(true);
     }
   }
 
@@ -175,8 +178,8 @@ const MainLayout = () => {
 
 
   const allMenuItems = [
-    { id: 'inbound', path: '/inbound', label: '進貨入庫 (Inbound)', category: 'registration' },
-    { id: 'inboundList', path: '/inbound-list', label: '進貨單列表 (I/N List)', category: 'list' },
+    { id: 'inbound', path: '/inbound', label: '進貨入庫(S/I Reg)', category: 'registration' },
+    { id: 'inboundList', path: '/inbound-list', label: '進貨單列表(S/I List)', category: 'list' },
     { id: 'outbound', path: '/outbound', label: '出貨建檔 (D/N Reg)', category: 'registration' },
     { id: 'dnList', path: '/dn-list', label: '出貨單列表 (D/N List)', category: 'list' },
     { id: 'assets', path: '/devices', label: '設備建檔 (Device Reg)', category: 'registration' },
@@ -188,7 +191,8 @@ const MainLayout = () => {
     { id: 'purchasing', path: '/purchasing', label: '採購建檔 (P/O Reg)', category: 'registration' },
     { id: 'procurementList', path: '/procurement-list', label: '採購單列表 (P/O List)', category: 'list' },
     { id: 'partners', path: '/partners', label: '客戶/廠商管理 (Partners)', category: 'shared' },
-    { id: 'reports', path: '/reports', label: '報表匯出 (Reports)', category: 'shared' },
+    { id: 'projects', path: '/projects', label: '專案列表 (Project List)', category: 'shared' },
+    { id: 'reports', path: '/reports', label: '報表中心 (Reports)', hasSub: true, category: 'shared' },
     { id: 'settings', path: '/settings', label: '系統管理 (Accounts)', category: 'shared' },
   ];
 
@@ -343,6 +347,30 @@ const MainLayout = () => {
                       {nicTypes.map(type => (
                         <li key={type}><NavLink to={`/hw-list?type=${encodeURIComponent(type)}`} className={({ isActive }) => `nav-sub-item ${isActive && location.search.includes(type) ? 'active' : ''}`}>• {type}</NavLink></li>
                       ))}
+                    </ul>
+                  )}
+                </>
+              ) : item.id === 'reports' ? (
+                <>
+                  <div onClick={() => {
+                    const next = !isReportsExpanded;
+                    setIsReportsExpanded(next);
+                  }} className={`nav-item ${location.pathname === '/reports' || location.pathname === '/pj-report' ? 'active' : ''}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
+                    <NavLink to="/reports" onClick={(e) => {
+                      e.stopPropagation();
+                      if (!isReportsExpanded) {
+                        setIsReportsExpanded(true);
+                      }
+                    }} style={{ flex: 1, color: 'inherit', textDecoration: 'none' }}>{item.label}</NavLink>
+                    {isReportsExpanded ? <ChevronDown size={16} opacity={0.5} /> : <ChevronRight size={16} opacity={0.5} />}
+                  </div>
+                  {isReportsExpanded && (
+                    <ul style={{ listStyle: 'none', paddingLeft: '12px', marginTop: '4px' }}>
+                      <li>
+                        <NavLink to="/pj-report" className={({ isActive }) => `nav-sub-item ${isActive ? 'active' : ''}`}>
+                          • 專案報表 (PJ Report)
+                        </NavLink>
+                      </li>
                     </ul>
                   )}
                 </>

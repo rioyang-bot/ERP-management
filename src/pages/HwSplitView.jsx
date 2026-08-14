@@ -29,7 +29,7 @@ const HwSplitView = () => {
       </div>
 
       {/* 雙視窗容器 */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', flex: 1, minHeight: 0 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '4fr 6fr', gap: '24px', flex: 1, minHeight: 0 }}>
         <div style={{ overflowY: 'auto' }}>
           <HwRegistration isSplitMode={true} />
         </div>

@@ -266,9 +266,9 @@ const Devices = ({ isSplitMode = false }) => {
   };
 
   // Styles
-  const containerStyle = { padding: '24px', backgroundColor: '#f1f5f9', minHeight: '100vh', display: 'flex', gap: '24px' };
-  const leftSectionStyle = { flex: '0 0 60%' };
-  const rightSectionStyle = { flex: '0 0 40%' };
+  const containerStyle = { padding: '24px', backgroundColor: '#f1f5f9', minHeight: '100vh', display: 'flex', flexDirection: isSplitMode ? 'column' : 'row', gap: '24px' };
+  const leftSectionStyle = isSplitMode ? { width: '100%' } : { flex: '0 0 60%' };
+  const rightSectionStyle = isSplitMode ? { width: '100%' } : { flex: '1' };
   const cardStyle = { backgroundColor: '#ffffff', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', marginBottom: '24px' };
   const labelStyle = { display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' };
   const inputStyle = { width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '14px', boxSizing: 'border-box', outline: 'none' };

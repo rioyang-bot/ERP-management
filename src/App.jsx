@@ -7,10 +7,12 @@ import Devices from './pages/Devices';
 import DeviceList from './pages/DeviceList';
 import Partners from './pages/Partners';
 import Settings from './pages/Settings';
+import ProjectList from './pages/ProjectList';
 import InboundList from './pages/InboundList';
 import Outbound from './pages/Outbound';
 import DNList from './pages/DNList';
 import Reports from './pages/Reports';
+import PJReport from './pages/PJReport';
 import Login from './pages/Login';
 import Consumables from './pages/Consumables';
 import Purchasing from './pages/Purchasing';
@@ -67,6 +69,7 @@ function App() {
             <Route path="consumables" element={<Consumables />} />
             <Route path="partners" element={<Partners />} />
             <Route path="reports" element={<Reports />} />
+            <Route path="pj-report" element={<PJReport />} />
             <Route path="purchasing" element={<Purchasing />} />
             <Route path="procurement-list" element={<ProcurementList />} />
             <Route path="procurement-split" element={<ProcurementSplitView />} />
@@ -75,6 +78,7 @@ function App() {
             <Route path="hw-registration" element={<HwRegistration />} />
             <Route path="hw-list" element={<HwList />} />
             <Route path="hw-split" element={<HwSplitView />} />
+            <Route path="projects" element={<ProjectList />} />
             <Route path="settings" element={<Settings />} />
           </Route>
         </Routes>

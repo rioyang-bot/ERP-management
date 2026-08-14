@@ -208,7 +208,7 @@ const DNList = ({ isSplitMode = false }) => {
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <div>
             <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
-              <FileText size={26} color="#2563eb" /> 出貨單列表 (D/N List)
+              <FileText size={26} color="#2563eb" /> 出貨單列表 (Delivery Note List)
             </h1>
             <p style={{ color: '#64748b', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>檢視所有出貨紀錄、追蹤出單進度並執行扣庫存作業。</p>
           </div>

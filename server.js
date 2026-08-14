@@ -31,7 +31,18 @@ const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, 'uploads/'),
+  destination: (req, file, cb) => {
+    let folderPath = 'uploads/';
+    if (req.body.projectName) {
+      const safeName = req.body.projectName.replace(/[^a-zA-Z0-9_\-\u4e00-\u9fa5]/g, '_');
+      folderPath = path.join('uploads', safeName);
+      const fullPath = path.join(__dirname, folderPath);
+      if (!fs.existsSync(fullPath)) {
+        fs.mkdirSync(fullPath, { recursive: true });
+      }
+    }
+    cb(null, folderPath);
+  },
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
     const baseName = path.basename(file.originalname, ext);
@@ -89,7 +100,13 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.post('/api/upload', upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ success: false, error: 'No file uploaded' });
-  res.json({ success: true, fileName: req.file.filename });
+  
+  let fileUrl = req.file.path.replace(/\\/g, '/');
+  if (!fileUrl.startsWith('/')) {
+    fileUrl = '/' + fileUrl;
+  }
+  
+  res.json({ success: true, fileName: req.file.filename, url: fileUrl });
 });
 
 app.listen(PORT, '0.0.0.0', () => {

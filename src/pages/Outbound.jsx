@@ -14,7 +14,8 @@ const Outbound = ({ isSplitMode = false }) => {
       customer: '',
       contact_info: '',
       location: '',
-      date: new Date().toISOString().split('T')[0]
+      date: new Date().toISOString().split('T')[0],
+      project_name: ''
     };
   });
 
@@ -25,6 +26,7 @@ const Outbound = ({ isSplitMode = false }) => {
   
   // 自動補全相關狀態
   const [activeAssets, setActiveAssets] = useState([]);
+  const [projects, setProjects] = useState([]);
   const [showDeviceDropdown, setShowDeviceDropdown] = useState(false);
   const [showHwDropdown, setShowHwDropdown] = useState(false);
   const [outboundItems, setOutboundItems] = useState(() => {
@@ -61,9 +63,60 @@ const Outbound = ({ isSplitMode = false }) => {
       // 獲取所有啟用中的資產以便提供即時搜尋選項
       const assetRes = await window.electronAPI.namedQuery('searchActiveAssetSNs');
       if (assetRes.success) setActiveAssets(assetRes.rows);
+
+      // 獲取專案清單
+      const projRes = await window.electronAPI.namedQuery('fetchActiveProjects');
+      if (projRes.success) {
+        setProjects(projRes.rows);
+      }
     };
     initData();
   }, []);
+
+  const handleProjectChange = async (e) => {
+    const newProject = e.target.value;
+    
+    if (outboundItems.length > 0) {
+      if (!window.confirm(`切換專案將會清除目前清單中的所有項目，並載入【${newProject || '空'}】的設備。確定要繼續嗎？`)) {
+        return;
+      }
+    }
+    
+    setHeader(prev => ({ ...prev, project_name: newProject }));
+    
+    if (!newProject) {
+      setOutboundItems([]); 
+      return;
+    }
+
+    setIsSearching(true);
+    try {
+      const res = await window.electronAPI.namedQuery('fetchAssetsByProject', [newProject]);
+      if (res.success) {
+        if (res.rows.length === 0) {
+            alert(`找不到專案【${newProject}】中狀態為 ACTIVE 的設備。`);
+            setOutboundItems([]);
+            return;
+        }
+        
+        const newItems = res.rows.map((item, index) => ({
+          ...item,
+          tempId: Date.now() + index,
+          qty: 1,
+          isSerialized: true,
+          location: header.location || '',
+          components: item.components || []
+        }));
+        
+        setOutboundItems(newItems);
+      }
+    } catch(err) {
+      console.error(err);
+      alert('載入專案設備時發生錯誤');
+    } finally {
+      setIsSearching(false);
+    }
+  };
 
   // --- 序號查詢邏輯 ---
   const handleSnSearch = async (e, type) => {
@@ -225,7 +278,8 @@ const Outbound = ({ isSplitMode = false }) => {
           customer: '',
           contact_info: '',
           location: '',
-          date: new Date().toISOString().split('T')[0]
+          date: new Date().toISOString().split('T')[0],
+          project_name: ''
         });
         localStorage.removeItem('dn_draft_items');
         localStorage.removeItem('dn_draft_header');
@@ -349,6 +403,15 @@ const Outbound = ({ isSplitMode = false }) => {
                     readOnly
                     style={{ backgroundColor: '#f8fafc', color: '#64748b', cursor: 'not-allowed' }}
                   />
+                </div>
+              </div>
+              <div className="dn-field">
+                <label>出貨專案 (自動載入設備)</label>
+                <div className="select-wrapper">
+                  <select className="form-input" value={header.project_name || ''} onChange={handleProjectChange}>
+                    <option value="">--請選擇專案--</option>
+                    {projects.map(p => <option key={p.project_no} value={p.project_name}>[{p.project_no}] {p.project_name}</option>)}
+                  </select>
                 </div>
               </div>
               <div className="dn-field">
@@ -520,8 +583,9 @@ const Outbound = ({ isSplitMode = false }) => {
                 <table className="dn-table">
                   <thead>
                     <tr>
-                      <th>類別</th>
-                      <th>廠牌 / 型號</th>
+                      <th>廠牌</th>
+                      <th>型號</th>
+                      <th>類型</th>
                       <th>序號 (S/N)</th>
                       <th>數量</th>
                       <th>出貨位置</th>
@@ -532,14 +596,17 @@ const Outbound = ({ isSplitMode = false }) => {
                     {outboundItems.map(item => (
                       <React.Fragment key={item.tempId}>
                         <tr className="main-row">
+                          <td className="col-brand">
+                            <div className="model-name">{item.brand}</div>
+                          </td>
+                          <td className="col-model">
+                            <div className="model-name">{item.model}</div>
+                            <div className="model-specs">{item.specification}</div>
+                          </td>
                           <td className="col-type">
                             <span className={`type-badge ${item.isSerialized ? 'serial' : 'cons'}`}>
                               {item.type}
                             </span>
-                          </td>
-                          <td className="col-model">
-                            <div className="model-name">{item.brand} {item.model}</div>
-                            <div className="model-specs">{item.specification}</div>
                           </td>
                           <td className="col-sn"><code>{item.sn}</code></td>
                           <td className="col-qty">
@@ -575,8 +642,9 @@ const Outbound = ({ isSplitMode = false }) => {
                         {/* 搭載元件顯示 */}
                         {item.components && item.components.length > 0 && item.components.map(comp => (
                           <tr key={`${item.tempId}-${comp.sn}`} className="sub-row">
-                            <td><div className="sub-line"></div></td>
-                            <td><span className="type-badge sub">{comp.type}</span> {comp.brand} {comp.model}</td>
+                            <td><div className="sub-line"></div>{comp.brand}</td>
+                            <td>{comp.model}</td>
+                            <td><span className="type-badge sub">{comp.type}</span></td>
                             <td><code>{comp.sn}</code></td>
                             <td>1</td>
                             <td style={{ fontSize: '0.75rem', color: '#94a3b8' }}>同上</td>

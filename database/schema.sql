@@ -312,8 +312,24 @@ CROSS JOIN (
     SELECT 'Epson' UNION ALL
     SELECT 'Brother' UNION ALL
     SELECT 'Pilot' UNION ALL
-    SELECT 'Pentel' UNION ALL
     SELECT '其他'
 ) t
 WHERE c.name = '耗材'
 ON CONFLICT DO NOTHING;
+
+-- 專案主檔 (Projects)
+CREATE TABLE IF NOT EXISTS projects (
+    id SERIAL PRIMARY KEY,
+    project_no VARCHAR(50) UNIQUE NOT NULL,
+    customer_name VARCHAR(100),
+    customer_contact VARCHAR(100),
+    name VARCHAR(100) NOT NULL,
+    start_date DATE,
+    end_date DATE,
+    remarks TEXT,
+    status VARCHAR(20) DEFAULT 'IN_PROGRESS' CHECK (status IN ('IN_PROGRESS', 'CLOSED')),
+    documents JSONB DEFAULT '[]'::jsonb,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+

@@ -181,7 +181,7 @@ const ProcurementList = ({ isSplitMode = false }) => {
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <div>
             <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
-              <ShoppingCart size={26} color="#2563eb" /> 採購單列表 (P/O List)
+              <ShoppingCart size={26} color="#2563eb" /> 採購列表(Purchase Order List)
             </h1>
             <p style={{ color: '#64748b', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>管理所有採購單 (PO) 的品項分佈與入庫進度。</p>
           </div>
