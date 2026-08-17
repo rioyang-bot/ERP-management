@@ -15,7 +15,9 @@ const Outbound = ({ isSplitMode = false }) => {
       contact_info: '',
       location: '',
       date: new Date().toISOString().split('T')[0],
-      project_name: ''
+      project_name: '',
+      request_type: 'SALE',
+      expected_return_date: ''
     };
   });
 
@@ -238,7 +240,9 @@ const Outbound = ({ isSplitMode = false }) => {
         header.location,
         header.date,
         authUser?.id || null,
-        header.contact_info
+        header.contact_info,
+        header.request_type || 'SALE',
+        header.request_type === 'LEND' ? (header.expected_return_date || null) : null
       ]);
 
       if (reqRes.success) {
@@ -410,10 +414,36 @@ const Outbound = ({ isSplitMode = false }) => {
                 <div className="select-wrapper">
                   <select className="form-input" value={header.project_name || ''} onChange={handleProjectChange}>
                     <option value="">--請選擇專案--</option>
-                    {projects.map(p => <option key={p.project_no} value={p.project_name}>[{p.project_no}] {p.project_name}</option>)}
+                    {projects.map(p => <option key={p.project_no} value={`${p.project_no} ${p.project_name}`}>[{p.project_no}] {p.project_name}</option>)}
                   </select>
                 </div>
               </div>
+              <div className="dn-field">
+                <label>單據類型</label>
+                <div className="select-wrapper">
+                  <select
+                    className="form-input"
+                    value={header.request_type || 'SALE'}
+                    onChange={e => setHeader({ ...header, request_type: e.target.value })}
+                  >
+                    <option value="SALE">一般出貨 (SALE)</option>
+                    <option value="LEND">借用單 (LEND)</option>
+                  </select>
+                </div>
+              </div>
+              {header.request_type === 'LEND' && (
+                <div className="dn-field">
+                  <label>預計歸還日</label>
+                  <div className="input-with-icon">
+                    <Calendar size={16} />
+                    <input
+                      type="date"
+                      value={header.expected_return_date || ''}
+                      onChange={e => setHeader({ ...header, expected_return_date: e.target.value })}
+                    />
+                  </div>
+                </div>
+              )}
               <div className="dn-field">
                 <label>出貨地點 / 備註</label>
                 <div className="input-with-icon">
@@ -597,7 +627,12 @@ const Outbound = ({ isSplitMode = false }) => {
                       <React.Fragment key={item.tempId}>
                         <tr className="main-row">
                           <td className="col-brand">
-                            <div className="model-name">{item.brand}</div>
+                            <div className="model-name" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              {item.brand}
+                              {item.ownership === 'COMPANY' && (
+                                <span style={{ fontSize: '10px', padding: '2px 6px', backgroundColor: '#8b5cf6', color: 'white', borderRadius: '4px', whiteSpace: 'nowrap' }}>公司資產</span>
+                              )}
+                            </div>
                           </td>
                           <td className="col-model">
                             <div className="model-name">{item.model}</div>

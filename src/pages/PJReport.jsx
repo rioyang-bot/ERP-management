@@ -145,6 +145,18 @@ const PJReport = () => {
 
   // 3. KPI Calculations
   const kpis = useMemo(() => {
+    if (!selectedProject) {
+      return {
+        totalItems: '--',
+        totalPoQty: '--',
+        totalInboundQty: '--',
+        totalOutboundQty: '--',
+        stockBalance: '--',
+        inboundRate: '--',
+        outboundRate: '--'
+      };
+    }
+
     let totalPoQty = 0;
     let totalInboundQty = 0;
     let totalOutboundQty = 0;
@@ -168,7 +180,7 @@ const PJReport = () => {
       inboundRate,
       outboundRate
     };
-  }, [filteredData]);
+  }, [filteredData, selectedProject]);
 
   // 4. CSV Export
   const handleExportCSV = () => {
@@ -473,7 +485,7 @@ const PJReport = () => {
             <thead>
               <tr>
                 <th style={{ width: '40px' }}></th>
-                <th>專案名稱 / 編號</th>
+                <th>專案編號 / 名稱</th>
                 <th>採購單號 (PO)</th>
                 <th>類別 / 廠牌 / 型號</th>
                 <th>規格詳細說明</th>

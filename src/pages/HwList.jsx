@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Search, Edit2, X, Server, User, MapPin, MoreHorizontal, Trash2, ShoppingBag, AlertTriangle, CheckCircle, Save, Monitor, Settings, ShieldAlert, Archive, RotateCcw, Cpu } from 'lucide-react';
+import { Search, Edit2, X, Server, User, MapPin, MoreHorizontal, Trash2, ShoppingBag, AlertTriangle, CheckCircle, Save, Monitor, Settings, ShieldAlert, Archive, RotateCcw, Cpu, Send } from 'lucide-react';
 
 const HwList = ({ isSplitMode = false }) => {
   const location = useLocation();
@@ -136,6 +136,7 @@ const HwList = ({ isSplitMode = false }) => {
   const getStatusConfig = (status) => {
     switch (status) {
       case 'SHIPPED': return { label: '已出貨', color: '#1d4ed8', bgColor: '#dbeafe', borderColor: '#bfdbfe' };
+      case 'LENT': return { label: '借出/借用', color: '#b45309', bgColor: '#fef3c7', borderColor: '#fde68a' };
       case 'REPAIR': return { label: '故障', color: '#b91c1c', bgColor: '#fee2e2', borderColor: '#fecaca' };
       case 'SCRAPPED': return { label: '已報廢', color: '#595959', bgColor: '#f5f5f5', borderColor: '#d9d9d9' };
       default: return { label: '在庫', color: '#047857', bgColor: '#dcfce7', borderColor: '#bbf7d0' };
@@ -154,7 +155,7 @@ const HwList = ({ isSplitMode = false }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
-  const statusPriority = { 'REPAIR': 1, 'ACTIVE': 2, 'SHIPPED': 3, 'SCRAPPED': 4 };
+  const statusPriority = { 'REPAIR': 1, 'ACTIVE': 2, 'LENT': 3, 'SHIPPED': 4, 'SCRAPPED': 5 };
 
   const filteredNics = nics
     .filter(n => {
@@ -500,7 +501,12 @@ const HwList = ({ isSplitMode = false }) => {
             return (
               <tr key={nic.id} style={{ borderBottom: '1px solid #f1f5f9', opacity: nic.status === 'SCRAPPED' ? 0.6 : 1 }}>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                  <div style={{ fontWeight: 800, color: '#1e293b' }}>{nic.brand}</div>
+                  <div style={{ fontWeight: 800, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {nic.brand}
+                    {nic.ownership === 'COMPANY' && (
+                      <span style={{ fontSize: '10px', padding: '2px 6px', backgroundColor: '#8b5cf6', color: 'white', borderRadius: '4px', whiteSpace: 'nowrap' }}>公司資產</span>
+                    )}
+                  </div>
                   <div style={{ fontSize: '11px', color: '#64748b' }}>{nic.type} - {nic.model}</div>
                 </td>
                 <td style={{ ...tdStyle, fontWeight: 800, fontFamily: 'monospace', color: '#2563eb', whiteSpace: 'nowrap' }}>{nic.sn || '(未設定)'}</td>
@@ -576,6 +582,7 @@ const HwList = ({ isSplitMode = false }) => {
                       <div style={{ height: '1px', backgroundColor: '#f1f5f9', margin: '4px 0' }} />
                       <button onClick={() => handleUpdateStatus(nic.id, nic.sn, 'ACTIVE', '在庫')} style={{ ...menuButtonStyle, color: '#047857' }}><CheckCircle size={14} /> 標記為在庫</button>
                       <button onClick={() => handleUpdateStatus(nic.id, nic.sn, 'SHIPPED', '已出貨')} style={{ ...menuButtonStyle, color: '#1d4ed8' }}><ShoppingBag size={14} /> 標記為出貨</button>
+                      <button onClick={() => handleUpdateStatus(nic.id, nic.sn, 'LENT', '借出')} style={{ ...menuButtonStyle, color: '#b45309' }}><Send size={14} /> 標記為借出</button>
                       <button onClick={() => handleUpdateStatus(nic.id, nic.sn, 'REPAIR', '故障')} style={{ ...menuButtonStyle, color: '#b91c1c' }}><AlertTriangle size={14} /> 標記為故障</button>
                       <button onClick={() => handleUpdateStatus(nic.id, nic.sn, 'SCRAPPED', '報廢')} style={{ ...menuButtonStyle, color: '#e11d48' }}><ShieldAlert size={14} /> 標記為報廢</button>
                       <div style={{ height: '1px', backgroundColor: '#f1f5f9', margin: '4px 0' }} />

@@ -111,7 +111,7 @@ const MainLayout = () => {
       setIsNicListExpanded(true);
       setIsDeviceListExpanded(false);
       setIsConsumableListExpanded(false);
-    } else if (location.pathname === '/reports' || location.pathname === '/pj-report') {
+    } else if (location.pathname === '/reports' || location.pathname === '/pj-report' || location.pathname === '/stocktaking') {
       setIsReportsExpanded(true);
     }
   }
@@ -182,6 +182,7 @@ const MainLayout = () => {
     { id: 'inboundList', path: '/inbound-list', label: '進貨單列表(S/I List)', category: 'list' },
     { id: 'outbound', path: '/outbound', label: '出貨建檔 (D/N Reg)', category: 'registration' },
     { id: 'dnList', path: '/dn-list', label: '出貨單列表 (D/N List)', category: 'list' },
+    { id: 'lentList', path: '/lent-list', label: '借用列表 (Lent List)', category: 'list' },
     { id: 'assets', path: '/devices', label: '設備建檔 (Device Reg)', category: 'registration' },
     { id: 'assetList', path: '/device-list', label: '設備列表 (Device List)', hasSub: true, category: 'list' },
     { id: 'nic-registration', path: '/hw-registration', label: '硬體建檔 (HW Reg)', category: 'registration' },
@@ -355,7 +356,7 @@ const MainLayout = () => {
                   <div onClick={() => {
                     const next = !isReportsExpanded;
                     setIsReportsExpanded(next);
-                  }} className={`nav-item ${location.pathname === '/reports' || location.pathname === '/pj-report' ? 'active' : ''}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
+                  }} className={`nav-item ${location.pathname === '/reports' || location.pathname === '/pj-report' || location.pathname === '/stocktaking' ? 'active' : ''}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
                     <NavLink to="/reports" onClick={(e) => {
                       e.stopPropagation();
                       if (!isReportsExpanded) {
@@ -369,6 +370,11 @@ const MainLayout = () => {
                       <li>
                         <NavLink to="/pj-report" className={({ isActive }) => `nav-sub-item ${isActive ? 'active' : ''}`}>
                           • 專案報表 (PJ Report)
+                        </NavLink>
+                      </li>
+                      <li>
+                        <NavLink to="/stocktaking" className={({ isActive }) => `nav-sub-item ${isActive ? 'active' : ''}`}>
+                          • 庫存盤點總表 (Stocktaking)
                         </NavLink>
                       </li>
                     </ul>

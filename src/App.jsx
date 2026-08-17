@@ -11,6 +11,7 @@ import ProjectList from './pages/ProjectList';
 import InboundList from './pages/InboundList';
 import Outbound from './pages/Outbound';
 import DNList from './pages/DNList';
+import LentList from './pages/LentList';
 import Reports from './pages/Reports';
 import PJReport from './pages/PJReport';
 import Login from './pages/Login';
@@ -18,6 +19,7 @@ import Consumables from './pages/Consumables';
 import Purchasing from './pages/Purchasing';
 import ProcurementList from './pages/ProcurementList';
 import ConsumableList from './pages/ConsumableList';
+import Stocktaking from './pages/Stocktaking';
 import HwRegistration from './pages/HwRegistration';
 import HwList from './pages/HwList';
 import HwSplitView from './pages/HwSplitView';
@@ -63,6 +65,7 @@ function App() {
             <Route path="outbound" element={<Outbound />} />
             <Route path="outbound-split" element={<OutboundSplitView />} />
             <Route path="dn-list" element={<DNList />} />
+            <Route path="lent-list" element={<LentList />} />
             <Route path="devices" element={<Devices />} />
             <Route path="device-list" element={<DeviceList />} />
             <Route path="device-split" element={<DeviceSplitView />} />
@@ -79,6 +82,7 @@ function App() {
             <Route path="hw-list" element={<HwList />} />
             <Route path="hw-split" element={<HwSplitView />} />
             <Route path="projects" element={<ProjectList />} />
+            <Route path="stocktaking" element={<Stocktaking />} />
             <Route path="settings" element={<Settings />} />
           </Route>
         </Routes>

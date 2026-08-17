@@ -22,8 +22,7 @@ const Devices = ({ isSplitMode = false }) => {
     type: '', brand: '', model: '', sn: '', specification: '', client: '',
     hostname: '', location: '', installed_date: '',
     customer_warranty_expire: '', system_date: '', warranty_expire: '',
-    os: '', nic: '', custom_attributes: {},
-    os: '', nic: '', custom_attributes: {},
+    os: '', nic: '', custom_attributes: {}, ownership: 'FOR_SALE',
     contact_person: '', contact_phone: '', project_name: ''
   });
   const [isBulkMode, setIsBulkMode] = useState(false);
@@ -244,7 +243,7 @@ const Devices = ({ isSplitMode = false }) => {
         const res = await window.electronAPI.namedQuery('insertAssetRecord', [
           masterId, sn || null, formData.client, formData.hostname, formData.location, formData.installed_date || null,
           formData.customer_warranty_expire || null, formData.system_date || null, formData.warranty_expire || null,
-          formData.os, formData.nic, updatedCustomAttributes
+          formData.os, formData.nic, updatedCustomAttributes, formData.ownership || 'FOR_SALE'
         ]);
         if (res.success) successCount++;
       }
@@ -349,9 +348,16 @@ const Devices = ({ isSplitMode = false }) => {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 1.5fr) 1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 1fr) 1fr 1fr 1fr', gap: '16px' }}>
               <div><label style={labelStyle}>規格 (Specification)</label><input type="text" name="specification" value={formData.specification} onChange={handleChange} style={inputStyle} /></div>
               <div><label style={labelStyle}>專案名稱 (Project)</label><input type="text" name="project_name" value={formData.project_name} onChange={handleChange} style={inputStyle} placeholder="選填" /></div>
+              <div>
+                <label style={labelStyle}>資產歸屬</label>
+                <div style={{ display: 'flex', gap: '4px', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>
+                  <button type="button" onClick={() => setFormData(prev => ({ ...prev, ownership: 'FOR_SALE' }))} style={modeBtnStyle(formData.ownership === 'FOR_SALE')}>一般銷售</button>
+                  <button type="button" onClick={() => setFormData(prev => ({ ...prev, ownership: 'COMPANY' }))} style={modeBtnStyle(formData.ownership === 'COMPANY')}>公司資產</button>
+                </div>
+              </div>
               <div>
                 <label style={labelStyle}>建檔模式</label>
                 <div style={{ display: 'flex', gap: '4px', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>

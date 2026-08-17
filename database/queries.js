@@ -50,7 +50,24 @@ export const queries = {
   updateItemMasterSpecs: `UPDATE item_master SET specification = $1, model = $2 WHERE id = $3`,
   updateAssetDetails: `UPDATE assets SET sn = $1, client = $2, hostname = $3, location = $4, installed_date = $5, customer_warranty_expire = $6, system_date = $7, warranty_expire = $8, os = $9, nic = $10, custom_attributes = $11 WHERE id = $12`,
   
-  // Menu Queries
+  fetchCompanyAssets: `
+    SELECT 
+      a.id, 
+      a.sn, 
+      a.status, 
+      a.location, 
+      i.brand, 
+      i.model, 
+      c.name as category_name
+    FROM assets a
+    JOIN item_master i ON a.item_master_id = i.id
+    LEFT JOIN categories c ON i.category_id = c.id
+    WHERE a.ownership = 'COMPANY'
+      AND a.status IN ('ACTIVE', 'LENT')
+      AND c.name IN ('設備', '硬體')
+    ORDER BY a.status, i.brand, i.model
+  `,
+  // View Data Queryies
   fetchMenuAssetBrands: `SELECT DISTINCT i.brand FROM assets a JOIN item_master i ON a.item_master_id = i.id LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '設備' ORDER BY i.brand ASC`,
   fetchMenuConsumableTypes: `SELECT DISTINCT i.type FROM item_master i LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '耗材' ORDER BY i.type ASC`,
   fetchMenuNicTypes: `SELECT DISTINCT i.type FROM item_master i LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '硬體' ORDER BY i.type ASC`,
@@ -97,7 +114,7 @@ export const queries = {
   
   findItemMaster: `SELECT id FROM item_master WHERE specification = $1 AND type = $2 AND brand = $3 AND model = $4`,
   insertItemMaster: `INSERT INTO item_master (specification, type, brand, model, unit, category_id, purchase_price) VALUES ($1, $2, $3, $4, $5, (SELECT id FROM categories WHERE name = $6), 0) RETURNING id`,
-  insertAssetRecord: `INSERT INTO assets (item_master_id, sn, client, hostname, location, installed_date, customer_warranty_expire, system_date, warranty_expire, os, nic, custom_attributes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+  insertAssetRecord: `INSERT INTO assets (item_master_id, sn, client, hostname, location, installed_date, customer_warranty_expire, system_date, warranty_expire, os, nic, custom_attributes, ownership) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
 
   // ConsumableList.jsx
   fetchConsumablesList: `SELECT v.*, i.id as id, i.stock_qty, i.lab_qty, c.name as category_name FROM v_inventory_summary v JOIN item_master i ON v.item_id = i.id LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '耗材' ORDER BY i.id DESC`,
@@ -270,7 +287,7 @@ export const queries = {
   
   // Outbound Workflow
   countOutboundRequests: `WITH seqs AS (SELECT CAST(SUBSTRING(request_no FROM '-([0-9]+)$') AS INTEGER) as sq FROM outbound_requests WHERE request_no LIKE $1 || '%') SELECT s.val as count FROM generate_series(1, 1000) as s(val) WHERE NOT EXISTS (SELECT 1 FROM seqs WHERE seqs.sq = s.val) ORDER BY s.val ASC LIMIT 1`,
-  insertOutboundRequest: `INSERT INTO outbound_requests (request_no, customer, location, shipping_date, status, creator_id, contact_info) VALUES ($1, $2, $3, $4, 'PENDING', $5, $6) RETURNING id`,
+  insertOutboundRequest: `INSERT INTO outbound_requests (request_no, customer, location, shipping_date, status, creator_id, contact_info, request_type, expected_return_date) VALUES ($1, $2, $3, $4, 'PENDING', $5, $6, $7, $8) RETURNING id`,
   insertOutboundItem: `INSERT INTO outbound_items (request_id, item_id, sn, quantity, location) VALUES ($1, $2, $3, $4, $5)`,
   searchActiveAssetSNs: `
     SELECT a.sn, c.name as category_name, i.brand, i.model 
@@ -297,7 +314,11 @@ export const queries = {
     FROM assets a 
     JOIN item_master i ON a.item_master_id = i.id 
     LEFT JOIN categories c ON i.category_id = c.id 
-    WHERE a.status = 'ACTIVE' AND a.custom_attributes->>'project_name' = $1
+    WHERE a.status = 'ACTIVE' AND (
+      a.custom_attributes->>'project_name' = $1 OR 
+      a.custom_attributes->>'project_name' = split_part($1, ' ', 1) OR
+      (POSITION(' ' IN $1) > 0 AND a.custom_attributes->>'project_name' = substring($1 from '^[^ ]+ (.*)$'))
+    )
   `,
   fetchDNList: `
     SELECT r.*, u.full_name as creator_name, 
@@ -310,6 +331,19 @@ export const queries = {
     FROM outbound_requests r
     LEFT JOIN users u ON r.creator_id = u.id
     ORDER BY r.created_at DESC
+  `,
+  fetchLentRequests: `
+    SELECT r.*, u.full_name as creator_name, 
+           (SELECT COUNT(*) FROM outbound_items WHERE request_id = r.id) as item_count,
+           (SELECT a.custom_attributes->>'project_name' 
+            FROM outbound_items oi 
+            JOIN assets a ON oi.sn = a.sn 
+            WHERE oi.request_id = r.id AND a.custom_attributes->>'project_name' IS NOT NULL 
+            LIMIT 1) as project_name
+    FROM outbound_requests r
+    LEFT JOIN users u ON r.creator_id = u.id
+    WHERE r.request_type = 'LEND' AND r.status IN ('SHIPPED', 'RETURNED')
+    ORDER BY r.expected_return_date ASC NULLS LAST, r.shipping_date DESC
   `,
   fetchDNItems: `
     SELECT oi.*, i.brand, i.model, i.specification, i.type, i.unit, c.name as category_name
@@ -431,5 +465,29 @@ export const queries = {
       )
     )
     ORDER BY pr.created_at DESC
+  `,
+
+  // --- Stocktaking (盤點總表) ---
+  fetchStocktakingAssets: `
+    SELECT 
+      c.name as category_name, 
+      i.type, 
+      i.brand, 
+      i.model, 
+      i.specification, 
+      COUNT(a.id) as stock_qty
+    FROM assets a 
+    JOIN item_master i ON a.item_master_id = i.id 
+    JOIN categories c ON i.category_id = c.id 
+    WHERE a.status = 'ACTIVE' AND c.name IN ('設備', '硬體')
+    GROUP BY c.name, i.type, i.brand, i.model, i.specification
+    ORDER BY c.name DESC, i.brand ASC, i.type ASC, i.model ASC
+  `,
+  fetchStocktakingConsumables: `
+    SELECT i.id, i.brand, i.model, i.specification, i.type, i.stock_qty, i.lab_qty, i.unit, c.name as category_name 
+    FROM item_master i 
+    JOIN categories c ON i.category_id = c.id 
+    WHERE c.name = '耗材' AND (i.stock_qty > 0 OR i.lab_qty > 0)
+    ORDER BY i.brand ASC, i.type ASC, i.model ASC
   `
 };

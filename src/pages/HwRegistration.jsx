@@ -22,7 +22,7 @@ const HwRegistration = ({ isSplitMode = false }) => {
 
   const [formData, setFormData] = useState({
     brand: '', type: '', model: '', specification: '', sn: '',
-    order_date: '', server_sn: '', project_name: ''
+    order_date: '', server_sn: '', project_name: '', ownership: 'FOR_SALE'
   });
 
   const validateAndSanitize = (val, fieldName = '欄位') => {
@@ -182,7 +182,7 @@ const HwRegistration = ({ isSplitMode = false }) => {
         const res = await window.electronAPI.namedQuery('insertAssetRecord', [
           itemMasterId, sn || null, '', '', '',
           null, null, null, null, '', '',
-          custom_attributes
+          custom_attributes, formData.ownership || 'FOR_SALE'
         ]);
 
         if (res.success) successCount++;
@@ -306,10 +306,17 @@ const HwRegistration = ({ isSplitMode = false }) => {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 1.5fr) 1fr', gap: '16px', marginBottom: '24px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 1fr) 1fr 1fr', gap: '16px', marginBottom: '24px' }}>
               <div>
                 <label style={labelStyle}>規格 (Specification)</label>
                 <input type="text" name="specification" value={formData.specification} onChange={handleChange} style={inputStyle} placeholder="例如: 10GbE SFP+ Dual Port" />
+              </div>
+              <div>
+                <label style={labelStyle}>資產歸屬</label>
+                <div style={{ display: 'flex', gap: '4px', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>
+                  <button type="button" onClick={() => setFormData(prev => ({ ...prev, ownership: 'FOR_SALE' }))} style={modeBtnStyle(formData.ownership === 'FOR_SALE')}>一般銷售</button>
+                  <button type="button" onClick={() => setFormData(prev => ({ ...prev, ownership: 'COMPANY' }))} style={modeBtnStyle(formData.ownership === 'COMPANY')}>公司資產</button>
+                </div>
               </div>
               <div>
                 <label style={labelStyle}>建檔模式</label>

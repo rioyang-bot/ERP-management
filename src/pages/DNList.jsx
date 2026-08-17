@@ -127,7 +127,8 @@ const DNList = ({ isSplitMode = false }) => {
            if (!res.success) throw new Error(`扣除耗材 [${item.brand} ${item.model}] 庫存時發生錯誤。`);
         } else if (item.category_name === '硬體' || item.category_name === '設備') {
            const destLocation = item.location || selectedDN.location;
-           const res = await window.electronAPI.namedQuery('updateAssetStatusAndLocationBySn', ['SHIPPED', destLocation, item.sn]);
+           const assetStatus = selectedDN.request_type === 'LEND' ? 'LENT' : 'SHIPPED';
+           const res = await window.electronAPI.namedQuery('updateAssetStatusAndLocationBySn', [assetStatus, destLocation, item.sn]);
            if (!res.success) throw new Error(`變更序號 [${item.sn}] 狀態時發生錯誤。`);
         }
       }
@@ -311,7 +312,14 @@ const DNList = ({ isSplitMode = false }) => {
                 <tr><td colSpan="8" style={{ textAlign: 'center', padding: '40px', color: '#999' }}>目前尚無出貨單資料</td></tr>
               ) : currentRecords.map(dn => (
                 <tr key={dn.id} className="row-hover" style={{ borderBottom: '1px solid #f5f5f5' }}>
-                  <td style={{ padding: '12px', fontWeight: 600 }}>{dn.request_no}</td>
+                  <td style={{ padding: '12px', fontWeight: 600 }}>
+                    {dn.request_no}
+                    {dn.request_type === 'LEND' && (
+                      <span style={{ marginLeft: '8px', fontSize: '0.75rem', backgroundColor: '#eab308', color: 'white', padding: '2px 6px', borderRadius: '4px', verticalAlign: 'middle' }}>
+                        借用單
+                      </span>
+                    )}
+                  </td>
                   <td style={{ padding: '12px' }}>{new Date(dn.shipping_date).toLocaleDateString()}</td>
                   <td style={{ padding: '12px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

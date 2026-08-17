@@ -106,7 +106,8 @@ CREATE TABLE IF NOT EXISTS assets (
     hostname VARCHAR(100),           -- 主機名稱
     client VARCHAR(100),             -- 客戶
     location VARCHAR(100),           -- 地點
-    status VARCHAR(20) DEFAULT 'ACTIVE', -- ACTIVE, BROKEN, PENDING, SHIPPED
+    status VARCHAR(20) DEFAULT 'ACTIVE', -- ACTIVE, BROKEN, PENDING, SHIPPED, LENT
+    ownership VARCHAR(20) DEFAULT 'FOR_SALE', -- FOR_SALE, COMPANY
     installed_date DATE,             -- 安裝日期
     system_date DATE,                -- 系統日期
     warranty_expire DATE,            -- 保固到期
@@ -156,9 +157,11 @@ CREATE TABLE IF NOT EXISTS inbound_items (
 CREATE TABLE IF NOT EXISTS outbound_requests (
     id SERIAL PRIMARY KEY,
     request_no VARCHAR(50) UNIQUE NOT NULL,
+    request_type VARCHAR(20) DEFAULT 'SALE', -- SALE (一般出貨), LEND (借出)
     customer VARCHAR(100),
     location TEXT,
     shipping_date DATE DEFAULT CURRENT_DATE,
+    expected_return_date DATE,            -- 預計歸還日 (LEND 用)
     status VARCHAR(20) DEFAULT 'PENDING', -- PENDING (鎖定中), SHIPPED (已出貨)
     creator_id INTEGER REFERENCES users(id),
     contact_info VARCHAR(255),            -- 聯絡人資訊

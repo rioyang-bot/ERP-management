@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Search, Edit2, X, Save, MoreHorizontal, MoreVertical, MapPin, User, Trash2, CheckCircle, ShoppingBag, Wrench, ShieldAlert, Cpu, Archive, RotateCcw, Server } from 'lucide-react';
+import { Search, Edit2, X, Save, MoreHorizontal, MoreVertical, MapPin, User, Trash2, CheckCircle, ShoppingBag, Wrench, ShieldAlert, Cpu, Archive, RotateCcw, Server, Send } from 'lucide-react';
 
 const DeviceList = ({ isSplitMode = false }) => {
   const navigate = useNavigate();
@@ -35,7 +35,8 @@ const DeviceList = ({ isSplitMode = false }) => {
     REPAIRING: { label: '異常/維修中', color: '#fa8c16', bgColor: '#fff7e6', borderColor: '#ffd591' },
     PENDING_SCRAP: { label: '停用/待報廢', color: '#595959', bgColor: '#f5f5f5', borderColor: '#d9d9d9' },
     SCRAPPED: { label: '已報廢', color: '#f5222d', bgColor: '#fff1f0', borderColor: '#ffccc7' },
-    SHIPPED: { label: '已出貨', color: '#1d4ed8', bgColor: '#dbeafe', borderColor: '#bfdbfe' }
+    SHIPPED: { label: '已出貨', color: '#1d4ed8', bgColor: '#dbeafe', borderColor: '#bfdbfe' },
+    LENT: { label: '借出/借用', color: '#b45309', bgColor: '#fef3c7', borderColor: '#fde68a' }
   };
 
   const fetchAssets = useCallback(async () => {
@@ -132,7 +133,7 @@ const DeviceList = ({ isSplitMode = false }) => {
     if (res.success) { setShowEditModal(false); fetchAssets(); }
   };
 
-  const statusPriority = { 'REPAIRING': 1, 'ACTIVE': 2, 'SHIPPED': 3, 'PENDING_SCRAP': 4, 'SCRAPPED': 5 };
+  const statusPriority = { 'REPAIRING': 1, 'ACTIVE': 2, 'LENT': 3, 'SHIPPED': 4, 'PENDING_SCRAP': 5, 'SCRAPPED': 6 };
 
   const sortedItems = items
     .filter(item => {
@@ -482,7 +483,12 @@ const DeviceList = ({ isSplitMode = false }) => {
                           return (
                             <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9', backgroundColor: item.status === 'SCRAPPED' ? '#fff1f0' : 'transparent' }}>
                               <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                                <div style={{ fontWeight: 800, color: '#1e293b' }}>{item.brand}</div>
+                                <div style={{ fontWeight: 800, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  {item.brand}
+                                  {item.ownership === 'COMPANY' && (
+                                    <span style={{ fontSize: '10px', padding: '2px 6px', backgroundColor: '#8b5cf6', color: 'white', borderRadius: '4px', whiteSpace: 'nowrap' }}>公司資產</span>
+                                  )}
+                                </div>
                                 <div style={{ fontSize: '11px', color: '#64748b' }}>{item.type} - {item.model}</div>
                               </td>
                               <td style={{ ...tdStyle, fontWeight: 800, fontFamily: 'monospace', color: '#2563eb', whiteSpace: 'nowrap' }}>
@@ -595,6 +601,7 @@ const DeviceList = ({ isSplitMode = false }) => {
                                     <div style={{ height: '1px', backgroundColor: '#f1f5f9', margin: '4px 0' }} />
                                     <button onClick={() => handleUpdateStatus(item.id, item.sn, 'ACTIVE', '在庫')} style={{ ...menuButtonStyle, color: '#059669' }}><CheckCircle size={14} /> 標記為在庫</button>
                                     <button onClick={() => handleUpdateStatus(item.id, item.sn, 'SHIPPED', '已出貨')} style={{ ...menuButtonStyle, color: '#2563eb' }}><ShoppingBag size={14} /> 標記為出貨</button>
+                                    <button onClick={() => handleUpdateStatus(item.id, item.sn, 'LENT', '借出/借用')} style={{ ...menuButtonStyle, color: '#b45309' }}><Send size={14} /> 標記為借出</button>
                                     <button onClick={() => handleUpdateStatus(item.id, item.sn, 'REPAIRING', '異常維修')} style={{ ...menuButtonStyle, color: '#d97706' }}><Wrench size={14} /> 標記為維修</button>
                                     <button onClick={() => handleUpdateStatus(item.id, item.sn, 'SCRAPPED', '報廢')} style={{ ...menuButtonStyle, color: '#dc2626' }}><ShieldAlert size={14} /> 標記為報廢</button>
                                     <div style={{ height: '1px', backgroundColor: '#f1f5f9', margin: '4px 0' }} />

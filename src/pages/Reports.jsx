@@ -41,11 +41,11 @@ const Reports = () => {
       categoryLabel: '庫存盤點',
       icon: <PackageCheck size={28} />,
       iconBg: 'linear-gradient(135deg, #059669, #047857)',
-      status: 'UPCOMING',
-      statusText: '即將推出',
+      status: 'ACTIVE',
+      statusText: '已上線',
       desc: '針對全廠設備、硬體零組件與耗材進行全方位即時盤點，支援安全水位警示與多倉庫存狀況總覽。',
       tags: ['即時在線庫存', '安全水位警示', '盤點查核', '零組件總覽'],
-      path: null
+      path: '/stocktaking'
     },
     {
       id: 'flow-history',
