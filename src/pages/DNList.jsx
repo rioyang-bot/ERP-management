@@ -12,8 +12,7 @@ const DNList = ({ isSplitMode = false }) => {
   const searchOptions = [
     { value: 'all', label: '全部欄位' },
     { value: 'request_no', label: 'D/N 單號' },
-    { value: 'customer', label: '客戶名稱' },
-    { value: 'project', label: '專案名稱' }
+    { value: 'customer', label: '客戶名稱' }
   ];
 
   const [dnRecords, setDnRecords] = useState([]);
@@ -160,14 +159,11 @@ const DNList = ({ isSplitMode = false }) => {
     let matchSearch = true;
     if (searchField === 'all') {
       matchSearch = (dn.request_no || '').toLowerCase().includes(search) ||
-             (dn.customer || '').toLowerCase().includes(search) ||
-             (dn.project_name || '').toLowerCase().includes(search);
+             (dn.customer || '').toLowerCase().includes(search);
     } else if (searchField === 'request_no') {
       matchSearch = (dn.request_no || '').toLowerCase().includes(search);
     } else if (searchField === 'customer') {
       matchSearch = (dn.customer || '').toLowerCase().includes(search);
-    } else if (searchField === 'project') {
-      matchSearch = (dn.project_name || '').toLowerCase().includes(search);
     }
 
     if (!matchSearch) return false;
@@ -298,7 +294,6 @@ const DNList = ({ isSplitMode = false }) => {
                 <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>D/N 單號</th>
                 <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>出貨日期</th>
                 <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>客戶/對象</th>
-                <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>所屬專案</th>
                 <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>項目數</th>
                 <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>建立者</th>
                 <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>狀態</th>
@@ -307,9 +302,9 @@ const DNList = ({ isSplitMode = false }) => {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan="8" style={{ textAlign: 'center', padding: '40px', color: '#999' }}>讀取中...</td></tr>
+                <tr><td colSpan="7" style={{ textAlign: 'center', padding: '40px', color: '#999' }}>讀取中...</td></tr>
               ) : currentRecords.length === 0 ? (
-                <tr><td colSpan="8" style={{ textAlign: 'center', padding: '40px', color: '#999' }}>目前尚無出貨單資料</td></tr>
+                <tr><td colSpan="7" style={{ textAlign: 'center', padding: '40px', color: '#999' }}>目前尚無出貨單資料</td></tr>
               ) : currentRecords.map(dn => (
                 <tr key={dn.id} className="row-hover" style={{ borderBottom: '1px solid #f5f5f5' }}>
                   <td style={{ padding: '12px', fontWeight: 600 }}>
@@ -330,13 +325,6 @@ const DNList = ({ isSplitMode = false }) => {
                         </span>
                       )}
                     </div>
-                  </td>
-                  <td style={{ padding: '12px' }}>
-                     {dn.project_name ? (
-                        <span style={{ fontWeight: 600, color: '#4338ca', backgroundColor: '#e0e7ff', padding: '4px 8px', borderRadius: '4px', fontSize: '0.85rem' }}>
-                          {dn.project_name}
-                        </span>
-                     ) : <span style={{ color: '#999', fontSize: '0.85rem' }}>-</span>}
                   </td>
                   <td style={{ padding: '12px' }}>
                     <span style={{ fontWeight: 600, color: 'var(--primary-color)' }}>{dn.item_count}</span> 項

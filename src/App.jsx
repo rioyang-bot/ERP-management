@@ -14,6 +14,7 @@ import DNList from './pages/DNList';
 import LentList from './pages/LentList';
 import Reports from './pages/Reports';
 import PJReport from './pages/PJReport';
+import FlowHistory from './pages/FlowHistory';
 import Login from './pages/Login';
 import Consumables from './pages/Consumables';
 import Purchasing from './pages/Purchasing';
@@ -73,6 +74,7 @@ function App() {
             <Route path="partners" element={<Partners />} />
             <Route path="reports" element={<Reports />} />
             <Route path="pj-report" element={<PJReport />} />
+            <Route path="flow-history" element={<FlowHistory />} />
             <Route path="purchasing" element={<Purchasing />} />
             <Route path="procurement-list" element={<ProcurementList />} />
             <Route path="procurement-split" element={<ProcurementSplitView />} />

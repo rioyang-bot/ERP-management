@@ -16,7 +16,6 @@ const ProcurementList = ({ isSplitMode = false }) => {
     { value: 'all', label: '全部欄位' },
     { value: 'order_no', label: '採購單號' },
     { value: 'partner', label: '供應商' },
-    { value: 'project', label: '專案名稱' },
     { value: 'item_spec', label: '品項規格' }
   ];
 
@@ -85,7 +84,6 @@ const ProcurementList = ({ isSplitMode = false }) => {
         partner_name: record.partner_name,
         purchaser_name: record.purchaser_name,
         created_at: record.created_at,
-        project_name: record.project_name,
         items: [],
         totalQty: 0,
         receivedQty: 0,
@@ -121,7 +119,6 @@ const ProcurementList = ({ isSplitMode = false }) => {
     const search = searchTerm.toLowerCase();
     const orderNo = (order.order_no || '').toLowerCase();
     const partner = (order.partner_name || '').toLowerCase();
-    const project = (order.project_name || '').toLowerCase();
     
     const matchItems = () => order.items.some(item => {
       const spec = (item.specification || '').toLowerCase();
@@ -133,14 +130,11 @@ const ProcurementList = ({ isSplitMode = false }) => {
     if (searchField === 'all') {
       matchSearch = orderNo.includes(search) ||
              partner.includes(search) ||
-             project.includes(search) ||
              matchItems();
     } else if (searchField === 'order_no') {
       matchSearch = orderNo.includes(search);
     } else if (searchField === 'partner') {
       matchSearch = partner.includes(search);
-    } else if (searchField === 'project') {
-      matchSearch = project.includes(search);
     } else if (searchField === 'item_spec') {
       matchSearch = matchItems();
     }
@@ -301,11 +295,6 @@ const ProcurementList = ({ isSplitMode = false }) => {
                       <td style={{ padding: '16px 24px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--primary-color)' }}>{order.order_no}</span>
-                          {order.project_name && (
-                            <span style={{ backgroundColor: '#ebfbee', color: '#2b8a3e', fontSize: '0.75rem', padding: '2px 8px', borderRadius: '4px', fontWeight: 600 }}>
-                              {order.project_name}
-                            </span>
-                          )}
                         </div>
                         <div style={{ fontSize: '0.75rem', color: '#aaa', marginTop: '2px' }}>{new Date(order.created_at).toLocaleDateString()} {new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                       </td>

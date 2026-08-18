@@ -356,7 +356,7 @@ const MainLayout = () => {
                   <div onClick={() => {
                     const next = !isReportsExpanded;
                     setIsReportsExpanded(next);
-                  }} className={`nav-item ${location.pathname === '/reports' || location.pathname === '/pj-report' || location.pathname === '/stocktaking' ? 'active' : ''}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
+                  }} className={`nav-item ${['/reports', '/pj-report', '/stocktaking', '/flow-history'].includes(location.pathname) ? 'active' : ''}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
                     <NavLink to="/reports" onClick={(e) => {
                       e.stopPropagation();
                       if (!isReportsExpanded) {
@@ -374,7 +374,12 @@ const MainLayout = () => {
                       </li>
                       <li>
                         <NavLink to="/stocktaking" className={({ isActive }) => `nav-sub-item ${isActive ? 'active' : ''}`}>
-                          • 庫存盤點總表 (Stocktaking)
+                          • 庫存盤點表 (Stocktaking)
+                        </NavLink>
+                      </li>
+                      <li>
+                        <NavLink to="/flow-history" className={({ isActive }) => `nav-sub-item ${isActive ? 'active' : ''}`}>
+                          • 進出貨日誌 In/Out Log
                         </NavLink>
                       </li>
                     </ul>

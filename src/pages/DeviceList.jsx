@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Search, Edit2, X, Save, MoreHorizontal, MoreVertical, MapPin, User, Trash2, CheckCircle, ShoppingBag, Wrench, ShieldAlert, Cpu, Archive, RotateCcw, Server, Send } from 'lucide-react';
+import { Search, Edit2, X, Save, MoreHorizontal, MoreVertical, MapPin, User, Trash2, CheckCircle, ShoppingBag, Wrench, ShieldAlert, Cpu, Archive, RotateCcw, Server, Send, History } from 'lucide-react';
+import ItemLedgerModal from '../components/ItemLedgerModal';
 
 const DeviceList = ({ isSplitMode = false }) => {
   const navigate = useNavigate();
@@ -9,6 +10,7 @@ const DeviceList = ({ isSplitMode = false }) => {
   const [loading, setLoading] = useState(true);
   const [searchParams, setSearchParams] = useSearchParams();
   const [customers, setCustomers] = useState([]);
+  const [projects, setProjects] = useState([]);
   const [activeMenuId, setActiveMenuId] = useState(null); 
   const brandFilter = searchParams.get('brand');
   
@@ -29,6 +31,7 @@ const DeviceList = ({ isSplitMode = false }) => {
   const [originalFieldIds, setOriginalFieldIds] = useState([]);
   const [expandedItems, setExpandedItems] = useState({}); // 控制摺疊狀態
   const [expandedLabItems, setExpandedLabItems] = useState({}); // 控制 LAB 耗材摺疊
+  const [ledgerItem, setLedgerItem] = useState(null); // 品項履歷 Modal
 
   const statusConfig = {
     ACTIVE: { label: '在庫', color: '#047857', bgColor: '#dcfce7', borderColor: '#bbf7d0' },
@@ -61,13 +64,18 @@ const DeviceList = ({ isSplitMode = false }) => {
     if (defsRes.success && defsRes.rows.length > 0) setCustomFieldDefs(defsRes.rows[0].value || []);
   }, []);
 
+  const fetchProjects = useCallback(async () => {
+    const res = await window.electronAPI.namedQuery('fetchActiveProjects');
+    if (res.success) setProjects(res.rows);
+  }, []);
+
   useEffect(() => {
     const initPage = async () => {
       setCurrentPage(1);
-      await Promise.all([fetchAssets(), fetchCustomers(), fetchSettings()]);
+      await Promise.all([fetchAssets(), fetchCustomers(), fetchSettings(), fetchProjects()]);
     };
     initPage();
-  }, [fetchAssets, fetchCustomers, fetchSettings]);
+  }, [fetchAssets, fetchCustomers, fetchSettings, fetchProjects]);
 
   const isFieldVisible = (brand, fieldId) => {
     if (!brand) return true;
@@ -133,7 +141,7 @@ const DeviceList = ({ isSplitMode = false }) => {
     if (res.success) { setShowEditModal(false); fetchAssets(); }
   };
 
-  const statusPriority = { 'REPAIRING': 1, 'ACTIVE': 2, 'LENT': 3, 'SHIPPED': 4, 'PENDING_SCRAP': 5, 'SCRAPPED': 6 };
+  const statusPriority = { 'REPAIRING': 1, 'LENT': 2, 'ACTIVE': 3, 'SHIPPED': 4, 'PENDING_SCRAP': 5, 'SCRAPPED': 6 };
 
   const sortedItems = items
     .filter(item => {
@@ -596,7 +604,17 @@ const DeviceList = ({ isSplitMode = false }) => {
                                   <MoreHorizontal size={20} />
                                 </button>
                                 {activeMenuId === item.id && (
-                                  <div style={{ position: 'absolute', right: 0, top: '100%', backgroundColor: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', zIndex: 9999, padding: '8px', minWidth: '180px', display: 'flex', flexDirection: 'column', marginTop: '4px' }}>
+                                  <div style={{ position: 'absolute', right: 0, top: '100%', backgroundColor: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', zIndex: 9999, padding: '8px', minWidth: '180px', display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                                    <button 
+                                      onClick={() => {
+                                        setActiveMenuId(null);
+                                        setLedgerItem({ item_master_id: item.item_master_id, sn: item.sn, brand: item.brand, model: item.model, type: item.type, current_stock: 1 });
+                                      }} 
+                                      style={{ ...menuButtonStyle, color: '#0f172a' }}
+                                    >
+                                      <History size={14} /> 履歷 (History)
+                                    </button>
+                                    <div style={{ height: '1px', backgroundColor: '#e2e8f0', margin: '2px 0' }} />
                                     <button onClick={() => handleEditClick(item)} style={menuButtonStyle}><Edit2 size={14} /> 編輯詳細資訊</button>
                                     <div style={{ height: '1px', backgroundColor: '#f1f5f9', margin: '4px 0' }} />
                                     <button onClick={() => handleUpdateStatus(item.id, item.sn, 'ACTIVE', '在庫')} style={{ ...menuButtonStyle, color: '#059669' }}><CheckCircle size={14} /> 標記為在庫</button>
@@ -659,7 +677,57 @@ const DeviceList = ({ isSplitMode = false }) => {
 
               <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 1fr) 1fr 1fr', gap: '16px' }}>
                 <div><label style={editLabelStyle}>序號 / SN</label><input type="text" value={editItem.sn || ''} onChange={(e) => setEditItem({...editItem, sn: e.target.value})} style={editInputStyle} /></div>
-                <div><label style={editLabelStyle}>專案名稱 (Project)</label><input type="text" value={(editItem.custom_attributes && editItem.custom_attributes.project_name) || ''} onChange={(e) => setEditItem({...editItem, custom_attributes: {...editItem.custom_attributes, project_name: e.target.value}})} style={editInputStyle} /></div>
+                <div style={{ position: 'relative' }}>
+                  <label style={editLabelStyle}>專案名稱 (Project)</label>
+                  <input 
+                    type="text" 
+                    value={(editItem.custom_attributes && editItem.custom_attributes.project_name) || ''} 
+                    onChange={(e) => {
+                      setEditItem({...editItem, custom_attributes: {...editItem.custom_attributes, project_name: e.target.value}});
+                    }} 
+                    placeholder="輸入關鍵字搜尋專案"
+                    style={editInputStyle} 
+                    onFocus={() => {
+                      if (!editItem.showProjectDropdown) {
+                        setEditItem({...editItem, showProjectDropdown: true});
+                      }
+                    }}
+                    onBlur={() => {
+                      setTimeout(() => {
+                        setEditItem(prev => prev ? {...prev, showProjectDropdown: false} : prev);
+                      }, 200);
+                    }}
+                  />
+                  {editItem.showProjectDropdown && (
+                    <div style={{
+                      position: 'absolute', top: '100%', left: 0, right: 0, 
+                      backgroundColor: 'white', border: '1px solid #cbd5e1', 
+                      borderRadius: '8px', marginTop: '4px', maxHeight: '200px', 
+                      overflowY: 'auto', zIndex: 10, boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                    }}>
+                      {(() => {
+                        const searchStr = ((editItem.custom_attributes && editItem.custom_attributes.project_name) || '').toLowerCase();
+                        const matches = projects.filter(p => 
+                          (p.project_no || '').toLowerCase().includes(searchStr) || 
+                          (p.project_name || '').toLowerCase().includes(searchStr)
+                        );
+                        if (matches.length === 0) return <div style={{ padding: '8px', color: '#94a3b8', fontSize: '0.85rem' }}>無符合專案</div>;
+                        return matches.map(p => (
+                          <div 
+                            key={p.project_no}
+                            style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem' }}
+                            onMouseDown={() => {
+                              setEditItem({...editItem, custom_attributes: {...editItem.custom_attributes, project_name: p.project_name}, showProjectDropdown: false});
+                            }}
+                          >
+                            <div style={{ fontWeight: 'bold', color: '#334155' }}>{p.project_no}</div>
+                            <div style={{ color: '#64748b' }}>{p.project_name}</div>
+                          </div>
+                        ));
+                      })()}
+                    </div>
+                  )}
+                </div>
                 <div><label style={editLabelStyle}>主機名稱 (HostName)</label><input type="text" value={editItem.hostname || ''} onChange={(e) => setEditItem({...editItem, hostname: e.target.value})} style={editInputStyle} /></div>
               </div>
 
@@ -876,6 +944,13 @@ const DeviceList = ({ isSplitMode = false }) => {
           </div>
         </div>
       )}
+
+      {/* 品項履歷 Modal */}
+      <ItemLedgerModal
+        isOpen={!!ledgerItem}
+        onClose={() => setLedgerItem(null)}
+        item={ledgerItem}
+      />
     </div>
   );
 };

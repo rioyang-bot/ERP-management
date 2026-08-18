@@ -15,7 +15,6 @@ const Outbound = ({ isSplitMode = false }) => {
       contact_info: '',
       location: '',
       date: new Date().toISOString().split('T')[0],
-      project_name: '',
       request_type: 'SALE',
       expected_return_date: ''
     };
@@ -28,7 +27,6 @@ const Outbound = ({ isSplitMode = false }) => {
   
   // 自動補全相關狀態
   const [activeAssets, setActiveAssets] = useState([]);
-  const [projects, setProjects] = useState([]);
   const [showDeviceDropdown, setShowDeviceDropdown] = useState(false);
   const [showHwDropdown, setShowHwDropdown] = useState(false);
   const [outboundItems, setOutboundItems] = useState(() => {
@@ -65,60 +63,11 @@ const Outbound = ({ isSplitMode = false }) => {
       // 獲取所有啟用中的資產以便提供即時搜尋選項
       const assetRes = await window.electronAPI.namedQuery('searchActiveAssetSNs');
       if (assetRes.success) setActiveAssets(assetRes.rows);
-
-      // 獲取專案清單
-      const projRes = await window.electronAPI.namedQuery('fetchActiveProjects');
-      if (projRes.success) {
-        setProjects(projRes.rows);
-      }
     };
     initData();
   }, []);
 
-  const handleProjectChange = async (e) => {
-    const newProject = e.target.value;
-    
-    if (outboundItems.length > 0) {
-      if (!window.confirm(`切換專案將會清除目前清單中的所有項目，並載入【${newProject || '空'}】的設備。確定要繼續嗎？`)) {
-        return;
-      }
-    }
-    
-    setHeader(prev => ({ ...prev, project_name: newProject }));
-    
-    if (!newProject) {
-      setOutboundItems([]); 
-      return;
-    }
 
-    setIsSearching(true);
-    try {
-      const res = await window.electronAPI.namedQuery('fetchAssetsByProject', [newProject]);
-      if (res.success) {
-        if (res.rows.length === 0) {
-            alert(`找不到專案【${newProject}】中狀態為 ACTIVE 的設備。`);
-            setOutboundItems([]);
-            return;
-        }
-        
-        const newItems = res.rows.map((item, index) => ({
-          ...item,
-          tempId: Date.now() + index,
-          qty: 1,
-          isSerialized: true,
-          location: header.location || '',
-          components: item.components || []
-        }));
-        
-        setOutboundItems(newItems);
-      }
-    } catch(err) {
-      console.error(err);
-      alert('載入專案設備時發生錯誤');
-    } finally {
-      setIsSearching(false);
-    }
-  };
 
   // --- 序號查詢邏輯 ---
   const handleSnSearch = async (e, type) => {
@@ -147,15 +96,7 @@ const Outbound = ({ isSplitMode = false }) => {
           return;
         }
 
-        // 專案混用阻斷邏輯 (Prevent mixed projects)
-        const incomingProject = item.custom_attributes?.project_name;
-        if (incomingProject) {
-           const existingProjects = [...new Set(outboundItems.map(i => i.custom_attributes?.project_name).filter(Boolean))];
-           if (existingProjects.length > 0 && !existingProjects.includes(incomingProject)) {
-              alert(`此出貨單已包含專案【${existingProjects[0]}】的設備。\n禁止混入專案【${incomingProject}】的設備！\n請您針對該專案另外建立新的出貨單。`);
-              return;
-           }
-        }
+
 
         // 建立主品項
         const newItem = {
@@ -409,15 +350,7 @@ const Outbound = ({ isSplitMode = false }) => {
                   />
                 </div>
               </div>
-              <div className="dn-field">
-                <label>出貨專案 (自動載入設備)</label>
-                <div className="select-wrapper">
-                  <select className="form-input" value={header.project_name || ''} onChange={handleProjectChange}>
-                    <option value="">--請選擇專案--</option>
-                    {projects.map(p => <option key={p.project_no} value={`${p.project_no} ${p.project_name}`}>[{p.project_no}] {p.project_name}</option>)}
-                  </select>
-                </div>
-              </div>
+
               <div className="dn-field">
                 <label>單據類型</label>
                 <div className="select-wrapper">

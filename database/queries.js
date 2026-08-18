@@ -339,7 +339,11 @@ export const queries = {
             FROM outbound_items oi 
             JOIN assets a ON oi.sn = a.sn 
             WHERE oi.request_id = r.id AND a.custom_attributes->>'project_name' IS NOT NULL 
-            LIMIT 1) as project_name
+            LIMIT 1) as project_name,
+           (SELECT string_agg(COALESCE(oi.sn, '') || ' ' || COALESCE(im.model, '') || ' ' || COALESCE(im.brand, ''), ' ')
+            FROM outbound_items oi
+            JOIN item_master im ON oi.item_id = im.id
+            WHERE oi.request_id = r.id) as searchable_items
     FROM outbound_requests r
     LEFT JOIN users u ON r.creator_id = u.id
     WHERE r.request_type = 'LEND' AND r.status IN ('SHIPPED', 'RETURNED')
@@ -358,6 +362,7 @@ export const queries = {
   updateStockQtyOnOutbound: `UPDATE item_master SET stock_qty = stock_qty - $1 WHERE id = $2 AND stock_qty >= $1`,
   updateAssetStatusAndLocationBySn: `UPDATE assets SET status = $1, location = $2 WHERE sn = $3`,
   updateOutboundRequestStatus: `UPDATE outbound_requests SET status = $1 WHERE id = $2`,
+  updateOutboundRequestReturned: `UPDATE outbound_requests SET status = 'RETURNED', actual_return_date = $2 WHERE id = $1`,
   deleteOutboundRequest: `DELETE FROM outbound_requests WHERE id = $1`,
   
   // --- Projects ---
@@ -489,5 +494,81 @@ export const queries = {
     JOIN categories c ON i.category_id = c.id 
     WHERE c.name = '耗材' AND (i.stock_qty > 0 OR i.lab_qty > 0)
     ORDER BY i.brand ASC, i.type ASC, i.model ASC
+  `,
+  fetchFlowHistory: `
+    SELECT 
+      'INBOUND' as transaction_type,
+      io.order_date as transaction_date,
+      io.order_no,
+      p.name as partner_name,
+      ii.quantity,
+      ii.sn,
+      im.brand,
+      im.model,
+      im.specification,
+      ii.created_at
+    FROM inbound_items ii
+    JOIN inbound_orders io ON ii.inbound_order_id = io.id
+    LEFT JOIN partners p ON io.partner_id = p.id
+    LEFT JOIN item_master im ON ii.item_id = im.id
+    WHERE io.status = 'COMPLETED'
+    
+    UNION ALL
+    
+    SELECT 
+      CASE WHEN o.request_type = 'LEND' THEN 'OUTBOUND_LEND' ELSE 'OUTBOUND_SALE' END as transaction_type,
+      o.shipping_date as transaction_date,
+      o.request_no as order_no,
+      o.customer as partner_name,
+      oi.quantity,
+      oi.sn,
+      im.brand,
+      im.model,
+      im.specification,
+      o.created_at
+    FROM outbound_items oi
+    JOIN outbound_requests o ON oi.request_id = o.id
+    LEFT JOIN item_master im ON oi.item_id = im.id
+    WHERE o.status IN ('SHIPPED', 'RETURNED')
+    
+    ORDER BY transaction_date DESC, created_at DESC
+  `,
+  fetchItemFlowHistory: `
+    SELECT 
+      'INBOUND' as transaction_type,
+      io.order_date as transaction_date,
+      io.order_no,
+      p.name as partner_name,
+      ii.quantity,
+      ii.sn,
+      im.brand,
+      im.model,
+      im.specification,
+      ii.created_at
+    FROM inbound_items ii
+    JOIN inbound_orders io ON ii.inbound_order_id = io.id
+    LEFT JOIN partners p ON io.partner_id = p.id
+    LEFT JOIN item_master im ON ii.item_id = im.id
+    WHERE io.status = 'COMPLETED' AND ii.item_id = $1
+    
+    UNION ALL
+    
+    SELECT 
+      CASE WHEN o.request_type = 'LEND' THEN 'OUTBOUND_LEND' ELSE 'OUTBOUND_SALE' END as transaction_type,
+      o.shipping_date as transaction_date,
+      o.request_no as order_no,
+      o.customer as partner_name,
+      oi.quantity,
+      oi.sn,
+      im.brand,
+      im.model,
+      im.specification,
+      o.created_at
+    FROM outbound_items oi
+    JOIN outbound_requests o ON oi.request_id = o.id
+    LEFT JOIN item_master im ON oi.item_id = im.id
+    WHERE o.status IN ('SHIPPED', 'RETURNED') AND oi.item_id = $1
+    
+    ORDER BY transaction_date DESC, created_at DESC
   `
 };

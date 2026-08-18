@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Search, Edit2, X, Server, User, MapPin, MoreHorizontal, Trash2, ShoppingBag, AlertTriangle, CheckCircle, Save, Monitor, Settings, ShieldAlert, Archive, RotateCcw, Cpu, Send } from 'lucide-react';
+import { Search, Edit2, X, Server, User, MapPin, MoreHorizontal, Trash2, ShoppingBag, AlertTriangle, CheckCircle, Save, Monitor, Settings, ShieldAlert, Archive, RotateCcw, Cpu, Send, History } from 'lucide-react';
+import ItemLedgerModal from '../components/ItemLedgerModal';
 
 const HwList = ({ isSplitMode = false }) => {
   const location = useLocation();
@@ -11,8 +12,10 @@ const HwList = ({ isSplitMode = false }) => {
   const [nics, setNics] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [customers, setCustomers] = useState([]);
+  const [projects, setProjects] = useState([]);
   const [activeMenuId, setActiveMenuId] = useState(null);
   const [showServerDetails, setShowServerDetails] = useState(true);
+  const [ledgerItem, setLedgerItem] = useState(null);
 
   // 當側邊欄分類變動時，清除搜尋關鍵字
   useEffect(() => {
@@ -55,6 +58,11 @@ const HwList = ({ isSplitMode = false }) => {
       const custRes = await window.electronAPI.namedQuery('fetchCustomers');
       if (isMounted && custRes.success) {
         setCustomers(custRes.rows.map(r => r.name));
+      }
+
+      const projRes = await window.electronAPI.namedQuery('fetchActiveProjects');
+      if (isMounted && projRes.success) {
+        setProjects(projRes.rows);
       }
     };
 
@@ -155,7 +163,7 @@ const HwList = ({ isSplitMode = false }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
-  const statusPriority = { 'REPAIR': 1, 'ACTIVE': 2, 'LENT': 3, 'SHIPPED': 4, 'SCRAPPED': 5 };
+  const statusPriority = { 'REPAIR': 1, 'LENT': 2, 'ACTIVE': 3, 'SHIPPED': 4, 'SCRAPPED': 5 };
 
   const filteredNics = nics
     .filter(n => {
@@ -578,7 +586,17 @@ const HwList = ({ isSplitMode = false }) => {
                   <button onClick={() => setActiveMenuId(activeMenuId === nic.id ? null : nic.id)} style={{ border: 'none', background: 'none', color: '#64748b' }}><MoreHorizontal size={20} /></button>
                   {activeMenuId === nic.id && (
                     <div style={{ position: 'absolute', right: 0, top: '100%', backgroundColor: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.2)', zIndex: 9999, padding: '8px', minWidth: '150px', display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
-                      <button onClick={() => handleEdit(nic)} style={menuButtonStyle}><Edit2 size={14} /> 編輯詳細資訊</button>
+                      <button 
+                        onClick={() => {
+                          setActiveMenuId(null);
+                          setLedgerItem({ item_master_id: nic.item_master_id, sn: nic.sn, brand: nic.brand, model: nic.model, type: nic.type, current_stock: 1 });
+                        }} 
+                        style={{ ...menuButtonStyle, color: '#0f172a' }}
+                      >
+                        <History size={14} /> 履歷 (History)
+                      </button>
+                      <div style={{ height: '1px', backgroundColor: '#e2e8f0', margin: '2px 0' }} />
+                      <button onClick={() => { setActiveMenuId(null); handleEdit(nic); }} style={menuButtonStyle}><Edit2 size={14} /> 編輯詳細資訊</button>
                       <div style={{ height: '1px', backgroundColor: '#f1f5f9', margin: '4px 0' }} />
                       <button onClick={() => handleUpdateStatus(nic.id, nic.sn, 'ACTIVE', '在庫')} style={{ ...menuButtonStyle, color: '#047857' }}><CheckCircle size={14} /> 標記為在庫</button>
                       <button onClick={() => handleUpdateStatus(nic.id, nic.sn, 'SHIPPED', '已出貨')} style={{ ...menuButtonStyle, color: '#1d4ed8' }}><ShoppingBag size={14} /> 標記為出貨</button>
@@ -689,7 +707,55 @@ const HwList = ({ isSplitMode = false }) => {
 
               <div style={{ display: 'grid', gridTemplateColumns: 'minmax(150px, 1fr) 1fr 1fr', gap: '16px' }}>
                 <label style={editLabelStyle}>對應伺服器 SN<input type="text" value={editItem.temp_server_sn || ''} onChange={(e) => setEditItem({ ...editItem, temp_server_sn: e.target.value })} style={editInputStyle} /></label>
-                <label style={editLabelStyle}>專案名稱 (Project)<input type="text" value={editItem.temp_project_name || ''} onChange={(e) => setEditItem({ ...editItem, temp_project_name: e.target.value })} style={editInputStyle} /></label>
+                <div style={{ position: 'relative' }}>
+                  <label style={editLabelStyle}>專案名稱 (Project)</label>
+                  <input 
+                    type="text" 
+                    value={editItem.temp_project_name || ''} 
+                    onChange={(e) => setEditItem({ ...editItem, temp_project_name: e.target.value })} 
+                    placeholder="輸入關鍵字搜尋專案"
+                    style={editInputStyle} 
+                    onFocus={() => {
+                      if (!editItem.showProjectDropdown) {
+                        setEditItem({...editItem, showProjectDropdown: true});
+                      }
+                    }}
+                    onBlur={() => {
+                      setTimeout(() => {
+                        setEditItem(prev => prev ? {...prev, showProjectDropdown: false} : prev);
+                      }, 200);
+                    }}
+                  />
+                  {editItem.showProjectDropdown && (
+                    <div style={{
+                      position: 'absolute', top: '100%', left: 0, right: 0, 
+                      backgroundColor: 'white', border: '1px solid #cbd5e1', 
+                      borderRadius: '8px', marginTop: '4px', maxHeight: '200px', 
+                      overflowY: 'auto', zIndex: 10, boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                    }}>
+                      {(() => {
+                        const searchStr = (editItem.temp_project_name || '').toLowerCase();
+                        const matches = projects.filter(p => 
+                          (p.project_no || '').toLowerCase().includes(searchStr) || 
+                          (p.project_name || '').toLowerCase().includes(searchStr)
+                        );
+                        if (matches.length === 0) return <div style={{ padding: '8px', color: '#94a3b8', fontSize: '0.85rem' }}>無符合專案</div>;
+                        return matches.map(p => (
+                          <div 
+                            key={p.project_no}
+                            style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem' }}
+                            onMouseDown={() => {
+                              setEditItem({...editItem, temp_project_name: p.project_name, showProjectDropdown: false});
+                            }}
+                          >
+                            <div style={{ fontWeight: 'bold', color: '#334155' }}>{p.project_no}</div>
+                            <div style={{ color: '#64748b' }}>{p.project_name}</div>
+                          </div>
+                        ));
+                      })()}
+                    </div>
+                  )}
+                </div>
                 <label style={editLabelStyle}>訂單日期<input type="date" value={editItem.temp_order_date || ''} onChange={(e) => setEditItem({ ...editItem, temp_order_date: e.target.value })} style={editInputStyle} /></label>
               </div>
 
@@ -723,6 +789,13 @@ const HwList = ({ isSplitMode = false }) => {
           </div>
         </div>
       )}
+
+      {/* 品項履歷 Modal */}
+      <ItemLedgerModal
+        isOpen={!!ledgerItem}
+        onClose={() => setLedgerItem(null)}
+        item={ledgerItem}
+      />
     </div>
   );
 };

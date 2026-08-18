@@ -8,7 +8,6 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
   const navigate = useNavigate();
   const [purchaseRecords, setPurchaseRecords] = useState([]);
   const [partners, setPartners] = useState([]);
-  const [projects, setProjects] = useState([]);
   const [categories, setCategories] = useState([]);
   
   // Options state for selects
@@ -22,7 +21,6 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
 
   // PO Header states
   const [orderNo, setOrderNo] = useState('');
-  const [projectName, setProjectName] = useState('');
   const [remarks, setRemarks] = useState('');
 
   // Items in this PO
@@ -53,16 +51,14 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
   const fetchData = useCallback(async (forceNewOrderNo = false) => {
     setLoading(true);
     try {
-      const [recordsRes, partnersRes, catsRes, projectsRes] = await Promise.all([
+      const [recordsRes, partnersRes, catsRes] = await Promise.all([
         window.electronAPI.namedQuery('fetchPurchasingRecords'),
         window.electronAPI.namedQuery('fetchSuppliers'),
-        window.electronAPI.namedQuery('fetchCategories'),
-        window.electronAPI.namedQuery('fetchActiveProjects')
+        window.electronAPI.namedQuery('fetchCategories')
       ]);
 
       if (recordsRes.success) setPurchaseRecords(recordsRes.rows);
       if (partnersRes.success) setPartners(partnersRes.rows);
-      if (projectsRes.success) setProjects(projectsRes.rows);
       if (catsRes.success) {
         setCategories(catsRes.rows);
         for (const cat of catsRes.rows) {
@@ -73,8 +69,7 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
           setOrderNo(initOrderNo);
           const detailRes = await window.electronAPI.namedQuery('fetchPurchaseRecordsByOrder', [initOrderNo]);
           if (detailRes.success && detailRes.rows.length > 0) {
-             setProjectName(detailRes.rows[0].project_name || '');
-             setRemarks(detailRes.rows[0].remarks || '');
+           setRemarks(detailRes.rows[0].remarks || '');
              setItems(detailRes.rows.map(r => ({
                id: r.id, 
                category_id: r.category_id.toString(),
@@ -228,12 +223,12 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
          for (const item of items) {
            if (item.id > 1000000000000) {
              const res = await window.electronAPI.namedQuery('insertPurchaseRecord',
-               [initOrderNo, item.partner_id ? parseInt(item.partner_id) : null, parseInt(item.category_id), item.item_type, item.brand, item.model, item.specification || null, item.unit, parseInt(item.quantity), authUser?.id, 'ORDERED', remarks, projectName]
+               [initOrderNo, item.partner_id ? parseInt(item.partner_id) : null, parseInt(item.category_id), item.item_type, item.brand, item.model, item.specification || null, item.unit, parseInt(item.quantity), authUser?.id, 'ORDERED', remarks, null]
              );
              if (!res.success) throw new Error(`新增品項失敗: ${res.error}`);
            } else {
              const res = await window.electronAPI.namedQuery('updatePurchaseRecordFull',
-               [item.partner_id ? parseInt(item.partner_id) : null, parseInt(item.category_id), item.item_type, item.brand, item.model, item.specification || null, item.unit, parseInt(item.quantity), remarks, projectName, item.id]
+               [item.partner_id ? parseInt(item.partner_id) : null, parseInt(item.category_id), item.item_type, item.brand, item.model, item.specification || null, item.unit, parseInt(item.quantity), remarks, null, item.id]
              );
              if (!res.success) throw new Error(`更新品項失敗: ${res.error}`);
            }
@@ -245,7 +240,7 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
            const res = await window.electronAPI.namedQuery('insertPurchaseRecord',
              [
                orderNo, item.partner_id ? parseInt(item.partner_id) : null, item.category_id, item.item_type, item.brand, item.model,
-               item.specification || null, item.unit, item.quantity, authUser?.id, 'ORDERED', remarks, projectName
+               item.specification || null, item.unit, item.quantity, authUser?.id, 'ORDERED', remarks, null
              ]
            );
            if (!res.success) throw new Error(`品項 ${item.model || '未指定型號'} 儲存失敗: ${res.error}`);
@@ -253,7 +248,6 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
    
          alert('採購建檔成功！');
          setRemarks('');
-         setProjectName('');
          setItems([]); 
          await fetchData(true);
       }
@@ -309,25 +303,10 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
         <form onSubmit={handleSubmit}>
           {/* Header Section */}
           <div className="card-surface" style={{ backgroundColor: '#f8f9fa', marginBottom: '24px', padding: '24px', border: '1px solid #eee' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px', marginBottom: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px', marginBottom: '16px' }}>
               <div>
                 <label style={labelStyle}>採購單號 (PO No.)</label>
                 <input value={orderNo} readOnly style={{ ...inputStyle, backgroundColor: '#eee', fontWeight: 'bold' }} />
-              </div>
-              <div>
-                <label style={labelStyle}>專案名稱 (Project Name)</label>
-                <select 
-                  value={projectName} 
-                  onChange={e => setProjectName(e.target.value)} 
-                  style={inputStyle}
-                >
-                  <option value="">(無專案)</option>
-                  {projects.map(proj => (
-                    <option key={proj.project_no} value={`${proj.project_no} ${proj.project_name}`}>
-                      [{proj.project_no}] {proj.project_name}
-                    </option>
-                  ))}
-                </select>
               </div>
               <div>
                 <label style={labelStyle}>採購人員 (Purchaser)</label>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Search, Edit2, Trash2, X, Save, MoreHorizontal, ArrowLeftRight, ClipboardList, ShoppingBag, AlertTriangle, Archive, RotateCcw, Package } from 'lucide-react';
+import { Search, Edit2, Trash2, X, Save, MoreHorizontal, ArrowLeftRight, ClipboardList, ShoppingBag, AlertTriangle, Archive, RotateCcw, Package, History } from 'lucide-react';
+import ItemLedgerModal from '../components/ItemLedgerModal';
 
 const editLabelStyle = { display: 'block', fontWeight: 800, fontSize: '13px', marginBottom: '6px', color: '#475569' };
 const editInputStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', outline: 'none', fontSize: '13px', boxSizing: 'border-box' };
@@ -41,6 +42,7 @@ const ConsumableList = ({ isSplitMode = false }) => {
   const [showAssignmentModal, setShowAssignmentModal] = useState(false);
   const [activeItemName, setActiveItemName] = useState('');
   const [activeMenuId, setActiveMenuId] = useState(null);
+  const [ledgerItem, setLedgerItem] = useState(null);
 
   const fetchConsumables = useCallback(async () => {
     setLoading(true);
@@ -494,6 +496,16 @@ const ConsumableList = ({ isSplitMode = false }) => {
                         <button onClick={() => setActiveMenuId(activeMenuId === item.id ? null : item.id)} style={{ border: 'none', background: 'none', color: '#64748b', cursor: 'pointer' }}><MoreHorizontal size={20} /></button>
                         {activeMenuId === item.id && (
                           <div style={{ position: 'absolute', right: 0, top: '100%', backgroundColor: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.2)', zIndex: 9999, padding: '8px', minWidth: '160px', display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                            <button 
+                              onClick={() => {
+                                setActiveMenuId(null);
+                                setLedgerItem({ item_master_id: item.id, brand: item.brand, model: item.model, type: item.type, current_stock: item.stock_qty });
+                              }} 
+                              style={{ ...menuButtonStyle, color: '#0f172a' }}
+                            >
+                              <History size={14} /> 履歷 (History)
+                            </button>
+                            <div style={{ height: '1px', backgroundColor: '#e2e8f0', margin: '2px 0' }} />
                             <button onClick={() => { setActiveMenuId(null); setEditItem({ ...item }); setShowEditModal(true); }} style={menuButtonStyle}><Edit2 size={14} /> 編輯詳細資訊</button>
                             <button onClick={() => { setActiveMenuId(null); setTransferData({ itemId: item.id, direction: 'TO_LAB', quantity: 1, deviceSn: '', note: '' }); setShowTransferModal(true); }} style={{ ...menuButtonStyle, color: '#2563eb' }}><ArrowLeftRight size={14} /> 庫存異動 (Stock↔LAB)</button>
                             <div style={{ height: '1px', backgroundColor: '#f1f5f9', margin: '4px 0' }} />
@@ -694,6 +706,13 @@ const ConsumableList = ({ isSplitMode = false }) => {
           </div>
         </div>
       )}
+
+      {/* 品項履歷 Modal */}
+      <ItemLedgerModal
+        isOpen={!!ledgerItem}
+        onClose={() => setLedgerItem(null)}
+        item={ledgerItem}
+      />
     </div>
   );
 };

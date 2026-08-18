@@ -162,6 +162,7 @@ CREATE TABLE IF NOT EXISTS outbound_requests (
     location TEXT,
     shipping_date DATE DEFAULT CURRENT_DATE,
     expected_return_date DATE,            -- 預計歸還日 (LEND 用)
+    actual_return_date DATE,              -- 實際歸還入庫日 (LEND 用)
     status VARCHAR(20) DEFAULT 'PENDING', -- PENDING (鎖定中), SHIPPED (已出貨)
     creator_id INTEGER REFERENCES users(id),
     contact_info VARCHAR(255),            -- 聯絡人資訊

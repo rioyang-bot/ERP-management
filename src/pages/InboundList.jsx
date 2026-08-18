@@ -11,8 +11,7 @@ const InboundList = () => {
     { value: 'all', label: '全部欄位' },
     { value: 'order_no', label: '進貨單號' },
     { value: 'partner', label: '供應商' },
-    { value: 'invoice_no', label: '發票號碼' },
-    { value: 'project_name', label: '專案名稱' }
+    { value: 'invoice_no', label: '發票號碼' }
   ];
 
   const [inboundRecords, setInboundRecords] = useState([]);
@@ -77,19 +76,16 @@ const InboundList = () => {
     const orderNo = (order.order_no || '').toLowerCase();
     const partner = (order.partner_name || '').toLowerCase();
     const invoice = (order.invoice_no || '').toLowerCase();
-    const projectName = (order.project_name || '').toLowerCase();
 
     let matchSearch = true;
     if (searchField === 'all') {
-      matchSearch = orderNo.includes(search) || partner.includes(search) || invoice.includes(search) || projectName.includes(search);
+      matchSearch = orderNo.includes(search) || partner.includes(search) || invoice.includes(search);
     } else if (searchField === 'order_no') {
       matchSearch = orderNo.includes(search);
     } else if (searchField === 'partner') {
       matchSearch = partner.includes(search);
     } else if (searchField === 'invoice_no') {
       matchSearch = invoice.includes(search);
-    } else if (searchField === 'project_name') {
-      matchSearch = projectName.includes(search);
     }
 
     if (!matchSearch) return false;
@@ -199,30 +195,20 @@ const InboundList = () => {
                   <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>進貨單號</th>
                   <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>進貨建立時間</th>
                   <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>供應商</th>
-                  <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>專案名稱</th>
                   <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>發票號碼</th>
                   <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>操作</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px', color: '#999' }}>讀取中...</td></tr>
+                  <tr><td colSpan="5" style={{ textAlign: 'center', padding: '40px', color: '#999' }}>讀取中...</td></tr>
                 ) : currentRecords.length === 0 ? (
-                  <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px', color: '#999' }}>目前尚無進貨單資料</td></tr>
+                  <tr><td colSpan="5" style={{ textAlign: 'center', padding: '40px', color: '#999' }}>目前尚無進貨單資料</td></tr>
                 ) : currentRecords.map(order => (
                   <tr key={order.id} className="row-hover" style={{ borderBottom: '1px solid #f5f5f5' }}>
                     <td style={{ padding: '12px', fontWeight: 600 }}>{order.order_no}</td>
                     <td style={{ padding: '12px' }}>{new Date(order.created_at).toLocaleString()}</td>
                     <td style={{ padding: '12px', color: order.partner_name ? '#333' : '#94a3b8' }}>{order.partner_name || '無紀錄'}</td>
-                    <td style={{ padding: '12px' }}>
-                      {order.project_name ? (
-                        <span style={{ backgroundColor: '#e0f2fe', color: '#0284c7', padding: '4px 8px', borderRadius: '4px', fontSize: '0.85rem', fontWeight: 600 }}>
-                          {order.project_name}
-                        </span>
-                      ) : (
-                        <span style={{ color: '#94a3b8' }}>--</span>
-                      )}
-                    </td>
                     <td style={{ padding: '12px' }}>{order.invoice_no || '--'}</td>
                     <td style={{ padding: '12px' }}>
                       <div style={{ display: 'flex', gap: '8px' }}>

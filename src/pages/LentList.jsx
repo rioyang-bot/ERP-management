@@ -13,6 +13,8 @@ const LentList = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [returnModal, setReturnModal] = useState({ show: false, dn: null, date: new Date().toISOString().split('T')[0] });
+  const [showOverdue, setShowOverdue] = useState(false);
 
   const fetchRecords = useCallback(async () => {
     setLoading(true);
@@ -38,7 +40,7 @@ const LentList = () => {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [activeTab, searchTerm]);
+  }, [activeTab, searchTerm, showOverdue]);
 
   const handleViewDetails = async (dn) => {
     setSelectedDN(dn);
@@ -59,8 +61,13 @@ const LentList = () => {
     }
   };
 
-  const handleReturnToStock = async (dn) => {
-    if (!window.confirm(`確認要將借用單 [${dn.request_no}] 標記為「已歸還」，並將相關設備入庫嗎？`)) return;
+  const handleReturnToStockClick = (dn) => {
+    setReturnModal({ show: true, dn, date: new Date().toISOString().split('T')[0] });
+  };
+
+  const executeReturnToStock = async () => {
+    const { dn, date } = returnModal;
+    if (!dn || !date) return;
 
     try {
       const res = await window.electronAPI.namedQuery('fetchDNItems', [dn.id]);
@@ -74,10 +81,11 @@ const LentList = () => {
         }
       }
 
-      const finalRes = await window.electronAPI.namedQuery('updateOutboundRequestStatus', ['RETURNED', dn.id]);
+      const finalRes = await window.electronAPI.namedQuery('updateOutboundRequestReturned', [dn.id, date]);
       if (!finalRes.success) throw new Error('變更借用單狀態失敗。');
 
       alert('歸還成功！設備已恢復為在庫狀態。');
+      setReturnModal({ show: false, dn: null, date: '' });
       fetchRecords();
 
     } catch (err) {
@@ -89,11 +97,18 @@ const LentList = () => {
   const filteredRecords = dnRecords.filter(dn => {
     if (dn.status !== activeTab) return false;
     
+    if (showOverdue && activeTab === 'SHIPPED') {
+      const today = new Date().toISOString().split('T')[0];
+      const returnDate = dn.expected_return_date ? new Date(dn.expected_return_date).toISOString().split('T')[0] : null;
+      if (!returnDate || returnDate >= today) return false;
+    }
+    
     const search = searchTerm.toLowerCase();
     if (!search) return true;
     return (dn.request_no || '').toLowerCase().includes(search) ||
            (dn.customer || '').toLowerCase().includes(search) ||
-           (dn.project_name || '').toLowerCase().includes(search);
+           (dn.project_name || '').toLowerCase().includes(search) ||
+           (dn.searchable_items || '').toLowerCase().includes(search);
   });
 
   const ITEMS_PER_PAGE = 10;
@@ -169,16 +184,47 @@ const LentList = () => {
         </div>
 
         <div style={{ padding: '20px 24px', borderBottom: '1px solid #eee', display: 'flex', gap: '16px', alignItems: 'center', backgroundColor: '#fff' }}>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flex: 1 }}>
-            <div className="search-box-vibrant" style={{ flex: 1, maxWidth: '400px' }}>
-              <Search size={18} />
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flex: 1, flexWrap: 'wrap' }}>
+            <div className="search-box-vibrant" style={{ flex: 1, maxWidth: '600px', display: 'flex', alignItems: 'center' }}>
+              <Search size={18} style={{ color: '#94a3b8' }} />
               <input 
                 type="text" 
-                placeholder="搜尋單號、客戶名稱或專案名稱..." 
+                placeholder="搜尋單號、客戶、專案、設備序號 (S/N) 或型號..." 
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
+                style={{ flex: 1, border: 'none', outline: 'none', padding: '8px', backgroundColor: 'transparent' }}
               />
+              {searchTerm && (
+                <button 
+                  onClick={() => setSearchTerm('')} 
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: '4px', display: 'flex', alignItems: 'center' }}
+                >
+                  ✕
+                </button>
+              )}
             </div>
+            
+            {activeTab === 'SHIPPED' && (
+              <button
+                onClick={() => setShowOverdue(!showOverdue)}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '20px',
+                  border: showOverdue ? 'none' : '1px solid #e2e8f0',
+                  backgroundColor: showOverdue ? '#fee2e2' : '#fff',
+                  color: showOverdue ? '#ef4444' : '#64748b',
+                  fontWeight: 700,
+                  fontSize: '0.85rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  transition: 'all 0.2s'
+                }}
+              >
+                🚨 僅顯示逾期未還
+              </button>
+            )}
           </div>
         </div>
 
@@ -197,6 +243,7 @@ const LentList = () => {
                 <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>單據編號</th>
                 <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>借出日期</th>
                 <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>預計歸還日</th>
+                {activeTab === 'RETURNED' && <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>實際歸還日</th>}
                 <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>客戶/對象</th>
                 <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>所屬專案</th>
                 <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>建立者</th>
@@ -224,6 +271,11 @@ const LentList = () => {
                   <td style={{ padding: '12px', color: dn.status === 'SHIPPED' ? '#d97706' : '#666', fontWeight: dn.status === 'SHIPPED' ? 600 : 400 }}>
                     {dn.expected_return_date ? new Date(dn.expected_return_date).toLocaleDateString() : '-'}
                   </td>
+                  {activeTab === 'RETURNED' && (
+                    <td style={{ padding: '12px', color: '#059669', fontWeight: 600 }}>
+                      {dn.actual_return_date ? new Date(dn.actual_return_date).toLocaleDateString() : '-'}
+                    </td>
+                  )}
                   <td style={{ padding: '12px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <span style={{ fontWeight: 600 }}>{dn.customer}</span>
@@ -250,7 +302,7 @@ const LentList = () => {
                         <button 
                           style={{ padding: '6px 12px', backgroundColor: '#10b981', color: 'white', border: 'none', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
                           title="歸還入庫"
-                          onClick={() => handleReturnToStock(dn)}
+                          onClick={() => handleReturnToStockClick(dn)}
                         >
                           <CornerDownLeft size={16} /> 歸還入庫
                         </button>
@@ -381,6 +433,42 @@ const LentList = () => {
                 style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', backgroundColor: '#fff', color: '#64748b', fontWeight: 600, cursor: 'pointer' }}
               >
                 關閉
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {returnModal.show && returnModal.dn && (
+        <div className="modal-overlay" style={{ zIndex: 9999 }}>
+          <div className="modal-content" style={{ width: '400px', padding: '24px' }}>
+            <h3 style={{ marginTop: 0, color: '#1e293b' }}>歸還入庫確認</h3>
+            <p style={{ color: '#64748b', fontSize: '0.9rem', marginBottom: '16px' }}>
+              將單號 <strong>{returnModal.dn.request_no}</strong> 標記為已歸還，並設定其實際歸還日期。相關設備將同步入庫。
+            </p>
+            <div style={{ marginBottom: '24px' }}>
+              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '8px', color: '#334155' }}>
+                歸還入庫日期
+              </label>
+              <input 
+                type="date"
+                value={returnModal.date}
+                onChange={e => setReturnModal({ ...returnModal, date: e.target.value })}
+                style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none' }}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button 
+                onClick={() => setReturnModal({ show: false, dn: null, date: '' })}
+                style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', backgroundColor: '#fff', color: '#64748b', fontWeight: 600, cursor: 'pointer' }}
+              >
+                取消
+              </button>
+              <button 
+                onClick={executeReturnToStock}
+                style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', backgroundColor: '#10b981', color: 'white', fontWeight: 600, cursor: 'pointer' }}
+              >
+                確定歸還
               </button>
             </div>
           </div>

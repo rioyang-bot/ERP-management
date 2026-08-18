@@ -191,13 +191,11 @@ const Inbound = () => {
           if (!finalItemId) continue;
 
           if (item.cat_name === '設備' || item.cat_name === '硬體') {
-            const currentPo = item.purchaseRecordId ? pendingPurchases.find(p => p.id.toString() === item.purchaseRecordId.toString()) : null;
-            const itemProjectName = (currentPo && currentPo.project_name) ? currentPo.project_name : '';
             const qty = parseInt(item.qty, 10) || 1;
             for (let i = 0; i < qty; i++) {
               await window.electronAPI.namedQuery(
                 'insertInboundAssets', 
-                [item.sn || null, finalItemId, itemProjectName]
+                [item.sn || null, finalItemId, null]
               );
             }
           }
@@ -244,11 +242,6 @@ const Inbound = () => {
   };
 
   const selectedPOOrderNo = items.find(i => i.selectedOrderNo)?.selectedOrderNo;
-  let currProjectName = '請於下方選擇採購單';
-  if (selectedPOOrderNo) {
-    const po = pendingPurchases.find(p => p.order_no === selectedPOOrderNo);
-    currProjectName = (po && po.project_name) ? po.project_name : '無專案名稱';
-  }
 
   const hasPOSelected = items.some(i => !!i.selectedOrderNo || !!i.purchaseRecordId);
 
@@ -272,7 +265,7 @@ const Inbound = () => {
           <FileText size={40} color="#ffb300" style={{ opacity: 0.3 }} />
         </div>
       )}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '20px', marginBottom: '32px', paddingBottom: '32px', borderBottom: '1px solid #eee' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '32px', paddingBottom: '32px', borderBottom: '1px solid #eee' }}>
         <div><label style={labelStyle}>進貨單號 (系統生成)</label><input disabled value={orderNo} style={{ ...inputStyle, backgroundColor: '#f5f5f5', color: '#999' }} /></div>
         <div>
           <label style={labelStyle}>供應商名稱 {hasPOSelected ? '(自動帶入)' : '(必填)'}</label>
@@ -287,7 +280,7 @@ const Inbound = () => {
             </select>
           )}
         </div>
-        <div><label style={labelStyle}>專案名稱 (自動帶入)</label><input disabled value={currProjectName} style={{ ...inputStyle, backgroundColor: '#f5f5f5', color: '#999' }} /></div>
+
         <div><label style={labelStyle}>發票號碼 (Invoice No.)</label><input type="text" value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} style={inputStyle} placeholder="請輸入紙本發票號碼" /></div>
         <div><label style={labelStyle}>進貨/到貨日期</label><input type="date" defaultValue={new Date().toISOString().slice(0,10)} style={inputStyle} /></div>
       </div>

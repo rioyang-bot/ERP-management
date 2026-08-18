@@ -6,6 +6,8 @@ const ProjectList = () => {
   const [projects, setProjects] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [search, setSearch] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState(null);
   
@@ -191,6 +193,15 @@ const ProjectList = () => {
     (p.customer_name && p.customer_name.toLowerCase().includes(search.toLowerCase()))
   );
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search]);
+
+  const totalPages = Math.ceil(filteredProjects.length / itemsPerPage) || 1;
+  const paginatedProjects = filteredProjects.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  const navBtnStyle = { padding: '6px 12px', border: '1px solid #cbd5e1', borderRadius: '6px', backgroundColor: '#fff', cursor: 'pointer', fontSize: '13px', fontWeight: '600', color: '#475569' };
+
   return (
     <div className="page-container">
       <div className="page-header">
@@ -204,6 +215,23 @@ const ProjectList = () => {
               value={search} 
               onChange={e => setSearch(e.target.value)} 
             />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#64748b' }}>
+            顯示
+            <select
+              value={itemsPerPage}
+              onChange={(e) => {
+                setItemsPerPage(Number(e.target.value));
+                setCurrentPage(1);
+              }}
+              style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none', backgroundColor: '#fff', cursor: 'pointer' }}
+            >
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+            筆/頁
           </div>
           <button className="primary-btn" onClick={() => handleOpenModal()}>
             <Plus size={20} /> 新增專案
@@ -227,7 +255,7 @@ const ProjectList = () => {
             </tr>
           </thead>
           <tbody>
-            {filteredProjects.map(proj => (
+            {paginatedProjects.map(proj => (
               <tr key={proj.id}>
                 <td>{proj.project_no}</td>
                 <td className="font-medium">{proj.name}</td>
@@ -261,6 +289,14 @@ const ProjectList = () => {
           </tbody>
         </table>
       </div>
+
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', padding: '20px', backgroundColor: '#fff', borderRadius: '16px', marginTop: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+          <button disabled={currentPage === 1} onClick={() => setCurrentPage(prev => prev - 1)} style={{ ...navBtnStyle, opacity: currentPage === 1 ? 0.5 : 1 }}>上一頁</button>
+          <span style={{ display: 'flex', alignItems: 'center', fontWeight: '800', color: '#475569', fontSize: '13px' }}>第 {currentPage} 頁 / 共 {totalPages} 頁</span>
+          <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(prev => prev + 1)} style={{ ...navBtnStyle, opacity: currentPage === totalPages ? 0.5 : 1 }}>下一頁</button>
+        </div>
+      )}
 
       {showModal && (
         <div className="modal-overlay">

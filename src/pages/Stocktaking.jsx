@@ -4,7 +4,7 @@ import './Stocktaking.css';
 
 const Stocktaking = () => {
   const [activeTab, setActiveTab] = useState('devices'); // 'devices', 'hardware', 'consumables', 'company'
-  
+
   const [assets, setAssets] = useState([]); // Contains both devices and hardware
   const [consumables, setConsumables] = useState([]);
   const [companyAssets, setCompanyAssets] = useState([]);
@@ -12,6 +12,9 @@ const Stocktaking = () => {
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   // 取得資料
   const fetchData = async () => {
@@ -91,6 +94,15 @@ const Stocktaking = () => {
     }
   }, [assets, consumables, companyAssets, activeTab, searchTerm]);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab, searchTerm]);
+
+  const totalPages = Math.ceil(filteredData.length / itemsPerPage) || 1;
+  const paginatedData = filteredData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  const navBtnStyle = { padding: '6px 12px', border: '1px solid #cbd5e1', borderRadius: '6px', backgroundColor: '#fff', cursor: 'pointer', fontSize: '13px', fontWeight: '600', color: '#475569' };
+
   // 匯出 CSV 盤點單
   const handleExportCSV = () => {
     const today = new Date().toISOString().split('T')[0];
@@ -103,7 +115,7 @@ const Stocktaking = () => {
     if (activeTab === 'devices' || activeTab === 'hardware') {
       filename = `${activeTab === 'devices' ? '設備' : '硬體'}盤點單_${today}.csv`;
       headers = ['分類', '類型', '廠牌', '型號', '規格說明', '系統庫存總數', '實盤總數量', '盤點備註'];
-      
+
       csvRows = filteredData.map(item => [
         item.category_name || '',
         item.type || '',
@@ -117,7 +129,7 @@ const Stocktaking = () => {
     } else if (activeTab === 'company') {
       filename = `公司資產盤點單_${today}.csv`;
       headers = ['資產分類', '廠牌', '型號', '序號(S/N)', '狀態', '存放地點', '實盤確認', '盤點備註'];
-      
+
       csvRows = filteredData.map(item => [
         item.category_name || '',
         item.brand || '',
@@ -131,7 +143,7 @@ const Stocktaking = () => {
     } else {
       filename = `耗材盤點單_${today}.csv`;
       headers = ['分類', '類型', '廠牌', '型號', '規格說明', '系統庫存量', '實驗室暫存量', '實盤總數量', '盤點備註'];
-      
+
       csvRows = filteredData.map(item => [
         item.category_name || '',
         item.type || '',
@@ -170,10 +182,10 @@ const Stocktaking = () => {
           <div className="pj-breadcrumb">
             <span>庫存管理</span>
             <span>/</span>
-            <span style={{ color: '#0f172a', fontWeight: '600' }}>實體庫存盤點總表</span>
+            <span style={{ color: '#0f172a', fontWeight: '600' }}>庫存盤點表(Stocktaking)</span>
           </div>
           <h1 className="st-title">
-            <ClipboardList size={28} color="#2563eb" /> 實體庫存盤點總表
+            <ClipboardList size={28} color="#2563eb" /> 庫存盤點表(Stocktaking)
           </h1>
           <p className="st-subtitle">匯出目前系統在庫清單，方便進行現場實物盤點核對。</p>
         </div>
@@ -189,28 +201,28 @@ const Stocktaking = () => {
 
       {/* Tabs */}
       <div className="st-tabs">
-        <div 
+        <div
           className={`st-tab ${activeTab === 'devices' ? 'active' : ''}`}
           onClick={() => { setActiveTab('devices'); setSearchTerm(''); }}
         >
           <Server size={16} style={{ position: 'relative', top: '3px', marginRight: '6px' }} />
           設備盤點
         </div>
-        <div 
+        <div
           className={`st-tab ${activeTab === 'hardware' ? 'active' : ''}`}
           onClick={() => { setActiveTab('hardware'); setSearchTerm(''); }}
         >
           <Cpu size={16} style={{ position: 'relative', top: '3px', marginRight: '6px' }} />
           硬體盤點
         </div>
-        <div 
+        <div
           className={`st-tab ${activeTab === 'consumables' ? 'active' : ''}`}
           onClick={() => { setActiveTab('consumables'); setSearchTerm(''); }}
         >
           <Package size={16} style={{ position: 'relative', top: '3px', marginRight: '6px' }} />
           耗材盤點
         </div>
-        <div 
+        <div
           className={`st-tab ${activeTab === 'company' ? 'active' : ''}`}
           onClick={() => { setActiveTab('company'); setSearchTerm(''); }}
         >
@@ -224,8 +236,8 @@ const Stocktaking = () => {
         <div className="st-filter-grid">
           <div className="st-filter-item" style={{ flex: 1 }}>
             <label className="st-filter-label">關鍵字搜尋</label>
-            <input 
-              type="text" 
+            <input
+              type="text"
               className="st-input"
               placeholder="搜尋廠牌、型號、類型、規格..."
               value={searchTerm}
@@ -244,8 +256,25 @@ const Stocktaking = () => {
               共 {filteredData.length} 筆
             </span>
           </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#64748b' }}>
+            顯示
+            <select
+              value={itemsPerPage}
+              onChange={(e) => {
+                setItemsPerPage(Number(e.target.value));
+                setCurrentPage(1);
+              }}
+              style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none', backgroundColor: '#fff', cursor: 'pointer' }}
+            >
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+            筆/頁
+          </div>
         </div>
-        
+
         <div className="st-table-wrapper">
           <table className="st-table">
             <thead>
@@ -275,7 +304,7 @@ const Stocktaking = () => {
             </thead>
             <tbody>
               {filteredData.length > 0 ? (
-                filteredData.map((item, index) => {
+                paginatedData.map((item, index) => {
                   if (activeTab === 'company') {
                     return (
                       <tr key={`company-${item.sn}-${index}`}>
@@ -338,6 +367,14 @@ const Stocktaking = () => {
             </tbody>
           </table>
         </div>
+        
+        {totalPages > 1 && (
+          <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', padding: '20px', borderTop: '1px solid #e2e8f0', backgroundColor: '#fff', borderBottomLeftRadius: '16px', borderBottomRightRadius: '16px' }}>
+            <button disabled={currentPage === 1} onClick={() => setCurrentPage(prev => prev - 1)} style={{ ...navBtnStyle, opacity: currentPage === 1 ? 0.5 : 1 }}>上一頁</button>
+            <span style={{ display: 'flex', alignItems: 'center', fontWeight: '800', color: '#475569', fontSize: '13px' }}>第 {currentPage} 頁 / 共 {totalPages} 頁</span>
+            <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(prev => prev + 1)} style={{ ...navBtnStyle, opacity: currentPage === totalPages ? 0.5 : 1 }}>下一頁</button>
+          </div>
+        )}
       </div>
     </div>
   );

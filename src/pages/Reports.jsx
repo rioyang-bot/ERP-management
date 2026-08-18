@@ -49,16 +49,16 @@ const Reports = () => {
     },
     {
       id: 'flow-history',
-      title: '進出貨歷史總表',
+      title: '進出貨日誌 Stock In/Out Log',
       category: 'AUDIT',
       categoryLabel: '歷史稽核',
       icon: <History size={28} />,
       iconBg: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
-      status: 'UPCOMING',
-      statusText: '即將推出',
+      status: 'ACTIVE',
+      statusText: '已上線',
       desc: '按時間序列追蹤所有進貨入庫、出庫發貨、借用撥轉與異動軌跡，提供完整歷史紀錄與稽核報表。',
       tags: ['進出歷史流水', '時間序列追蹤', '出庫稽核', '操作軌跡'],
-      path: null
+      path: '/flow-history'
     },
     {
       id: 'client-delivery',
