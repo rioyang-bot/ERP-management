@@ -471,7 +471,7 @@ const DeviceList = ({ isSplitMode = false }) => {
                           <th style={{ ...thStyle, textAlign: 'left', width: '200px' }}>廠牌 / 型號 / 類型</th>
                           <th style={{ ...thStyle, textAlign: 'left' }}>序號 (SN)</th>
                           <th style={{ ...thStyle, textAlign: 'left' }}>規格 (Spec)</th>
-                          <th style={{ ...thStyle, textAlign: 'left' }}>專案名稱 (Project)</th>
+                          <th style={{ ...thStyle, textAlign: 'left' }}>專案編號/名稱 (Project)</th>
                           <th style={{ ...thStyle, textAlign: 'left' }}>主機名稱</th>
                           <th style={{ ...thStyle, textAlign: 'left' }}>自訂設備屬性</th>
                           <th style={{ ...thStyle, textAlign: 'left' }}>搭載硬體</th>
@@ -503,7 +503,19 @@ const DeviceList = ({ isSplitMode = false }) => {
                                 {item.sn}
                               </td>
                               <td style={{ ...tdStyle, fontSize: '11px', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.specification}>{item.specification || '--'}</td>
-                              <td style={{ ...tdStyle, fontWeight: 700, color: '#334155' }}>{attrs.project_name || '--'}</td>
+                              <td style={{ ...tdStyle, fontWeight: 700, color: '#334155' }}>
+                                {(() => {
+                                  const pName = attrs.project_name;
+                                  if (!pName) return '--';
+                                  const proj = projects.find(p => p.project_name === pName);
+                                  return (
+                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                      {proj && proj.project_no && <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 'normal', marginBottom: '2px' }}>{proj.project_no}</span>}
+                                      <span>{pName}</span>
+                                    </div>
+                                  );
+                                })()}
+                              </td>
                               <td style={tdStyle}>{item.hostname || '--'}</td>
                               <td style={{ ...tdStyle, fontSize: '11px', minWidth: '120px' }}>
                                 {customFieldDefs.filter(f => isFieldVisible(brandFilter, f.id)).map(f => {

@@ -484,7 +484,7 @@ const HwList = ({ isSplitMode = false }) => {
             <th style={{ ...thStyle, textAlign: 'left', width: '200px' }}>廠牌 / 型號 / 類型</th>
             <th style={{ ...thStyle, textAlign: 'left' }}>序號 (SN)</th>
             <th style={{ ...thStyle, textAlign: 'left' }}>規格 (Spec)</th>
-            <th style={{ ...thStyle, textAlign: 'left' }}>專案名稱 (Project)</th>
+            <th style={{ ...thStyle, textAlign: 'left' }}>專案編號/名稱 (Project)</th>
             <th style={{ ...thStyle, textAlign: 'left' }}>訂單日期</th>
             <th style={{ ...thStyle, textAlign: 'left' }}>對應伺服器</th>
             {showServerDetails && <th style={{ ...thStyle, textAlign: 'left' }}>伺服器屬性</th>}
@@ -519,7 +519,19 @@ const HwList = ({ isSplitMode = false }) => {
                 </td>
                 <td style={{ ...tdStyle, fontWeight: 800, fontFamily: 'monospace', color: '#2563eb', whiteSpace: 'nowrap' }}>{nic.sn || '(未設定)'}</td>
                 <td style={{ ...tdStyle, fontSize: '11px', color: '#64748b' }}>{nic.specification || '--'}</td>
-                <td style={{ ...tdStyle, fontWeight: 700, color: '#334155' }}>{nic.custom_attributes?.project_name || '--'}</td>
+                <td style={{ ...tdStyle, fontWeight: 700, color: '#334155' }}>
+                  {(() => {
+                    const pName = nic.custom_attributes?.project_name;
+                    if (!pName) return '--';
+                    const proj = projects.find(p => p.project_name === pName);
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        {proj && proj.project_no && <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 'normal', marginBottom: '2px' }}>{proj.project_no}</span>}
+                        <span>{pName}</span>
+                      </div>
+                    );
+                  })()}
+                </td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{nic.custom_attributes?.order_date || '--'}</td>
                 <td style={tdStyle}>
                   <div style={{ color: '#6366f1', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>

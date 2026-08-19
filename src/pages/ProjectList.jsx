@@ -13,6 +13,7 @@ const ProjectList = () => {
   
   const [formData, setFormData] = useState({
     project_no: '',
+    build_date: '',
     customer_name: '',
     customer_contact: '',
     name: '',
@@ -47,11 +48,60 @@ const ProjectList = () => {
     }
   };
 
+  const generateProjectNo = (dateObj) => {
+    const yyyy = dateObj.getFullYear();
+    const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const dd = String(dateObj.getDate()).padStart(2, '0');
+    const prefix = `PRJ-${yyyy}${mm}${dd}-`;
+
+    const existingSuffixes = projects
+      .filter(p => p.project_no && p.project_no.startsWith(prefix))
+      .map(p => parseInt(p.project_no.replace(prefix, ''), 10))
+      .filter(n => !isNaN(n))
+      .sort((a, b) => a - b);
+
+    let nextNum = 1;
+    for (let num of existingSuffixes) {
+      if (num === nextNum) {
+        nextNum++;
+      } else if (num > nextNum) {
+        break;
+      }
+    }
+    
+    return prefix + String(nextNum).padStart(2, '0');
+  };
+
+  const handleDateChange = (e) => {
+    const newDateStr = e.target.value;
+    if (!newDateStr) {
+      setFormData(prev => ({ ...prev, build_date: '' }));
+      return;
+    }
+    const newDateObj = new Date(newDateStr);
+    const newNo = generateProjectNo(newDateObj);
+    setFormData(prev => ({
+      ...prev,
+      build_date: newDateStr,
+      project_no: newNo
+    }));
+  };
+
   const handleOpenModal = (proj = null) => {
     if (proj) {
       setEditingId(proj.id);
+      
+      let parsedBuildDate = '';
+      if (proj.project_no && proj.project_no.startsWith('PRJ-')) {
+        const datePart = proj.project_no.split('-')[1];
+        if (datePart && datePart.length === 8) {
+          parsedBuildDate = `${datePart.substring(0,4)}-${datePart.substring(4,6)}-${datePart.substring(6,8)}`;
+        }
+      }
+
       setFormData({
         project_no: proj.project_no || '',
+        build_date: parsedBuildDate,
         customer_name: proj.customer_name || '',
         customer_contact: proj.customer_contact || '',
         name: proj.name || '',
@@ -65,30 +115,12 @@ const ProjectList = () => {
       setEditingId(null);
       
       const today = new Date();
-      const yyyy = today.getFullYear();
-      const mm = String(today.getMonth() + 1).padStart(2, '0');
-      const dd = String(today.getDate()).padStart(2, '0');
-      const prefix = `PRJ-${yyyy}${mm}${dd}-`;
-
-      const existingSuffixes = projects
-        .filter(p => p.project_no && p.project_no.startsWith(prefix))
-        .map(p => parseInt(p.project_no.replace(prefix, ''), 10))
-        .filter(n => !isNaN(n))
-        .sort((a, b) => a - b);
-
-      let nextNum = 1;
-      for (let num of existingSuffixes) {
-        if (num === nextNum) {
-          nextNum++;
-        } else if (num > nextNum) {
-          break;
-        }
-      }
-      
-      const newNo = prefix + String(nextNum).padStart(2, '0');
+      const newNo = generateProjectNo(today);
+      const todayStr = today.toISOString().split('T')[0];
 
       setFormData({
         project_no: newNo,
+        build_date: todayStr,
         customer_name: '',
         customer_contact: '',
         name: '',
@@ -137,14 +169,27 @@ const ProjectList = () => {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (window.confirm('確定要刪除這個專案嗎？')) {
-      try {
+  const handleDelete = async (id, projectName) => {
+    try {
+      const countRes = await window.electronAPI.namedQuery('countProjectAssets', [projectName]);
+      // The backend returns { success: true, rows: [...] }
+      const count = countRes?.rows?.[0]?.count ? parseInt(countRes.rows[0].count, 10) : 0;
+      
+      let confirmMsg = '確定要刪除這筆專案嗎？';
+      if (count > 0) {
+        confirmMsg = `注意：此專案尚有 ${count} 個設備綁定中！\n刪除專案將會「自動清空」這些設備的專案標籤。\n\n確定要繼續刪除嗎？`;
+      }
+      
+      if (window.confirm(confirmMsg)) {
+        if (count > 0) {
+          await window.electronAPI.namedQuery('clearProjectFromAssets', [projectName]);
+        }
         await window.electronAPI.namedQuery('deleteProject', [id]);
         fetchProjects();
-      } catch (error) {
-        console.error('Delete failed', error);
       }
+    } catch (error) {
+      console.error('Delete failed', error);
+      alert('刪除專案時發生錯誤');
     }
   };
 
@@ -274,7 +319,7 @@ const ProjectList = () => {
                     <button className="icon-btn edit" onClick={() => handleOpenModal(proj)} title="編輯">
                       <Edit2 size={18} />
                     </button>
-                    <button className="icon-btn delete" onClick={() => handleDelete(proj.id)} title="刪除">
+                    <button className="icon-btn delete" onClick={() => handleDelete(proj.id, proj.name)} title="刪除">
                       <Trash2 size={18} />
                     </button>
                   </div>
@@ -306,6 +351,27 @@ const ProjectList = () => {
               <button className="close-btn" onClick={() => setShowModal(false)}><X size={24} /></button>
             </div>
             <form onSubmit={handleSave} className="modal-body form-grid">
+              <div className="form-group">
+                <label>專案建置日期 *</label>
+                <input 
+                  type="date" 
+                  required
+                  value={formData.build_date} 
+                  onChange={handleDateChange}
+                  disabled={!!editingId}
+                  style={{ backgroundColor: editingId ? '#f1f5f9' : 'white' }}
+                />
+              </div>
+              <div className="form-group">
+                <label>專案編號 *</label>
+                <input 
+                  type="text" 
+                  required
+                  value={formData.project_no} 
+                  readOnly
+                  style={{ backgroundColor: '#f1f5f9', cursor: 'not-allowed' }}
+                />
+              </div>
               <div className="form-group">
                 <label>客戶名稱 (聯絡人)</label>
                 <select 
