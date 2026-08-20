@@ -16,7 +16,8 @@ const Outbound = ({ isSplitMode = false }) => {
       location: '',
       date: new Date().toISOString().split('T')[0],
       request_type: 'SALE',
-      expected_return_date: ''
+      expected_return_date: '',
+      project_name: ''
     };
   });
 
@@ -34,6 +35,7 @@ const Outbound = ({ isSplitMode = false }) => {
     return saved ? JSON.parse(saved) : [];
   });
   const [customers, setCustomers] = useState([]);
+  const [projects, setProjects] = useState([]);
   const [consumables, setConsumables] = useState([]);
   const [csmSearchTerm, setCsmSearchTerm] = useState('');
   const [csmFilterBrand, setCsmFilterBrand] = useState('');
@@ -63,11 +65,54 @@ const Outbound = ({ isSplitMode = false }) => {
       // 獲取所有啟用中的資產以便提供即時搜尋選項
       const assetRes = await window.electronAPI.namedQuery('searchActiveAssetSNs');
       if (assetRes.success) setActiveAssets(assetRes.rows);
+
+      // 獲取進行中的專案
+      const projRes = await window.electronAPI.namedQuery('fetchActiveProjects');
+      if (projRes.success) setProjects(projRes.rows);
     };
     initData();
   }, []);
 
 
+
+  // --- 專案選擇邏輯 ---
+  const handleProjectSelect = async (e) => {
+    const selectedProject = e.target.value;
+    setHeader({ ...header, project_name: selectedProject });
+    
+    if (selectedProject) {
+      try {
+        const res = await window.electronAPI.namedQuery('fetchAssetsByProject', [selectedProject]);
+        if (res.success && res.rows.length > 0) {
+          const newItems = res.rows.map(item => ({
+            ...item,
+            tempId: Date.now() + Math.random(),
+            qty: 1,
+            isSerialized: true,
+            location: header.location,
+            components: item.components || []
+          }));
+          
+          setOutboundItems(prev => {
+            const existingSns = new Set(prev.map(i => i.sn));
+            const filteredNewItems = newItems.filter(i => !existingSns.has(i.sn));
+            
+            if (filteredNewItems.length > 0) {
+              alert(`已從專案 [${selectedProject}] 自動帶入 ${filteredNewItems.length} 項資產。`);
+              return [...prev, ...filteredNewItems];
+            } else if (res.rows.length > 0) {
+              alert(`專案 [${selectedProject}] 的所有在庫資產已在出貨清單中。`);
+            }
+            return prev;
+          });
+        } else if (res.success && res.rows.length === 0) {
+          alert(`專案 [${selectedProject}] 目前沒有任何在庫 (ACTIVE) 的資產。`);
+        }
+      } catch (err) {
+        console.error('Fetch project assets error:', err);
+      }
+    }
+  };
 
   // --- 序號查詢邏輯 ---
   const handleSnSearch = async (e, type) => {
@@ -309,20 +354,34 @@ const Outbound = ({ isSplitMode = false }) => {
                 <label>出貨對象 (客戶) *</label>
                 <div className="select-wrapper">
                   <select 
-                    value={header.customer} 
+                    value={header.customerId || customers.find(c => c.name === header.customer)?.id || ''} 
                     onChange={e => {
-                      const selectedName = e.target.value;
-                      const customerData = customers.find(c => c.name === selectedName);
-                      const contactStr = customerData ? `${customerData.contact || ''} ${customerData.phone || ''}`.trim() : '';
-                      setHeader({
-                        ...header, 
-                        customer: selectedName,
-                        contact_info: contactStr
-                      });
+                      const selectedId = e.target.value;
+                      const customerData = customers.find(c => c.id.toString() === selectedId);
+                      if (customerData) {
+                        const contactStr = `${customerData.contact || ''} ${customerData.phone || ''}`.trim();
+                        setHeader({
+                          ...header, 
+                          customerId: selectedId,
+                          customer: customerData.name,
+                          contact_info: contactStr
+                        });
+                      } else {
+                        setHeader({
+                          ...header,
+                          customerId: '',
+                          customer: '',
+                          contact_info: ''
+                        });
+                      }
                     }}
                   >
                     <option value="">請選擇客戶...</option>
-                    {customers.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                    {customers.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} {c.contact ? `(${c.contact})` : ''}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -348,6 +407,23 @@ const Outbound = ({ isSplitMode = false }) => {
                     readOnly
                     style={{ backgroundColor: '#f8fafc', color: '#64748b', cursor: 'not-allowed' }}
                   />
+                </div>
+              </div>
+
+              <div className="dn-field">
+                <label>出貨專案 (自動帶入資產)</label>
+                <div className="select-wrapper">
+                  <select 
+                    value={header.project_name || ''} 
+                    onChange={handleProjectSelect}
+                  >
+                    <option value="">無 (不指定)</option>
+                    {projects.map(p => (
+                      <option key={p.project_no} value={p.project_name}>
+                        {p.project_name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 

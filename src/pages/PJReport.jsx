@@ -118,37 +118,7 @@ const PJReport = () => {
     });
   }, [data, selectedProject, selectedStatus, startDate, endDate, searchTerm]);
 
-  // 3. KPI Calculations
-  const kpis = useMemo(() => {
-    if (filteredData.length === 0) {
-      return {
-        totalProjects: 0,
-        totalAllocated: 0,
-        totalOutbound: 0,
-        stockBalance: 0,
-        outboundRate: 0
-      };
-    }
 
-    let totalAllocated = 0;
-    let totalOutbound = 0;
-
-    filteredData.forEach(item => {
-      totalAllocated += Number(item.allocated_assets || 0);
-      totalOutbound += Number(item.outbound_quantity || 0);
-    });
-
-    const stockBalance = Math.max(0, totalAllocated - totalOutbound);
-    const outboundRate = totalAllocated > 0 ? Math.round((totalOutbound / totalAllocated) * 100) : 0;
-
-    return {
-      totalProjects: filteredData.length,
-      totalAllocated,
-      totalOutbound,
-      stockBalance,
-      outboundRate
-    };
-  }, [filteredData]);
 
   // 4. CSV Export
   const handleExportCSV = () => {
@@ -157,24 +127,32 @@ const PJReport = () => {
       return;
     }
 
-    const headers = [
-      '專案編號',
-      '專案名稱',
-      '客戶名稱',
-      '建立日期',
-      '專案總分配資產數',
-      '已出庫數量',
-      '未出庫庫存數',
-      '出庫進度'
-    ];
+    const statusConfig = {
+      ACTIVE: { label: '在庫' },
+      REPAIRING: { label: '維修中' },
+      PENDING_SCRAP: { label: '待報廢' },
+      SCRAPPED: { label: '已報廢' },
+      SHIPPED: { label: '已出貨' },
+      LENT: { label: '借出/借用' }
+    };
 
-    const rows = filteredData.map(item => {
+    let csvRows = [];
+
+    // Header indicating the report nature
+    csvRows.push(['專案詳細報表 (Project Detailed Report)']);
+    csvRows.push([`匯出日期: ${new Date().toLocaleDateString()}`]);
+    csvRows.push([]);
+
+    filteredData.forEach(item => {
       const allocated = Number(item.allocated_assets || 0);
       const outbound = Number(item.outbound_quantity || 0);
       const balance = Math.max(0, allocated - outbound);
       const rate = allocated > 0 ? Math.round((outbound / allocated) * 100) : 0;
 
-      return [
+      // --- 1. Project Summary ---
+      csvRows.push(['========== 專案摘要 ==========']);
+      csvRows.push(['專案編號', '專案名稱', '客戶名稱', '建立日期', '專案總分配資產數', '已出庫數量', '未出庫庫存數', '出庫進度'].join(','));
+      csvRows.push([
         `"${item.project_no || '-'}"`,
         `"${(item.project_name || '-').replace(/"/g, '""')}"`,
         `"${(item.project_customer || '-').replace(/"/g, '""')}"`,
@@ -183,10 +161,59 @@ const PJReport = () => {
         outbound,
         balance,
         `${rate}%`
-      ].join(',');
+      ].join(','));
+      csvRows.push([]); // spacer
+
+      // --- 2. Allocated Assets ---
+      if (item.allocated_assets_history && item.allocated_assets_history.length > 0) {
+        csvRows.push(['--- 分配資產清單 ---']);
+        csvRows.push(['序號 (SN)', '分類 (Category)', '廠牌 (Brand)', '類型 (Type)', '型號 (Model)', '狀態'].join(','));
+        item.allocated_assets_history.forEach(a => {
+           const statusLabel = statusConfig[a.status]?.label || a.status || '-';
+           csvRows.push([
+             `"${a.sn || '-'}"`,
+             `"${a.category_name || '-'}"`,
+             `"${(a.brand || '-').replace(/"/g, '""')}"`,
+             `"${(a.type || '-').replace(/"/g, '""')}"`,
+             `"${(a.model || '-').replace(/"/g, '""')}"`,
+             `"${statusLabel}"`
+           ].join(','));
+        });
+        csvRows.push([]); // spacer
+      } else {
+        csvRows.push(['--- 分配資產清單 ---']);
+        csvRows.push(['(目前無分配任何資產)']);
+        csvRows.push([]); // spacer
+      }
+
+      // --- 3. Outbound History ---
+      if (item.outbound_history && item.outbound_history.length > 0) {
+        csvRows.push(['--- 出貨建檔歷程 ---']);
+        csvRows.push(['出貨單號', '出貨日期', '序號(SN)', '分類 (Category)', '廠牌 (Brand)', '類型 (Type)', '型號 (Model)', '數量'].join(','));
+        item.outbound_history.forEach(o => {
+           csvRows.push([
+             `"${o.request_no || '-'}"`, 
+             o.shipping_date ? new Date(o.shipping_date).toLocaleDateString() : '-', 
+             `"${o.sn || '(無序號)'}"`,
+             `"${o.category_name || '-'}"`,
+             `"${(o.brand || '-').replace(/"/g, '""')}"`,
+             `"${(o.type || '-').replace(/"/g, '""')}"`,
+             `"${(o.model || '-').replace(/"/g, '""')}"`,
+             o.quantity || 0
+           ].join(','));
+        });
+        csvRows.push([]); // spacer
+      } else {
+        csvRows.push(['--- 出貨建檔歷程 ---']);
+        csvRows.push(['(尚未有出貨紀錄)']);
+        csvRows.push([]); // spacer
+      }
+      
+      // Large spacer between projects
+      csvRows.push(['']);
     });
 
-    const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\n');
+    const csvContent = '\uFEFF' + csvRows.join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -267,52 +294,7 @@ const PJReport = () => {
         </div>
       </div>
 
-      {/* 頂部 KPI 統計摘要卡片 */}
-      <div className="pj-kpi-grid">
-        <div className="pj-kpi-card">
-          <div className="pj-kpi-icon-box" style={{ background: '#eff6ff', color: '#2563eb' }}>
-            <Building2 size={26} />
-          </div>
-          <div className="pj-kpi-info">
-            <span className="pj-kpi-label">專案總數</span>
-            <span className="pj-kpi-value">{kpis.totalProjects}</span>
-            <span className="pj-kpi-subtext">篩選條件下符合的專案數量</span>
-          </div>
-        </div>
 
-        <div className="pj-kpi-card">
-          <div className="pj-kpi-icon-box" style={{ background: '#ecfdf5', color: '#059669' }}>
-            <Package size={26} />
-          </div>
-          <div className="pj-kpi-info">
-            <span className="pj-kpi-label">專案分配資產總數</span>
-            <span className="pj-kpi-value" style={{ color: '#059669' }}>{kpis.totalAllocated}</span>
-            <span className="pj-kpi-subtext">加入專案的設備與硬體</span>
-          </div>
-        </div>
-
-        <div className="pj-kpi-card">
-          <div className="pj-kpi-icon-box" style={{ background: '#faf5ff', color: '#7c3aed' }}>
-            <Truck size={26} />
-          </div>
-          <div className="pj-kpi-info">
-            <span className="pj-kpi-label">已出貨總數</span>
-            <span className="pj-kpi-value" style={{ color: '#7c3aed' }}>{kpis.totalOutbound}</span>
-            <span className="pj-kpi-subtext">整體出貨達成率 {kpis.outboundRate}%</span>
-          </div>
-        </div>
-
-        <div className="pj-kpi-card">
-          <div className="pj-kpi-icon-box" style={{ background: '#fffbeb', color: '#d97706' }}>
-            <TrendingUp size={26} />
-          </div>
-          <div className="pj-kpi-info">
-            <span className="pj-kpi-label">未出貨庫存數</span>
-            <span className="pj-kpi-value" style={{ color: '#d97706' }}>{kpis.stockBalance}</span>
-            <span className="pj-kpi-subtext">已分配但尚未出貨的設備</span>
-          </div>
-        </div>
-      </div>
 
       {/* 篩選條件卡片 */}
       <div className="pj-filter-card">
@@ -518,9 +500,8 @@ const PJReport = () => {
                           <td colSpan="8" style={{ padding: 0 }}>
                             <div className="pj-detail-box">
                               
-                              <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
                                 {/* 📥 分配資產清單 */}
-                                <div className="pj-detail-section" style={{ flex: 1 }}>
+                                <div className="pj-detail-section" style={{ minWidth: 0, overflowX: 'auto' }}>
                                   <div className="pj-detail-title">
                                     <Package size={16} color="#059669" /> 硬體設備清單 ({item.allocated_assets_history?.length || 0})
                                   </div>
@@ -529,7 +510,10 @@ const PJReport = () => {
                                       <thead>
                                         <tr>
                                           <th>序號 (SN)</th>
-                                          <th>設備品名</th>
+                                          <th>分類</th>
+                                          <th>廠牌</th>
+                                          <th>類型</th>
+                                          <th>型號</th>
                                           <th>狀態</th>
                                         </tr>
                                       </thead>
@@ -538,13 +522,15 @@ const PJReport = () => {
                                           <tr key={aIdx}>
                                             <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{a.sn || '-'}</td>
                                             <td>
-                                              {a.category_name && (
-                                                <span className="pj-badge pj-badge-slate" style={{ marginRight: '6px', fontSize: '10px', padding: '2px 6px' }}>
+                                              {a.category_name ? (
+                                                <span className="pj-badge pj-badge-slate" style={{ fontSize: '10px', padding: '2px 6px' }}>
                                                   {a.category_name}
                                                 </span>
-                                              )}
-                                              {a.item_name}
+                                              ) : '-'}
                                             </td>
+                                            <td>{a.brand || '-'}</td>
+                                            <td>{a.type || '-'}</td>
+                                            <td>{a.model || '-'}</td>
                                             <td>
                                               {(() => {
                                                 const statusConfig = {
@@ -584,7 +570,7 @@ const PJReport = () => {
                                 </div>
 
                                 {/* 📤 出貨單明細歷程 */}
-                                <div className="pj-detail-section" style={{ flex: 1 }}>
+                                <div className="pj-detail-section" style={{ minWidth: 0, overflowX: 'auto' }}>
                                   <div className="pj-detail-title">
                                     <Truck size={16} color="#7c3aed" /> 出貨建檔歷程 ({item.outbound_history?.length || 0})
                                   </div>
@@ -594,8 +580,11 @@ const PJReport = () => {
                                         <tr>
                                           <th>出貨單號</th>
                                           <th>出貨日期</th>
-                                          <th>出貨序號</th>
-                                          <th>設備品名</th>
+                                          <th>序號(SN)</th>
+                                          <th>分類</th>
+                                          <th>廠牌</th>
+                                          <th>類型</th>
+                                          <th>型號</th>
                                           <th style={{ textAlign: 'right' }}>數量</th>
                                         </tr>
                                       </thead>
@@ -605,7 +594,16 @@ const PJReport = () => {
                                             <td style={{ fontWeight: 600, color: '#7c3aed' }}>{o.request_no}</td>
                                             <td>{o.shipping_date ? new Date(o.shipping_date).toLocaleDateString() : '-'}</td>
                                             <td style={{ fontFamily: 'monospace' }}>{o.sn || '(無序號)'}</td>
-                                            <td>{o.item_name}</td>
+                                            <td>
+                                              {o.category_name ? (
+                                                <span className="pj-badge pj-badge-slate" style={{ fontSize: '10px', padding: '2px 6px' }}>
+                                                  {o.category_name}
+                                                </span>
+                                              ) : '-'}
+                                            </td>
+                                            <td>{o.brand || '-'}</td>
+                                            <td>{o.type || '-'}</td>
+                                            <td>{o.model || '-'}</td>
                                             <td style={{ textAlign: 'right', fontWeight: 700 }}>{o.quantity}</td>
                                           </tr>
                                         ))}
@@ -617,7 +615,6 @@ const PJReport = () => {
                                     </div>
                                   )}
                                 </div>
-                              </div>
                             </div>
                           </td>
                         </tr>

@@ -82,7 +82,7 @@ export const queries = {
   upsertSystemSetting: `INSERT INTO system_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
   
   // Dashboard / Misc
-  fetchCustomers: `SELECT name, contact_person as contact, phone FROM partners WHERE partner_type = 'CUSTOMER' AND COALESCE(is_active, TRUE) = true ORDER BY name ASC`,
+  fetchCustomers: `SELECT id, name, contact_person as contact, phone FROM partners WHERE partner_type = 'CUSTOMER' AND COALESCE(is_active, TRUE) = true ORDER BY name ASC`,
   
   // Assets.jsx
   fetchRecentAssets: `
@@ -409,11 +409,16 @@ export const queries = {
           'status', o.status,
           'sn', oi.sn,
           'quantity', oi.quantity,
+          'category_name', c.name,
+          'brand', im.brand,
+          'model', im.model,
+          'type', im.type,
           'item_name', im.brand || ' ' || im.model || ' (' || im.type || ')'
         ))
         FROM outbound_items oi
         JOIN outbound_requests o ON oi.request_id = o.id
         LEFT JOIN item_master im ON oi.item_id = im.id
+        LEFT JOIN categories c ON im.category_id = c.id
         WHERE oi.sn IN (
           SELECT a.sn FROM assets a
           WHERE a.custom_attributes->>'project_name' = p.name
@@ -423,6 +428,9 @@ export const queries = {
       (
         SELECT json_agg(json_build_object(
           'sn', a.sn,
+          'brand', im.brand,
+          'model', im.model,
+          'type', im.type,
           'item_name', im.brand || ' ' || im.model || ' (' || im.type || ')',
           'category_name', c.name,
           'status', a.status
