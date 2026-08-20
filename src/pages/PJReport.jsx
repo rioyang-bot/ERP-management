@@ -118,6 +118,24 @@ const PJReport = () => {
     });
   }, [data, selectedProject, selectedStatus, startDate, endDate, searchTerm]);
 
+  // Dropdown options for Projects, filtered by selectedStatus
+  const availableProjectsForDropdown = useMemo(() => {
+    return data.filter(item => {
+      if (!selectedStatus) return true;
+      const allocated = Number(item.allocated_assets || 0);
+      const outbound = Number(item.outbound_quantity || 0);
+
+      if (selectedStatus === 'FULLY_OUTBOUND') {
+        return (allocated > 0 && outbound >= allocated);
+      } else if (selectedStatus === 'PARTIAL_OUTBOUND') {
+        return (outbound > 0 && outbound < allocated);
+      } else if (selectedStatus === 'NO_OUTBOUND') {
+        return (outbound === 0);
+      }
+      return true;
+    });
+  }, [data, selectedStatus]);
+
 
 
   // 4. CSV Export
@@ -299,6 +317,24 @@ const PJReport = () => {
       {/* 篩選條件卡片 */}
       <div className="pj-filter-card">
         <div className="pj-filter-grid">
+          {/* 狀態篩選 (Moved to front) */}
+          <div className="pj-filter-item">
+            <label className="pj-filter-label">出貨狀態 (Status)</label>
+            <select 
+              className="pj-select"
+              value={selectedStatus}
+              onChange={e => {
+                setSelectedStatus(e.target.value);
+                setSelectedProject(''); // Reset project when status changes
+              }}
+            >
+              <option value="">-- 全部狀態 --</option>
+              <option value="NO_OUTBOUND">未出貨</option>
+              <option value="PARTIAL_OUTBOUND">部分出貨</option>
+              <option value="FULLY_OUTBOUND">已全數出貨</option>
+            </select>
+          </div>
+
           {/* 專案選擇 */}
           <div className="pj-filter-item">
             <label className="pj-filter-label">選擇專案 (Project)</label>
@@ -308,9 +344,9 @@ const PJReport = () => {
               onChange={e => setSelectedProject(e.target.value)}
             >
               <option value="">-- 全部專案 (All Projects) --</option>
-              {projects.map(p => (
-                <option key={p.id} value={`${p.name}`}>
-                  [{p.project_no}] {p.name} {p.customer_name ? `(${p.customer_name})` : ''}
+              {availableProjectsForDropdown.map(p => (
+                <option key={p.id || p.project_no} value={`${p.project_name}`}>
+                  [{p.project_no}] {p.project_name} {p.project_customer ? `(${p.project_customer})` : ''}
                 </option>
               ))}
             </select>
@@ -326,21 +362,6 @@ const PJReport = () => {
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
             />
-          </div>
-
-          {/* 狀態篩選 */}
-          <div className="pj-filter-item">
-            <label className="pj-filter-label">出貨狀態 (Status)</label>
-            <select 
-              className="pj-select"
-              value={selectedStatus}
-              onChange={e => setSelectedStatus(e.target.value)}
-            >
-              <option value="">-- 全部狀態 --</option>
-              <option value="NO_OUTBOUND">未出貨</option>
-              <option value="PARTIAL_OUTBOUND">部分出貨</option>
-              <option value="FULLY_OUTBOUND">已全數出貨</option>
-            </select>
           </div>
 
           {/* 專案日期區間 */}
