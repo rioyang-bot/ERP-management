@@ -8,15 +8,7 @@ import './MainLayout.css';
 
 const MainLayout = () => {
   const { role, authUser, setAuthUser } = useContext(RoleContext);
-  const [deviceBrands, setDeviceBrands] = useState([]);
-  const [consumableTypes, setConsumableTypes] = useState([]);
-  const [nicTypes, setNicTypes] = useState([]);
   const location = useLocation();
-  const [isDeviceListExpanded, setIsDeviceListExpanded] = useState(location.pathname === '/device-list');
-  const [isConsumableListExpanded, setIsConsumableListExpanded] = useState(location.pathname === '/consumable-list');
-  const [isNicListExpanded, setIsNicListExpanded] = useState(location.pathname === '/hw-list');
-  const [isReportsExpanded, setIsReportsExpanded] = useState(location.pathname === '/reports' || location.pathname === '/pj-report');
-  const [prevPath, setPrevPath] = useState(location.pathname);
 
   // --- 變更密碼 (Change Password) ---
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -96,25 +88,6 @@ const MainLayout = () => {
     localStorage.setItem('erp_sidebar_mode', sidebarMode);
   }, [sidebarMode]);
 
-  // --- 選單自動同步邏輯 (在渲染期間處理，避免 useEffect 連鎖渲染) ---
-  if (location.pathname !== prevPath) {
-    setPrevPath(location.pathname);
-    if (location.pathname === '/device-list') {
-      setIsDeviceListExpanded(true);
-      setIsConsumableListExpanded(false);
-      setIsNicListExpanded(false);
-    } else if (location.pathname === '/consumable-list') {
-      setIsConsumableListExpanded(true);
-      setIsDeviceListExpanded(false);
-      setIsNicListExpanded(false);
-    } else if (location.pathname === '/hw-list') {
-      setIsNicListExpanded(true);
-      setIsDeviceListExpanded(false);
-      setIsConsumableListExpanded(false);
-    } else if (location.pathname === '/reports' || location.pathname === '/pj-report' || location.pathname === '/stocktaking') {
-      setIsReportsExpanded(true);
-    }
-  }
 
   // --- 選單排序邏輯 ---
   const [menuOrder, setMenuOrder] = useState(() => {
@@ -123,58 +96,6 @@ const MainLayout = () => {
   });
   const [draggingMenuId, setDraggingMenuId] = useState(null);
 
-  useEffect(() => {
-    const fetchMenuData = async () => {
-      // 讀取汰舊狀態
-      const deviceRetired = JSON.parse(localStorage.getItem('device_list_retired_keys') || '[]');
-      const hwRetired = JSON.parse(localStorage.getItem('hw_list_retired_keys') || '[]');
-      const csmRetired = JSON.parse(localStorage.getItem('consumable_list_retired_keys') || '[]');
-
-      // 1. 處理設備選單 (以 Brand 分類)
-      const devRes = await window.electronAPI.namedQuery('fetchFullDeviceStructure');
-      if (devRes.success) {
-        const brands = [...new Set(devRes.rows.map(r => r.brand))].sort();
-        const activeBrands = brands.filter(b => {
-          const items = devRes.rows.filter(r => r.brand === b);
-          // 只要有一款型號沒被汰舊，就顯示該品牌
-          return items.some(i => !deviceRetired.includes(`${i.brand} - ${i.type} - ${i.model}`));
-        });
-        setDeviceBrands(activeBrands);
-      }
-
-      // 2. 處理耗材選單 (以 Type 分類)
-      const csmRes = await window.electronAPI.namedQuery('fetchFullConsumableStructure');
-      if (csmRes.success) {
-        const types = [...new Set(csmRes.rows.map(r => r.type))].sort();
-        const activeTypes = types.filter(t => {
-          const items = csmRes.rows.filter(r => r.type === t);
-          return items.some(i => !csmRetired.includes(`${i.brand} - ${i.type} - ${i.model}`));
-        });
-        setConsumableTypes(activeTypes);
-      }
-
-      // 3. 處理硬體選單 (以 Type 分類)
-      const hwRes = await window.electronAPI.namedQuery('fetchFullNicStructure');
-      if (hwRes.success) {
-        const types = [...new Set(hwRes.rows.map(r => r.type))].sort();
-        const activeTypes = types.filter(t => {
-          const items = hwRes.rows.filter(r => r.type === t);
-          return items.some(i => !hwRetired.includes(`${i.brand} - ${i.type} - ${i.model}`));
-        });
-        setNicTypes(activeTypes);
-      }
-    };
-    
-    fetchMenuData();
-
-    const handleUpdate = () => fetchMenuData();
-    window.addEventListener('db-update', handleUpdate);
-    window.addEventListener('retired-update', handleUpdate);
-    return () => {
-      window.removeEventListener('db-update', handleUpdate);
-      window.removeEventListener('retired-update', handleUpdate);
-    };
-  }, [location.pathname]); // 僅在路徑變動時執行資料獲取與狀態同步
 
 
   const allMenuItems = [
@@ -276,118 +197,12 @@ const MainLayout = () => {
               onDrop={(e) => handleMenuDrop(e, item.id)}
               style={{ cursor: 'move', transition: 'all 0.2s', borderLeft: draggingMenuId === item.id ? '2px solid var(--primary-color)' : 'none' }}
             >
-              {item.id === 'assetList' ? (
-                <>
-                  <div onClick={() => {
-                    const next = !isDeviceListExpanded;
-                    setIsDeviceListExpanded(next);
-                    if (next) { setIsConsumableListExpanded(false); setIsNicListExpanded(false); }
-                  }} className={`nav-item ${location.pathname === '/device-list' ? 'active' : ''}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
-                    <NavLink to="/device-list" onClick={(e) => {
-                      e.stopPropagation();
-                      if (!isDeviceListExpanded) {
-                        setIsDeviceListExpanded(true);
-                        setIsConsumableListExpanded(false);
-                        setIsNicListExpanded(false);
-                      }
-                    }} style={{ flex: 1, color: 'inherit', textDecoration: 'none' }}>{item.label}</NavLink>
-                    {isDeviceListExpanded ? <ChevronDown size={16} opacity={0.5} /> : <ChevronRight size={16} opacity={0.5} />}
-                  </div>
-                  {isDeviceListExpanded && (
-                    <ul style={{ listStyle: 'none', paddingLeft: '12px', marginTop: '4px' }}>
-                      {deviceBrands.map(brand => (
-                        <li key={brand}><NavLink to={`/device-list?brand=${encodeURIComponent(brand)}`} className={({ isActive }) => `nav-sub-item ${isActive && location.search.includes(brand) ? 'active' : ''}`}>• {brand}</NavLink></li>
-                      ))}
-                    </ul>
-                  )}
-                </>
-              ) : item.id === 'consumableList' ? (
-                <>
-                  <div onClick={() => {
-                    const next = !isConsumableListExpanded;
-                    setIsConsumableListExpanded(next);
-                    if (next) { setIsDeviceListExpanded(false); setIsNicListExpanded(false); }
-                  }} className={`nav-item ${location.pathname === '/consumable-list' ? 'active' : ''}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
-                    <NavLink to="/consumable-list" onClick={(e) => {
-                      e.stopPropagation();
-                      if (!isConsumableListExpanded) {
-                        setIsConsumableListExpanded(true);
-                        setIsDeviceListExpanded(false);
-                        setIsNicListExpanded(false);
-                      }
-                    }} style={{ flex: 1, color: 'inherit', textDecoration: 'none' }}>{item.label}</NavLink>
-                    {isConsumableListExpanded ? <ChevronDown size={16} opacity={0.5} /> : <ChevronRight size={16} opacity={0.5} />}
-                  </div>
-                  {isConsumableListExpanded && (
-                    <ul style={{ listStyle: 'none', paddingLeft: '12px', marginTop: '4px' }}>
-                      {consumableTypes.map(type => (
-                        <li key={type}><NavLink to={`/consumable-list?type=${encodeURIComponent(type)}`} className={({ isActive }) => `nav-sub-item ${isActive && location.search.includes(type) ? 'active' : ''}`}>• {type}</NavLink></li>
-                      ))}
-                    </ul>
-                  )}
-                </>
-              ) : item.id === 'nic-list' ? (
-                <>
-                  <div onClick={() => {
-                    const next = !isNicListExpanded;
-                    setIsNicListExpanded(next);
-                    if (next) { setIsDeviceListExpanded(false); setIsConsumableListExpanded(false); }
-                  }} className={`nav-item ${location.pathname === '/hw-list' ? 'active' : ''}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
-                    <NavLink to="/hw-list" onClick={(e) => {
-                      e.stopPropagation();
-                      if (!isNicListExpanded) {
-                        setIsNicListExpanded(true);
-                        setIsDeviceListExpanded(false);
-                        setIsConsumableListExpanded(false);
-                      }
-                    }} style={{ flex: 1, color: 'inherit', textDecoration: 'none' }}>{item.label}</NavLink>
-                    {isNicListExpanded ? <ChevronDown size={16} opacity={0.5} /> : <ChevronRight size={16} opacity={0.5} />}
-                  </div>
-                  {isNicListExpanded && (
-                    <ul style={{ listStyle: 'none', paddingLeft: '12px', marginTop: '4px' }}>
-                      {nicTypes.map(type => (
-                        <li key={type}><NavLink to={`/hw-list?type=${encodeURIComponent(type)}`} className={({ isActive }) => `nav-sub-item ${isActive && location.search.includes(type) ? 'active' : ''}`}>• {type}</NavLink></li>
-                      ))}
-                    </ul>
-                  )}
-                </>
-              ) : item.id === 'reports' ? (
-                <>
-                  <div onClick={() => {
-                    const next = !isReportsExpanded;
-                    setIsReportsExpanded(next);
-                  }} className={`nav-item ${['/reports', '/pj-report', '/stocktaking', '/flow-history'].includes(location.pathname) ? 'active' : ''}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
-                    <NavLink to="/reports" onClick={(e) => {
-                      e.stopPropagation();
-                      if (!isReportsExpanded) {
-                        setIsReportsExpanded(true);
-                      }
-                    }} style={{ flex: 1, color: 'inherit', textDecoration: 'none' }}>{item.label}</NavLink>
-                    {isReportsExpanded ? <ChevronDown size={16} opacity={0.5} /> : <ChevronRight size={16} opacity={0.5} />}
-                  </div>
-                  {isReportsExpanded && (
-                    <ul style={{ listStyle: 'none', paddingLeft: '12px', marginTop: '4px' }}>
-                      <li>
-                        <NavLink to="/pj-report" className={({ isActive }) => `nav-sub-item ${isActive ? 'active' : ''}`}>
-                          • 專案報表 (PJ Report)
-                        </NavLink>
-                      </li>
-                      <li>
-                        <NavLink to="/stocktaking" className={({ isActive }) => `nav-sub-item ${isActive ? 'active' : ''}`}>
-                          • 庫存盤點表 (Stocktaking)
-                        </NavLink>
-                      </li>
-                      <li>
-                        <NavLink to="/flow-history" className={({ isActive }) => `nav-sub-item ${isActive ? 'active' : ''}`}>
-                          • 進出貨日誌 In/Out Log
-                        </NavLink>
-                      </li>
-                    </ul>
-                  )}
-                </>
-              ) : (
-                <NavLink to={item.path} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>{item.label}</NavLink>
-              )}
+              <NavLink to={item.path} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>{item.label}</span>
+                  {item.hasSub && <ChevronRight size={16} opacity={0.5} />}
+                </div>
+              </NavLink>
             </li>
           ))}
         </ul>
