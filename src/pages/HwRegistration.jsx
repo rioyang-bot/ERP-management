@@ -8,6 +8,8 @@ const HwRegistration = ({ isSplitMode = false }) => {
   const [types, setTypes] = useState([]);
   const [models, setModels] = useState([]);
   const [recentItems, setRecentItems] = useState([]);
+  const [projects, setProjects] = useState([]);
+  const [showProjectDropdown, setShowProjectDropdown] = useState(false);
 
   const [activeMgmt, setActiveMgmt] = useState(null);
   const [activeAdd, setActiveAdd] = useState(null);
@@ -60,10 +62,20 @@ const HwRegistration = ({ isSplitMode = false }) => {
     if (res.success) setModels(res.rows.map(r => r.name));
   }, []);
 
+  const fetchProjects = useCallback(async () => {
+    try {
+      const res = await window.electronAPI.namedQuery('fetchActiveProjects');
+      if (res.success) setProjects(res.rows || []);
+    } catch (err) {
+      console.error('Fetch projects error:', err);
+    }
+  }, []);
+
   useEffect(() => {
     fetchBrands();
     fetchRecentItems();
-  }, [fetchBrands, fetchRecentItems]);
+    fetchProjects();
+  }, [fetchBrands, fetchRecentItems, fetchProjects]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -203,31 +215,31 @@ const HwRegistration = ({ isSplitMode = false }) => {
     }
   };
 
-  const containerStyle = { padding: '24px', backgroundColor: '#f1f5f9', minHeight: '100vh', display: 'flex', flexDirection: isSplitMode ? 'column' : 'row', gap: '24px' };
+  const containerStyle = { padding: '24px', backgroundColor: 'var(--bg-app)', minHeight: '100vh', display: 'flex', flexDirection: isSplitMode ? 'column' : 'row', gap: '24px' };
   const leftSectionStyle = isSplitMode ? { width: '100%' } : { flex: '0 0 60%' };
   const rightSectionStyle = isSplitMode ? { width: '100%' } : { flex: '1' };
-  const cardStyle = { backgroundColor: '#ffffff', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', marginBottom: '24px' };
-  const labelStyle = { display: 'block', fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' };
-  const inputStyle = { width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '14px', outline: 'none' };
-  const iconBtnStyle = { padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', backgroundColor: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center' };
+  const cardStyle = { backgroundColor: 'var(--bg-surface)', borderRadius: '16px', padding: '24px', boxShadow: 'var(--card-shadow)', border: '1px solid var(--border-color)', marginBottom: '24px', color: 'var(--text-main)' };
+  const labelStyle = { display: 'block', fontSize: '14px', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '6px' };
+  const inputStyle = { width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', fontSize: '14px', outline: 'none' };
+  const iconBtnStyle = { padding: '8px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-main)', cursor: 'pointer', display: 'flex', alignItems: 'center' };
 
   const modeBtnStyle = (active) => ({
     flex: 1, padding: '10px', borderRadius: '8px', border: 'none',
-    backgroundColor: active ? '#2563eb' : '#f1f5f9',
-    color: active ? '#fff' : '#475569',
+    backgroundColor: active ? 'var(--primary-color)' : 'var(--bg-surface-subtle)',
+    color: active ? '#fff' : 'var(--text-muted)',
     fontWeight: '700', fontSize: '13px', cursor: 'pointer', transition: 'all 0.2s',
     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
   });
 
   const RenderInlineMgmt = ({ title, items, onDelete }) => (
-    <div style={{ marginTop: '8px', border: '1px solid #e2e8f0', borderRadius: '10px', backgroundColor: '#fff', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
-      <div style={{ padding: '8px 12px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: '700' }}>
+    <div style={{ marginTop: '8px', border: '1px solid var(--border-color)', borderRadius: '10px', backgroundColor: 'var(--bg-surface)', boxShadow: 'var(--modal-shadow)' }}>
+      <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: '700', color: 'var(--text-main)' }}>
         <span>管理{title}清單</span>
-        <X size={14} onClick={() => setActiveMgmt(null)} style={{ cursor: 'pointer' }} />
+        <X size={14} onClick={() => setActiveMgmt(null)} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} />
       </div>
       <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
         {items.map(item => (
-          <div key={typeof item === 'object' ? item.id : item} style={{ padding: '8px 12px', display: 'flex', justifyContent: 'space-between', fontSize: '13px', borderBottom: '1px solid #f9f9f9' }}>
+          <div key={typeof item === 'object' ? item.id : item} style={{ padding: '8px 12px', display: 'flex', justifyContent: 'space-between', fontSize: '13px', borderBottom: '1px solid var(--border-color)', color: 'var(--text-main)' }}>
             <span>{typeof item === 'object' ? item.name : item}</span>
             <Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => onDelete(typeof item === 'object' ? item.name : item)} />
           </div>
@@ -242,20 +254,20 @@ const HwRegistration = ({ isSplitMode = false }) => {
         <div style={cardStyle}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
             <div>
-              <h2 style={{ fontSize: '24px', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b', margin: 0 }}>
-                <Cpu size={26} color="#2563eb" /> 硬體建檔 (Hardware Registration)
+              <h2 style={{ fontSize: '24px', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)', margin: 0 }}>
+                <Cpu size={26} color="var(--primary-color)" /> 硬體建檔 (Hardware Registration)
               </h2>
-              <p style={{ color: '#64748b', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>新增硬體元件（如網卡、記憶體等）並建立獨立序號進行管理。</p>
+              <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>新增硬體元件（如網卡、記憶體等）並建立獨立序號進行管理。</p>
             </div>
             {!isSplitMode && (
-              <div style={{ display: 'flex', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>
-                <button style={{ padding: '6px 14px', backgroundColor: '#ffffff', color: '#2563eb', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '800', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', cursor: 'default' }}>
+              <div style={{ display: 'flex', backgroundColor: 'var(--bg-surface-subtle)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+                <button style={{ padding: '6px 14px', backgroundColor: 'var(--bg-surface)', color: 'var(--primary-color)', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '800', boxShadow: 'var(--card-shadow)', cursor: 'default' }}>
                   📝 建檔
                 </button>
-                <button onClick={() => navigate('/hw-split')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: '#64748b', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
+                <button onClick={() => navigate('/hw-split')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: 'var(--text-muted)', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
                   ◫ 雙開
                 </button>
-                <button onClick={() => navigate('/hw-list')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: '#64748b', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
+                <button onClick={() => navigate('/hw-list')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: 'var(--text-muted)', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
                   📋 清單
                 </button>
               </div>
@@ -313,55 +325,105 @@ const HwRegistration = ({ isSplitMode = false }) => {
               </div>
               <div>
                 <label style={labelStyle}>資產歸屬</label>
-                <div style={{ display: 'flex', gap: '4px', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>
+                <div style={{ display: 'flex', gap: '4px', backgroundColor: 'var(--bg-surface-subtle)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
                   <button type="button" onClick={() => setFormData(prev => ({ ...prev, ownership: 'FOR_SALE' }))} style={modeBtnStyle(formData.ownership === 'FOR_SALE')}>一般銷售</button>
                   <button type="button" onClick={() => setFormData(prev => ({ ...prev, ownership: 'COMPANY' }))} style={modeBtnStyle(formData.ownership === 'COMPANY')}>公司資產</button>
                 </div>
               </div>
               <div>
                 <label style={labelStyle}>建檔模式</label>
-                <div style={{ display: 'flex', gap: '4px', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>
+                <div style={{ display: 'flex', gap: '4px', backgroundColor: 'var(--bg-surface-subtle)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
                   <button type="button" onClick={() => setIsBulkMode(false)} style={modeBtnStyle(!isBulkMode)}><ListFilter size={14} /> 單筆</button>
                   <button type="button" onClick={() => setIsBulkMode(true)} style={modeBtnStyle(isBulkMode)}><Layers size={14} /> 多筆</button>
                 </div>
               </div>
             </div>
 
-            <div style={{ marginBottom: '24px' }}>
-              <label style={labelStyle}>{isBulkMode ? '硬體序號清單 (每行一個序號)' : '硬體序號 (SN)'}</label>
-              {isBulkMode ? (
-                <textarea
-                  value={bulkSns}
-                  onChange={e => setBulkSns(e.target.value)}
-                  style={{ ...inputStyle, minHeight: '160px', fontFamily: 'monospace', lineHeight: '1.6' }}
-                  placeholder="請在此處貼上或掃描多個序號..."
+            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '16px', marginBottom: '24px', alignItems: 'start' }}>
+              <div>
+                <label style={labelStyle}>{isBulkMode ? '硬體序號清單 (每行一個序號)' : '硬體序號 (SN)'}</label>
+                {isBulkMode ? (
+                  <textarea
+                    value={bulkSns}
+                    onChange={e => setBulkSns(e.target.value)}
+                    style={{ ...inputStyle, minHeight: '160px', fontFamily: 'monospace', lineHeight: '1.6' }}
+                    placeholder="請在此處貼上或掃描多個序號..."
+                  />
+                ) : (
+                  <input type="text" name="sn" value={formData.sn} onChange={handleChange} style={inputStyle} placeholder="請輸入硬體序號" />
+                )}
+                {isBulkMode && <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '6px' }}>已輸入: <b>{bulkSns.split('\n').filter(s => s.trim()).length}</b> 個序號</div>}
+              </div>
+              <div style={{ position: 'relative' }}>
+                <label style={labelStyle}>專案名稱 (Project)</label>
+                <input 
+                  type="text" 
+                  name="project_name" 
+                  value={formData.project_name || ''} 
+                  onChange={handleChange} 
+                  onFocus={() => setShowProjectDropdown(true)}
+                  onBlur={() => {
+                    setTimeout(() => setShowProjectDropdown(false), 250);
+                  }}
+                  style={inputStyle} 
+                  placeholder="輸入關鍵字搜尋專案代號或名稱" 
+                  autoComplete="off"
                 />
-              ) : (
-                <input type="text" name="sn" value={formData.sn} onChange={handleChange} style={inputStyle} placeholder="請輸入硬體序號" />
-              )}
-              {isBulkMode && <div style={{ fontSize: '12px', color: '#64748b', marginTop: '6px' }}>已輸入: <b>{bulkSns.split('\n').filter(s => s.trim()).length}</b> 個序號</div>}
+                {showProjectDropdown && (
+                  <div style={{
+                    position: 'absolute', top: '100%', left: 0, right: 0, 
+                    backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', 
+                    borderRadius: '8px', marginTop: '4px', maxHeight: '200px', 
+                    overflowY: 'auto', zIndex: 50, boxShadow: 'var(--modal-shadow)'
+                  }}>
+                    {(() => {
+                      const searchStr = (formData.project_name || '').toLowerCase().trim();
+                      const matches = projects.filter(p => 
+                        !searchStr ||
+                        (p.project_no || '').toLowerCase().includes(searchStr) || 
+                        (p.project_name || '').toLowerCase().includes(searchStr)
+                      );
+                      if (matches.length === 0) {
+                        return <div style={{ padding: '10px 12px', color: 'var(--text-muted)', fontSize: '12px' }}>無符合專案（可直接輸入自訂名稱）</div>;
+                      }
+                      return matches.map(p => (
+                        <div 
+                          key={p.project_no || p.id}
+                          style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--border-color)', fontSize: '13px' }}
+                          onMouseDown={() => {
+                            setFormData(prev => ({ ...prev, project_name: p.project_name }));
+                            setShowProjectDropdown(false);
+                          }}
+                        >
+                          <div style={{ fontWeight: 'bold', color: 'var(--text-main)', display: 'flex', justifyContent: 'space-between' }}>
+                            <span>{p.project_no}</span>
+                            {p.client_name && <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 'normal' }}>{p.client_name}</span>}
+                          </div>
+                          <div style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '2px' }}>{p.project_name}</div>
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                )}
+              </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
               <div>
                 <label style={labelStyle}>訂單日期 (Order Date)</label>
                 <input type="date" name="order_date" value={formData.order_date} onChange={handleChange} style={inputStyle} />
               </div>
               <div>
-                <label style={labelStyle}>專案名稱 (Project)</label>
-                <input type="text" name="project_name" value={formData.project_name} onChange={handleChange} style={inputStyle} placeholder="選填" />
-              </div>
-              <div>
                 <label style={labelStyle}>對應 Server SN</label>
                 <div style={{ position: 'relative' }}>
-                  <Server size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                  <Server size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-subtle)' }} />
                   <input type="text" name="server_sn" value={formData.server_sn} onChange={handleChange} style={{ ...inputStyle, paddingLeft: '38px' }} placeholder="同步對應主機" />
                 </div>
               </div>
             </div>
 
             <div style={{ textAlign: 'right' }}>
-              <button type="submit" style={{ ...inputStyle, width: '100%', backgroundColor: '#2563eb', color: 'white', border: 'none', padding: '14px', fontWeight: '900', cursor: 'pointer', borderRadius: '12px', fontSize: '16px', boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.2)' }}>
+              <button type="submit" style={{ ...inputStyle, width: '100%', backgroundColor: 'var(--primary-color)', color: 'white', border: 'none', padding: '14px', fontWeight: '900', cursor: 'pointer', borderRadius: '12px', fontSize: '16px', boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)' }}>
                 <Save size={20} style={{ marginRight: '8px', verticalAlign: 'middle' }} /> {isBulkMode ? `開始多筆建檔 (${bulkSns.split('\n').filter(s => s.trim()).length} 筆)` : '儲存硬體資料'}
               </button>
             </div>
@@ -371,41 +433,41 @@ const HwRegistration = ({ isSplitMode = false }) => {
 
       <div style={rightSectionStyle}>
         <div style={cardStyle}>
-          <h3 style={{ fontSize: '16px', fontWeight: '800', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px', color: '#1e293b' }}>
-            <Clock size={18} color="#64748b" /> 最新 10 筆建檔記錄
+          <h3 style={{ fontSize: '16px', fontWeight: '800', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-main)' }}>
+            <Clock size={18} color="var(--text-muted)" /> 最新 10 筆建檔記錄
           </h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {recentItems.length === 0 ? (
-              <div style={{ textAlign: 'center', color: '#94a3b8', padding: '20px', fontSize: '13px' }}>尚無建檔紀錄</div>
+              <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '20px', fontSize: '13px' }}>尚無建檔紀錄</div>
             ) : (
               recentItems.map(item => (
-                <div key={item.id} style={{ padding: '12px 16px', borderRadius: '12px', border: '1px solid #f1f5f9', backgroundColor: '#fcfcfc' }}>
+                <div key={item.id} style={{ padding: '12px 16px', borderRadius: '12px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)' }}>
                   <div style={{ fontWeight: '800', fontSize: '13px', marginBottom: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    <span style={{ color: '#2563eb' }}>{item.brand}</span>
-                    <span style={{ color: '#64748b', margin: '0 4px' }}>/</span>
-                    <span style={{ color: '#475569' }}>{item.type}</span>
-                    <span style={{ color: '#64748b', margin: '0 4px' }}>/</span>
-                    <span style={{ color: '#1e293b' }}>{item.model}</span>
+                    <span style={{ color: 'var(--primary-color)' }}>{item.brand}</span>
+                    <span style={{ color: 'var(--text-subtle)', margin: '0 4px' }}>/</span>
+                    <span style={{ color: 'var(--text-muted)' }}>{item.type}</span>
+                    <span style={{ color: 'var(--text-subtle)', margin: '0 4px' }}>/</span>
+                    <span style={{ color: 'var(--text-main)' }}>{item.model}</span>
                   </div>
-                  <div style={{ color: '#64748b', fontSize: '12px', fontWeight: '500', marginBottom: '6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div style={{ color: 'var(--text-muted)', fontSize: '12px', fontWeight: '500', marginBottom: '6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {(item.specification || '').replace(`${item.type} ${item.brand}`, '').trim().replace(/^\(|\)$/g, '') || '--'}
                   </div>
-                  <div style={{ fontSize: '11px', color: '#94a3b8', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>SN: <span style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{item.sn || '--'}</span></span>
+                  <div style={{ fontSize: '11px', color: 'var(--text-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>SN: <span style={{ fontFamily: 'monospace', fontWeight: 'bold', color: 'var(--text-main)' }}>{item.sn || '--'}</span></span>
                     {item.custom_attributes?.server_sn && (
-                      <span style={{ backgroundColor: '#eff6ff', color: '#2563eb', padding: '1px 6px', borderRadius: '4px', fontWeight: '800', fontSize: '10px' }}>
+                      <span style={{ backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.3)', padding: '1px 6px', borderRadius: '4px', fontWeight: '800', fontSize: '10px' }}>
                         Host: {item.custom_attributes.server_sn}
                       </span>
                     )}
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#94a3b8', marginTop: '8px', borderTop: '1px solid #f1f5f9', paddingTop: '6px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-subtle)', marginTop: '8px', borderTop: '1px solid var(--border-color)', paddingTop: '6px' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><User size={12} /> {item.server_client || item.client || '--'}</span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-main)' }}><User size={12} /> {item.server_client || item.client || '--'}</span>
                       {(item.partner_contact || item.partner_phone) && (
-                        <span style={{ fontSize: '10px', color: '#64748b', paddingLeft: '16px' }}>{item.partner_contact} {item.partner_phone}</span>
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', paddingLeft: '16px' }}>{item.partner_contact} {item.partner_phone}</span>
                       )}
                     </div>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><MapPin size={12} /> {item.server_location || '--'}</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-muted)' }}><MapPin size={12} /> {item.server_location || '--'}</span>
                   </div>
                 </div>
               ))

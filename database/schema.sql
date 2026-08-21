@@ -61,6 +61,18 @@ CREATE TABLE IF NOT EXISTS partners (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 進貨單主檔 (Inbound Orders)
+CREATE TABLE IF NOT EXISTS inbound_orders (
+    id SERIAL PRIMARY KEY,
+    order_no VARCHAR(50) UNIQUE NOT NULL,
+    partner_id INTEGER REFERENCES partners(id),
+    invoice_no VARCHAR(100),
+    status VARCHAR(20) DEFAULT 'DRAFT' CHECK (status IN ('DRAFT', 'COMPLETED', 'CANCELLED')),
+    attachments JSONB DEFAULT '[]'::jsonb,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- 系統使用者表
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
@@ -139,6 +151,7 @@ CREATE TABLE IF NOT EXISTS inbound_orders (
     total_amount DECIMAL(15, 2) DEFAULT 0,
     invoice_image_path TEXT,              -- 發票圖檔路徑 (新加入)
     status VARCHAR(20) DEFAULT 'DRAFT', -- DRAFT, COMPLETED
+    attachments JSONB DEFAULT '[]'::jsonb, -- 進貨單附件
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -196,6 +209,7 @@ CREATE TABLE IF NOT EXISTS purchase_records (
     status VARCHAR(20) DEFAULT 'ORDERED', -- ORDERED, PARTIAL, COMPLETED
     purchaser_id INTEGER REFERENCES users(id), -- 採購人員
     remarks TEXT,                        -- 備註
+    attachments JSONB DEFAULT '[]'::jsonb, -- 附件
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

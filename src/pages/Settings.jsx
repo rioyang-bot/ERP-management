@@ -4,16 +4,12 @@ import { hashPassword, validatePassword } from '../utils/auth';
 import { Shield, User, Settings as SettingsIcon, CheckSquare, Square, X, Save, Key, Lock } from 'lucide-react';
 
 const MENU_OPTIONS = [
-  { id: 'inbound', label: '進貨入庫 (Inbound)' },
-  { id: 'outbound', label: '出貨建檔 (D/N Reg)' },
+  { id: 'inboundList', label: '進貨單列表 (S/I List)' },
   { id: 'dnList', label: '出貨單列表 (D/N List)' },
-  { id: 'assets', label: '設備管理 (Device Reg)' },
+  { id: 'lentList', label: '借用列表 (Lent List)' },
   { id: 'assetList', label: '設備列表 (Device List)' },
-  { id: 'nic-registration', label: '硬體建檔 (HW Reg)' },
   { id: 'nic-list', label: '硬體列表 (HW List)' },
-  { id: 'consumables', label: '耗材建檔 (CSM Reg)' },
-  { id: 'consumableList', label: '耗材列表 (CSM List)' },
-  { id: 'purchasing', label: '採購建檔 (Procurement)' },
+  { id: 'consumable-list', label: '耗材列表 (CSM List)' },
   { id: 'procurementList', label: '採購單列表 (P/O List)' },
   { id: 'partners', label: '客戶/廠商管理 (Partners)' },
   { id: 'projects', label: '專案列表 (Project List)' },
@@ -89,11 +85,11 @@ const Settings = () => {
           defaultAccess[opt.id] = true;
         });
       } else if (newUser.role === 'IT') {
-        defaultAccess = { outbound: true, dnList: true, reports: true };
+        defaultAccess = { dnList: true, lentList: true, assetList: true, 'nic-list': true, 'consumable-list': true, reports: true };
       } else if (newUser.role === 'WAREHOUSE') {
-        defaultAccess = { review: true, inbound: true, assets: true, assetList: true, consumables: true, consumableList: true, partners: true, reports: true };
+        defaultAccess = { inboundList: true, dnList: true, assetList: true, 'nic-list': true, 'consumable-list': true, partners: true, reports: true };
       } else if (newUser.role === 'PURCHASING') {
-        defaultAccess = { purchasing: true, reports: true };
+        defaultAccess = { procurementList: true, partners: true, reports: true };
       }
 
       const res = await window.electronAPI.namedQuery(
@@ -131,7 +127,17 @@ const Settings = () => {
   };
 
   const handleOpenPermissions = (user) => {
-    const access = { ...(user.menu_access || {}) };
+    const rawAccess = user.menu_access || {};
+    // 相容舊格式 Key 並對齊目前列表模組
+    const access = {
+      ...rawAccess,
+      inboundList: rawAccess.inboundList ?? rawAccess.inbound ?? false,
+      dnList: rawAccess.dnList ?? rawAccess.outbound ?? false,
+      assetList: rawAccess.assetList ?? rawAccess.assets ?? false,
+      'nic-list': rawAccess['nic-list'] ?? rawAccess['nic-registration'] ?? false,
+      'consumable-list': rawAccess['consumable-list'] ?? rawAccess.consumableList ?? rawAccess.consumables ?? false,
+      procurementList: rawAccess.procurementList ?? rawAccess.purchasing ?? false,
+    };
     if (user.role === 'ADMIN') {
       MENU_OPTIONS.forEach(opt => {
         access[opt.id] = true;
@@ -233,21 +239,21 @@ const Settings = () => {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '32px', paddingBottom: '60px' }}>
       
       {/* 帳號權限管理 */}
-      <div className="card-surface" style={{ padding: '32px' }}>
+      <div className="card-surface" style={{ padding: '32px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '16px', boxShadow: 'var(--card-shadow)' }}>
         <div style={{ marginBottom: '32px' }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
-            <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
-              <SettingsIcon size={26} color="#2563eb" /> 帳號權限管理
+            <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
+              <SettingsIcon size={26} color="var(--primary-color)" /> 帳號權限管理
             </h1>
-            <span style={{ fontSize: '0.9rem', color: '#888' }}>(User Access Control)</span>
+            <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>(User Access Control)</span>
           </div>
-          <p style={{ color: '#64748b', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>管理人員可在此新增帳號，並針對每個使用者單獨開啟或關閉各模組功能。</p>
+          <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>管理人員可在此新增帳號，並針對每個使用者單獨開啟或關閉各模組功能。</p>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '32px' }}>
           {/* 新增帳號表單 */}
-          <div style={{ backgroundColor: '#fcfcfc', padding: '24px', borderRadius: '12px', border: '1px solid #eee', alignSelf: 'start' }}>
-            <h3 style={{ marginBottom: '20px', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ backgroundColor: 'var(--bg-surface-subtle)', padding: '24px', borderRadius: '16px', border: '1px solid var(--border-color)', alignSelf: 'start' }}>
+            <h3 style={{ marginBottom: '20px', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-main)', fontWeight: '800' }}>
               <User size={18} color="var(--primary-color)" /> 新增系統帳號
             </h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -271,9 +277,9 @@ const Settings = () => {
                   <option value="PURCHASING">PURCHASING 採購端</option>
                   <option value="ADMIN">ADMIN 管理端</option>
                 </select>
-                <p style={{ fontSize: '0.75rem', color: '#999', marginTop: '4px' }}>角色僅決定預設權限，後續可微調。</p>
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-subtle)', marginTop: '4px' }}>角色僅決定預設權限，後續可微調。</p>
               </div>
-              <button onClick={handleAddUser} className="btn-primary" style={{ marginTop: '8px', padding: '12px' }}>
+              <button onClick={handleAddUser} className="btn-primary" style={{ marginTop: '8px', padding: '12px', backgroundColor: 'var(--primary-color)', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)' }}>
                 建立帳號
               </button>
             </div>
@@ -281,11 +287,11 @@ const Settings = () => {
 
           {/* 帳號列表 */}
           <div>
-            <h3 style={{ marginBottom: '16px', fontSize: '1.1rem' }}>人員清單</h3>
+            <h3 style={{ marginBottom: '16px', fontSize: '1.1rem', color: 'var(--text-main)', fontWeight: '800' }}>人員清單</h3>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
-                  <tr style={{ backgroundColor: '#f8f9fa', textAlign: 'left' }}>
+                  <tr style={{ backgroundColor: 'var(--table-header-bg)', textAlign: 'left', borderBottom: '2px solid var(--border-color)' }}>
                     <th className="th-cell">人員資訊</th>
                     <th className="th-cell">角色</th>
                     <th className="th-cell" style={{ textAlign: 'center' }}>目前權限</th>
@@ -295,17 +301,19 @@ const Settings = () => {
                 </thead>
                 <tbody>
                   {loadingUsers ? (
-                    <tr><td colSpan="5" style={{ textAlign: 'center', padding: '40px' }}>載入中...</td></tr>
+                    <tr><td colSpan="5" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>載入中...</td></tr>
                   ) : users.map(u => (
-                    <tr key={u.id} style={{ borderBottom: '1px solid #f0f0f0', opacity: u.is_active ? 1 : 0.6 }} className="row-hover">
+                    <tr key={u.id} style={{ borderBottom: '1px solid var(--table-border)', opacity: u.is_active ? 1 : 0.6 }} className="row-hover">
                       <td style={{ padding: '16px 12px' }}>
-                        <div style={{ fontWeight: 700 }}>{u.full_name || u.username}</div>
-                        <div style={{ fontSize: '0.8rem', color: '#888' }}>ID: {u.username}</div>
+                        <div style={{ fontWeight: 700, color: 'var(--text-main)' }}>{u.full_name || u.username}</div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>ID: {u.username}</div>
                       </td>
                       <td style={{ padding: '16px 12px' }}>
                         <span style={{ 
                           padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 700,
-                          backgroundColor: '#f0f0f0', color: '#555'
+                          backgroundColor: u.role === 'ADMIN' ? 'rgba(139, 92, 246, 0.15)' : 'rgba(59, 130, 246, 0.15)',
+                          color: u.role === 'ADMIN' ? '#a78bfa' : '#60a5fa',
+                          border: `1px solid ${u.role === 'ADMIN' ? 'rgba(139, 92, 246, 0.3)' : 'rgba(59, 130, 246, 0.3)'}`
                         }}>
                           {u.role}
                         </span>
@@ -313,14 +321,17 @@ const Settings = () => {
                       <td style={{ padding: '16px 12px', textAlign: 'center' }}>
                         <button 
                           onClick={() => handleOpenPermissions(u)}
-                          className="btn-secondary"
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 12px', fontSize: '0.85rem' }}
+                          style={{ 
+                            display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '6px 12px', fontSize: '0.85rem',
+                            backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--primary-color)', border: '1px solid var(--border-color)',
+                            borderRadius: '8px', cursor: 'pointer', fontWeight: 600
+                          }}
                         >
                           <Shield size={14} /> 設定權限
                         </button>
                       </td>
                       <td style={{ padding: '16px 12px', textAlign: 'center' }}>
-                        <span style={{ color: u.is_active ? '#2e7d32' : '#d32f2f', fontWeight: 600, fontSize: '0.9rem' }}>
+                        <span style={{ color: u.is_active ? '#10b981' : '#ef4444', fontWeight: 700, fontSize: '0.9rem' }}>
                           {u.is_active ? '啟用' : '停用'}
                         </span>
                       </td>
@@ -347,51 +358,53 @@ const Settings = () => {
       </div>
       
       {/* 密碼安全原則設定 */}
-      <div className="card-surface" style={{ padding: '32px' }}>
+      <div className="card-surface" style={{ padding: '32px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '16px', boxShadow: 'var(--card-shadow)' }}>
         <div style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <h2 style={{ fontSize: '1.25rem', color: '#1e293b', margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}><Lock size={22} color="#059669" /> 密碼安全原則設定</h2>
-          <span style={{ fontSize: '0.9rem', color: '#888' }}>(強制套用於新帳號建立與密碼變更作業)</span>
+          <h2 style={{ fontSize: '1.25rem', color: 'var(--text-main)', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', fontWeight: '800' }}>
+            <Lock size={22} color="#10b981" /> 密碼安全原則設定
+          </h2>
+          <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>(強制套用於新帳號建立與密碼變更作業)</span>
         </div>
         
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '600px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '8px', fontWeight: 600, fontSize: '1rem' }}>
+            <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '8px', fontWeight: 700, fontSize: '1rem', color: 'var(--text-main)' }}>
               <input type="checkbox" checked={passwordPolicy.enabled} onChange={() => togglePolicy('enabled')} style={{ transform: 'scale(1.2)' }} />
               啟用複雜密碼檢查
             </label>
           </div>
           
-          <div style={{ padding: '20px', border: '1px solid #e2e8f0', borderRadius: '12px', backgroundColor: passwordPolicy.enabled ? '#fff' : '#f8fafc', opacity: passwordPolicy.enabled ? 1 : 0.6, pointerEvents: passwordPolicy.enabled ? 'auto' : 'none', transition: 'all 0.3s' }}>
+          <div style={{ padding: '20px', border: '1px solid var(--border-color)', borderRadius: '12px', backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-main)', opacity: passwordPolicy.enabled ? 1 : 0.6, pointerEvents: passwordPolicy.enabled ? 'auto' : 'none', transition: 'all 0.3s' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
-              <label style={{ fontWeight: 600, fontSize: '0.9rem', width: '120px' }}>最少字元長度</label>
+              <label style={{ fontWeight: 600, fontSize: '0.9rem', width: '120px', color: 'var(--text-main)' }}>最少字元長度</label>
               <input type="number" min="4" max="32" value={passwordPolicy.minLength} onChange={e => setPasswordPolicy(prev => ({ ...prev, minLength: parseInt(e.target.value) || 8 }))} className="settings-input" style={{ width: '80px', padding: '6px 10px' }} />
             </div>
             
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '24px' }}>
-              <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '6px', fontSize: '0.9rem' }}>
+              <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '6px', fontSize: '0.9rem', color: 'var(--text-main)' }}>
                 <input type="checkbox" checked={passwordPolicy.requireUppercase} onChange={() => togglePolicy('requireUppercase')} />
                 必須包含大寫英文字母
               </label>
-              <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '6px', fontSize: '0.9rem' }}>
+              <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '6px', fontSize: '0.9rem', color: 'var(--text-main)' }}>
                 <input type="checkbox" checked={passwordPolicy.requireLowercase} onChange={() => togglePolicy('requireLowercase')} />
                 必須包含小寫英文字母
               </label>
-              <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '6px', fontSize: '0.9rem' }}>
+              <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '6px', fontSize: '0.9rem', color: 'var(--text-main)' }}>
                 <input type="checkbox" checked={passwordPolicy.requireNumber} onChange={() => togglePolicy('requireNumber')} />
                 必須包含數字
               </label>
-              <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '6px', fontSize: '0.9rem' }}>
+              <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '6px', fontSize: '0.9rem', color: 'var(--text-main)' }}>
                 <input type="checkbox" checked={passwordPolicy.requireSpecialChar} onChange={() => togglePolicy('requireSpecialChar')} />
                 必須包含特殊符號
               </label>
             </div>
             
-            <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
+            <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
               <button 
                 onClick={savePolicy} 
                 disabled={isSavingPolicy}
                 className="btn-primary" 
-                style={{ padding: '8px 24px', backgroundColor: '#059669', display: 'flex', alignItems: 'center', gap: '8px' }}
+                style={{ padding: '8px 24px', backgroundColor: '#10b981', color: 'white', border: 'none', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '700', cursor: 'pointer', boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)' }}
               >
                 <Save size={16} /> {isSavingPolicy ? '儲存中...' : '儲存安全原則'}
               </button>
@@ -402,14 +415,14 @@ const Settings = () => {
 
       {/* 權限設定 Modal */}
       {showPermissionModal && editingUser && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
-          <div className="card-surface" style={{ width: '550px', padding: '32px', maxHeight: '90vh', overflowY: 'auto' }}>
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'var(--bg-modal-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
+          <div className="card-surface" style={{ width: '550px', padding: '32px', maxHeight: '90vh', overflowY: 'auto', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '16px', boxShadow: 'var(--modal-shadow)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
               <div>
-                <h2 style={{ fontSize: '1.25rem', color: 'var(--primary-color)', margin: 0 }}>權限設定</h2>
-                <div style={{ fontSize: '0.9rem', color: '#666', marginTop: '4px' }}>使用者：<span style={{ fontWeight: 600 }}>{editingUser.full_name} ({editingUser.username})</span></div>
+                <h2 style={{ fontSize: '1.25rem', color: 'var(--primary-color)', margin: 0, fontWeight: '800' }}>權限設定</h2>
+                <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: '4px' }}>使用者：<span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{editingUser.full_name} ({editingUser.username})</span></div>
               </div>
-              <X size={24} style={{ cursor: 'pointer', color: '#999' }} onClick={() => setShowPermissionModal(false)} />
+              <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setShowPermissionModal(false)} />
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '32px' }}>
@@ -424,14 +437,15 @@ const Settings = () => {
                     }}
                     style={{ 
                       display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', 
-                      borderRadius: '8px', border: '1px solid #eee', 
+                      borderRadius: '8px', border: '1px solid var(--border-color)', 
                       cursor: isAdminUser ? 'not-allowed' : 'pointer',
-                      backgroundColor: isChecked ? '#f0f7ff' : '#fff',
+                      backgroundColor: isChecked ? 'var(--primary-bg)' : 'var(--bg-surface-subtle)',
+                      color: 'var(--text-main)',
                       opacity: isAdminUser ? 0.75 : 1,
                       transition: 'all 0.2s'
                     }}
                   >
-                    {isChecked ? <CheckSquare size={18} color="var(--primary-color)" /> : <Square size={18} color="#ccc" />}
+                    {isChecked ? <CheckSquare size={18} color="var(--primary-color)" /> : <Square size={18} color="var(--text-subtle)" />}
                     <span style={{ fontSize: '0.9rem', fontWeight: isChecked ? 600 : 400 }}>{opt.label}</span>
                   </div>
                 );
@@ -439,10 +453,10 @@ const Settings = () => {
             </div>
 
             <div style={{ display: 'flex', gap: '12px' }}>
-              <button onClick={handleSavePermissions} className="btn-primary" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+              <button onClick={handleSavePermissions} className="btn-primary" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '12px', backgroundColor: 'var(--primary-color)', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)' }}>
                 <Save size={18} /> 儲存權限設定
               </button>
-              <button onClick={() => setShowPermissionModal(false)} className="btn-secondary" style={{ padding: '12px 24px' }}>
+              <button onClick={() => setShowPermissionModal(false)} className="btn-secondary" style={{ padding: '12px 24px', backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}>
                 取消
               </button>
             </div>
@@ -452,20 +466,20 @@ const Settings = () => {
 
       {/* 重設密碼 Modal (管理者強制) */}
       {resetUser && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
-          <div className="card-surface" style={{ width: '400px', padding: '24px' }}>
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'var(--bg-modal-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
+          <div className="card-surface" style={{ width: '400px', padding: '24px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '16px', boxShadow: 'var(--modal-shadow)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h2 style={{ fontSize: '1.25rem', color: '#1e293b', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}><Key size={20} color="#eab308" /> 強制重設密碼</h2>
-              <X size={20} style={{ cursor: 'pointer', color: '#999' }} onClick={() => { setResetUser(null); setAdminResetPwd(''); }} />
+              <h2 style={{ fontSize: '1.25rem', color: 'var(--text-main)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '800' }}><Key size={20} color="#eab308" /> 強制重設密碼</h2>
+              <X size={20} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => { setResetUser(null); setAdminResetPwd(''); }} />
             </div>
             
-            <p style={{ fontSize: '0.9rem', color: '#64748b', marginBottom: '16px' }}>
-              即將為使用者 <strong style={{ color: '#000' }}>{resetUser.full_name || resetUser.username}</strong> 重新設定密碼。<br/>
+            <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
+              即將為使用者 <strong style={{ color: 'var(--text-main)' }}>{resetUser.full_name || resetUser.username}</strong> 重新設定密碼。<br/>
               如果啟用了密碼安全原則，新設定密碼仍需受到原則規範限制。
             </p>
 
             <div style={{ marginBottom: '24px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.9rem', fontWeight: 600, color: '#334155' }}>新密碼設定</label>
+              <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-muted)' }}>新密碼設定</label>
               <input 
                 type="text" 
                 value={adminResetPwd} 
@@ -479,7 +493,7 @@ const Settings = () => {
               <button 
                 onClick={() => { setResetUser(null); setAdminResetPwd(''); }} 
                 className="btn-secondary" 
-                style={{ padding: '8px 16px' }}
+                style={{ padding: '8px 16px', backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}
               >
                 取消
               </button>
@@ -487,7 +501,7 @@ const Settings = () => {
                 onClick={handleAdminResetPassword} 
                 disabled={isResetting}
                 className="btn-primary" 
-                style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'var(--primary-color)', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)' }}
               >
                 {isResetting ? '儲存中...' : '確認變更'}
               </button>
@@ -498,15 +512,15 @@ const Settings = () => {
 
       {/* 樣式 */}
       <style>{`
-        .input-label { display: block; fontSize: 0.85rem; fontWeight: 600; color: #555; marginBottom: 6px; }
-        .settings-input { width: 100%; padding: 10px; border: 1px solid #ddd; borderRadius: 8px; outline: none; }
+        .input-label { display: block; font-size: 0.85rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; }
+        .settings-input { width: 100%; padding: 10px; border: 1px solid var(--input-border); background-color: var(--input-bg); color: var(--input-text); border-radius: 8px; outline: none; }
         .settings-input:focus { border-color: var(--primary-color); }
-        .th-cell { padding: 14px 12px; border-bottom: 2px solid #eee; font-weight: 600; color: #666; font-size: 0.85rem; }
-        .row-hover:hover { background-color: #fcfdfe; }
-        .btn-icon { padding: 6px 12px; border: 1px solid #ddd; background: #fff; borderRadius: 6px; cursor: pointer; font-size: 0.85rem; }
-        .btn-icon:hover { border-color: var(--primary-color); color: var(--primary-color); }
-        .btn-icon-danger { padding: 6px 12px; border: 1px solid #ffcccc; background: #fff5f5; borderRadius: 6px; cursor: pointer; color: #d32f2f; font-size: 0.85rem; }
-        .btn-icon-danger:hover { background: #fee2e2; }
+        .th-cell { padding: 14px 12px; border-bottom: 2px solid var(--border-color); font-weight: 600; color: var(--table-header-text); font-size: 0.85rem; }
+        .row-hover:hover { background-color: var(--table-row-hover); }
+        .btn-icon { padding: 6px 12px; border: 1px solid var(--border-color); background: var(--bg-surface-subtle); color: var(--text-main); border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
+        .btn-icon:hover { border-color: var(--primary-color); color: var(--primary-color); background: var(--bg-surface-hover); }
+        .btn-icon-danger { padding: 6px 12px; border: 1px solid rgba(244,63,94,0.3); background: rgba(244,63,94,0.15); border-radius: 6px; cursor: pointer; color: #f43f5e; font-size: 0.85rem; }
+        .btn-icon-danger:hover { background: rgba(244,63,94,0.25); }
       `}</style>
     </div>
   );

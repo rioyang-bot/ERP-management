@@ -7,6 +7,8 @@ const Inbound = () => {
   const [orderNo, setOrderNo] = useState('');
   const [items, setItems] = useState([{ id: 1, selectedOrderNo: '', itemId: '', purchaseRecordId: '', cat_name: '', unit: '', sn: '', qty: 1 }]);
   const [invoiceNo, setInvoiceNo] = useState('');
+  const [attachments, setAttachments] = useState([]);
+  const [previewFile, setPreviewFile] = useState(null);
   const [partnerId, setPartnerId] = useState('');
   const [partners, setPartners] = useState([]);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
@@ -129,6 +131,43 @@ const Inbound = () => {
     setItems(items.map(row => row.id === rowId ? { ...row, [field]: value } : row));
   };
 
+  const handleFileUpload = async (e) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    // We can show loading if we add a loading state, but let's just upload
+    try {
+      const newAttachments = [...attachments];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const buffer = await file.arrayBuffer();
+        const res = await window.electronAPI.saveFile(file.name, buffer);
+        if (res.success) {
+          newAttachments.push({ originalName: file.name, fileName: res.fileName, type: file.type });
+        } else {
+          alert('上傳失敗: ' + res.error);
+        }
+      }
+      setAttachments(newAttachments);
+    } catch (err) {
+      console.error(err);
+      alert('上傳發生錯誤');
+    } finally {
+      e.target.value = ''; // clear input
+    }
+  };
+
+  const removeAttachment = (index) => {
+    const newAtt = [...attachments];
+    newAtt.splice(index, 1);
+    setAttachments(newAtt);
+  };
+
+  const getMediaSrc = (fileName) => {
+    const rawUrl = `erp-media:///${encodeURIComponent(fileName)}`;
+    return window.getMediaUrl ? window.getMediaUrl(rawUrl) : rawUrl;
+  };
+
   const handleQuickAddSave = async () => {
     if (!quickAddData.name) return alert('請輸入品項名稱');
     const fullSpec = `${quickAddData.name} ${quickAddData.spec ? `(${quickAddData.spec})` : ''}`.trim();
@@ -171,7 +210,7 @@ const Inbound = () => {
     }
 
     if (window.confirm('確認將此單據入庫？')) {
-      const orderRes = await window.electronAPI.namedQuery('insertInboundOrder', [orderNo, partnerId, invoiceNo, 'COMPLETED']);
+      const orderRes = await window.electronAPI.namedQuery('insertInboundOrder', [orderNo, partnerId, invoiceNo, 'COMPLETED', JSON.stringify(attachments)]);
       if (orderRes.success) {
         const orderId = orderRes.rows[0].id;
         for (const item of items) {
@@ -213,6 +252,7 @@ const Inbound = () => {
         alert('進貨入庫成功！');
         setItems([{ id: Date.now(), selectedOrderNo: '', itemId: '', purchaseRecordId: '', cat_name: '', unit: '', sn: '', qty: 1 }]);
         setInvoiceNo('');
+        setAttachments([]);
         setOrderNo(''); // Reset to generate new order no
         fetchData();
       } else { alert('入庫失敗：' + orderRes.error); }
@@ -248,31 +288,31 @@ const Inbound = () => {
   return (
     <div className="card-surface">
         <div style={{ marginBottom: '24px' }}>
-          <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
-            <ArrowDownToLine size={26} color="#2563eb" /> 進貨入庫(Stock in Registration)
+          <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
+            <ArrowDownToLine size={26} color="var(--primary-color)" /> 進貨入庫(Stock in Registration)
           </h1>
-          <p style={{ color: '#64748b', fontSize: '13px', marginTop: '4px' }}>管理並登記從供應商收到的實體物品與物料，入庫並增加庫存量。</p>
+          <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px' }}>管理並登記從供應商收到的實體物品與物料，入庫並增加庫存量。</p>
         </div>
       {pendingPurchases.length > 0 && (
         <div style={alertContainerStyle}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <div style={alertBadgeStyle}>{pendingPurchases.length}</div>
             <div>
-              <div style={{ fontWeight: 800, color: '#5f4b00', fontSize: '1.1rem' }}>有 {pendingPurchases.length} 筆採購案件待入庫</div>
-              <div style={{ fontSize: '0.9rem', color: '#856404', marginTop: '2px' }}>請核對採購單並將品項載入庫存。</div>
+              <div style={{ fontWeight: 800, color: '#f59e0b', fontSize: '1.1rem' }}>有 {pendingPurchases.length} 筆採購案件待入庫</div>
+              <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: '2px' }}>請核對採購單並將品項載入庫存。</div>
             </div>
           </div>
-          <FileText size={40} color="#ffb300" style={{ opacity: 0.3 }} />
+          <FileText size={40} color="#f59e0b" style={{ opacity: 0.3 }} />
         </div>
       )}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '32px', paddingBottom: '32px', borderBottom: '1px solid #eee' }}>
-        <div><label style={labelStyle}>進貨單號 (系統生成)</label><input disabled value={orderNo} style={{ ...inputStyle, backgroundColor: '#f5f5f5', color: '#999' }} /></div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '32px', paddingBottom: '32px', borderBottom: '1px solid var(--border-color)' }}>
+        <div><label style={labelStyle}>進貨單號 (系統生成)</label><input disabled value={orderNo} style={{ ...inputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)' }} /></div>
         <div>
           <label style={labelStyle}>供應商名稱 {hasPOSelected ? '(自動帶入)' : '(必填)'}</label>
           {hasPOSelected ? (
-            <input disabled value={partners.find(p => p.id.toString() === partnerId?.toString())?.name || '請於下方選擇採購單'} style={{ ...inputStyle, backgroundColor: '#f5f5f5', color: '#999' }} />
+            <input disabled value={partners.find(p => p.id.toString() === partnerId?.toString())?.name || '請於下方選擇採購單'} style={{ ...inputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)' }} />
           ) : (
-            <select value={partnerId || ''} onChange={(e) => setPartnerId(e.target.value)} style={{ ...inputStyle, backgroundColor: '#fff' }}>
+            <select value={partnerId || ''} onChange={(e) => setPartnerId(e.target.value)} style={{ ...inputStyle, backgroundColor: 'var(--input-bg)', color: 'var(--input-text)' }}>
               <option value="">-- 請選擇供應商 --</option>
               {partners.map(p => (
                 <option key={p.id} value={p.id}>{p.name}</option>
@@ -284,6 +324,38 @@ const Inbound = () => {
         <div><label style={labelStyle}>發票號碼 (Invoice No.)</label><input type="text" value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} style={inputStyle} placeholder="請輸入紙本發票號碼" /></div>
         <div><label style={labelStyle}>進貨/到貨日期</label><input type="date" defaultValue={new Date().toISOString().slice(0,10)} style={inputStyle} /></div>
       </div>
+      
+      <div style={{ marginBottom: '32px' }}>
+        <label style={labelStyle}>相關附件 (報價單、進貨單影本等)</label>
+        <div style={{ padding: '16px', border: '2px dashed var(--border-color)', borderRadius: '12px', backgroundColor: 'var(--bg-surface-subtle)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+            {attachments.map((att, index) => (
+              <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '8px', boxShadow: 'var(--card-shadow)' }}>
+                {att.type?.startsWith('image/') ? (
+                   <img src={getMediaSrc(att.fileName)} alt={att.originalName} style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px', cursor: 'pointer' }} onClick={() => setPreviewFile(att)} />
+                ) : (
+                   <div style={{ width: '40px', height: '40px', backgroundColor: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '4px', cursor: 'pointer' }} onClick={() => setPreviewFile(att)}>
+                      <FileText size={20} color="#64748b" />
+                   </div>
+                )}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#334155', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '150px' }} title={att.originalName}>{att.originalName}</div>
+                </div>
+                <button onClick={() => removeAttachment(index)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '4px' }}>
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+          <div>
+            <label style={{ display: 'inline-block', padding: '8px 16px', backgroundColor: '#e2e8f0', color: '#475569', borderRadius: '8px', fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer' }}>
+              + 新增附件
+              <input type="file" multiple style={{ display: 'none' }} onChange={handleFileUpload} />
+            </label>
+          </div>
+        </div>
+      </div>
+      
       <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '20px' }}>
         <thead>
           <tr style={{ backgroundColor: '#f8f9fa', textAlign: 'left' }}>
@@ -350,23 +422,42 @@ const Inbound = () => {
           </div>
         </div>
       )}
+      {previewFile && (
+        <div style={modalOverlayStyle} onClick={() => setPreviewFile(null)}>
+          <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '12px', maxWidth: '90vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0 }}>預覽附件：{previewFile.originalName}</h3>
+              <button onClick={() => setPreviewFile(null)} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer' }}>&times;</button>
+            </div>
+            <div style={{ flex: 1, overflow: 'auto', display: 'flex', justifyContent: 'center' }}>
+              {previewFile.type?.startsWith('image/') ? (
+                <img src={getMediaSrc(previewFile.fileName)} alt={previewFile.originalName} style={{ maxWidth: '100%', maxHeight: '70vh', objectFit: 'contain' }} />
+              ) : previewFile.type === 'application/pdf' ? (
+                <iframe src={getMediaSrc(previewFile.fileName)} style={{ width: '80vw', height: '70vh', border: 'none' }} title={previewFile.originalName} />
+              ) : (
+                <div style={{ padding: '40px', color: '#64748b' }}>此檔案類型不支援預覽，請下載後檢視。</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
-const labelStyle = { display: 'block', fontSize: '0.85rem', fontWeight: 700, color: '#555', marginBottom: '8px' };
-const inputStyle = { width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '0.95rem', outline: 'none', boxSizing: 'border-box' };
-const thStyle = { padding: '15px 12px', borderBottom: '2px solid #eee', fontWeight: 800, color: '#666', fontSize: '0.85rem' };
-const tdStyle = { padding: '12px' };
-const alertContainerStyle = { backgroundColor: '#fff8e1', borderLeft: '6px solid #ffb300', padding: '16px 24px', marginBottom: '32px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' };
-const alertBadgeStyle = { backgroundColor: '#ffb300', color: '#fff', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: '1.1rem' };
-const expandButtonStyle = { padding: '8px', backgroundColor: '#e6f7ff', border: '1px solid #91d5ff', borderRadius: '8px', cursor: 'pointer', color: '#1890ff', display: 'flex' };
-const deleteButtonStyle = { padding: '8px', color: '#f5222d', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 };
-const addRowsButtonStyle = { display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 20px', backgroundColor: '#f5f7f9', color: '#1a73e8', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 700 };
+const labelStyle = { display: 'block', fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '8px' };
+const inputStyle = { width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', fontSize: '0.95rem', outline: 'none', boxSizing: 'border-box' };
+const thStyle = { padding: '15px 12px', borderBottom: '2px solid var(--border-color)', fontWeight: 800, color: 'var(--table-header-text)', backgroundColor: 'var(--table-header-bg)', fontSize: '0.85rem' };
+const tdStyle = { padding: '12px', borderBottom: '1px solid var(--table-border)', color: 'var(--text-main)' };
+const alertContainerStyle = { backgroundColor: 'rgba(245, 158, 11, 0.1)', borderLeft: '6px solid #f59e0b', padding: '16px 24px', marginBottom: '32px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' };
+const alertBadgeStyle = { backgroundColor: '#f59e0b', color: '#fff', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: '1.1rem' };
+const expandButtonStyle = { padding: '8px', backgroundColor: 'var(--primary-bg)', border: '1px solid rgba(59, 130, 246, 0.3)', borderRadius: '8px', cursor: 'pointer', color: 'var(--primary-color)', display: 'flex' };
+const deleteButtonStyle = { padding: '8px', color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.8 };
+const addRowsButtonStyle = { display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 20px', backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--primary-color)', border: '1px solid var(--border-color)', borderRadius: '10px', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 700 };
 const submitButtonStyle = { padding: '14px 40px', backgroundColor: 'var(--primary-color)', color: 'white', border: 'none', borderRadius: '12px', cursor: 'pointer', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '10px', boxShadow: '0 4px 15px rgba(26,115,232,0.3)' };
-const modalOverlayStyle = { position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1050, backdropFilter: 'blur(5px)' };
-const modalCancelButtonStyle = { padding: '10px 20px', background: '#f5f5f5', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 };
+const modalOverlayStyle = { position: 'fixed', inset: 0, backgroundColor: 'var(--bg-modal-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1050, backdropFilter: 'blur(5px)' };
+const modalCancelButtonStyle = { padding: '10px 20px', background: 'var(--bg-surface-subtle)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 };
 const modalSaveButtonStyle = { padding: '10px 20px', background: 'var(--primary-color)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 };
-const radioLabelStyle = { display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.9rem' };
+const radioLabelStyle = { display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-main)' };
 
 export default Inbound;

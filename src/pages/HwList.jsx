@@ -143,22 +143,22 @@ const HwList = ({ isSplitMode = false }) => {
 
   const getStatusConfig = (status) => {
     switch (status) {
-      case 'SHIPPED': return { label: '已出貨', color: '#1d4ed8', bgColor: '#dbeafe', borderColor: '#bfdbfe' };
-      case 'LENT': return { label: '借出/借用', color: '#b45309', bgColor: '#fef3c7', borderColor: '#fde68a' };
-      case 'REPAIR': return { label: '故障', color: '#b91c1c', bgColor: '#fee2e2', borderColor: '#fecaca' };
-      case 'SCRAPPED': return { label: '已報廢', color: '#595959', bgColor: '#f5f5f5', borderColor: '#d9d9d9' };
-      default: return { label: '在庫', color: '#047857', bgColor: '#dcfce7', borderColor: '#bbf7d0' };
+      case 'SHIPPED': return { label: '已出貨', color: '#3b82f6', bgColor: 'rgba(59, 130, 246, 0.15)', borderColor: 'rgba(59, 130, 246, 0.3)' };
+      case 'LENT': return { label: '借出/借用', color: '#f59e0b', bgColor: 'rgba(245, 158, 11, 0.15)', borderColor: 'rgba(245, 158, 11, 0.3)' };
+      case 'REPAIR': return { label: '故障', color: '#ef4444', bgColor: 'rgba(239, 68, 68, 0.15)', borderColor: 'rgba(239, 68, 68, 0.3)' };
+      case 'SCRAPPED': return { label: '已報廢', color: 'var(--text-subtle)', bgColor: 'rgba(100, 116, 139, 0.15)', borderColor: 'rgba(100, 116, 139, 0.3)' };
+      default: return { label: '在庫', color: '#10b981', bgColor: 'rgba(16, 185, 129, 0.15)', borderColor: 'rgba(16, 185, 129, 0.3)' };
     }
   };
 
-  const containerStyle = { padding: '24px', backgroundColor: '#f1f5f9', minHeight: '100vh' };
-  const cardStyle = { backgroundColor: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' };
-  const thStyle = { textAlign: 'left', padding: '14px', borderBottom: '2px solid #f1f5f9', color: '#1e293b', fontSize: '13px', fontWeight: '900', backgroundColor: '#f8fafc' };
-  const tdStyle = { padding: '14px', borderBottom: '1px solid #f1f5f9', fontSize: '12px' };
-  const navBtnStyle = { padding: '8px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', backgroundColor: 'white', cursor: 'pointer', fontWeight: '700' };
-  const menuButtonStyle = { display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', border: 'none', background: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: '#475569', borderRadius: '8px', textAlign: 'left' };
-  const editLabelStyle = { display: 'block', fontWeight: '800', fontSize: '13px', marginBottom: '6px', color: '#475569' };
-  const editInputStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', outline: 'none', fontSize: '13px' };
+  const containerStyle = { padding: '24px', backgroundColor: 'var(--bg-app)', minHeight: '100vh' };
+  const cardStyle = { backgroundColor: 'var(--bg-surface)', borderRadius: '16px', padding: '24px', boxShadow: 'var(--card-shadow)', border: '1px solid var(--border-color)', color: 'var(--text-main)' };
+  const thStyle = { textAlign: 'left', padding: '14px', borderBottom: '2px solid var(--border-color)', color: 'var(--table-header-text)', fontSize: '13px', fontWeight: '900', backgroundColor: 'var(--table-header-bg)' };
+  const tdStyle = { padding: '14px', borderBottom: '1px solid var(--table-border)', fontSize: '12px', color: 'var(--text-main)' };
+  const navBtnStyle = { padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-main)', cursor: 'pointer', fontWeight: '700' };
+  const menuButtonStyle = { display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', border: 'none', background: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', borderRadius: '8px', textAlign: 'left' };
+  const editLabelStyle = { display: 'block', fontWeight: '800', fontSize: '13px', marginBottom: '6px', color: 'var(--text-muted)' };
+  const editInputStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', outline: 'none', fontSize: '13px' };
 
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
@@ -255,29 +255,38 @@ const HwList = ({ isSplitMode = false }) => {
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
         <div>
-          <h2 style={{ fontSize: '24px', fontWeight: '900', color: '#1e293b', margin: 0 }}>
+          <h2 style={{ fontSize: '24px', fontWeight: '900', color: 'var(--text-main)', margin: 0 }}>
             {filterType ? `${filterType} - 硬體清單` : '硬體列表 (Hardware List)'}
           </h2>
-          <p style={{ color: '#64748b', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>管理硬體零組件庫存、搭載狀態及進出貨歷史紀錄。</p>
+          <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>管理硬體零組件庫存、搭載狀態及進出貨歷史紀錄。</p>
         </div>
         
         {!isSplitMode && (
-          <div style={{ display: 'flex', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>
-            <button onClick={() => navigate('/hw-registration')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: '#64748b', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
-              📝 建檔
-            </button>
-            <button onClick={() => navigate('/hw-split')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: '#64748b', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
-              ◫ 雙開
-            </button>
-            <button style={{ padding: '6px 14px', backgroundColor: '#ffffff', color: '#2563eb', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '800', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', cursor: 'default' }}>
-              📋 清單
+          <div style={{ display: 'flex', backgroundColor: 'var(--bg-surface-subtle)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+            <button
+              onClick={() => navigate('/hw-split')}
+              style={{
+                padding: '8px 16px',
+                backgroundColor: 'var(--primary-color)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)'
+              }}
+            >
+              新增硬體 (HW Reg)
             </button>
           </div>
         )}
         {(filterType || searchTerm) && (
           <button 
             onClick={() => { setSearchTerm(''); navigate('?'); }}
-            style={{ padding: '4px 12px', borderRadius: '20px', backgroundColor: '#f1f5f9', border: '1px solid #e2e8f0', color: '#64748b', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
+            style={{ padding: '4px 12px', borderRadius: '20px', backgroundColor: 'var(--bg-surface-subtle)', border: '1px solid var(--border-color)', color: 'var(--text-muted)', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
           >
             清除所有篩選 ×
           </button>
@@ -286,14 +295,14 @@ const HwList = ({ isSplitMode = false }) => {
       <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <input type="checkbox" id="showServerDetails" checked={showServerDetails} onChange={(e) => setShowServerDetails(e.target.checked)} style={{ cursor: 'pointer' }} />
-          <label htmlFor="showServerDetails" style={{ fontSize: '13px', fontWeight: '700', color: '#64748b', cursor: 'pointer' }}>顯示伺服器同步資訊</label>
+          <label htmlFor="showServerDetails" style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-muted)', cursor: 'pointer' }}>顯示伺服器同步資訊</label>
         </div>
-        <button onClick={() => setShowSyncConfig(true)} style={{ padding: '10px 16px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', fontWeight: '700', color: '#475569', gap: '6px' }}>
+        <button onClick={() => setShowSyncConfig(true)} style={{ padding: '10px 16px', backgroundColor: 'var(--bg-surface-subtle)', border: '1px solid var(--border-color)', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', fontWeight: '700', color: 'var(--text-main)', gap: '6px' }}>
           <Settings size={16} /> 伺服器屬性顯示設定
         </button>
         <div style={{ position: 'relative' }}>
-          <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
-          <input type="text" placeholder="搜尋..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ padding: '10px 12px 10px 42px', borderRadius: '30px', border: '1.5px solid #e2e8f0', width: '200px' }} />
+          <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-subtle)' }} />
+          <input type="text" placeholder="搜尋..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ padding: '10px 12px 10px 42px', borderRadius: '30px', border: '1.5px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', width: '200px', outline: 'none' }} />
         </div>
       </div>
     </div>
@@ -327,29 +336,29 @@ const HwList = ({ isSplitMode = false }) => {
     const renderRetiredSection = (list) => {
       if (list.length === 0) return null;
       return (
-        <div style={{ marginTop: '24px', borderTop: '2px dashed #e2e8f0', paddingTop: '24px', marginBottom: '32px', gridColumn: 'span 6' }}>
-          <h3 style={{ fontSize: '16px', fontWeight: '900', color: '#64748b', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ marginTop: '24px', borderTop: '2px dashed var(--border-color)', paddingTop: '24px', marginBottom: '32px', gridColumn: 'span 6' }}>
+          <h3 style={{ fontSize: '16px', fontWeight: '900', color: 'var(--text-muted)', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Archive size={18} /> 汰舊 / 停用區塊 (Retired Items)
           </h3>
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
             {list.map(st => (
-              <div key={st.key} onClick={() => handleCardClick(st)} style={{ backgroundColor: 'white', padding: '10px', borderRadius: '12px', border: '1px solid #e2e8f0', cursor: 'pointer', minWidth: '220px', opacity: 0.6, position: 'relative' }} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.6'}>
-                <button onClick={(e) => toggleRetire(e, st.key)} style={{ position: 'absolute', top: '8px', right: '8px', border: 'none', background: '#f1f5f9', color: '#64748b', borderRadius: '4px', padding: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center' }} title="復原此卡片">
+              <div key={st.key} onClick={() => handleCardClick(st)} style={{ backgroundColor: 'var(--bg-surface)', padding: '10px', borderRadius: '12px', border: '1px solid var(--border-color)', cursor: 'pointer', minWidth: '220px', opacity: 0.6, position: 'relative' }} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.6'}>
+                <button onClick={(e) => toggleRetire(e, st.key)} style={{ position: 'absolute', top: '8px', right: '8px', border: 'none', background: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', borderRadius: '4px', padding: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center' }} title="復原此卡片">
                   <RotateCcw size={14} />
                 </button>
-              <div style={{ marginBottom: '8px', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
-                <div style={{ fontSize: '12px', fontWeight: '900', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <Monitor size={12} color="#64748b" /> {st.brand}
+              <div style={{ marginBottom: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>
+                <div style={{ fontSize: '12px', fontWeight: '900', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <Monitor size={12} color="var(--text-muted)" /> {st.brand}
                 </div>
-                <div style={{ color: '#64748b', fontSize: '10px', fontWeight: '500', marginTop: '2px', paddingLeft: '16px' }}>
+                <div style={{ color: 'var(--text-muted)', fontSize: '10px', fontWeight: '500', marginTop: '2px', paddingLeft: '16px' }}>
                   {st.type} - {st.model}
                 </div>
               </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span>在庫</span><span style={{ color: '#166534', fontWeight: '800' }}>{st.active}</span></div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span>出貨</span><span style={{ color: '#1e40af', fontWeight: '800' }}>{st.shipped}</span></div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span>故障</span><span style={{ color: '#991b1b', fontWeight: '800' }}>{st.repair}</span></div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span>報廢</span><span style={{ color: '#475569', fontWeight: '800' }}>{st.scrapped}</span></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>在庫</span><span style={{ color: '#16a34a', fontWeight: '800' }}>{st.active}</span></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>出貨</span><span style={{ color: '#3b82f6', fontWeight: '800' }}>{st.shipped}</span></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>故障</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>報廢</span><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
                 </div>
               </div>
             ))}
@@ -365,7 +374,7 @@ const HwList = ({ isSplitMode = false }) => {
 
       return (
         <div style={{ position: 'relative' }}>
-          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '24px', padding: '16px', backgroundColor: '#f8fafc', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '24px', padding: '16px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '16px', border: '1px solid var(--border-color)' }}>
             {activeMatches.map(st => {
               const isSelected = searchTerm && (`${st.brand} ${st.model}`).toLowerCase() === searchTerm.toLowerCase();
               return (
@@ -373,11 +382,11 @@ const HwList = ({ isSplitMode = false }) => {
                   key={st.key}
                   onClick={() => handleCardClick(st)}
                   style={{ 
-                    backgroundColor: 'white', 
+                    backgroundColor: isSelected ? 'var(--primary-bg)' : 'var(--bg-surface)', 
                     padding: '10px', 
                     borderRadius: '12px', 
-                    border: isSelected ? '2px solid #2563eb' : '1px solid #e2e8f0', 
-                    boxShadow: isSelected ? '0 4px 6px -1px rgba(37, 99, 235, 0.2)' : '0 2px 4px rgba(0,0,0,0.02)',
+                    border: isSelected ? '2px solid var(--primary-color)' : '1px solid var(--border-color)', 
+                    boxShadow: isSelected ? '0 4px 12px rgba(37, 99, 235, 0.2)' : 'var(--card-shadow)',
                     cursor: 'pointer',
                     minWidth: '220px',
                     display: 'flex',
@@ -387,22 +396,22 @@ const HwList = ({ isSplitMode = false }) => {
                     position: 'relative'
                   }}
                 >
-                  <button onClick={(e) => toggleRetire(e, st.key)} style={{ position: 'absolute', top: '8px', right: '8px', border: 'none', background: 'none', color: '#cbd5e1', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }} title="將此卡片移至汰舊區">
+                  <button onClick={(e) => toggleRetire(e, st.key)} style={{ position: 'absolute', top: '8px', right: '8px', border: 'none', background: 'none', color: 'var(--text-subtle)', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }} title="將此卡片移至汰舊區">
                     <Archive size={14} />
                   </button>
-                  <div style={{ marginBottom: '8px', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
-                    <div style={{ fontSize: '13px', fontWeight: '900', color: isSelected ? '#2563eb' : '#1e293b', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <Monitor size={12} color={isSelected ? '#2563eb' : '#64748b'} /> {st.brand}
+                  <div style={{ marginBottom: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>
+                    <div style={{ fontSize: '13px', fontWeight: '900', color: isSelected ? 'var(--primary-color)' : 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Monitor size={12} color={isSelected ? 'var(--primary-color)' : 'var(--text-muted)'} /> {st.brand}
                     </div>
-                    <div style={{ color: isSelected ? '#3b82f6' : '#64748b', fontSize: '11px', fontWeight: '500', marginTop: '2px', paddingLeft: '16px' }}>
+                    <div style={{ color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', fontSize: '11px', fontWeight: '500', marginTop: '2px', paddingLeft: '16px' }}>
                       {st.type} - {st.model}
                     </div>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span>在庫</span><span style={{ color: '#166534', fontWeight: '800' }}>{st.active}</span></div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span>出貨</span><span style={{ color: '#1e40af', fontWeight: '800' }}>{st.shipped}</span></div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span>故障</span><span style={{ color: '#991b1b', fontWeight: '800' }}>{st.repair}</span></div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span>報廢</span><span style={{ color: '#475569', fontWeight: '800' }}>{st.scrapped}</span></div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span style={{ color: 'var(--text-muted)' }}>在庫</span><span style={{ color: '#16a34a', fontWeight: '800' }}>{st.active}</span></div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span style={{ color: 'var(--text-muted)' }}>出貨</span><span style={{ color: '#3b82f6', fontWeight: '800' }}>{st.shipped}</span></div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span style={{ color: 'var(--text-muted)' }}>故障</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span style={{ color: 'var(--text-muted)' }}>報廢</span><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
                   </div>
                 </div>
               );
@@ -441,30 +450,30 @@ const HwList = ({ isSplitMode = false }) => {
     const slots = Array.from({ length: SLOTS_COUNT });
 
     return (
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '12px', marginBottom: '24px', padding: '16px', backgroundColor: '#f8fafc', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '12px', marginBottom: '24px', padding: '16px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '16px', border: '1px solid var(--border-color)' }}>
         {slots.map((_, idx) => {
           const cardKey = layoutMap[idx];
           const st = statsMap[cardKey];
           return (
-            <div key={idx} onDragOver={handleSlotDragOver} onDrop={(e) => handleDropOnSlot(e, idx)} style={{ minHeight: '100px', borderRadius: '12px', border: draggingCardKey ? '1px dashed #cbd5e1' : '1px solid transparent', backgroundColor: draggingCardKey ? 'rgba(255,255,255,0.5)' : 'transparent', transition: 'all 0.2s' }}>
+            <div key={idx} onDragOver={handleSlotDragOver} onDrop={(e) => handleDropOnSlot(e, idx)} style={{ minHeight: '100px', borderRadius: '12px', border: draggingCardKey ? '1px dashed var(--border-color)' : '1px solid transparent', backgroundColor: draggingCardKey ? 'var(--bg-surface-hover)' : 'transparent', transition: 'all 0.2s' }}>
               {st && (
-                <div draggable onDragStart={(e) => handleCardDragStart(e, st.key)} onClick={() => handleCardClick(st)} style={{ backgroundColor: 'white', padding: '10px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.02)', cursor: 'pointer', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', opacity: draggingCardKey === st.key ? 0.3 : 1, transform: 'scale(1)', transition: 'transform 0.1s', position: 'relative' }} onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'} onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}>
-                  <button onClick={(e) => toggleRetire(e, st.key)} style={{ position: 'absolute', top: '8px', right: '8px', border: 'none', background: 'none', color: '#cbd5e1', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }} title="將此卡片移至汰舊區">
+                <div draggable onDragStart={(e) => handleCardDragStart(e, st.key)} onClick={() => handleCardClick(st)} style={{ backgroundColor: 'var(--bg-surface)', padding: '10px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: 'var(--card-shadow)', cursor: 'pointer', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', opacity: draggingCardKey === st.key ? 0.3 : 1, transform: 'scale(1)', transition: 'transform 0.1s', position: 'relative' }} onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'} onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}>
+                  <button onClick={(e) => toggleRetire(e, st.key)} style={{ position: 'absolute', top: '8px', right: '8px', border: 'none', background: 'none', color: 'var(--text-subtle)', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }} title="將此卡片移至汰舊區">
                     <Archive size={14} />
                   </button>
-                  <div style={{ marginBottom: '6px', borderBottom: '1px solid #f1f5f9', paddingBottom: '4px', overflow: 'hidden' }}>
-                    <div style={{ fontSize: '12px', fontWeight: '900', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
-                      <Monitor size={12} color="#64748b" /> {st.brand}
+                  <div style={{ marginBottom: '6px', borderBottom: '1px solid var(--border-color)', paddingBottom: '4px', overflow: 'hidden' }}>
+                    <div style={{ fontSize: '12px', fontWeight: '900', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                      <Monitor size={12} color="var(--text-muted)" /> {st.brand}
                     </div>
-                    <div style={{ color: '#64748b', fontSize: '10px', fontWeight: '500', marginTop: '1px', paddingLeft: '16px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                    <div style={{ color: 'var(--text-muted)', fontSize: '10px', fontWeight: '500', marginTop: '1px', paddingLeft: '16px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
                       {st.type} - {st.model}
                     </div>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span>在庫</span><span style={{ color: '#166534', fontWeight: '800' }}>{st.active}</span></div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span>出貨</span><span style={{ color: '#1e40af', fontWeight: '800' }}>{st.shipped}</span></div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span>故障</span><span style={{ color: '#991b1b', fontWeight: '800' }}>{st.repair}</span></div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span>報廢</span><span style={{ color: '#475569', fontWeight: '800' }}>{st.scrapped}</span></div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>在庫</span><span style={{ color: '#16a34a', fontWeight: '800' }}>{st.active}</span></div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>出貨</span><span style={{ color: '#3b82f6', fontWeight: '800' }}>{st.shipped}</span></div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>故障</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>報廢</span><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
                   </div>
                 </div>
               )}
@@ -477,10 +486,10 @@ const HwList = ({ isSplitMode = false }) => {
   };
 
   const renderTable = () => (
-    <div style={{ marginBottom: '20px' }}>
+    <div style={{ marginBottom: '20px', overflowX: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
         <thead>
-          <tr style={{ borderBottom: '2px solid #f1f5f9', backgroundColor: '#f8fafc' }}>
+          <tr style={{ borderBottom: '2px solid var(--border-color)', backgroundColor: 'var(--table-header-bg)' }}>
             <th style={{ ...thStyle, textAlign: 'left', width: '200px' }}>廠牌 / 型號 / 類型</th>
             <th style={{ ...thStyle, textAlign: 'left' }}>序號 (SN)</th>
             <th style={{ ...thStyle, textAlign: 'left' }}>規格 (Spec)</th>
@@ -507,26 +516,26 @@ const HwList = ({ isSplitMode = false }) => {
               serverAttrs = {};
             }
             return (
-              <tr key={nic.id} style={{ borderBottom: '1px solid #f1f5f9', opacity: nic.status === 'SCRAPPED' ? 0.6 : 1 }}>
+              <tr key={nic.id} style={{ borderBottom: '1px solid var(--table-border)', backgroundColor: nic.status === 'SCRAPPED' ? 'rgba(239, 68, 68, 0.08)' : 'transparent' }}>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                  <div style={{ fontWeight: 800, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ fontWeight: 800, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     {nic.brand}
                     {nic.ownership === 'COMPANY' && (
                       <span style={{ fontSize: '10px', padding: '2px 6px', backgroundColor: '#8b5cf6', color: 'white', borderRadius: '4px', whiteSpace: 'nowrap' }}>公司資產</span>
                     )}
                   </div>
-                  <div style={{ fontSize: '11px', color: '#64748b' }}>{nic.type} - {nic.model}</div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{nic.type} - {nic.model}</div>
                 </td>
-                <td style={{ ...tdStyle, fontWeight: 800, fontFamily: 'monospace', color: '#2563eb', whiteSpace: 'nowrap' }}>{nic.sn || '(未設定)'}</td>
-                <td style={{ ...tdStyle, fontSize: '11px', color: '#64748b' }}>{nic.specification || '--'}</td>
-                <td style={{ ...tdStyle, fontWeight: 700, color: '#334155' }}>
+                <td style={{ ...tdStyle, fontWeight: 800, fontFamily: 'monospace', color: 'var(--primary-color)', whiteSpace: 'nowrap' }}>{nic.sn || '(未設定)'}</td>
+                <td style={{ ...tdStyle, fontSize: '11px', color: 'var(--text-muted)' }}>{nic.specification || '--'}</td>
+                <td style={{ ...tdStyle, fontWeight: 700, color: 'var(--text-main)' }}>
                   {(() => {
                     const pName = nic.custom_attributes?.project_name;
                     if (!pName) return '--';
                     const proj = projects.find(p => p.project_name === pName);
                     return (
                       <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        {proj && proj.project_no && <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 'normal', marginBottom: '2px' }}>{proj.project_no}</span>}
+                        {proj && proj.project_no && <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 'normal', marginBottom: '2px' }}>{proj.project_no}</span>}
                         <span>{pName}</span>
                       </div>
                     );
@@ -534,12 +543,12 @@ const HwList = ({ isSplitMode = false }) => {
                 </td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{nic.custom_attributes?.order_date || '--'}</td>
                 <td style={tdStyle}>
-                  <div style={{ color: '#6366f1', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <div style={{ color: '#818cf8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <Server size={12} /> {nic.custom_attributes?.server_sn || '--'}
                   </div>
                   {nic.server_hostname && (
-                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px', paddingLeft: '16px' }}>
-                      HostName: <b style={{ color: '#1e293b' }}>{nic.server_hostname}</b>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', paddingLeft: '16px' }}>
+                      HostName: <b style={{ color: 'var(--text-main)' }}>{nic.server_hostname}</b>
                     </div>
                   )}
                 </td>
@@ -561,7 +570,7 @@ const HwList = ({ isSplitMode = false }) => {
                         if (!val) return null;
                         return (
                           <div key={id} style={{ display: 'flex', gap: '4px', marginBottom: '2px' }}>
-                            <span style={{ color: '#64748b', whiteSpace: 'nowrap' }}>{label}:</span>
+                            <span style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{label}:</span>
                             <span style={{ fontWeight: 600, color: def?.color || 'inherit' }}>{val}</span>
                           </div>
                         );
@@ -570,17 +579,17 @@ const HwList = ({ isSplitMode = false }) => {
                         if (id === 'hostname') return !nic.server_hostname;
                         if (id === 'os') return !nic.server_os;
                         return !serverAttrs[id];
-                      }) && <span style={{ color: '#cbd5e1' }}>--</span>}
+                      }) && <span style={{ color: 'var(--text-subtle)' }}>--</span>}
                     </div>
                   </td>
                 )}
                 <td style={tdStyle}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 700 }}>
-                      <User size={14} color="#64748b" /> {nic.server_client || nic.client || '--'}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 700, color: 'var(--text-main)' }}>
+                      <User size={14} color="var(--text-muted)" /> {nic.server_client || nic.client || '--'}
                     </div>
                     {(nic.partner_contact || nic.partner_phone) && (
-                      <div style={{ fontSize: '11px', color: '#64748b', paddingLeft: '18px' }}>
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', paddingLeft: '18px' }}>
                         {nic.partner_contact} {nic.partner_phone}
                       </div>
                     )}
@@ -588,35 +597,35 @@ const HwList = ({ isSplitMode = false }) => {
                 </td>
                 {showServerDetails && (
                   <td style={tdStyle}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <MapPin size={14} color="#64748b" /> {nic.server_location || '--'}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-main)' }}>
+                      <MapPin size={14} color="var(--text-muted)" /> {nic.server_location || '--'}
                     </div>
                   </td>
                 )}
                 <td style={{ ...tdStyle, width: '100px' }}><span style={{ padding: '4px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: '800', backgroundColor: cfg.bgColor, color: cfg.color, border: `1px solid ${cfg.borderColor}`, whiteSpace: 'nowrap' }}>{cfg.label}</span></td>
                 <td style={{ ...tdStyle, textAlign: 'center', width: '80px', position: 'relative' }}>
-                  <button onClick={() => setActiveMenuId(activeMenuId === nic.id ? null : nic.id)} style={{ border: 'none', background: 'none', color: '#64748b' }}><MoreHorizontal size={20} /></button>
+                  <button onClick={() => setActiveMenuId(activeMenuId === nic.id ? null : nic.id)} style={{ border: 'none', background: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}><MoreHorizontal size={20} /></button>
                   {activeMenuId === nic.id && (
-                    <div style={{ position: 'absolute', right: 0, top: '100%', backgroundColor: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.2)', zIndex: 9999, padding: '8px', minWidth: '150px', display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                    <div style={{ position: 'absolute', right: 0, top: '100%', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '12px', boxShadow: 'var(--modal-shadow)', zIndex: 9999, padding: '8px', minWidth: '150px', display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
                       <button 
                         onClick={() => {
                           setActiveMenuId(null);
                           setLedgerItem({ item_master_id: nic.item_master_id, sn: nic.sn, brand: nic.brand, model: nic.model, type: nic.type, current_stock: 1 });
                         }} 
-                        style={{ ...menuButtonStyle, color: '#0f172a' }}
+                        style={{ ...menuButtonStyle, color: 'var(--text-main)' }}
                       >
                         <History size={14} /> 履歷 (History)
                       </button>
-                      <div style={{ height: '1px', backgroundColor: '#e2e8f0', margin: '2px 0' }} />
+                      <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '2px 0' }} />
                       <button onClick={() => { setActiveMenuId(null); handleEdit(nic); }} style={menuButtonStyle}><Edit2 size={14} /> 編輯詳細資訊</button>
-                      <div style={{ height: '1px', backgroundColor: '#f1f5f9', margin: '4px 0' }} />
-                      <button onClick={() => handleUpdateStatus(nic.id, nic.sn, 'ACTIVE', '在庫')} style={{ ...menuButtonStyle, color: '#047857' }}><CheckCircle size={14} /> 標記為在庫</button>
-                      <button onClick={() => handleUpdateStatus(nic.id, nic.sn, 'SHIPPED', '已出貨')} style={{ ...menuButtonStyle, color: '#1d4ed8' }}><ShoppingBag size={14} /> 標記為出貨</button>
-                      <button onClick={() => handleUpdateStatus(nic.id, nic.sn, 'LENT', '借出')} style={{ ...menuButtonStyle, color: '#b45309' }}><Send size={14} /> 標記為借出</button>
-                      <button onClick={() => handleUpdateStatus(nic.id, nic.sn, 'REPAIR', '故障')} style={{ ...menuButtonStyle, color: '#b91c1c' }}><AlertTriangle size={14} /> 標記為故障</button>
-                      <button onClick={() => handleUpdateStatus(nic.id, nic.sn, 'SCRAPPED', '報廢')} style={{ ...menuButtonStyle, color: '#e11d48' }}><ShieldAlert size={14} /> 標記為報廢</button>
-                      <div style={{ height: '1px', backgroundColor: '#f1f5f9', margin: '4px 0' }} />
-                      <button onClick={() => handleDelete(nic)} style={{ ...menuButtonStyle, color: '#f43f5e', backgroundColor: '#fff1f2' }}><Trash2 size={14} /> 刪除紀錄</button>
+                      <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '4px 0' }} />
+                      <button onClick={() => handleUpdateStatus(nic.id, nic.sn, 'ACTIVE', '在庫')} style={{ ...menuButtonStyle, color: '#10b981' }}><CheckCircle size={14} /> 標記為在庫</button>
+                      <button onClick={() => handleUpdateStatus(nic.id, nic.sn, 'SHIPPED', '已出貨')} style={{ ...menuButtonStyle, color: '#3b82f6' }}><ShoppingBag size={14} /> 標記為出貨</button>
+                      <button onClick={() => handleUpdateStatus(nic.id, nic.sn, 'LENT', '借出')} style={{ ...menuButtonStyle, color: '#f59e0b' }}><Send size={14} /> 標記為借出</button>
+                      <button onClick={() => handleUpdateStatus(nic.id, nic.sn, 'REPAIR', '故障')} style={{ ...menuButtonStyle, color: '#ef4444' }}><AlertTriangle size={14} /> 標記為故障</button>
+                      <button onClick={() => handleUpdateStatus(nic.id, nic.sn, 'SCRAPPED', '報廢')} style={{ ...menuButtonStyle, color: 'var(--text-subtle)' }}><ShieldAlert size={14} /> 標記為報廢</button>
+                      <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '4px 0' }} />
+                      <button onClick={() => handleDelete(nic)} style={{ ...menuButtonStyle, color: '#f43f5e' }}><Trash2 size={14} /> 刪除紀錄</button>
                     </div>
                   )}
                 </td>
@@ -628,7 +637,7 @@ const HwList = ({ isSplitMode = false }) => {
       {totalPages > 1 && (
         <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginTop: '20px' }}>
           <button disabled={currentPage === 1} onClick={() => { setCurrentPage(prev => prev - 1); window.scrollTo(0, 0); }} style={{ ...navBtnStyle, opacity: currentPage === 1 ? 0.5 : 1 }}>上一頁</button>
-          <span style={{ display: 'flex', alignItems: 'center', fontWeight: '800', color: '#475569' }}>第 {currentPage} 頁 / 共 {totalPages} 頁</span>
+          <span style={{ display: 'flex', alignItems: 'center', fontWeight: '800', color: 'var(--text-muted)' }}>第 {currentPage} 頁 / 共 {totalPages} 頁</span>
           <button disabled={currentPage === totalPages} onClick={() => { setCurrentPage(prev => prev + 1); window.scrollTo(0, 0); }} style={{ ...navBtnStyle, opacity: currentPage === totalPages ? 0.5 : 1 }}>下一頁</button>
         </div>
       )}
@@ -643,11 +652,11 @@ const HwList = ({ isSplitMode = false }) => {
         {filterType ? (
           renderTable()
         ) : (
-          <div style={{ textAlign: 'center', padding: '60px 20px', backgroundColor: '#f8fafc', borderRadius: '16px', border: '1px dashed #e2e8f0', marginTop: '20px' }}>
-            <div style={{ color: '#94a3b8', fontSize: '15px', fontWeight: '500' }}>
+          <div style={{ textAlign: 'center', padding: '60px 20px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '16px', border: '1px dashed var(--border-color)', marginTop: '20px' }}>
+            <div style={{ color: 'var(--text-muted)', fontSize: '15px', fontWeight: '500' }}>
               請點擊上方統計卡片，或從左側選單選擇分類來查看詳細清單
             </div>
-            <div style={{ color: '#cbd5e1', fontSize: '12px', marginTop: '8px' }}>
+            <div style={{ color: 'var(--text-subtle)', fontSize: '12px', marginTop: '8px' }}>
               您也可以在右上角使用搜尋功能直接查找
             </div>
           </div>
@@ -655,40 +664,43 @@ const HwList = ({ isSplitMode = false }) => {
       </div>
 
       {showSyncConfig && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
-          <div style={{ backgroundColor: 'white', width: '450px', padding: '32px', borderRadius: '16px' }}>
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'var(--bg-modal-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
+          <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-main)', width: '450px', padding: '32px', borderRadius: '16px', boxShadow: 'var(--modal-shadow)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-              <h2 style={{ fontSize: '18px', fontWeight: '900' }}>伺服器屬性顯示設定</h2>
-              <X size={20} style={{ cursor: 'pointer' }} onClick={() => setShowSyncConfig(false)} />
+              <h2 style={{ fontSize: '18px', fontWeight: '900', color: 'var(--text-main)', margin: 0 }}>伺服器屬性顯示設定</h2>
+              <X size={20} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setShowSyncConfig(false)} />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '400px', overflowY: 'auto' }}>
               {availableFieldDefs.map(def => {
                 const id = def.id;
                 const label = def.label;
                 return (
-                  <label key={id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', border: '1px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer' }}>
+                  <label key={id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', border: '1px solid var(--border-color)', borderRadius: '8px', cursor: 'pointer', backgroundColor: 'var(--bg-surface-subtle)' }}>
                     <input type="checkbox" checked={selectedSyncFields.includes(id)} onChange={() => toggleSyncField(id)} />
-                    <span style={{ fontSize: '14px' }}>{label}</span>
+                    <span style={{ fontSize: '14px', color: 'var(--text-main)' }}>{label}</span>
                   </label>
                 );
               })}
             </div>
-            <button onClick={handleSaveSyncPreference} style={{ width: '100%', padding: '12px', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 700, marginTop: '24px' }}>儲存設定</button>
+            <button onClick={handleSaveSyncPreference} style={{ width: '100%', padding: '12px', backgroundColor: 'var(--primary-color)', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 700, marginTop: '24px', cursor: 'pointer' }}>儲存設定</button>
           </div>
         </div>
       )}
 
       {showEditModal && editItem && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ backgroundColor: 'white', width: '500px', padding: '32px', borderRadius: '16px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}><h2>修改硬體資訊</h2><X size={24} style={{ cursor: 'pointer' }} onClick={() => setShowEditModal(false)} /></div>
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'var(--bg-modal-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
+          <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-main)', width: '60vw', maxWidth: '95vw', padding: '32px', borderRadius: '16px', boxShadow: 'var(--modal-shadow)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+              <h2 style={{ fontSize: '20px', fontWeight: '900', color: 'var(--text-main)', margin: 0 }}>修改硬體資訊</h2>
+              <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setShowEditModal(false)} />
+            </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div>
                 <label style={editLabelStyle}>廠牌 / 類型 / 型號 (鎖定)</label>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <input type="text" value={editItem.brand || ''} disabled style={{ ...editInputStyle, backgroundColor: '#f1f5f9', width: '30%', cursor: 'not-allowed' }} />
-                  <input type="text" value={editItem.type || ''} disabled style={{ ...editInputStyle, backgroundColor: '#f1f5f9', width: '30%', cursor: 'not-allowed' }} />
-                  <input type="text" value={editItem.model || ''} disabled style={{ ...editInputStyle, backgroundColor: '#f1f5f9', flex: 1, cursor: 'not-allowed' }} />
+                  <input type="text" value={editItem.brand || ''} disabled style={{ ...editInputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', width: '30%', cursor: 'not-allowed' }} />
+                  <input type="text" value={editItem.type || ''} disabled style={{ ...editInputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', width: '30%', cursor: 'not-allowed' }} />
+                  <input type="text" value={editItem.model || ''} disabled style={{ ...editInputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', flex: 1, cursor: 'not-allowed' }} />
                 </div>
               </div>
 
@@ -741,9 +753,9 @@ const HwList = ({ isSplitMode = false }) => {
                   {editItem.showProjectDropdown && (
                     <div style={{
                       position: 'absolute', top: '100%', left: 0, right: 0, 
-                      backgroundColor: 'white', border: '1px solid #cbd5e1', 
+                      backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', 
                       borderRadius: '8px', marginTop: '4px', maxHeight: '200px', 
-                      overflowY: 'auto', zIndex: 10, boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                      overflowY: 'auto', zIndex: 10, boxShadow: 'var(--modal-shadow)'
                     }}>
                       {(() => {
                         const searchStr = (editItem.temp_project_name || '').toLowerCase();
@@ -751,17 +763,17 @@ const HwList = ({ isSplitMode = false }) => {
                           (p.project_no || '').toLowerCase().includes(searchStr) || 
                           (p.project_name || '').toLowerCase().includes(searchStr)
                         );
-                        if (matches.length === 0) return <div style={{ padding: '8px', color: '#94a3b8', fontSize: '0.85rem' }}>無符合專案</div>;
+                        if (matches.length === 0) return <div style={{ padding: '8px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>無符合專案</div>;
                         return matches.map(p => (
                           <div 
                             key={p.project_no}
-                            style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem' }}
+                            style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem' }}
                             onMouseDown={() => {
                               setEditItem({...editItem, temp_project_name: p.project_name, showProjectDropdown: false});
                             }}
                           >
-                            <div style={{ fontWeight: 'bold', color: '#334155' }}>{p.project_no}</div>
-                            <div style={{ color: '#64748b' }}>{p.project_name}</div>
+                            <div style={{ fontWeight: 'bold', color: 'var(--text-main)' }}>{p.project_no}</div>
+                            <div style={{ color: 'var(--text-muted)' }}>{p.project_name}</div>
                           </div>
                         ));
                       })()}
@@ -771,9 +783,9 @@ const HwList = ({ isSplitMode = false }) => {
                 <label style={editLabelStyle}>訂單日期<input type="date" value={editItem.temp_order_date || ''} onChange={(e) => setEditItem({ ...editItem, temp_order_date: e.target.value })} style={editInputStyle} /></label>
               </div>
 
-              <div style={{ display: 'flex', gap: '12px', marginTop: '12px', borderTop: '1px solid #f1f5f9', paddingTop: '24px' }}>
-                <button onClick={handleSave} style={{ flex: 1, padding: '14px', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 700, cursor: 'pointer' }}>儲存變更</button>
-                <button onClick={() => setShowEditModal(false)} style={{ padding: '14px 24px', backgroundColor: '#f1f5f9', border: 'none', borderRadius: '10px', cursor: 'pointer' }}>取消</button>
+              <div style={{ display: 'flex', gap: '12px', marginTop: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '24px' }}>
+                <button onClick={handleSave} style={{ flex: 1, padding: '14px', backgroundColor: 'var(--primary-color)', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 700, cursor: 'pointer' }}>儲存變更</button>
+                <button onClick={() => setShowEditModal(false)} style={{ padding: '14px 24px', backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '10px', cursor: 'pointer' }}>取消</button>
               </div>
             </div>
           </div>
@@ -781,13 +793,13 @@ const HwList = ({ isSplitMode = false }) => {
       )}
 
       {confirmModal.show && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 11000 }}>
-          <div style={{ backgroundColor: 'white', width: '320px', padding: '24px', borderRadius: '20px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)', textAlign: 'center' }}>
-            <div style={{ marginBottom: '20px', fontSize: '15px', fontWeight: '700', color: '#1e293b', lineHeight: '1.5' }}>{confirmModal.msg}</div>
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'var(--bg-modal-overlay)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 11000 }}>
+          <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-main)', width: '320px', padding: '24px', borderRadius: '20px', boxShadow: 'var(--modal-shadow)', textAlign: 'center' }}>
+            <div style={{ marginBottom: '20px', fontSize: '15px', fontWeight: '700', color: 'var(--text-main)', lineHeight: '1.5' }}>{confirmModal.msg}</div>
             <div style={{ display: 'flex', gap: '12px' }}>
               <button 
                 onClick={() => setConfirmModal({ show: false, msg: '', onConfirm: null })}
-                style={{ flex: 1, padding: '10px', backgroundColor: '#f1f5f9', border: 'none', borderRadius: '30px', color: '#64748b', fontWeight: '700', cursor: 'pointer', fontSize: '13px' }}
+                style={{ flex: 1, padding: '10px', backgroundColor: 'var(--bg-surface-subtle)', border: '1px solid var(--border-color)', borderRadius: '30px', color: 'var(--text-muted)', fontWeight: '700', cursor: 'pointer', fontSize: '13px' }}
               >
                 取消
               </button>

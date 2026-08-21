@@ -13,21 +13,9 @@ const OutboundSplitView = () => {
         <h2 style={{ fontSize: '24px', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b', margin: 0 }}>
           <Columns size={26} color="#8b5cf6" /> 出貨單雙畫面作業 (D/N Split View)
         </h2>
-        
-        <div style={{ display: 'flex', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>
-          <button onClick={() => navigate('/outbound')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: '#64748b', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
-            📝 建檔
-          </button>
-          <button style={{ padding: '6px 14px', backgroundColor: '#ffffff', color: '#8b5cf6', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '800', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', cursor: 'default' }}>
-            ◫ 雙開
-          </button>
-          <button onClick={() => navigate('/dn-list')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: '#64748b', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
-            📋 清單
-          </button>
-        </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', flex: 1, minHeight: 0 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '6fr 4fr', gap: '24px', flex: 1, minHeight: 0 }}>
         <div style={{ overflowY: 'auto', backgroundColor: '#fff', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
           <Outbound isSplitMode={true} />
         </div>

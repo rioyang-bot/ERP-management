@@ -22,6 +22,8 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
   // PO Header states
   const [orderNo, setOrderNo] = useState('');
   const [remarks, setRemarks] = useState('');
+  const [attachments, setAttachments] = useState([]);
+  const [previewFile, setPreviewFile] = useState(null);
 
   // Items in this PO
   const [items, setItems] = useState([
@@ -70,6 +72,8 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
           const detailRes = await window.electronAPI.namedQuery('fetchPurchaseRecordsByOrder', [initOrderNo]);
           if (detailRes.success && detailRes.rows.length > 0) {
            setRemarks(detailRes.rows[0].remarks || '');
+           const existingAtt = detailRes.rows[0].attachments;
+           setAttachments(Array.isArray(existingAtt) ? existingAtt : (existingAtt ? JSON.parse(existingAtt) : []));
              setItems(detailRes.rows.map(r => ({
                id: r.id, 
                category_id: r.category_id.toString(),
@@ -207,6 +211,7 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
 
     setLoading(true);
     try {
+      const attachmentsJson = JSON.stringify(attachments);
       if (editMode && initOrderNo) {
          const existRes = await window.electronAPI.namedQuery('fetchPurchaseRecordsByOrder', [initOrderNo]);
          if (!existRes.success) throw new Error('獲取原始訂單失敗');
@@ -223,12 +228,12 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
          for (const item of items) {
            if (item.id > 1000000000000) {
              const res = await window.electronAPI.namedQuery('insertPurchaseRecord',
-               [initOrderNo, item.partner_id ? parseInt(item.partner_id) : null, parseInt(item.category_id), item.item_type, item.brand, item.model, item.specification || null, item.unit, parseInt(item.quantity), authUser?.id, 'ORDERED', remarks, null]
+               [initOrderNo, item.partner_id ? parseInt(item.partner_id) : null, parseInt(item.category_id), item.item_type, item.brand, item.model, item.specification || null, item.unit, parseInt(item.quantity), authUser?.id, 'ORDERED', remarks, null, attachmentsJson]
              );
              if (!res.success) throw new Error(`新增品項失敗: ${res.error}`);
            } else {
              const res = await window.electronAPI.namedQuery('updatePurchaseRecordFull',
-               [item.partner_id ? parseInt(item.partner_id) : null, parseInt(item.category_id), item.item_type, item.brand, item.model, item.specification || null, item.unit, parseInt(item.quantity), remarks, null, item.id]
+               [item.partner_id ? parseInt(item.partner_id) : null, parseInt(item.category_id), item.item_type, item.brand, item.model, item.specification || null, item.unit, parseInt(item.quantity), remarks, null, attachmentsJson, item.id]
              );
              if (!res.success) throw new Error(`更新品項失敗: ${res.error}`);
            }
@@ -240,7 +245,7 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
            const res = await window.electronAPI.namedQuery('insertPurchaseRecord',
              [
                orderNo, item.partner_id ? parseInt(item.partner_id) : null, item.category_id, item.item_type, item.brand, item.model,
-               item.specification || null, item.unit, item.quantity, authUser?.id, 'ORDERED', remarks, null
+               item.specification || null, item.unit, item.quantity, authUser?.id, 'ORDERED', remarks, null, attachmentsJson
              ]
            );
            if (!res.success) throw new Error(`品項 ${item.model || '未指定型號'} 儲存失敗: ${res.error}`);
@@ -267,10 +272,48 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
 
   const UNIFIED_UNITS = ['個', '台', '盒', '包', '支', '組', '瓶', '卷', '張', '份'];
 
-  const containerStyle = editMode ? { padding: 0 } : { padding: '24px', backgroundColor: '#f1f5f9', minHeight: '100vh', display: 'flex', flexDirection: isSplitMode ? 'column' : 'row', gap: '24px' };
+  const handleFileUpload = async (e) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    setLoading(true);
+    try {
+      const newAttachments = [...attachments];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const buffer = await file.arrayBuffer();
+        const res = await window.electronAPI.saveFile(file.name, buffer);
+        if (res.success) {
+          newAttachments.push({ originalName: file.name, fileName: res.fileName, type: file.type });
+        } else {
+          alert('上傳失敗: ' + res.error);
+        }
+      }
+      setAttachments(newAttachments);
+    } catch (err) {
+      console.error(err);
+      alert('上傳發生錯誤');
+    } finally {
+      setLoading(false);
+      e.target.value = ''; // clear input
+    }
+  };
+
+  const removeAttachment = (index) => {
+    const newAtt = [...attachments];
+    newAtt.splice(index, 1);
+    setAttachments(newAtt);
+  };
+
+  const getMediaSrc = (fileName) => {
+    const rawUrl = `erp-media:///${encodeURIComponent(fileName)}`;
+    return window.getMediaUrl ? window.getMediaUrl(rawUrl) : rawUrl;
+  };
+
+  const containerStyle = editMode ? { padding: 0 } : { padding: '24px', backgroundColor: 'var(--bg-app)', minHeight: '100vh', display: 'flex', flexDirection: isSplitMode ? 'column' : 'row', gap: '24px' };
   const leftSectionStyle = editMode ? { width: '100%' } : (isSplitMode ? { width: '100%' } : { flex: '0 0 60%' });
   const rightSectionStyle = isSplitMode ? { width: '100%' } : { flex: '1' };
-  const cardStyle = editMode ? {} : { backgroundColor: '#ffffff', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', marginBottom: '24px' };
+  const cardStyle = editMode ? {} : { backgroundColor: 'var(--bg-surface)', borderRadius: '16px', padding: '24px', boxShadow: 'var(--card-shadow)', border: '1px solid var(--border-color)', marginBottom: '24px', color: 'var(--text-main)' };
 
   return (
     <div style={containerStyle}>
@@ -279,20 +322,20 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
           {!editMode && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
               <div>
-                <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
-                  <ShoppingCart size={26} color="#2563eb" /> 採購建檔(Purchase Order Registration )
+                <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
+                  <ShoppingCart size={26} color="var(--primary-color)" /> 採購建檔(Purchase Order Registration )
                 </h1>
-                <p style={{ color: '#64748b', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>建立與申請新的採購單，設定專案與供應商訂購細節。</p>
+                <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>建立與申請新的採購單，設定專案與供應商訂購細節。</p>
               </div>
               {!isSplitMode && (
-                <div style={{ display: 'flex', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>
-                  <button style={{ padding: '6px 14px', backgroundColor: '#ffffff', color: '#2563eb', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '800', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', cursor: 'default' }}>
+                <div style={{ display: 'flex', backgroundColor: 'var(--bg-surface-subtle)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+                  <button style={{ padding: '6px 14px', backgroundColor: 'var(--bg-surface)', color: 'var(--primary-color)', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '800', boxShadow: 'var(--card-shadow)', cursor: 'default' }}>
                     📝 建檔
                   </button>
-                  <button onClick={() => navigate('/procurement-split')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: '#64748b', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
+                  <button onClick={() => navigate('/procurement-split')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: 'var(--text-muted)', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
                     ◫ 雙開
                   </button>
-                  <button onClick={() => navigate('/procurement-list')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: '#64748b', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
+                  <button onClick={() => navigate('/procurement-list')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: 'var(--text-muted)', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
                     📋 清單
                   </button>
                 </div>
@@ -302,15 +345,15 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
 
         <form onSubmit={handleSubmit}>
           {/* Header Section */}
-          <div className="card-surface" style={{ backgroundColor: '#f8f9fa', marginBottom: '24px', padding: '24px', border: '1px solid #eee' }}>
+          <div className="card-surface" style={{ backgroundColor: 'var(--bg-surface-subtle)', marginBottom: '24px', padding: '24px', border: '1px solid var(--border-color)', borderRadius: '12px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px', marginBottom: '16px' }}>
               <div>
                 <label style={labelStyle}>採購單號 (PO No.)</label>
-                <input value={orderNo} readOnly style={{ ...inputStyle, backgroundColor: '#eee', fontWeight: 'bold' }} />
+                <input value={orderNo} readOnly style={{ ...inputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', fontWeight: 'bold' }} />
               </div>
               <div>
                 <label style={labelStyle}>採購人員 (Purchaser)</label>
-                <input disabled value={authUser?.full_name || '--'} style={{ ...inputStyle, backgroundColor: '#eee' }} />
+                <input disabled value={authUser?.full_name || '--'} style={{ ...inputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)' }} />
               </div>
             </div>
             <div>
@@ -322,13 +365,47 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
                 style={{ ...inputStyle, minHeight: '40px', height: '40px', resize: 'none' }}
               />
             </div>
+            <div style={{ marginTop: '16px' }}>
+              <label style={labelStyle}>相關附件 (報價單、規格書等)</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <label style={{ 
+                  padding: '8px 16px', backgroundColor: 'var(--primary-color)', color: '#fff', 
+                  borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold' 
+                }}>
+                  上傳檔案
+                  <input type="file" multiple onChange={handleFileUpload} style={{ display: 'none' }} accept="image/png, image/jpeg, application/pdf" />
+                </label>
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>支援 PNG, JPG, PDF (可直接點擊檢視)</span>
+              </div>
+              {attachments.length > 0 && (
+                <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {attachments.map((file, idx) => (
+                    <div key={idx} style={{ 
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
+                      backgroundColor: 'var(--bg-surface)', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border-color)' 
+                    }}>
+                      <div 
+                        style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: 'var(--primary-color)' }}
+                        onClick={() => setPreviewFile(file)}
+                      >
+                        <FileText size={16} />
+                        <span style={{ fontSize: '13px', fontWeight: 600 }}>{file.originalName}</span>
+                      </div>
+                      <button type="button" onClick={() => removeAttachment(idx)} style={{ background: 'none', border: 'none', color: '#ff4d4f', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                        <X size={16} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Items Section */}
-          <div className="card-surface" style={{ padding: '0', overflow: 'hidden', border: '1px solid #eee' }}>
+          <div className="card-surface" style={{ padding: '0', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr style={{ backgroundColor: '#f1f3f4', textAlign: 'left' }}>
+                <tr style={{ backgroundColor: 'var(--table-header-bg)', textAlign: 'left' }}>
                   <th style={{ ...thStyle, width: '130px' }}>類別</th>
                   <th style={{ ...thStyle, width: '180px' }}>供應商</th>
                   <th style={{ ...thStyle, width: '230px' }}>廠牌 / 類型</th>
@@ -451,10 +528,10 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
               </tbody>
             </table>
             
-            <div style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fafafa' }}>
+            <div style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-surface-subtle)', borderTop: '1px solid var(--border-color)' }}>
               <button type="button" onClick={handleAddItem} style={{ 
                 display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', 
-                backgroundColor: 'white', border: '1px solid #ddd', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, color: 'var(--primary-color)'
+                backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, color: 'var(--primary-color)'
               }}>
                 <Plus size={18} /> 增加採購品項
               </button>
@@ -470,7 +547,7 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
             {editMode ? (
               <>
                 <button type="button" onClick={onClose} style={{ 
-                  padding: '14px 32px', backgroundColor: '#fff', border: '1px solid #ddd', borderRadius: '10px', fontWeight: 600, cursor: 'pointer' 
+                  padding: '14px 32px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '10px', fontWeight: 600, cursor: 'pointer' 
                 }}>取消編輯</button>
                 <button type="submit" disabled={loading} className="btn-primary" style={{ 
                   padding: '14px 48px', borderRadius: '10px', fontSize: '1.1rem', fontWeight: 700, boxShadow: '0 4px 12px rgba(27, 54, 93, 0.2)'
@@ -481,7 +558,7 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
             ) : (
               <>
                 <button type="button" onClick={() => fetchData(false)} style={{ 
-                  padding: '14px 32px', backgroundColor: '#fff', border: '1px solid #ddd', borderRadius: '10px', fontWeight: 600, cursor: 'pointer' 
+                  padding: '14px 32px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '10px', fontWeight: 600, cursor: 'pointer' 
                 }}>取消並重設</button>
                 <button type="submit" disabled={loading} className="btn-primary" style={{ 
                   padding: '14px 48px', borderRadius: '10px', fontSize: '1.1rem', fontWeight: 700, boxShadow: '0 4px 12px rgba(27, 54, 93, 0.2)'
@@ -498,17 +575,17 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
       {!editMode && (
         <div style={rightSectionStyle}>
           <div style={cardStyle}>
-            <h3 style={{ fontSize: '16px', fontWeight: '800', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px', color: '#1e293b' }}>
-              <Clock size={18} color="#64748b" /> 最新 10 筆建檔記錄
+            <h3 style={{ fontSize: '16px', fontWeight: '800', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-main)' }}>
+              <Clock size={18} color="var(--text-muted)" /> 最新 10 筆建檔記錄
             </h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {loading && purchaseRecords.length === 0 ? (
-                <p style={{ color: '#aaa', textAlign: 'center', padding: '20px' }}>載入中...</p>
+                <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>載入中...</p>
               ) : purchaseRecords.length === 0 ? (
-                <p style={{ color: '#aaa', textAlign: 'center', padding: '20px' }}>尚無採購紀錄</p>
+                <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>尚無採購紀錄</p>
               ) : (
                 purchaseRecords.map(record => (
-                  <div key={record.id} style={{ padding: '12px 16px', borderRadius: '12px', border: '1px solid #f1f5f9', backgroundColor: '#fafafa' }}>
+                  <div key={record.id} style={{ padding: '12px 16px', borderRadius: '12px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                       <span style={{ fontWeight: 700, color: 'var(--primary-color)', fontSize: '13px' }}>{record.order_no}</span>
                       <span style={{ 
@@ -516,13 +593,13 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
                         backgroundColor: statusColors[record.status]?.bg, color: statusColors[record.status]?.color
                       }}>{statusColors[record.status]?.label}</span>
                     </div>
-                    <div style={{ fontWeight: '800', fontSize: '13px', color: '#333', marginBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <div style={{ fontWeight: '800', fontSize: '13px', color: 'var(--text-main)', marginBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {record.specification}
-                      {record.model && <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 500, marginLeft: '6px' }}>({record.model})</span>}
+                      {record.model && <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 500, marginLeft: '6px' }}>({record.model})</span>}
                     </div>
-                    <div style={{ fontSize: '12px', color: '#475569', marginBottom: '6px' }}>
-                      <span style={{ color: '#94a3b8' }}>{record.partner_name}</span> · 
-                      <span style={{ fontWeight: 700, color: '#1e293b' }}>{record.quantity} {record.unit}</span>
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                      <span style={{ color: 'var(--text-subtle)' }}>{record.partner_name}</span> · 
+                      <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>{record.quantity} {record.unit}</span>
                     </div>
                     {record.project_name && (
                       <div style={{ marginBottom: '4px', fontSize: '12px', color: 'var(--primary-color)', fontWeight: 600 }}>
@@ -530,11 +607,11 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
                       </div>
                     )}
                     {record.remarks && (
-                      <div style={{ marginBottom: '8px', padding: '4px 8px', backgroundColor: '#fff', borderRadius: '4px', fontSize: '11px', color: '#64748b', borderLeft: '3px solid #e2e8f0' }}>
+                      <div style={{ marginBottom: '8px', padding: '4px 8px', backgroundColor: 'var(--bg-surface)', borderRadius: '4px', fontSize: '11px', color: 'var(--text-muted)', borderLeft: '3px solid var(--primary-color)' }}>
                         備註: {record.remarks}
                       </div>
                     )}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#94a3b8', borderTop: '1px solid #f1f5f9', paddingTop: '8px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-subtle)', borderTop: '1px solid var(--border-color)', paddingTop: '8px' }}>
                       <span>採購人: {record.purchaser_name || '--'}</span>
                       <span>{new Date(record.created_at).toLocaleString()}</span>
                     </div>
@@ -548,10 +625,10 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
 
       {/* Quick Add Popover/Modal */}
       {quickAdd.show && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
-          <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', width: '360px', padding: '24px' }}>
-            <h3 style={{ marginBottom: '16px' }}>新增{quickAdd.type === 'type' ? '類型' : '廠牌'}</h3>
-            <p style={{ fontSize: '0.8rem', color: '#666', marginBottom: '16px' }}>類別: {categories.find(c => c.id.toString() === quickAdd.catId.toString())?.name}</p>
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'var(--bg-modal-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
+          <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '16px', boxShadow: 'var(--modal-shadow)', width: '360px', padding: '24px' }}>
+            <h3 style={{ marginBottom: '16px', color: 'var(--text-main)' }}>新增{quickAdd.type === 'type' ? '類型' : '廠牌'}</h3>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '16px' }}>類別: {categories.find(c => c.id.toString() === quickAdd.catId.toString())?.name}</p>
             <input 
               autoFocus
               value={newName} 
@@ -561,8 +638,38 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
               onKeyDown={e => e.key === 'Enter' && handleQuickAddSave()}
             />
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <button onClick={() => setQuickAdd({ show: false, type: '', rowId: null, catId: null })} style={{ padding: '8px 16px', border: '1px solid #ddd', borderRadius: '6px', background: '#fff', cursor: 'pointer' }}>取消</button>
+              <button onClick={() => setQuickAdd({ show: false, type: '', rowId: null, catId: null })} style={{ padding: '8px 16px', border: '1px solid var(--border-color)', borderRadius: '6px', background: 'var(--bg-surface)', color: 'var(--text-main)', cursor: 'pointer' }}>取消</button>
               <button onClick={handleQuickAddSave} style={{ padding: '8px 24px', backgroundColor: 'var(--primary-color)', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>儲存</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Preview Modal */}
+      {previewFile && (
+        <div style={{ 
+          position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.75)', 
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000, padding: '24px' 
+        }}>
+          <div style={{ backgroundColor: '#fff', width: '80vw', height: '80vh', borderRadius: '12px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{ padding: '16px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, fontSize: '16px' }}>{previewFile.originalName}</h3>
+              <button onClick={() => setPreviewFile(null)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={24} /></button>
+            </div>
+            <div style={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f0f0f0' }}>
+              {previewFile.type === 'application/pdf' ? (
+                <iframe 
+                  src={getMediaSrc(previewFile.fileName)} 
+                  style={{ width: '100%', height: '100%', border: 'none' }} 
+                  title="PDF Preview"
+                />
+              ) : (
+                <img 
+                  src={getMediaSrc(previewFile.fileName)} 
+                  style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} 
+                  alt="Preview"
+                />
+              )}
             </div>
           </div>
         </div>
@@ -571,10 +678,10 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
   );
 };
 
-const labelStyle = { display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#555', marginBottom: '8px' };
-const inputStyle = { width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '0.95rem', outline: 'none', backgroundColor: '#fff', boxSizing: 'border-box' };
-const thStyle = { padding: '12px 16px', borderBottom: '2px solid #eee', fontWeight: 600, color: '#666', fontSize: '0.85rem' };
-const tdStyle = { padding: '12px 16px', verticalAlign: 'middle' };
-const smallIconButtonStyle = { display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px', backgroundColor: '#f0f0f0', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer' };
+const labelStyle = { display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px' };
+const inputStyle = { width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--input-border)', fontSize: '0.95rem', outline: 'none', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', boxSizing: 'border-box' };
+const thStyle = { padding: '12px 16px', borderBottom: '2px solid var(--border-color)', fontWeight: 600, color: 'var(--table-header-text)', backgroundColor: 'var(--table-header-bg)', fontSize: '0.85rem' };
+const tdStyle = { padding: '12px 16px', verticalAlign: 'middle', borderBottom: '1px solid var(--table-border)', color: 'var(--text-main)' };
+const smallIconButtonStyle = { display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px', backgroundColor: 'var(--bg-surface-subtle)', border: '1px solid var(--border-color)', borderRadius: '4px', cursor: 'pointer', color: 'var(--text-main)' };
 
 export default ProcurementRegistration; 

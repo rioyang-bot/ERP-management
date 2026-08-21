@@ -9,6 +9,7 @@ const ProcurementList = ({ isSplitMode = false }) => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [searchField, setSearchField] = useState('all');
+  const [searchStatus, setSearchStatus] = useState('ALL');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
@@ -26,7 +27,7 @@ const ProcurementList = ({ isSplitMode = false }) => {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, searchField, startDate, endDate]);
+  }, [searchTerm, searchField, searchStatus, startDate, endDate]);
 
   const fetchRecords = useCallback(async () => {
     setLoading(true);
@@ -140,6 +141,10 @@ const ProcurementList = ({ isSplitMode = false }) => {
     }
 
     if (!matchSearch) return false;
+    
+    if (searchStatus !== 'ALL' && order.status !== searchStatus) {
+      return false;
+    }
 
     if (startDate || endDate) {
       const orderDate = new Date(order.created_at);
@@ -159,9 +164,9 @@ const ProcurementList = ({ isSplitMode = false }) => {
   });
 
   const statusColors = {
-    'ORDERED': { bg: '#e3f2fd', color: '#1976d2', label: '已下單' },
-    'PARTIAL': { bg: '#fff3e0', color: '#e65100', label: '部分入庫' },
-    'COMPLETED': { bg: '#e8f5e9', color: '#2e7d32', label: '已結案入庫' }
+    'ORDERED': { bg: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6', label: '已下單' },
+    'PARTIAL': { bg: 'rgba(249, 115, 22, 0.15)', color: '#f97316', label: '部分入庫' },
+    'COMPLETED': { bg: 'rgba(34, 197, 94, 0.15)', color: '#22c55e', label: '已結案入庫' }
   };
 
 
@@ -174,49 +179,37 @@ const ProcurementList = ({ isSplitMode = false }) => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <div>
-            <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
-              <ShoppingCart size={26} color="#2563eb" /> 採購列表(Purchase Order List)
+            <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
+              <ShoppingCart size={26} color="var(--primary-color)" /> 採購列表(Purchase Order List)
             </h1>
-            <p style={{ color: '#64748b', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>管理所有採購單 (PO) 的品項分佈與入庫進度。</p>
+            <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>管理所有採購單 (PO) 的品項分佈與入庫進度。</p>
           </div>
-          {!isSplitMode && (
-            <div style={{ display: 'flex', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>
-              <button onClick={() => navigate('/purchasing')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: '#64748b', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
-                📝 建檔
-              </button>
-              <button onClick={() => navigate('/procurement-split')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: '#64748b', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
-                ◫ 雙開
-              </button>
-              <button style={{ padding: '6px 14px', backgroundColor: '#ffffff', color: '#2563eb', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '800', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', cursor: 'default' }}>
-                📋 清單
-              </button>
-            </div>
-          )}
         </div>
         
         <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-           <div style={{ backgroundColor: '#fff', padding: '12px 24px', borderRadius: '12px', border: '1px solid #eee', display: 'flex', gap: '24px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+           <div style={{ backgroundColor: 'var(--bg-surface)', padding: '12px 24px', borderRadius: '12px', border: '1px solid var(--border-color)', display: 'flex', gap: '24px', boxShadow: 'var(--card-shadow)' }}>
               <div>
-                <div style={{ fontSize: '0.75rem', color: '#aaa', fontWeight: 600 }}>待處理採購單</div>
-                <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#e65100' }}>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>待處理採購單</div>
+                <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#f97316' }}>
                   {orders.filter(o => o.status !== 'COMPLETED').length} <span style={{ fontSize: '0.8rem', fontWeight: 400, opacity: 0.8 }}>單</span>
                 </div>
               </div>
-
            </div>
-           <button onClick={fetchRecords} className="btn-refresh-vibrant">
-             <RefreshCw size={18} className={loading ? 'spinner' : ''} /> 重新整理
-           </button>
+           {!isSplitMode && (
+             <button onClick={() => navigate('/procurement-split')} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '12px', border: 'none', backgroundColor: 'var(--primary-color)', color: '#fff', fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer', boxShadow: '0 4px 12px rgba(37, 99, 235, 0.2)' }}>
+               <ShoppingCart size={18} /> 新增採購單(P/O Reg)
+             </button>
+           )}
         </div>
       </div>
 
-      <div className="card-surface" style={{ padding: '0' }}>
-        <div style={{ padding: '20px 24px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fafafa' }}>
+      <div className="card-surface" style={{ padding: '0', overflow: 'hidden' }}>
+        <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-surface-subtle)' }}>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <select 
               value={searchField} 
               onChange={e => setSearchField(e.target.value)}
-              style={{ padding: '10px 14px', borderRadius: '10px', border: '1px solid #ddd', outline: 'none', fontSize: '0.9rem', backgroundColor: '#fff', cursor: 'pointer', minWidth: '130px', boxShadow: '0 2px 4px rgba(0,0,0,0.03)' }}
+              style={{ padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--input-border)', outline: 'none', fontSize: '0.9rem', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', cursor: 'pointer', minWidth: '130px' }}
             >
               {searchOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
             </select>
@@ -229,30 +222,42 @@ const ProcurementList = ({ isSplitMode = false }) => {
                 style={{ 
                   padding: '10px 16px 10px 42px', 
                   borderRadius: '10px', 
-                  border: '1px solid #ddd', 
+                  border: '1px solid var(--input-border)', 
+                  backgroundColor: 'var(--input-bg)',
+                  color: 'var(--input-text)',
                   fontSize: '0.9rem', 
                   width: '320px',
-                  outline: 'none',
-                  boxShadow: '0 2px 4px rgba(0,0,0,0.03)'
+                  outline: 'none'
                 }}
               />
-              <Search size={18} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#aaa' }} />
+              <Search size={18} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-subtle)' }} />
             </div>
             
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '10px', border: '1px solid #e2e8f0', backgroundColor: '#fff', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
-              <Calendar size={18} color="#94a3b8" />
+            <select
+              value={searchStatus}
+              onChange={e => setSearchStatus(e.target.value)}
+              style={{ padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--input-border)', outline: 'none', fontSize: '0.9rem', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', cursor: 'pointer', minWidth: '120px' }}
+            >
+              <option value="ALL">所有狀態</option>
+              <option value="ORDERED">已下單</option>
+              <option value="PARTIAL">部分入庫</option>
+              <option value="COMPLETED">已結案入庫</option>
+            </select>
+            
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '10px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)' }}>
+              <Calendar size={18} color="var(--text-subtle)" />
               <input 
                 type="date" 
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                style={{ border: 'none', outline: 'none', fontSize: '0.9rem', color: '#475569', background: 'transparent' }} 
+                style={{ border: 'none', outline: 'none', fontSize: '0.9rem', color: 'var(--text-main)', background: 'transparent' }} 
               />
-              <span style={{ color: '#cbd5e1' }}>-</span>
+              <span style={{ color: 'var(--text-subtle)' }}>-</span>
               <input 
                 type="date" 
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                style={{ border: 'none', outline: 'none', fontSize: '0.9rem', color: '#475569', background: 'transparent' }} 
+                style={{ border: 'none', outline: 'none', fontSize: '0.9rem', color: 'var(--text-main)', background: 'transparent' }} 
               />
             </div>
           </div>
@@ -261,56 +266,57 @@ const ProcurementList = ({ isSplitMode = false }) => {
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
-              <tr style={{ textAlign: 'left', borderBottom: '2px solid #334155' }}>
+              <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--border-color)', backgroundColor: 'var(--table-header-bg)' }}>
                 <th style={{ ...thStyle, width: '40px' }}></th>
                 <th style={thStyle}>採購單號 / 日期</th>
                 <th style={thStyle}>供應商 / 採購員</th>
                 <th style={{ ...thStyle, textAlign: 'center' }}>品項數</th>
                 <th style={{ ...thStyle, textAlign: 'center' }}>總到貨進度</th>
                 <th style={thStyle}>狀態</th>
-                <th style={{ ...thStyle, textAlign: 'center' }}>功能</th>
+                <th style={{ ...thStyle, textAlign: 'center' }}>操作</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan="7" style={{ padding: '60px', textAlign: 'center', color: '#999' }}>資料載入中...</td></tr>
+                <tr><td colSpan="7" style={{ padding: '60px', textAlign: 'center', color: 'var(--text-muted)' }}>資料載入中...</td></tr>
               ) : currentOrders.length === 0 ? (
-                <tr><td colSpan="7" style={{ padding: '60px', textAlign: 'center', color: '#999' }}>未找到符合條件的採購單</td></tr>
+                <tr><td colSpan="7" style={{ padding: '60px', textAlign: 'center', color: 'var(--text-muted)' }}>未找到符合條件的採購單</td></tr>
               ) : (
                 currentOrders.map(order => (
                   <React.Fragment key={order.order_no}>
                     <tr 
                       onClick={() => toggleOrder(order.order_no)}
                       style={{ 
-                        borderBottom: '1px solid #f5f5f5', 
+                        borderBottom: '1px solid var(--table-border)', 
                         cursor: 'pointer',
-                        backgroundColor: expandedOrders.has(order.order_no) ? '#f8fbff' : 'transparent',
-                        transition: 'background-color 0.2s'
+                        backgroundColor: expandedOrders.has(order.order_no) ? 'var(--bg-surface-hover)' : 'transparent',
+                        transition: 'background-color 0.2s',
+                        color: 'var(--text-main)'
                       }} 
                       className="row-hover-effect"
                     >
                       <td style={{ padding: '16px 8px 16px 24px' }}>
-                        {expandedOrders.has(order.order_no) ? <ChevronDown size={20} color="#666" /> : <ChevronRight size={20} color="#666" />}
+                        {expandedOrders.has(order.order_no) ? <ChevronDown size={20} color="var(--text-muted)" /> : <ChevronRight size={20} color="var(--text-muted)" />}
                       </td>
                       <td style={{ padding: '16px 24px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--primary-color)' }}>{order.order_no}</span>
                         </div>
-                        <div style={{ fontSize: '0.75rem', color: '#aaa', marginTop: '2px' }}>{new Date(order.created_at).toLocaleDateString()} {new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>{new Date(order.created_at).toLocaleDateString()} {new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                       </td>
                       <td style={{ padding: '16px 24px' }}>
-                        <div style={{ fontWeight: 600, color: '#333' }}>{order.partner_name || '未指定'}</div>
-                        <div style={{ fontSize: '0.8rem', color: '#888' }}>{order.purchaser_name || '系統'}</div>
+                        <div style={{ fontWeight: 600, color: 'var(--text-main)' }}>{order.partner_name || '未指定'}</div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{order.purchaser_name || '系統'}</div>
                       </td>
-                      <td style={{ padding: '16px 24px', textAlign: 'center', fontWeight: 500 }}>
+                      <td style={{ padding: '16px 24px', textAlign: 'center', fontWeight: 600, color: 'var(--text-main)' }}>
                         {order.items.length} 項
                       </td>
                       <td style={{ padding: '16px 24px', textAlign: 'center' }}>
-                         <div style={{ fontSize: '0.9rem', fontWeight: 700, color: order.receivedQty === order.totalQty ? '#2e7d32' : (order.receivedQty > 0 ? '#e65100' : '#888') }}>
+                         <div style={{ fontSize: '0.9rem', fontWeight: 700, color: order.receivedQty === order.totalQty ? '#22c55e' : (order.receivedQty > 0 ? '#f97316' : 'var(--text-muted)') }}>
                            {order.receivedQty} / {order.totalQty}
                          </div>
-                         <div style={{ height: '4px', backgroundColor: '#eee', borderRadius: '10px', marginTop: '6px', overflow: 'hidden' }}>
-                            <div style={{ height: '100%', backgroundColor: order.receivedQty === order.totalQty ? '#2e7d32' : '#faad14', width: `${(order.receivedQty / order.totalQty) * 100}%` }}></div>
+                         <div style={{ height: '4px', backgroundColor: 'var(--border-color)', borderRadius: '10px', marginTop: '6px', overflow: 'hidden' }}>
+                            <div style={{ height: '100%', backgroundColor: order.receivedQty === order.totalQty ? '#22c55e' : '#f59e0b', width: `${(order.receivedQty / order.totalQty) * 100}%` }}></div>
                          </div>
                       </td>
                       <td style={{ padding: '16px 24px' }}>
@@ -327,21 +333,21 @@ const ProcurementList = ({ isSplitMode = false }) => {
                               <>
                                 <button 
                                   onClick={(e) => { e.stopPropagation(); handleEditOrder(order); }} 
-                                  style={{ ...iconButtonStyle, color: '#1890ff' }}
+                                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', backgroundColor: 'rgba(16, 185, 129, 0.12)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
                                   title="修改採購單"
                                 >
-                                  <Edit2 size={16} />
+                                  <Edit2 size={16} /> 編輯
                                 </button>
                                 <button 
                                   onClick={(e) => { e.stopPropagation(); handleDeleteOrder(order.order_no); }} 
-                                  style={{ ...iconButtonStyle, color: '#ff4d4f' }}
+                                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', backgroundColor: 'rgba(239, 68, 68, 0.12)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
                                   title="刪除採購單"
                                 >
-                                  <Trash2 size={16} />
+                                  <Trash2 size={16} /> 刪除
                                 </button>
                               </>
                             ) : (
-                              <span style={{ fontSize: '0.7rem', color: '#ccc' }}>唯讀紀錄</span>
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-subtle)' }}>唯讀紀錄</span>
                             )}
                           </div>
                       </td>
@@ -350,11 +356,11 @@ const ProcurementList = ({ isSplitMode = false }) => {
                     {/* Collapsible Details */}
                     {expandedOrders.has(order.order_no) && (
                       <tr>
-                        <td colSpan="7" style={{ padding: '0', backgroundColor: '#fdfdfd' }}>
-                          <div style={{ padding: '20px 24px 20px 72px', borderBottom: '1px solid #eee' }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse', backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #eee', overflow: 'hidden' }}>
+                        <td colSpan="7" style={{ padding: '0', backgroundColor: 'var(--bg-surface-subtle)' }}>
+                          <div style={{ padding: '20px 24px 20px 72px', borderBottom: '1px solid var(--border-color)' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', backgroundColor: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
                               <thead>
-                                <tr style={{ backgroundColor: '#f9fafb', textAlign: 'left', borderBottom: '1px solid #eee' }}>
+                                <tr style={{ backgroundColor: 'var(--table-header-bg)', textAlign: 'left', borderBottom: '1px solid var(--border-color)' }}>
                                   <th style={innerThStyle}>廠牌 / 型號</th>
                                   <th style={innerThStyle}>規格 (Item Specification)</th>
                                   <th style={{ ...innerThStyle, textAlign: 'center' }}>數量</th>
@@ -364,19 +370,19 @@ const ProcurementList = ({ isSplitMode = false }) => {
                               </thead>
                               <tbody>
                                 {order.items.map(item => (
-                                  <tr key={item.id} style={{ borderBottom: '1px solid #f5f5f5' }}>
+                                  <tr key={item.id} style={{ borderBottom: '1px solid var(--table-border)' }}>
                                     <td style={innerTdStyle}>
                                       <div style={{ fontWeight: 600, color: 'var(--primary-color)' }}>{item.brand || '--'}</div>
-                                      <div style={{ fontSize: '0.75rem', color: '#666' }}>{item.model || '--'}</div>
+                                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{item.model || '--'}</div>
                                     </td>
                                     <td style={innerTdStyle}>
-                                      <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{item.specification}</div>
-                                      <div style={{ fontSize: '0.75rem', color: '#999' }}>{item.category_name}</div>
+                                      <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-main)' }}>{item.specification}</div>
+                                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{item.category_name}</div>
                                     </td>
-                                    <td style={{ ...innerTdStyle, textAlign: 'center' }}>{item.quantity} {item.unit}</td>
-                                    <td style={{ ...innerThStyle, textAlign: 'center', fontWeight: 700, color: item.received_quantity === item.quantity ? '#2e7d32' : '#e65100' }}>{item.received_quantity}</td>
+                                    <td style={{ ...innerTdStyle, textAlign: 'center', color: 'var(--text-main)' }}>{item.quantity} {item.unit}</td>
+                                    <td style={{ ...innerThStyle, textAlign: 'center', fontWeight: 700, color: item.received_quantity === item.quantity ? '#22c55e' : '#f97316' }}>{item.received_quantity}</td>
                                     <td style={innerTdStyle}>
-                                      <span style={{ fontSize: '0.75rem', color: statusColors[item.status]?.color }}>● {statusColors[item.status]?.label}</span>
+                                      <span style={{ fontSize: '0.75rem', color: statusColors[item.status]?.color, fontWeight: 600 }}>● {statusColors[item.status]?.label}</span>
                                     </td>
                                   </tr>
                                 ))}
@@ -394,21 +400,21 @@ const ProcurementList = ({ isSplitMode = false }) => {
           
           {/* Pagination Controls */}
           {totalPages > 1 && (
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '16px', gap: '12px', borderTop: '1px solid #eee', backgroundColor: '#fafafa' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '16px', gap: '12px', borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)' }}>
               <button 
                 disabled={currentPage === 1}
                 onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                style={{ padding: '6px 14px', border: '1px solid #ddd', borderRadius: '6px', backgroundColor: currentPage === 1 ? '#f5f5f5' : '#fff', color: currentPage === 1 ? '#aaa' : '#333', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
+                style={{ padding: '6px 14px', border: '1px solid var(--border-color)', borderRadius: '6px', backgroundColor: currentPage === 1 ? 'var(--bg-surface-subtle)' : 'var(--bg-surface)', color: currentPage === 1 ? 'var(--text-subtle)' : 'var(--text-main)', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
               >
                 上一頁
               </button>
-              <span style={{ fontSize: '0.9rem', color: '#555', fontWeight: 600 }}>
-                {currentPage} <span style={{ color: '#aaa', margin: '0 4px' }}>/</span> {totalPages}
+              <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                {currentPage} <span style={{ color: 'var(--text-subtle)', margin: '0 4px' }}>/</span> {totalPages}
               </span>
               <button 
                 disabled={currentPage === totalPages}
                 onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                style={{ padding: '6px 14px', border: '1px solid #ddd', borderRadius: '6px', backgroundColor: currentPage === totalPages ? '#f5f5f5' : '#fff', color: currentPage === totalPages ? '#aaa' : '#333', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
+                style={{ padding: '6px 14px', border: '1px solid var(--border-color)', borderRadius: '6px', backgroundColor: currentPage === totalPages ? 'var(--bg-surface-subtle)' : 'var(--bg-surface)', color: currentPage === totalPages ? 'var(--text-subtle)' : 'var(--text-main)', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
               >
                 下一頁
               </button>
@@ -419,7 +425,7 @@ const ProcurementList = ({ isSplitMode = false }) => {
 
       {showEditModal && editingOrder && (
         <div style={modalOverlayStyle}>
-          <div className="card-surface" style={{ ...modalContentStyle, width: '90vw', padding: '24px 32px' }}>
+          <div className="card-surface" style={{ ...modalContentStyle, width: '60vw', padding: '24px 32px' }}>
             <ProcurementRegistration 
               editMode={true} 
               initOrderNo={editingOrder.order_no} 
@@ -434,21 +440,21 @@ const ProcurementList = ({ isSplitMode = false }) => {
 
       <style>{`
         .row-hover-effect:hover {
-          background-color: #fcfdfe !important;
+          background-color: var(--table-row-hover) !important;
         }
       `}</style>
     </div>
   );
 };
 
-const thStyle = { padding: '12px 24px', fontSize: '0.95rem', fontWeight: 800, color: '#000' };
-const innerThStyle = { padding: '10px 16px', fontSize: '0.75rem', fontWeight: 600, color: '#888' };
-const innerTdStyle = { padding: '12px 16px', fontSize: '0.85rem', color: '#555' };
+const thStyle = { padding: '12px 24px', fontSize: '0.95rem', fontWeight: 800, color: 'var(--table-header-text)' };
+const innerThStyle = { padding: '10px 16px', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' };
+const innerTdStyle = { padding: '12px 16px', fontSize: '0.85rem', color: 'var(--text-main)' };
 const actionButtonStyle = { display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', fontSize: '0.85rem' };
 const iconButtonStyle = { padding: '6px', borderRadius: '6px', border: 'none', backgroundColor: 'transparent', cursor: 'pointer' };
-const modalOverlayStyle = { position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' };
-const modalContentStyle = { width: '800px', maxHeight: '85vh', padding: '32px', borderRadius: '16px', backgroundColor: '#fff', overflow: 'hidden', display: 'flex', flexDirection: 'column' };
-const labelStyle = { display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#aaa', marginBottom: '6px' };
-const inputStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '0.9rem', boxSizing: 'border-box' };
+const modalOverlayStyle = { position: 'fixed', inset: 0, backgroundColor: 'var(--bg-modal-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' };
+const modalContentStyle = { width: '800px', maxHeight: '85vh', padding: '32px', borderRadius: '16px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-main)', overflow: 'hidden', display: 'flex', flexDirection: 'column' };
+const labelStyle = { display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' };
+const inputStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', fontSize: '0.9rem', boxSizing: 'border-box' };
 
 export default ProcurementList;

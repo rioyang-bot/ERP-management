@@ -182,7 +182,7 @@ const Stocktaking = () => {
           <div className="pj-breadcrumb">
             <span>庫存管理</span>
             <span>/</span>
-            <span style={{ color: '#0f172a', fontWeight: '600' }}>庫存盤點表(Stocktaking)</span>
+            <span style={{ color: 'var(--text-main)', fontWeight: '600' }}>庫存盤點表(Stocktaking)</span>
           </div>
           <h1 className="st-title">
             <ClipboardList size={28} color="#2563eb" /> 庫存盤點表(Stocktaking)
@@ -344,7 +344,7 @@ const Stocktaking = () => {
                       <td style={{ fontSize: '12px', color: '#64748b', maxWidth: '300px' }}>
                         {item.specification}
                       </td>
-                      <td style={{ textAlign: 'right', fontWeight: '700', color: '#0f172a' }}>
+                      <td style={{ textAlign: 'right', fontWeight: '700', color: 'var(--text-main)' }}>
                         {item.stock_qty} {item.unit || ''}
                       </td>
                       {activeTab === 'consumables' && (

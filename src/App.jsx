@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { RoleContext } from './context/RoleContext';
+import { ThemeProvider } from './context/ThemeContext';
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import MainLayout from './components/layout/MainLayout';
 import Inbound from './pages/Inbound';
@@ -9,6 +10,7 @@ import Partners from './pages/Partners';
 import Settings from './pages/Settings';
 import ProjectList from './pages/ProjectList';
 import InboundList from './pages/InboundList';
+import InboundSplitView from './pages/InboundSplitView';
 import Outbound from './pages/Outbound';
 import DNList from './pages/DNList';
 import LentList from './pages/LentList';
@@ -55,41 +57,44 @@ function App() {
   const role = authUser?.role;
 
   return (
-    <RoleContext.Provider value={{ role, authUser, setAuthUser }}>
-      <Router>
-        <Routes>
-          <Route path="/login" element={<Login setAuthUser={setAuthUser} />} />
-          <Route path="/" element={authUser ? <MainLayout /> : <Navigate to="/login" replace />}>
-            <Route index element={<Navigate to="/device-list" replace />} />
-            <Route path="inbound" element={<Inbound />} />
-            <Route path="inbound-list" element={<InboundList />} />
-            <Route path="outbound" element={<Outbound />} />
-            <Route path="outbound-split" element={<OutboundSplitView />} />
-            <Route path="dn-list" element={<DNList />} />
-            <Route path="lent-list" element={<LentList />} />
-            <Route path="devices" element={<Devices />} />
-            <Route path="device-list" element={<DeviceList />} />
-            <Route path="device-split" element={<DeviceSplitView />} />
-            <Route path="consumables" element={<Consumables />} />
-            <Route path="partners" element={<Partners />} />
-            <Route path="reports" element={<Reports />} />
-            <Route path="pj-report" element={<PJReport />} />
-            <Route path="flow-history" element={<FlowHistory />} />
-            <Route path="purchasing" element={<Purchasing />} />
-            <Route path="procurement-list" element={<ProcurementList />} />
-            <Route path="procurement-split" element={<ProcurementSplitView />} />
-            <Route path="consumable-list" element={<ConsumableList />} />
-            <Route path="consumable-split" element={<ConsumableSplitView />} />
-            <Route path="hw-registration" element={<HwRegistration />} />
-            <Route path="hw-list" element={<HwList />} />
-            <Route path="hw-split" element={<HwSplitView />} />
-            <Route path="projects" element={<ProjectList />} />
-            <Route path="stocktaking" element={<Stocktaking />} />
-            <Route path="settings" element={<Settings />} />
-          </Route>
-        </Routes>
-      </Router>
-    </RoleContext.Provider>
+    <ThemeProvider>
+      <RoleContext.Provider value={{ role, authUser, setAuthUser }}>
+        <Router>
+          <Routes>
+            <Route path="/login" element={<Login setAuthUser={setAuthUser} />} />
+            <Route path="/" element={authUser ? <MainLayout /> : <Navigate to="/login" replace />}>
+              <Route index element={<Navigate to="/device-list" replace />} />
+              <Route path="inbound" element={<Inbound />} />
+              <Route path="inbound-list" element={<InboundList />} />
+              <Route path="inbound-split" element={<InboundSplitView />} />
+              <Route path="outbound" element={<Outbound />} />
+              <Route path="outbound-split" element={<OutboundSplitView />} />
+              <Route path="dn-list" element={<DNList />} />
+              <Route path="lent-list" element={<LentList />} />
+              <Route path="devices" element={<Devices />} />
+              <Route path="device-list" element={<DeviceList />} />
+              <Route path="device-split" element={<DeviceSplitView />} />
+              <Route path="consumables" element={<Consumables />} />
+              <Route path="partners" element={<Partners />} />
+              <Route path="reports" element={<Reports />} />
+              <Route path="pj-report" element={<PJReport />} />
+              <Route path="flow-history" element={<FlowHistory />} />
+              <Route path="purchasing" element={<Purchasing />} />
+              <Route path="procurement-list" element={<ProcurementList />} />
+              <Route path="procurement-split" element={<ProcurementSplitView />} />
+              <Route path="consumable-list" element={<ConsumableList />} />
+              <Route path="consumable-split" element={<ConsumableSplitView />} />
+              <Route path="hw-registration" element={<HwRegistration />} />
+              <Route path="hw-list" element={<HwList />} />
+              <Route path="hw-split" element={<HwSplitView />} />
+              <Route path="projects" element={<ProjectList />} />
+              <Route path="stocktaking" element={<Stocktaking />} />
+              <Route path="settings" element={<Settings />} />
+            </Route>
+          </Routes>
+        </Router>
+      </RoleContext.Provider>
+    </ThemeProvider>
   );
 }
 

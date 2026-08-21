@@ -198,6 +198,27 @@ const Consumables = ({ isSplitMode = false }) => {
   const handleAddConsumable = async () => {
     if (!formData.type || !formData.brand || !formData.model) return alert('請填寫必填欄位 (廠牌、類型、型號為必填)');
 
+    // 檢查現有系統中是否已有相同的「廠牌 + 類型 + 型號」
+    const checkRes = await window.electronAPI.namedQuery('checkDuplicateConsumable', [
+      formData.brand.trim(),
+      formData.type.trim(),
+      formData.model.trim()
+    ]);
+
+    if (checkRes.success && checkRes.rows && checkRes.rows.length > 0) {
+      const existing = checkRes.rows[0];
+      return alert(
+        `⚠️ 無法建立：此耗材品項已經存在！\n\n` +
+        `【已存在項目】\n` +
+        `• 廠牌：${formData.brand}\n` +
+        `• 類型：${formData.type}\n` +
+        `• 型號：${formData.model}\n` +
+        `• 規格說明：${existing.specification || '(無)'}\n` +
+        `• 目前 Stock 庫存：${existing.stock_qty || 0} / LAB：${existing.lab_qty || 0}\n\n` +
+        `系統不允許建立重複的「廠牌 + 類型 + 型號」，如需補充庫存請至「進貨入庫」作業。`
+      );
+    }
+
     const res = await window.electronAPI.namedQuery('insertConsumableMaster', [
       formData.spec || '',
       formData.type,
@@ -228,14 +249,14 @@ const Consumables = ({ isSplitMode = false }) => {
   };
 
   // Styles
-  const containerStyle = { padding: '24px', backgroundColor: '#f1f5f9', minHeight: '100vh', display: 'flex', flexDirection: isSplitMode ? 'column' : 'row', gap: '24px' };
+  const containerStyle = { padding: '24px', backgroundColor: 'var(--bg-app)', minHeight: '100vh', display: 'flex', flexDirection: isSplitMode ? 'column' : 'row', gap: '24px' };
   const leftSectionStyle = isSplitMode ? { width: '100%' } : { flex: '0 0 60%' };
   const rightSectionStyle = isSplitMode ? { width: '100%' } : { flex: '1' };
-  const cardStyle = { backgroundColor: '#ffffff', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', marginBottom: '24px' };
-  const labelStyle = { display: 'block', fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '8px' };
-  const inputStyle = { width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '14px', outline: 'none', boxSizing: 'border-box' };
-  const iconButtonStyle = { padding: '8px', border: '1px solid #e2e8f0', borderRadius: '8px', backgroundColor: '#fff', cursor: 'pointer' };
-  const manageItemStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', fontSize: '13px', borderBottom: '1px solid #f1f5f9' };
+  const cardStyle = { backgroundColor: 'var(--bg-surface)', borderRadius: '16px', padding: '24px', boxShadow: 'var(--card-shadow)', border: '1px solid var(--border-color)', marginBottom: '24px', color: 'var(--text-main)' };
+  const labelStyle = { display: 'block', fontSize: '14px', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '8px' };
+  const inputStyle = { width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', fontSize: '14px', outline: 'none', boxSizing: 'border-box' };
+  const iconButtonStyle = { padding: '8px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-main)', cursor: 'pointer' };
+  const manageItemStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', fontSize: '13px', borderBottom: '1px solid var(--border-color)', color: 'var(--text-main)' };
 
   return (
     <div style={containerStyle}>
@@ -243,20 +264,20 @@ const Consumables = ({ isSplitMode = false }) => {
         <div style={cardStyle}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
             <div>
-              <h2 style={{ fontSize: '24px', fontWeight: '800', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Package size={24} color="#2563eb" /> 耗材建檔 (Consumables Registration)
+              <h2 style={{ fontSize: '24px', fontWeight: '800', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-main)' }}>
+                <Package size={24} color="var(--primary-color)" /> 耗材建檔 (Consumables Registration)
               </h2>
-              <p style={{ color: '#64748b', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>用於登錄無獨立序號的批次性耗材，統一管理數量與規格。</p>
+              <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>用於登錄無獨立序號的批次性耗材，統一管理數量與規格。</p>
             </div>
             {!isSplitMode && (
-              <div style={{ display: 'flex', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>
-                <button style={{ padding: '6px 14px', backgroundColor: '#ffffff', color: '#2563eb', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '800', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', cursor: 'default' }}>
+              <div style={{ display: 'flex', backgroundColor: 'var(--bg-surface-subtle)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+                <button style={{ padding: '6px 14px', backgroundColor: 'var(--bg-surface)', color: 'var(--primary-color)', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '800', boxShadow: 'var(--card-shadow)', cursor: 'default' }}>
                   📝 建檔
                 </button>
-                <button onClick={() => navigate('/consumable-split')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: '#64748b', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
+                <button onClick={() => navigate('/consumable-split')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: 'var(--text-muted)', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
                   ◫ 雙開
                 </button>
-                <button onClick={() => navigate('/consumable-list')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: '#64748b', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
+                <button onClick={() => navigate('/consumable-list')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: 'var(--text-muted)', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
                   📋 清單
                 </button>
               </div>
@@ -275,8 +296,8 @@ const Consumables = ({ isSplitMode = false }) => {
                   <button onClick={() => setShowAddBrand(!showAddBrand)} style={iconButtonStyle}><Plus size={18} /></button>
                   <button onClick={() => setShowManageBrand(!showManageBrand)} style={iconButtonStyle}><Settings2 size={18} /></button>
                 </div>
-                {showAddBrand && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newBrandName} onChange={e => setNewBrandName(e.target.value)} style={inputStyle} /><button onClick={handleAddBrand} style={{ ...iconButtonStyle, background: '#2563eb', color: '#fff' }}><Plus size={18} /></button></div>}
-                {showManageBrand && <div style={{ marginTop: '8px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>{brands.map(b => (<div key={b.id} style={manageItemStyle}><span>{b.name}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteBrand(b.name)} /></div>))}</div>}
+                {showAddBrand && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newBrandName} onChange={e => setNewBrandName(e.target.value)} style={inputStyle} /><button onClick={handleAddBrand} style={{ ...iconButtonStyle, background: 'var(--primary-color)', color: '#fff' }}><Plus size={18} /></button></div>}
+                {showManageBrand && <div style={{ marginTop: '8px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-surface-subtle)' }}>{brands.map(b => (<div key={b.id} style={manageItemStyle}><span>{b.name}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteBrand(b.name)} /></div>))}</div>}
               </div>
 
               <div>
@@ -288,8 +309,8 @@ const Consumables = ({ isSplitMode = false }) => {
                   <button onClick={() => setShowAddType(!showAddType)} style={iconButtonStyle}><Plus size={18} /></button>
                   <button onClick={() => setShowManageType(!showManageType)} style={iconButtonStyle}><Settings2 size={18} /></button>
                 </div>
-                {showAddType && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newTypeName} onChange={e => setNewTypeName(e.target.value)} style={inputStyle} /><button onClick={handleAddType} style={{ ...iconButtonStyle, background: '#2563eb', color: '#fff' }}><Plus size={18} /></button></div>}
-                {showManageType && <div style={{ marginTop: '8px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>{types.map(t => (<div key={t} style={manageItemStyle}><span>{t}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteType(t)} /></div>))}</div>}
+                {showAddType && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newTypeName} onChange={e => setNewTypeName(e.target.value)} style={inputStyle} /><button onClick={handleAddType} style={{ ...iconButtonStyle, background: 'var(--primary-color)', color: '#fff' }}><Plus size={18} /></button></div>}
+                {showManageType && <div style={{ marginTop: '8px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-surface-subtle)' }}>{types.map(t => (<div key={t} style={manageItemStyle}><span>{t}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteType(t)} /></div>))}</div>}
               </div>
 
               <div>
@@ -302,8 +323,8 @@ const Consumables = ({ isSplitMode = false }) => {
                   <button onClick={() => setShowAddModel(!showAddModel)} style={iconButtonStyle}><Plus size={18} /></button>
                   <button onClick={() => setShowManageModel(!showManageModel)} style={iconButtonStyle}><Settings2 size={18} /></button>
                 </div>
-                {showAddModel && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newModelName} onChange={e => setNewModelName(e.target.value)} style={inputStyle} /><button onClick={handleAddModel} style={{ ...iconButtonStyle, background: '#2563eb', color: '#fff' }}><Plus size={18} /></button></div>}
-                {showManageModel && <div style={{ marginTop: '8px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>{models.map(m => (<div key={m} style={manageItemStyle}><span>{m}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteModel(m)} /></div>))}</div>}
+                {showAddModel && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newModelName} onChange={e => setNewModelName(e.target.value)} style={inputStyle} /><button onClick={handleAddModel} style={{ ...iconButtonStyle, background: 'var(--primary-color)', color: '#fff' }}><Plus size={18} /></button></div>}
+                {showManageModel && <div style={{ marginTop: '8px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-surface-subtle)' }}>{models.map(m => (<div key={m} style={manageItemStyle}><span>{m}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteModel(m)} /></div>))}</div>}
               </div>
             </div>
 
@@ -322,8 +343,8 @@ const Consumables = ({ isSplitMode = false }) => {
                   <button onClick={() => setShowAddUnit(!showAddUnit)} style={iconButtonStyle}><Plus size={18} /></button>
                   <button onClick={() => setShowManageUnit(!showManageUnit)} style={iconButtonStyle}><Settings2 size={18} /></button>
                 </div>
-                {showAddUnit && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newUnitName} onChange={e => setNewUnitName(e.target.value)} style={inputStyle} /><button onClick={handleAddUnit} style={{ ...iconButtonStyle, background: '#2563eb', color: '#fff' }}><Plus size={18} /></button></div>}
-                {showManageUnit && <div style={{ marginTop: '8px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>{units.map(u => (<div key={u} style={manageItemStyle}><span>{u}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteUnit(u)} /></div>))}</div>}
+                {showAddUnit && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newUnitName} onChange={e => setNewUnitName(e.target.value)} style={inputStyle} /><button onClick={handleAddUnit} style={{ ...iconButtonStyle, background: 'var(--primary-color)', color: '#fff' }}><Plus size={18} /></button></div>}
+                {showManageUnit && <div style={{ marginTop: '8px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-surface-subtle)' }}>{units.map(u => (<div key={u} style={manageItemStyle}><span>{u}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteUnit(u)} /></div>))}</div>}
               </div>
               <div>
                 <label style={labelStyle}>安全庫存 (Safety Stock)</label>
@@ -332,7 +353,7 @@ const Consumables = ({ isSplitMode = false }) => {
             </div>
 
             <div style={{ textAlign: 'right' }}>
-              <button onClick={handleAddConsumable} style={{ ...inputStyle, width: '100%', backgroundColor: '#2563eb', color: 'white', border: 'none', padding: '14px', fontWeight: '900', cursor: 'pointer', borderRadius: '12px', fontSize: '16px', boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.2)' }}>
+              <button onClick={handleAddConsumable} style={{ ...inputStyle, width: '100%', backgroundColor: 'var(--primary-color)', color: 'white', border: 'none', padding: '14px', fontWeight: '900', cursor: 'pointer', borderRadius: '12px', fontSize: '16px', boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.2)' }}>
                 <Save size={20} style={{ marginRight: '8px', verticalAlign: 'middle' }} /> 儲存耗材資料
               </button>
             </div>
@@ -343,28 +364,28 @@ const Consumables = ({ isSplitMode = false }) => {
       {/* Right Section: Recent 10 Items */}
       <div style={rightSectionStyle}>
         <div style={cardStyle}>
-          <h3 style={{ fontSize: '16px', fontWeight: '800', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px', color: '#1e293b' }}>
-            <Clock size={18} color="#64748b" /> 最新 10 筆建檔記錄
+          <h3 style={{ fontSize: '16px', fontWeight: '800', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-main)' }}>
+            <Clock size={18} color="var(--text-muted)" /> 最新 10 筆建檔記錄
           </h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {items.map(item => (
-              <div key={item.id} style={{ padding: '12px 16px', borderRadius: '12px', border: '1px solid #f1f5f9', backgroundColor: '#fafafa' }}>
+              <div key={item.id} style={{ padding: '12px 16px', borderRadius: '12px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)' }}>
                 <div style={{ fontWeight: '800', fontSize: '13px', marginBottom: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  <span style={{ color: '#2563eb' }}>{item.brand}</span>
-                  <span style={{ color: '#64748b', margin: '0 4px' }}>/</span>
-                  <span style={{ color: '#475569' }}>{item.type}</span>
-                  <span style={{ color: '#64748b', margin: '0 4px' }}>/</span>
-                  <span style={{ color: '#1e293b' }}>{item.model}</span>
+                  <span style={{ color: 'var(--primary-color)' }}>{item.brand}</span>
+                  <span style={{ color: 'var(--text-subtle)', margin: '0 4px' }}>/</span>
+                  <span style={{ color: 'var(--text-muted)' }}>{item.type}</span>
+                  <span style={{ color: 'var(--text-subtle)', margin: '0 4px' }}>/</span>
+                  <span style={{ color: 'var(--text-main)' }}>{item.model}</span>
                 </div>
-                <div style={{ color: '#64748b', fontSize: '12px', fontWeight: '500', marginBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div style={{ color: 'var(--text-muted)', fontSize: '12px', fontWeight: '500', marginBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {(item.specification || '').replace(`${item.type} ${item.brand}`, '').trim().replace(/^\(|\)$/g, '') || '--'}
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: '#94a3b8' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: 'var(--text-subtle)' }}>
                   <span>單位: {item.unit} | 安全庫存: {item.safety_stock}</span>
                 </div>
               </div>
             ))}
-            {items.length === 0 && <div style={{ textAlign: 'center', color: '#94a3b8', padding: '20px', fontSize: '13px' }}>尚無建檔資料</div>}
+            {items.length === 0 && <div style={{ textAlign: 'center', color: 'var(--text-subtle)', padding: '20px', fontSize: '13px' }}>尚無建檔資料</div>}
           </div>
         </div>
       </div>

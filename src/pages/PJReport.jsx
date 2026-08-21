@@ -470,18 +470,18 @@ const PJReport = () => {
                           </button>
                         </td>
                         <td>
-                          <div style={{ fontWeight: 600, color: '#1e293b' }}>{item.project_no}</div>
-                          <div style={{ fontWeight: 700, color: '#0f172a' }}>
+                          <div style={{ fontWeight: 600, color: 'var(--text-muted)' }}>{item.project_no}</div>
+                          <div style={{ fontWeight: 700, color: 'var(--text-main)' }}>
                             {item.project_name}
                           </div>
-                          <div style={{ fontSize: '11.5px', color: '#94a3b8' }}>
+                          <div style={{ fontSize: '11.5px', color: 'var(--text-subtle)' }}>
                             建立: {item.created_at ? new Date(item.created_at).toLocaleDateString() : '-'}
                           </div>
                         </td>
                         <td>
-                          <div style={{ color: '#334155' }}>{item.project_customer || '-'}</div>
+                          <div style={{ color: 'var(--text-main)', fontWeight: 600 }}>{item.project_customer || '-'}</div>
                           {item.project_contact && (
-                            <div style={{ fontSize: '11.5px', color: '#94a3b8' }}>窗口: {item.project_contact}</div>
+                            <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>窗口: {item.project_contact}</div>
                           )}
                         </td>
                         <td style={{ textAlign: 'center', fontWeight: 'bold' }}>

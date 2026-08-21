@@ -1,30 +1,30 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import Devices from './Devices';
-import DeviceList from './DeviceList';
+import Inbound from './Inbound';
+import InboundList from './InboundList';
 import { Columns } from 'lucide-react';
 
-const DeviceSplitView = () => {
+const InboundSplitView = () => {
   const navigate = useNavigate();
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
         <h2 style={{ fontSize: '24px', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)', margin: 0 }}>
-          <Columns size={26} color="var(--primary-color)" /> 設備雙畫面作業 (Device Split View)
+          <Columns size={26} color="var(--primary-color)" /> 進貨雙畫面作業 (S/I Split View)
         </h2>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '4fr 6fr', gap: '24px', flex: 1, minHeight: 0 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '6fr 4fr', gap: '24px', flex: 1, minHeight: 0 }}>
         <div style={{ overflowY: 'auto' }}>
-          <Devices isSplitMode={true} />
+          <Inbound isSplitMode={true} />
         </div>
         <div style={{ overflowY: 'auto' }}>
-          <DeviceList isSplitMode={true} />
+          <InboundList isSplitMode={true} />
         </div>
       </div>
     </div>
   );
 };
 
-export default DeviceSplitView;
+export default InboundSplitView;

@@ -137,6 +137,7 @@ export const queries = {
   fetchAllAssetsForSelect: `SELECT a.id, a.sn, a.hostname, i.brand, i.model FROM assets a JOIN item_master i ON a.item_master_id = i.id ORDER BY a.hostname ASC, a.sn ASC`,
 
   // Consumables.jsx
+  checkDuplicateConsumable: `SELECT id, specification, stock_qty, lab_qty FROM item_master WHERE brand = $1 AND type = $2 AND model = $3 AND category_id = (SELECT id FROM categories WHERE name = '耗材')`,
   fetchRecentConsumables: `SELECT i.* FROM item_master i LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '耗材' ORDER BY i.id DESC LIMIT 10`,
   insertConsumableMaster: `INSERT INTO item_master (specification, type, brand, model, unit, safety_stock, stock_qty, category_id, purchase_price) VALUES ($1, $2, $3, $4, $5, $6, $7, (SELECT id FROM categories WHERE name = $8), 0)`,
   fetchConsumableModelsByBrandType: `
@@ -158,7 +159,7 @@ export const queries = {
   fetchSuppliers: `SELECT id, name FROM partners WHERE partner_type = 'SUPPLIER' ORDER BY name ASC`,
   fetchCategories: `SELECT id, name FROM categories`,
   fetchBrandsByCategory: `SELECT name FROM item_brands WHERE category_id = $1 ORDER BY name ASC`,
-  updatePurchaseRecordFull: `UPDATE purchase_records SET partner_id = $1, category_id = $2, item_type = $3, brand = $4, model = $5, specification = $6, unit = $7, quantity = $8, remarks = $9, project_name = $10 WHERE id = $11`,
+  updatePurchaseRecordFull: `UPDATE purchase_records SET partner_id = $1, category_id = $2, item_type = $3, brand = $4, model = $5, specification = $6, unit = $7, quantity = $8, remarks = $9, project_name = $10, attachments = $11::jsonb WHERE id = $12`,
   fetchTypesByCategory: `SELECT name, (SELECT name FROM item_brands WHERE id = t.brand_id) as brand FROM item_types t WHERE category_id = $1 ORDER BY name ASC`,
   fetchModelsByCategory: `
       SELECT m.name as model, t.name as type, b.name as brand, i.specification, i.unit
@@ -168,8 +169,8 @@ export const queries = {
   insertItemBrand: `INSERT INTO item_brands (category_id, name) VALUES ($1, $2)`,
   insertItemType: `INSERT INTO item_types (category_id, name) VALUES ($1, $2)`,
   insertPurchaseRecord: `
-      INSERT INTO purchase_records (order_no, partner_id, category_id, item_type, brand, model, specification, unit, quantity, purchaser_id, status, remarks, project_name, unit_price) 
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 0)`,
+      INSERT INTO purchase_records (order_no, partner_id, category_id, item_type, brand, model, specification, unit, quantity, purchaser_id, status, remarks, project_name, unit_price, attachments) 
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 0, $14::jsonb)`,
       
   // ProcurementList.jsx
   fetchProcurementList: `
@@ -183,7 +184,8 @@ export const queries = {
   fetchPendingPurchases: `SELECT pr.*, p.name as partner_name, c.name as category_name FROM purchase_records pr LEFT JOIN partners p ON pr.partner_id = p.id LEFT JOIN categories c ON pr.category_id = c.id WHERE pr.status != 'COMPLETED' ORDER BY pr.created_at DESC`,
   insertInboundItemMaster: `INSERT INTO item_master (specification, type, brand, unit, category_id, purchase_price) VALUES ($1, $2, $3, $4, (SELECT id FROM categories WHERE name = $5), 0) RETURNING id`,
   countInboundOrders: `WITH seqs AS (SELECT CAST(SUBSTRING(order_no FROM '-([0-9]+)$') AS INTEGER) as sq FROM inbound_orders WHERE order_no LIKE $1 || '%') SELECT s.val as count FROM generate_series(1, 1000) as s(val) WHERE NOT EXISTS (SELECT 1 FROM seqs WHERE seqs.sq = s.val) ORDER BY s.val ASC LIMIT 1`,
-  insertInboundOrder: `INSERT INTO inbound_orders (order_no, partner_id, invoice_no, status) VALUES ($1, $2, $3, $4) RETURNING id`,
+  insertInboundOrder: `INSERT INTO inbound_orders (order_no, partner_id, invoice_no, status, attachments) VALUES ($1, $2, $3, $4, $5::jsonb) RETURNING id`,
+  updateInboundOrderHeader: `UPDATE inbound_orders SET partner_id = $1, invoice_no = $2, attachments = $3::jsonb WHERE id = $4`,
   insertInboundAssets: `INSERT INTO assets (sn, item_master_id, status, custom_attributes) VALUES ($1, $2, 'ACTIVE', jsonb_build_object('project_name', $3::text))`,
   insertInboundItems: `INSERT INTO inbound_items (inbound_order_id, item_id, sn, quantity, purchase_record_id, unit_price) VALUES ($1, $2, $3, $4, $5, 0)`,
   updateStockQtyOnInbound: `UPDATE item_master SET stock_qty = stock_qty + $1 WHERE id = $2`,

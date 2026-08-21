@@ -1,8 +1,7 @@
 .page-container {
   padding: 24px;
-  background-color: #f8fafc;
+  background-color: var(--bg-app);
   min-height: 100vh;
-  font-family: 'Inter', 'Segoe UI', sans-serif;
 }
 
 .page-header {
@@ -15,7 +14,7 @@
 .page-header h1 {
   font-size: 1.5rem;
   font-weight: 800;
-  color: #1e293b;
+  color: var(--text-main);
   margin: 0;
   display: flex;
   align-items: center;
@@ -31,15 +30,15 @@
 .search-bar {
   display: flex;
   align-items: center;
-  background: white;
-  border: 1px solid #e2e8f0;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
   border-radius: 8px;
   padding: 0 12px;
   width: 280px;
 }
 
 .search-icon {
-  color: #94a3b8;
+  color: var(--text-subtle);
 }
 
 .search-bar input {
@@ -48,10 +47,12 @@
   width: 100%;
   outline: none;
   font-size: 0.9rem;
+  background: transparent;
+  color: var(--input-text);
 }
 
 .primary-btn {
-  background-color: var(--primary-color, #1e40af);
+  background-color: var(--primary-color);
   color: white;
   border: none;
   padding: 10px 20px;
@@ -61,19 +62,19 @@
   align-items: center;
   gap: 8px;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(30, 64, 175, 0.2);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
   transition: all 0.2s;
 }
 
 .primary-btn:hover {
-  background-color: #1e3a8a;
+  background-color: var(--primary-hover);
   transform: translateY(-2px);
 }
 
 .secondary-btn {
-  background-color: white;
-  color: #475569;
-  border: 1px solid #cbd5e1;
+  background-color: var(--bg-surface-subtle);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
   padding: 10px 20px;
   border-radius: 8px;
   font-weight: 600;
@@ -81,14 +82,14 @@
 }
 
 .secondary-btn:hover {
-  background-color: #f1f5f9;
+  background-color: var(--bg-surface-hover);
 }
 
 .table-container {
-  background: white;
+  background: var(--bg-surface);
   border-radius: 12px;
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--card-shadow);
   overflow: hidden;
 }
 
@@ -98,30 +99,30 @@
 }
 
 .data-table th {
-  background-color: #f8fafc;
+  background-color: var(--table-header-bg);
   padding: 14px 16px;
   text-align: left;
   font-size: 0.75rem;
   font-weight: 800;
-  color: #64748b;
+  color: var(--table-header-text);
   text-transform: uppercase;
-  border-bottom: 2px solid #e2e8f0;
+  border-bottom: 2px solid var(--border-color);
 }
 
 .data-table td {
   padding: 16px;
-  border-bottom: 1px solid #f1f5f9;
-  color: #334155;
+  border-bottom: 1px solid var(--table-border);
+  color: var(--text-main);
   font-size: 0.9rem;
 }
 
 .data-table tr:hover {
-  background-color: #fcfdfe;
+  background-color: var(--table-row-hover);
 }
 
 .font-medium {
   font-weight: 600;
-  color: #0f172a;
+  color: var(--text-main);
 }
 
 .status-badge {
@@ -132,13 +133,14 @@
 }
 
 .status-badge.active {
-  background-color: #dcfce7;
-  color: #166534;
+  background-color: rgba(16, 185, 129, 0.2);
+  color: #10b981;
 }
 
 .status-badge.inactive {
-  background-color: #f1f5f9;
-  color: #475569;
+  background-color: var(--bg-surface-subtle);
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
 }
 
 .action-buttons {
@@ -159,28 +161,28 @@
 }
 
 .icon-btn.edit {
-  color: #3b82f6;
-  background-color: #eff6ff;
+  color: var(--primary-color);
+  background-color: var(--primary-bg);
 }
 
 .icon-btn.edit:hover {
-  background-color: #dbeafe;
+  background-color: rgba(59, 130, 246, 0.25);
 }
 
 .icon-btn.delete {
   color: #ef4444;
-  background-color: #fef2f2;
+  background-color: rgba(239, 68, 68, 0.15);
 }
 
 .icon-btn.delete:hover {
-  background-color: #fee2e2;
+  background-color: rgba(239, 68, 68, 0.25);
 }
 
 /* Modal Styles */
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background-color: rgba(15, 23, 42, 0.6);
+  background-color: var(--bg-modal-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -189,41 +191,43 @@
 }
 
 .modal-content {
-  background: white;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
   border-radius: 16px;
   width: 100%;
   max-width: 600px;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--modal-shadow);
   overflow: hidden;
 }
 
 .modal-header {
   padding: 20px 24px;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--border-color);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background-color: #f8fafc;
+  background-color: var(--bg-surface-subtle);
 }
 
 .modal-header h2 {
   margin: 0;
   font-size: 1.25rem;
   font-weight: 700;
-  color: #1e293b;
+  color: var(--text-main);
 }
 
 .close-btn {
   background: none;
   border: none;
-  color: #64748b;
+  color: var(--text-muted);
   cursor: pointer;
   padding: 4px;
   border-radius: 6px;
 }
 
 .close-btn:hover {
-  background-color: #e2e8f0;
+  background-color: var(--bg-surface-hover);
 }
 
 .modal-body {
@@ -249,7 +253,7 @@
 .form-group label {
   font-size: 0.85rem;
   font-weight: 700;
-  color: #475569;
+  color: var(--text-muted);
 }
 
 .form-group input,
@@ -257,35 +261,36 @@
 .form-group textarea {
   padding: 10px 14px;
   border-radius: 8px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--input-border);
   font-size: 0.95rem;
   outline: none;
   transition: all 0.2s;
   font-family: inherit;
-  background-color: #fff;
+  background-color: var(--input-bg);
+  color: var(--input-text);
 }
 
 .form-group input:focus,
 .form-group select:focus,
 .form-group textarea:focus {
-  border-color: #1e40af;
-  box-shadow: 0 0 0 3px rgba(30, 64, 175, 0.1);
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px var(--input-focus-ring);
 }
 
 .empty-state {
   text-align: center;
   padding: 60px !important;
-  color: #94a3b8 !important;
+  color: var(--text-subtle) !important;
   font-style: normal;
   font-weight: 500;
 }
 
 /* Document Upload Styles */
 .document-section {
-  background-color: #f8fafc;
+  background-color: var(--bg-surface-subtle);
   padding: 16px;
   border-radius: 12px;
-  border: 1px dashed #cbd5e1;
+  border: 1px dashed var(--border-color);
   margin-top: 10px;
 }
 
@@ -304,14 +309,14 @@
   justify-content: space-between;
   align-items: center;
   padding: 10px 14px;
-  background-color: #ffffff;
-  border: 1px solid #e2e8f0;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
   margin-bottom: 8px;
 }
 
 .document-item a {
-  color: #2563eb;
+  color: var(--primary-color);
   text-decoration: none;
   font-size: 0.9em;
   font-weight: 500;
@@ -336,5 +341,5 @@
 }
 
 .remove-doc-btn:hover {
-  background-color: #fee2e2;
+  background-color: rgba(239, 68, 68, 0.15);
 }

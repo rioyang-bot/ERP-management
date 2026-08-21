@@ -1,13 +1,15 @@
 import React, { useContext, useState, useEffect } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { RoleContext } from '../../context/RoleContext';
+import { useTheme } from '../../context/ThemeContext';
 import logo from '../../assets/logo.png';
-import { ChevronDown, ChevronRight, Edit3, List, LayoutGrid, Key, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Edit3, List, LayoutGrid, Key, X, Sun, Moon, LogOut } from 'lucide-react';
 import { hashPassword, validatePassword } from '../../utils/auth';
 import './MainLayout.css';
 
 const MainLayout = () => {
   const { role, authUser, setAuthUser } = useContext(RoleContext);
+  const { theme, isDark, toggleTheme } = useTheme();
   const location = useLocation();
 
   // --- 變更密碼 (Change Password) ---
@@ -28,8 +30,9 @@ const MainLayout = () => {
       setPwdError('新密碼與確認密碼不一致');
       return;
     }
-    setIsPwdUpdating(true);
+
     try {
+      setIsPwdUpdating(true);
       // 0. 拿取最新的密碼安全原則，如果系統已設定原則則進行驗證
       const policyRes = await window.electronAPI.namedQuery('getSystemSetting', ['password_policy']);
       if (policyRes.success && policyRes.rows.length > 0) {
@@ -44,9 +47,9 @@ const MainLayout = () => {
         }
       }
 
-      // 1. 驗證舊密碼
+      // 1. 驗證原密碼
       const hashedOld = await hashPassword(pwdOld);
-      const res = await window.electronAPI.authLogin(authUser.username);
+      const res = await window.electronAPI.namedQuery('fetchUserById', [authUser.id]);
       if (res.success && res.rows.length > 0) {
         if (res.rows[0].password_hash !== hashedOld) {
           setPwdError('原密碼錯誤');
@@ -99,18 +102,12 @@ const MainLayout = () => {
 
 
   const allMenuItems = [
-    { id: 'inbound', path: '/inbound', label: '進貨入庫(S/I Reg)', category: 'registration' },
     { id: 'inboundList', path: '/inbound-list', label: '進貨單列表(S/I List)', category: 'list' },
-    { id: 'outbound', path: '/outbound', label: '出貨建檔 (D/N Reg)', category: 'registration' },
     { id: 'dnList', path: '/dn-list', label: '出貨單列表 (D/N List)', category: 'list' },
     { id: 'lentList', path: '/lent-list', label: '借用列表 (Lent List)', category: 'list' },
-    { id: 'assets', path: '/devices', label: '設備建檔 (Device Reg)', category: 'registration' },
     { id: 'assetList', path: '/device-list', label: '設備列表 (Device List)', hasSub: true, category: 'list' },
-    { id: 'nic-registration', path: '/hw-registration', label: '硬體建檔 (HW Reg)', category: 'registration' },
     { id: 'nic-list', path: '/hw-list', label: '硬體列表 (HW List)', hasSub: true, category: 'list' },
-    { id: 'consumables', path: '/consumables', label: '耗材建檔 (CSM Reg)', category: 'registration' },
-    { id: 'consumableList', path: '/consumable-list', label: '耗材列表 (CSM List)', hasSub: true, category: 'list' },
-    { id: 'purchasing', path: '/purchasing', label: '採購建檔 (P/O Reg)', category: 'registration' },
+    { id: 'consumable-list', path: '/consumable-list', label: '耗材列表 (CSM List)', hasSub: true, category: 'list' },
     { id: 'procurementList', path: '/procurement-list', label: '採購單列表 (P/O List)', category: 'list' },
     { id: 'partners', path: '/partners', label: '客戶/廠商管理 (Partners)', category: 'shared' },
     { id: 'projects', path: '/projects', label: '專案列表 (Project List)', category: 'shared' },
@@ -131,7 +128,15 @@ const MainLayout = () => {
     });
   }
   const menuItems = sortedAllItems.filter(item => {
-    const accessAllowed = authUser?.role === 'ADMIN' || authUser?.menu_access?.[item.id];
+    const accessAllowed = 
+      authUser?.role === 'ADMIN' || 
+      authUser?.menu_access?.[item.id] ||
+      (item.id === 'inboundList' && authUser?.menu_access?.['inbound']) ||
+      (item.id === 'dnList' && authUser?.menu_access?.['outbound']) ||
+      (item.id === 'assetList' && authUser?.menu_access?.['assets']) ||
+      (item.id === 'nic-list' && authUser?.menu_access?.['nic-registration']) ||
+      (item.id === 'consumable-list' && (authUser?.menu_access?.['consumables'] || authUser?.menu_access?.['consumableList'])) ||
+      (item.id === 'procurementList' && authUser?.menu_access?.['purchasing']);
     if (!accessAllowed) return false;
     
     if (sidebarMode === 'all' || item.category === 'shared') return true;
@@ -237,13 +242,74 @@ const MainLayout = () => {
 
       <main className="main-content">
         <header className="topbar">
-          <div className="user-info" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <span style={{ fontSize: '0.9rem', color: '#555' }}>嗨，<span style={{ fontWeight: 600, color: 'var(--primary-color)' }}>{authUser?.full_name}</span>！</span>
-            <span style={{ padding: '4px 12px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 600, backgroundColor: role === 'IT' ? '#e3f2fd' : (role === 'ADMIN' ? '#fff3e0' : '#e8f5e9'), color: role === 'IT' ? '#1976d2' : (role === 'ADMIN' ? '#e65100' : '#2e7d32') }}>目前權限: {role}</span>
-            <button onClick={() => setShowPasswordModal(true)} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '6px', border: '1px solid #e2e8f0', backgroundColor: '#f8fafc', color: '#475569', cursor: 'pointer', fontSize: '0.85rem', transition: 'all 0.2s', fontWeight: 600 }}>
+          <div className="user-info" style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            {/* 日夜模式切換按鈕 */}
+            <button 
+              onClick={toggleTheme} 
+              className="theme-switch-btn"
+              title={isDark ? "切換至日間模式 (Light Mode)" : "切換至夜間模式 (Dark Mode)"}
+            >
+              {isDark ? <Sun size={15} color="#f59e0b" /> : <Moon size={15} color="#6366f1" />}
+              <span>{isDark ? '夜間模式' : '日間模式'}</span>
+            </button>
+
+            <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+              嗨，<span style={{ fontWeight: 700, color: 'var(--primary-color)' }}>{authUser?.full_name}</span>！
+            </span>
+            
+            <span style={{ 
+              padding: '4px 12px', 
+              borderRadius: '20px', 
+              fontSize: '0.8rem', 
+              fontWeight: 700, 
+              backgroundColor: isDark 
+                ? (role === 'IT' ? 'rgba(59,130,246,0.2)' : (role === 'ADMIN' ? 'rgba(249,115,22,0.2)' : 'rgba(16,185,129,0.2)'))
+                : (role === 'IT' ? '#e3f2fd' : (role === 'ADMIN' ? '#fff3e0' : '#e8f5e9')), 
+              color: isDark
+                ? (role === 'IT' ? '#60a5fa' : (role === 'ADMIN' ? '#fb923c' : '#34d399'))
+                : (role === 'IT' ? '#1976d2' : (role === 'ADMIN' ? '#e65100' : '#2e7d32')),
+              border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'transparent'}`
+            }}>
+              目前權限: {role}
+            </span>
+
+            <button 
+              onClick={() => setShowPasswordModal(true)} 
+              style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '6px', 
+                padding: '6px 12px', 
+                borderRadius: '8px', 
+                border: '1px solid var(--border-color)', 
+                backgroundColor: 'var(--bg-surface-subtle)', 
+                color: 'var(--text-main)', 
+                cursor: 'pointer', 
+                fontSize: '0.85rem', 
+                fontWeight: 600 
+              }}
+            >
               <Key size={14} /> 變更密碼
             </button>
-            <button onClick={() => setAuthUser(null)} style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #ccc', backgroundColor: '#fff', cursor: 'pointer', fontSize: '0.85rem' }}>系統登出</button>
+
+            <button 
+              onClick={() => setAuthUser(null)} 
+              style={{ 
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '6px 12px', 
+                borderRadius: '8px', 
+                border: '1px solid var(--border-color)', 
+                backgroundColor: 'var(--bg-surface)', 
+                color: 'var(--text-main)',
+                cursor: 'pointer', 
+                fontSize: '0.85rem',
+                fontWeight: 600
+              }}
+            >
+              <LogOut size={14} /> 系統登出
+            </button>
           </div>
         </header>
         <div className="content-area"><Outlet /></div>
@@ -251,34 +317,38 @@ const MainLayout = () => {
 
       {/* 變更密碼 Modal */}
       {showPasswordModal && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
-          <div style={{ backgroundColor: '#fff', borderRadius: '12px', padding: '24px', width: '380px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h2 style={{ fontSize: '1.25rem', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}><Key size={20} color="#059669" /> 變更密碼</h2>
-              <button onClick={() => setShowPasswordModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}><X size={20} /></button>
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'var(--bg-modal-overlay)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
+          <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '16px', padding: '28px', width: '400px', boxShadow: 'var(--modal-shadow)', color: 'var(--text-main)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h2 style={{ fontSize: '1.25rem', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-main)', fontWeight: 800 }}>
+                <Key size={20} color="var(--primary-color)" /> 變更密碼
+              </h2>
+              <button onClick={() => setShowPasswordModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                <X size={20} />
+              </button>
             </div>
             
-            {pwdError && <div style={{ backgroundColor: '#fef2f2', color: '#dc2626', padding: '10px', borderRadius: '6px', marginBottom: '16px', fontSize: '0.85rem' }}>{pwdError}</div>}
+            {pwdError && <div style={{ backgroundColor: isDark ? 'rgba(239, 68, 68, 0.2)' : '#fef2f2', color: isDark ? '#f87171' : '#dc2626', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '10px 14px', borderRadius: '8px', marginBottom: '16px', fontSize: '0.85rem', fontWeight: 600 }}>{pwdError}</div>}
             
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '24px' }}>
               <div>
-                <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.85rem', color: '#475569', fontWeight: 600 }}>原密碼</label>
-                <input type="password" value={pwdOld} onChange={e => setPwdOld(e.target.value)} style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9rem', boxSizing: 'border-box' }} placeholder="請輸入原密碼" />
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 700 }}>原密碼</label>
+                <input type="password" value={pwdOld} onChange={e => setPwdOld(e.target.value)} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', fontSize: '0.9rem', boxSizing: 'border-box' }} placeholder="請輸入原密碼" />
               </div>
               <div>
-                <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.85rem', color: '#475569', fontWeight: 600 }}>新密碼</label>
-                <input type="password" value={pwdNew} onChange={e => setPwdNew(e.target.value)} style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9rem', boxSizing: 'border-box' }} placeholder="請輸入新密碼" />
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 700 }}>新密碼</label>
+                <input type="password" value={pwdNew} onChange={e => setPwdNew(e.target.value)} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', fontSize: '0.9rem', boxSizing: 'border-box' }} placeholder="請輸入新密碼" />
               </div>
               <div>
-                <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.85rem', color: '#475569', fontWeight: 600 }}>確認新密碼</label>
-                <input type="password" value={pwdConfirm} onChange={e => setPwdConfirm(e.target.value)} style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9rem', boxSizing: 'border-box' }} placeholder="請再次輸入新密碼" />
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 700 }}>確認新密碼</label>
+                <input type="password" value={pwdConfirm} onChange={e => setPwdConfirm(e.target.value)} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', fontSize: '0.9rem', boxSizing: 'border-box' }} placeholder="請再次輸入新密碼" />
               </div>
             </div>
             
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
               <button 
                 onClick={() => setShowPasswordModal(false)}
-                style={{ padding: '8px 16px', backgroundColor: '#fff', border: '1px solid #cbd5e1', borderRadius: '6px', color: '#475569', cursor: 'pointer', fontWeight: 600 }}
+                style={{ padding: '8px 18px', backgroundColor: 'var(--bg-surface-subtle)', border: '1px solid var(--border-color)', borderRadius: '8px', color: 'var(--text-main)', cursor: 'pointer', fontWeight: 700, fontSize: '0.9rem' }}
               >
                 取消
               </button>

@@ -204,76 +204,80 @@ const DNList = ({ isSplitMode = false }) => {
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <div>
-            <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
-              <FileText size={26} color="#2563eb" /> 出貨單列表 (Delivery Note List)
+            <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
+              <FileText size={26} color="var(--primary-color)" /> 出貨單列表 (Delivery Note List)
             </h1>
-            <p style={{ color: '#64748b', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>檢視所有出貨紀錄、追蹤出單進度並執行扣庫存作業。</p>
+            <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>檢視所有出貨紀錄、追蹤出單進度並執行扣庫存作業。</p>
           </div>
-          {!isSplitMode && (
-            <div style={{ display: 'flex', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>
-              <button onClick={() => navigate('/outbound')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: '#64748b', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
-                📝 建檔
-              </button>
-              <button onClick={() => navigate('/outbound-split')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: '#64748b', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
-                ◫ 雙開
-              </button>
-              <button style={{ padding: '6px 14px', backgroundColor: '#ffffff', color: '#2563eb', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '800', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', cursor: 'default' }}>
-                📋 清單
-              </button>
-            </div>
-          )}
         </div>
         <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-           <div style={{ backgroundColor: '#fff', padding: '12px 24px', borderRadius: '12px', border: '1px solid #eee', display: 'flex', gap: '24px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+           <div style={{ backgroundColor: 'var(--bg-surface)', padding: '12px 24px', borderRadius: '12px', border: '1px solid var(--border-color)', display: 'flex', gap: '24px', boxShadow: 'var(--card-shadow)' }}>
               <div>
-                <div style={{ fontSize: '0.75rem', color: '#aaa', fontWeight: 600 }}>待處理出貨單</div>
-                <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#e65100' }}>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>待處理出貨單</div>
+                <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#f97316' }}>
                   {pendingCount} <span style={{ fontSize: '0.8rem', fontWeight: 400, opacity: 0.8 }}>單</span>
                 </div>
               </div>
 
            </div>
-           <button onClick={fetchRecords} className="btn-refresh-vibrant">
-             <RefreshCw size={18} className={loading ? 'spinner' : ''} /> 重新整理
-           </button>
+           {!isSplitMode && (
+             <button
+               onClick={() => navigate('/outbound-split')}
+               style={{
+                 padding: '8px 16px',
+                 backgroundColor: 'var(--primary-color)',
+                 color: '#fff',
+                 border: 'none',
+                 borderRadius: '8px',
+                 cursor: 'pointer',
+                 fontWeight: 700,
+                 display: 'flex',
+                 alignItems: 'center',
+                 gap: '8px',
+                 boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)'
+               }}
+             >
+               <FileText size={18} /> 新增出貨單 (D/N Reg)
+             </button>
+           )}
         </div>
       </div>
 
       <div className="card-surface" style={{ padding: '0', overflow: 'hidden' }}>
-        <div style={{ padding: '20px 24px', borderBottom: '1px solid #eee', display: 'flex', gap: '16px', alignItems: 'center', backgroundColor: '#fafafa' }}>
+        <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '16px', alignItems: 'center', backgroundColor: 'var(--bg-surface-subtle)' }}>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flex: 1 }}>
             <select 
               value={searchField} 
               onChange={e => setSearchField(e.target.value)}
-              style={{ padding: '10px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', outline: 'none', fontSize: '0.9rem', backgroundColor: '#fff', cursor: 'pointer', minWidth: '130px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}
+              style={{ padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--input-border)', outline: 'none', fontSize: '0.9rem', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', cursor: 'pointer', minWidth: '130px' }}
             >
               {searchOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
             </select>
             <div style={{ position: 'relative', width: '320px' }}>
-              <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+              <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-subtle)' }} />
               <input 
                 type="text" 
                 placeholder={`搜尋${searchOptions.find(o => o.value === searchField)?.label}...`} 
-                style={{ width: '100%', padding: '10px 10px 10px 40px', borderRadius: '10px', border: '1px solid #e2e8f0', outline: 'none', fontSize: '0.9rem', boxSizing: 'border-box', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}
+                style={{ width: '100%', padding: '10px 10px 10px 40px', borderRadius: '10px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', outline: 'none', fontSize: '0.9rem', boxSizing: 'border-box' }}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
             
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '10px', border: '1px solid #e2e8f0', backgroundColor: '#fff', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
-              <Calendar size={18} color="#94a3b8" />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '10px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)' }}>
+              <Calendar size={18} color="var(--text-subtle)" />
               <input 
                 type="date" 
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                style={{ border: 'none', outline: 'none', fontSize: '0.9rem', color: '#475569', background: 'transparent' }} 
+                style={{ border: 'none', outline: 'none', fontSize: '0.9rem', color: 'var(--text-main)', background: 'transparent' }} 
               />
-              <span style={{ color: '#cbd5e1' }}>-</span>
+              <span style={{ color: 'var(--text-subtle)' }}>-</span>
               <input 
                 type="date" 
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                style={{ border: 'none', outline: 'none', fontSize: '0.9rem', color: '#475569', background: 'transparent' }} 
+                style={{ border: 'none', outline: 'none', fontSize: '0.9rem', color: 'var(--text-main)', background: 'transparent' }} 
               />
             </div>
           </div>
@@ -290,24 +294,24 @@ const DNList = ({ isSplitMode = false }) => {
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
-              <tr style={{ textAlign: 'left', borderBottom: '2px solid #334155' }}>
-                <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>D/N 單號</th>
-                <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>出貨日期</th>
-                <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>客戶/對象</th>
-                <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>項目數</th>
-                <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>建立者</th>
-                <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>狀態</th>
-                <th style={{ padding: '12px', fontSize: '0.95rem', color: '#000', fontWeight: 800 }}>操作</th>
+              <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--border-color)', backgroundColor: 'var(--table-header-bg)' }}>
+                <th style={{ padding: '14px 12px', fontSize: '0.95rem', color: 'var(--table-header-text)', fontWeight: 800 }}>D/N 單號</th>
+                <th style={{ padding: '14px 12px', fontSize: '0.95rem', color: 'var(--table-header-text)', fontWeight: 800 }}>出貨日期</th>
+                <th style={{ padding: '14px 12px', fontSize: '0.95rem', color: 'var(--table-header-text)', fontWeight: 800 }}>客戶/對象</th>
+                <th style={{ padding: '14px 12px', fontSize: '0.95rem', color: 'var(--table-header-text)', fontWeight: 800 }}>項目數</th>
+                <th style={{ padding: '14px 12px', fontSize: '0.95rem', color: 'var(--table-header-text)', fontWeight: 800 }}>建立者</th>
+                <th style={{ padding: '14px 12px', fontSize: '0.95rem', color: 'var(--table-header-text)', fontWeight: 800 }}>狀態</th>
+                <th style={{ padding: '14px 12px', fontSize: '0.95rem', color: 'var(--table-header-text)', fontWeight: 800 }}>操作</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan="7" style={{ textAlign: 'center', padding: '40px', color: '#999' }}>讀取中...</td></tr>
+                <tr><td colSpan="7" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>讀取中...</td></tr>
               ) : currentRecords.length === 0 ? (
-                <tr><td colSpan="7" style={{ textAlign: 'center', padding: '40px', color: '#999' }}>目前尚無出貨單資料</td></tr>
+                <tr><td colSpan="7" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>目前尚無出貨單資料</td></tr>
               ) : currentRecords.map(dn => (
-                <tr key={dn.id} className="row-hover" style={{ borderBottom: '1px solid #f5f5f5' }}>
-                  <td style={{ padding: '12px', fontWeight: 600 }}>
+                <tr key={dn.id} className="row-hover" style={{ borderBottom: '1px solid var(--table-border)', color: 'var(--text-main)' }}>
+                  <td style={{ padding: '12px', fontWeight: 700, color: 'var(--text-main)' }}>
                     {dn.request_no}
                     {dn.request_type === 'LEND' && (
                       <span style={{ marginLeft: '8px', fontSize: '0.75rem', backgroundColor: '#eab308', color: 'white', padding: '2px 6px', borderRadius: '4px', verticalAlign: 'middle' }}>
@@ -315,29 +319,29 @@ const DNList = ({ isSplitMode = false }) => {
                       </span>
                     )}
                   </td>
-                  <td style={{ padding: '12px' }}>{new Date(dn.shipping_date).toLocaleDateString()}</td>
+                  <td style={{ padding: '12px', color: 'var(--text-muted)' }}>{new Date(dn.shipping_date).toLocaleDateString()}</td>
                   <td style={{ padding: '12px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontWeight: 600 }}>{dn.customer}</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{dn.customer}</span>
                       {dn.contact_info && (
-                        <span style={{ fontSize: '0.8rem', color: '#64748b', backgroundColor: '#f1f5f9', padding: '2px 8px', borderRadius: '4px' }}>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', backgroundColor: 'var(--bg-surface-subtle)', padding: '2px 8px', borderRadius: '4px' }}>
                           {dn.contact_info}
                         </span>
                       )}
                     </div>
                   </td>
                   <td style={{ padding: '12px' }}>
-                    <span style={{ fontWeight: 600, color: 'var(--primary-color)' }}>{dn.item_count}</span> 項
+                    <span style={{ fontWeight: 700, color: 'var(--primary-color)' }}>{dn.item_count}</span> 項
                   </td>
-                  <td style={{ padding: '12px', color: '#666', fontSize: '0.9rem' }}>{dn.creator_name || '系統系統'}</td>
+                  <td style={{ padding: '12px', color: 'var(--text-muted)', fontSize: '0.9rem' }}>{dn.creator_name || '系統'}</td>
                   <td style={{ padding: '12px' }}>
                     <span style={{ 
                       padding: '4px 10px', 
                       borderRadius: '12px', 
                       fontSize: '0.8rem',
                       fontWeight: 600,
-                      backgroundColor: dn.status === 'SHIPPED' ? '#e8f5e9' : '#fff3e0',
-                      color: dn.status === 'SHIPPED' ? '#2e7d32' : '#ef6c00'
+                      backgroundColor: dn.status === 'SHIPPED' ? 'rgba(34, 197, 94, 0.15)' : 'rgba(249, 115, 22, 0.15)',
+                      color: dn.status === 'SHIPPED' ? '#22c55e' : '#f97316'
                     }}>
                       {dn.status === 'PENDING' ? '已建立' : (dn.status === 'SHIPPED' ? '已出貨' : dn.status)}
                     </span>
@@ -345,18 +349,18 @@ const DNList = ({ isSplitMode = false }) => {
                   <td style={{ padding: '12px' }}>
                     <div style={{ display: 'flex', gap: '10px' }}>
                       <button 
-                        className="btn-action-view" 
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', backgroundColor: 'var(--primary-bg)', color: 'var(--primary-color)', border: '1px solid rgba(59, 130, 246, 0.2)', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
                         title="查看詳情"
                         onClick={() => handleViewDetails(dn)}
                       >
-                        <Eye size={16} />
+                        <Eye size={16} /> 檢視
                       </button>
                       <button 
-                        className="btn-action-delete" 
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', backgroundColor: '#fef2f2', color: '#ef4444', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
                         title="刪除單據"
                         onClick={() => handleDelete(dn)}
                       >
-                        <Trash2 size={16} />
+                        <Trash2 size={16} /> 刪除
                       </button>
                     </div>
                   </td>
@@ -536,7 +540,7 @@ const DNList = ({ isSplitMode = false }) => {
         }
 
         .dn-modal { 
-          width: 800px; 
+          width: 60vw; 
           max-width: 95vw; 
           background-color: white;
           border-radius: 12px;
