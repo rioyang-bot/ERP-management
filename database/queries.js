@@ -544,5 +544,62 @@ export const queries = {
     WHERE o.status IN ('SHIPPED', 'RETURNED') AND oi.item_id = $1
     
     ORDER BY transaction_date DESC, created_at DESC
+  `,
+
+  // System Audit Logs (事件紀錄與稽核日誌)
+  insertAuditLog: `
+    INSERT INTO system_audit_logs (
+      user_id, user_name, user_role, action_type, module, module_label, target_id, target_name, summary, details, ip_address
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    RETURNING *
+  `,
+  fetchAuditLogs: `
+    SELECT 
+      id,
+      timestamp,
+      user_id,
+      user_name,
+      user_role,
+      action_type,
+      module,
+      module_label,
+      target_id,
+      target_name,
+      summary,
+      details,
+      ip_address
+    FROM system_audit_logs
+    ORDER BY timestamp DESC
+    LIMIT 2000
+  `,
+  fetchLiveAuditLogs: `
+    SELECT 
+      id,
+      timestamp,
+      user_id,
+      user_name,
+      user_role,
+      action_type,
+      module,
+      module_label,
+      target_id,
+      target_name,
+      summary,
+      details,
+      ip_address
+    FROM system_audit_logs
+    WHERE timestamp >= NOW() - INTERVAL '24 hours'
+    ORDER BY timestamp DESC
+    LIMIT 500
+  `,
+  fetchAuditLogStats: `
+    SELECT 
+      COUNT(*) as total_count,
+      COUNT(CASE WHEN action_type = 'CREATE' THEN 1 END) as create_count,
+      COUNT(CASE WHEN action_type = 'UPDATE' OR action_type = 'STATUS_CHANGE' THEN 1 END) as update_count,
+      COUNT(CASE WHEN action_type = 'DELETE' THEN 1 END) as delete_count,
+      COUNT(DISTINCT user_name) as active_users,
+      COUNT(CASE WHEN timestamp >= CURRENT_DATE THEN 1 END) as today_count
+    FROM system_audit_logs
   `
 };

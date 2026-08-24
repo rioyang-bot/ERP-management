@@ -3,14 +3,27 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { RoleContext } from '../../context/RoleContext';
 import { useTheme } from '../../context/ThemeContext';
 import logo from '../../assets/logo.png';
-import { ChevronDown, ChevronRight, Edit3, List, LayoutGrid, Key, X, Sun, Moon, LogOut } from 'lucide-react';
+import { ChevronDown, ChevronRight, Edit3, List, LayoutGrid, Key, X, Sun, Moon, LogOut, Plus } from 'lucide-react';
 import { hashPassword, validatePassword } from '../../utils/auth';
+import LiveEventDrawer from './LiveEventDrawer';
 import './MainLayout.css';
 
 const MainLayout = () => {
   const { role, authUser, setAuthUser } = useContext(RoleContext);
   const { theme, isDark, toggleTheme } = useTheme();
   const location = useLocation();
+
+  // --- 即時事件抽屜 (Live Events Drawer) ---
+  const [showLiveEvents, setShowLiveEvents] = useState(false);
+
+  // --- 登出確認 (Logout Confirmation) ---
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+
+  const handleLogout = () => {
+    setShowLogoutConfirm(false);
+    localStorage.removeItem('erp_session');
+    setAuthUser(null);
+  };
 
   // --- 變更密碼 (Change Password) ---
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -293,7 +306,7 @@ const MainLayout = () => {
             </button>
 
             <button 
-              onClick={() => setAuthUser(null)} 
+              onClick={() => setShowLogoutConfirm(true)} 
               style={{ 
                 display: 'flex',
                 alignItems: 'center',
@@ -310,10 +323,54 @@ const MainLayout = () => {
             >
               <LogOut size={14} /> 系統登出
             </button>
+
+            {/* 即時事件串流抽屜切換按鈕 (+) */}
+            <button 
+              onClick={() => setShowLiveEvents(prev => !prev)}
+              className="live-events-toggle-btn"
+              title="即時事件串流 (Live Event Stream)"
+              style={{ 
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '36px',
+                height: '36px',
+                borderRadius: '10px',
+                border: showLiveEvents ? '1px solid var(--primary-color)' : '1px solid var(--border-color)',
+                backgroundColor: showLiveEvents ? 'var(--primary-color)' : 'var(--bg-surface-subtle)',
+                color: showLiveEvents ? '#ffffff' : 'var(--text-main)',
+                cursor: 'pointer',
+                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                position: 'relative',
+                boxShadow: showLiveEvents ? '0 0 12px rgba(37, 99, 235, 0.4)' : 'none'
+              }}
+            >
+              <Plus 
+                size={20} 
+                style={{ 
+                  transform: showLiveEvents ? 'rotate(45deg)' : 'rotate(0deg)', 
+                  transition: 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)' 
+                }} 
+              />
+              {/* 即時綠色指示點 */}
+              <span style={{
+                position: 'absolute',
+                top: '-2px',
+                right: '-2px',
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                backgroundColor: '#10b981',
+                boxShadow: '0 0 6px #10b981'
+              }} />
+            </button>
           </div>
         </header>
         <div className="content-area"><Outlet /></div>
       </main>
+
+      {/* 向左攤開的即時事件串流抽屜 */}
+      <LiveEventDrawer isOpen={showLiveEvents} onClose={() => setShowLiveEvents(false)} />
 
       {/* 變更密碼 Modal */}
       {showPasswordModal && (
@@ -358,6 +415,91 @@ const MainLayout = () => {
                 style={{ padding: '8px 16px', backgroundColor: '#059669', border: 'none', borderRadius: '6px', color: '#fff', cursor: isPwdUpdating ? 'not-allowed' : 'pointer', fontWeight: 600 }}
               >
                 {isPwdUpdating ? '儲存中...' : '確認變更'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 登出確認 Modal */}
+      {showLogoutConfirm && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100vw',
+          height: '100vh',
+          backgroundColor: 'var(--bg-modal-overlay)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000,
+          backdropFilter: 'blur(4px)'
+        }}>
+          <div style={{
+            backgroundColor: 'var(--bg-surface)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '16px',
+            padding: '28px',
+            width: '380px',
+            maxWidth: '90vw',
+            boxShadow: 'var(--modal-shadow)',
+            color: 'var(--text-main)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+              <div style={{
+                width: '40px',
+                height: '40px',
+                borderRadius: '10px',
+                backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#ef4444'
+              }}>
+                <LogOut size={20} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-main)' }}>確認登出系統</h3>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>確定要結束目前的作業連線？</span>
+              </div>
+            </div>
+
+            <p style={{ margin: '0 0 24px 0', fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
+              登出後系統將清除當前登入階段，您需要重新輸入帳號與密碼方可再次使用系統。
+            </p>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button
+                onClick={() => setShowLogoutConfirm(false)}
+                style={{
+                  padding: '8px 18px',
+                  backgroundColor: 'var(--bg-surface-subtle)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '8px',
+                  color: 'var(--text-main)',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                  fontSize: '0.85rem'
+                }}
+              >
+                取消
+              </button>
+              <button
+                onClick={handleLogout}
+                style={{
+                  padding: '8px 20px',
+                  backgroundColor: '#ef4444',
+                  border: 'none',
+                  borderRadius: '8px',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  fontWeight: 700,
+                  fontSize: '0.85rem',
+                  boxShadow: '0 2px 8px rgba(239, 68, 68, 0.3)'
+                }}
+              >
+                確認登出
               </button>
             </div>
           </div>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { FileText, Search, RefreshCw, Eye, CornerDownLeft, AlertCircle, History, Clock, CheckCircle } from 'lucide-react';
+import { logStatusChange } from '../utils/auditLogger';
 
 const LentList = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -83,6 +84,16 @@ const LentList = () => {
 
       const finalRes = await window.electronAPI.namedQuery('updateOutboundRequestReturned', [dn.id, date]);
       if (!finalRes.success) throw new Error('變更借用單狀態失敗。');
+
+      logStatusChange(
+        'LENT',
+        dn.request_no,
+        dn.customer || '借用單',
+        'SHIPPED',
+        'RETURNED',
+        `登記借用單 [${dn.request_no}] 歸還入庫 (歸還日: ${date}, 共 ${items.length} 項品項)`,
+        { dnId: dn.id, dnNumber: dn.request_no, customer: dn.customer, returnDate: date, itemsCount: items.length, items: items.map(i => ({ model: i.model, brand: i.brand, sn: i.sn })) }
+      );
 
       alert('歸還成功！設備已恢復為在庫狀態。');
       setReturnModal({ show: false, dn: null, date: '' });

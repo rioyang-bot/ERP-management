@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Search, Edit2, X, Server, User, MapPin, MoreHorizontal, Trash2, ShoppingBag, AlertTriangle, CheckCircle, Save, Monitor, Settings, ShieldAlert, Archive, RotateCcw, Cpu, Send, History } from 'lucide-react';
 import ItemLedgerModal from '../components/ItemLedgerModal';
+import { logUpdate, logDelete, logStatusChange } from '../utils/auditLogger';
 
 const HwList = ({ isSplitMode = false }) => {
   const location = useLocation();
@@ -110,6 +111,13 @@ const HwList = ({ isSplitMode = false }) => {
       editItem.temp_project_name || null
     ]);
     if (res.success) { 
+      logUpdate('HARDWARE', editItem.sn || editItem.id, `${editItem.brand || ''} ${editItem.model || ''}`, `編輯硬體詳細資訊 [${editItem.sn || editItem.id}]`, {
+        sn: editItem.sn,
+        client: editItem.client,
+        location: editItem.location,
+        server_sn: editItem.temp_server_sn,
+        project_name: editItem.temp_project_name
+      });
       setShowEditModal(false); 
       window.dispatchEvent(new CustomEvent('db-update'));
     }
@@ -129,6 +137,7 @@ const HwList = ({ isSplitMode = false }) => {
   const handleUpdateStatus = async (id, sn, newStatus, label) => {
     if (!confirm(`確定變更狀態為 [${label}] 嗎？`)) return;
     await window.electronAPI.namedQuery('updateAssetStatus', [newStatus, id]);
+    logStatusChange('HARDWARE', sn || id, '硬體零組件', '舊狀態', newStatus, `變更硬體 [${sn || id}] 狀態為「${label}」`, { id, sn, newStatus, label });
     window.dispatchEvent(new CustomEvent('db-update'));
     setActiveMenuId(null);
   };
@@ -137,6 +146,7 @@ const HwList = ({ isSplitMode = false }) => {
     const displayName = `${nic.brand} - ${nic.model} [${nic.sn || '未設定序號'}]`;
     if (!confirm(`確定要刪除硬體 [${displayName}] 嗎？`)) return;
     await window.electronAPI.namedQuery('deleteAsset', [nic.id]);
+    logDelete('HARDWARE', nic.sn || nic.id, `${nic.brand} ${nic.model}`, `刪除硬體紀錄 [${nic.sn || nic.id}]`, { id: nic.id, sn: nic.sn, brand: nic.brand, model: nic.model });
     window.dispatchEvent(new CustomEvent('db-update'));
     setActiveMenuId(null);
   };

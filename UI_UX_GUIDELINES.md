@@ -161,7 +161,63 @@
 *   **一般模式 (Standard Mode)**：
     *   採用 `display: flex`, `flexDirection: 'row'` 的左右分欄設計。
     *   **左側表單區 (Form Section)**：佔比 `flex: 0 0 60%`，包含所有輸入欄位與送出按鈕。
-    *   **右側紀錄區 (Recent Records)**：佔比 `flex: 1`（約 40%），用於即時顯示「最新 10 筆建檔記錄」。清單應為單欄向下排列 (`flexDirection: 'column'`)，卡片背景為 `#fafafa`，邊框為 `#f1f5f9`。
+    *   **右側紀錄區 (Recent Records)**：佔比 `flex: 1`（約 40%），用於即時顯示「最新 10 筆建檔記錄」。清單應為單欄向下排列 (`flexDirection: 'column'`)，卡片背景為 `var(--bg-surface-subtle)`，邊框為 `var(--border-color)`。
 *   **雙開/手機模式 (Split / Mobile Mode)**：
     *   當進入雙開畫面 (`isSplitMode = true`) 或螢幕過窄時，佈局應自動切換為 `flexDirection: 'column'`。
     *   左右兩個區塊寬度均改為 `100%`，呈上下堆疊呈現，確保在狹窄視窗中表單與紀錄仍具備最佳易讀性。
+
+## 8. 全域夜間模式與色彩設計規範 (Dark Mode & Theme Token Guidelines) - ⚡ **強制規範**
+全系統支援日間 (Light) 與夜間 (Dark) 雙主題切換。**後續所有新功能與新頁面開發，必須全面支援夜間模式，嚴禁使用硬編碼色彩。**
+
+### 8.1 設計變數參照標準 (Design Tokens)
+所有樣式（包含 CSS 文件與 JSX Inline Styles）必須優先使用以下全域 CSS 變數：
+
+| 分類 | 變數名稱 | 適用場景 | 日間預設 (Light) | 夜間預設 (Dark) |
+| :--- | :--- | :--- | :--- | :--- |
+| **背景** | `--bg-app` | 頁面最底層畫布 | `#f1f5f9` | `#090e17` |
+| | `--bg-surface` | 卡片、面板、視窗、彈窗本體 | `#ffffff` | `#111a28` |
+| | `--bg-surface-subtle` | 次級容器、表頭、資訊摘要卡、斑馬紋 | `#f8fafc` | `#162235` |
+| | `--bg-surface-hover` | 項目懸停高亮表面 | `#f1f5f9` | `#1c2b42` |
+| | `--bg-modal-overlay` | 彈窗背景遮罩 (含毛玻璃) | `rgba(0,0,0,0.45)` | `rgba(0,0,0,0.7)` |
+| **文字** | `--text-main` | 主標題、主要內文、數值 | `#0f172a` | `#f8fafc` |
+| | `--text-muted` | 次要文字、欄位說明、副標題 | `#64748b` | `#94a3b8` |
+| | `--text-subtle` | 輔助文字、無資料預設標籤 (`--`) | `#94a3b8` | `#64748b` |
+| | `--text-inverse` | 反向對比文字 (如徽章內字) | `#ffffff` | `#0f172a` |
+| **邊框** | `--border-color` | 卡片外框、輸入框邊框、主要分隔線 | `#e2e8f0` | `#1e2e45` |
+| | `--table-border` | 表格列底線、次要分割線 | `#f1f5f9` | `#1a273b` |
+| **表格** | `--table-header-bg` | 表格 `<thead>` 背景 | `#f8fafc` | `#141f30` |
+| | `--table-header-text` | 表格標題文字 | `#1e293b` | `#e2e8f0` |
+| | `--table-row-hover` | 表格滑鼠懸停 (Row Hover) 效果 | `#f8fafc` | `rgba(255,255,255,0.03)` |
+| **表單** | `--input-bg` | 輸入框、下拉選單底色 | `#ffffff` | `#0c1420` |
+| | `--input-border` | 輸入框預設邊框 | `#cbd5e1` | `#22344e` |
+| | `--input-text` | 輸入框輸入文字顏色 | `#0f172a` | `#f8fafc` |
+| | `--input-focus-border` | 輸入框聚焦外框色彩 | `#2563eb` | `#3b82f6` |
+
+### 8.2 動作按鈕與徽章透明度色彩規範 (Action Buttons & Badges)
+為確保在深色底與淺色底皆能呈現具備質感的透明發光感，操作按鈕與狀態標籤應使用 Alpha 半透明背景搭配標準前景色彩：
+
+*   **主要功能 (Primary / View)**：
+    *   `backgroundColor: 'var(--primary-bg)'`
+    *   `color: 'var(--primary-color)'`
+    *   `border: '1px solid rgba(59, 130, 246, 0.25)'`
+*   **危險 / 刪除動作 (Danger / Delete)**：
+    *   `backgroundColor: 'rgba(239, 68, 68, 0.12)'`
+    *   `color: '#ef4444'`
+    *   `border: '1px solid rgba(239, 68, 68, 0.25)'`
+*   **編輯 / 成功動作 (Success / Edit)**：
+    *   `backgroundColor: 'rgba(16, 185, 129, 0.12)'`
+    *   `color: '#10b981'`
+    *   `border: '1px solid rgba(16, 185, 129, 0.25)'`
+*   **警告 / 進行中狀態 (Warning / Pending)**：
+    *   `backgroundColor: 'rgba(245, 158, 11, 0.15)'`
+    *   `color: '#f59e0b'`
+    *   `border: '1px solid rgba(245, 158, 11, 0.3)'`
+
+### 8.3 常犯錯誤與自檢清單 (Dark Mode Development Checklist)
+開發任何新畫面時，必須逐項檢查：
+1. ❌ **禁止硬編碼純白色與深黑**：嚴禁在行內樣式寫死 `backgroundColor: '#fff'` 或 `color: '#1e293b'`。
+2. ❌ **禁止在 Table Hover 寫死亮色**：嚴禁在 `.row-hover:hover` 使用 `#f8fafc` 或 `#f0f7ff`，必須使用 `background-color: var(--table-row-hover);`。
+3. ❌ **彈窗與懸浮選單**：彈窗本體與下拉選單必須明確指定 `backgroundColor: 'var(--bg-surface)'`、`color: 'var(--text-main)'` 與 `border: '1px solid var(--border-color)'`。
+4. ❌ **輸入框與選單**：`<input>`, `<select>`, `<textarea>` 需使用 `var(--input-bg)`、`var(--input-border)` 與 `var(--input-text)`。
+5. 🔍 **雙模式驗證**：功能完成後，必須切換頂部導航之「日間 / 夜間模式」按鈕，確認雙模式下對比清晰、文字無吞色、無突兀白塊。
+

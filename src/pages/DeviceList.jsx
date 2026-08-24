@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Search, Edit2, X, Save, MoreHorizontal, MoreVertical, MapPin, User, Trash2, CheckCircle, ShoppingBag, Wrench, ShieldAlert, Cpu, Archive, RotateCcw, Server, Send, History } from 'lucide-react';
 import ItemLedgerModal from '../components/ItemLedgerModal';
+import { logUpdate, logDelete, logStatusChange } from '../utils/auditLogger';
 
 const DeviceList = ({ isSplitMode = false }) => {
   const navigate = useNavigate();
@@ -103,13 +104,18 @@ const DeviceList = ({ isSplitMode = false }) => {
   const handleDelete = async (id, sn) => {
     if (!window.confirm(`確定要刪除設備 [${sn}] 嗎？`)) return;
     const res = await window.electronAPI.namedQuery('deleteAsset', [id]);
-    if (res.success) { setActiveMenuId(null); fetchAssets(); }
+    if (res.success) {
+      logDelete('DEVICE', sn || id, '設備', `刪除設備紀錄 [${sn || id}]`, { id, sn });
+      setActiveMenuId(null);
+      fetchAssets();
+    }
   };
 
   const handleUpdateStatus = async (id, sn, newStatus, label) => {
     if (!window.confirm(`確定要變更為「${label}」嗎？`)) return;
     const res = await window.electronAPI.namedQuery('updateAssetStatus', [newStatus, id]);
     if (res.success) {
+      logStatusChange('DEVICE', sn || id, '設備', '舊狀態', newStatus, `變更設備 [${sn || id}] 狀態為「${label}」`, { id, sn, newStatus, label });
       if (sn && (newStatus === 'ACTIVE' || newStatus === 'SHIPPED')) {
         const hwStatusMap = {
           'ACTIVE': 'ACTIVE',
@@ -138,7 +144,18 @@ const DeviceList = ({ isSplitMode = false }) => {
         editItem.customer_warranty_expire || null, editItem.system_date || null, editItem.warranty_expire || null,
         editItem.os, editItem.nic, updatedCustomAttributes, editItem.id
     ]);
-    if (res.success) { setShowEditModal(false); fetchAssets(); }
+    if (res.success) {
+      logUpdate('DEVICE', editItem.sn || editItem.id, `${editItem.brand || ''} ${editItem.model || ''}`, `編輯設備詳細資訊 [${editItem.sn || editItem.id}]`, {
+        sn: editItem.sn,
+        client: editItem.client,
+        hostname: editItem.hostname,
+        location: editItem.location,
+        os: editItem.os,
+        nic: editItem.nic
+      });
+      setShowEditModal(false);
+      fetchAssets();
+    }
   };
 
   const statusPriority = { 'REPAIRING': 1, 'LENT': 2, 'ACTIVE': 3, 'SHIPPED': 4, 'PENDING_SCRAP': 5, 'SCRAPPED': 6 };

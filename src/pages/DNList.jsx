@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { FileText, Search, Filter, Eye, RefreshCw, AlertCircle, Trash2, Calendar } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { logStatusChange, logDelete } from '../utils/auditLogger';
 
 const DNList = ({ isSplitMode = false }) => {
   const navigate = useNavigate();
@@ -77,6 +78,7 @@ const DNList = ({ isSplitMode = false }) => {
     try {
       const res = await window.electronAPI.namedQuery('deleteOutboundRequest', [dn.id]);
       if (res.success) {
+        logDelete('OUTBOUND', dn.request_no, dn.customer || '出貨單', `刪除出貨單 [${dn.request_no}]`, { dnId: dn.id, dnNumber: dn.request_no, customer: dn.customer });
         alert('刪除成功');
         fetchRecords();
       } else {
@@ -135,6 +137,16 @@ const DNList = ({ isSplitMode = false }) => {
       // 更新出貨單狀態
       const finalRes = await window.electronAPI.namedQuery('updateOutboundRequestStatus', ['SHIPPED', selectedDN.id]);
       if (!finalRes.success) throw new Error('變更出貨單主檔狀態時發生錯誤。');
+
+      logStatusChange(
+        'OUTBOUND',
+        selectedDN.request_no,
+        selectedDN.customer || '出貨單',
+        selectedDN.status || 'PENDING',
+        'SHIPPED',
+        `出貨單 [${selectedDN.request_no}] 確認出貨並完成庫存扣除 (${dnItems.length} 項品項)`,
+        { dnId: selectedDN.id, dnNumber: selectedDN.request_no, customer: selectedDN.customer, itemsCount: dnItems.length, items: dnItems.map(i => ({ model: i.model, brand: i.brand, sn: i.sn, qty: i.quantity })) }
+      );
 
       alert('出貨成功！狀態已變更且相關庫存已扣除。');
       setIsModalOpen(false);
@@ -285,7 +297,7 @@ const DNList = ({ isSplitMode = false }) => {
 
         <div style={{ padding: '24px' }}>
           {error && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '16px', backgroundColor: '#fff5f5', color: '#d32f2f', borderRadius: '8px', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '16px', backgroundColor: 'rgba(239, 68, 68, 0.12)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '8px', marginBottom: '20px' }}>
               <AlertCircle size={20} />
               <span>{error}</span>
             </div>
@@ -356,7 +368,7 @@ const DNList = ({ isSplitMode = false }) => {
                         <Eye size={16} /> 檢視
                       </button>
                       <button 
-                        style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', backgroundColor: '#fef2f2', color: '#ef4444', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', backgroundColor: 'rgba(239, 68, 68, 0.12)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
                         title="刪除單據"
                         onClick={() => handleDelete(dn)}
                       >
@@ -371,21 +383,21 @@ const DNList = ({ isSplitMode = false }) => {
           
           {/* Pagination Controls */}
           {totalPages > 1 && (
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '16px', gap: '12px', borderTop: '1px solid #eee', backgroundColor: '#fafafa' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '16px', gap: '12px', borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)' }}>
               <button 
                 disabled={currentPage === 1}
                 onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                style={{ padding: '6px 14px', border: '1px solid #ddd', borderRadius: '6px', backgroundColor: currentPage === 1 ? '#f5f5f5' : '#fff', color: currentPage === 1 ? '#aaa' : '#333', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
+                style={{ padding: '6px 14px', border: '1px solid var(--border-color)', borderRadius: '6px', backgroundColor: currentPage === 1 ? 'var(--bg-surface-subtle)' : 'var(--bg-surface)', color: currentPage === 1 ? 'var(--text-subtle)' : 'var(--text-main)', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
               >
                 上一頁
               </button>
-              <span style={{ fontSize: '0.9rem', color: '#555', fontWeight: 600 }}>
-                {currentPage} <span style={{ color: '#aaa', margin: '0 4px' }}>/</span> {totalPages}
+              <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                {currentPage} <span style={{ color: 'var(--text-subtle)', margin: '0 4px' }}>/</span> {totalPages}
               </span>
               <button 
                 disabled={currentPage === totalPages}
                 onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                style={{ padding: '6px 14px', border: '1px solid #ddd', borderRadius: '6px', backgroundColor: currentPage === totalPages ? '#f5f5f5' : '#fff', color: currentPage === totalPages ? '#aaa' : '#333', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
+                style={{ padding: '6px 14px', border: '1px solid var(--border-color)', borderRadius: '6px', backgroundColor: currentPage === totalPages ? 'var(--bg-surface-subtle)' : 'var(--bg-surface)', color: currentPage === totalPages ? 'var(--text-subtle)' : 'var(--text-main)', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
               >
                 下一頁
               </button>
@@ -399,12 +411,12 @@ const DNList = ({ isSplitMode = false }) => {
       {isModalOpen && selectedDN && (
         <div className="modal-overlay" onClick={() => setIsModalOpen(false)}>
           <div className="modal-content dn-modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-header" style={{ padding: '12px 20px' }}>
+            <div className="modal-header" style={{ padding: '12px 20px', borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <FileText size={18} color="var(--primary-color)" />
                 <div>
-                  <h3 style={{ margin: 0, fontSize: '1.1rem' }}>出貨單明細</h3>
-                  <span style={{ fontSize: '0.75rem', color: '#666' }}>{selectedDN.request_no}</span>
+                  <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-main)' }}>出貨單明細</h3>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{selectedDN.request_no}</span>
                 </div>
               </div>
               <button className="close-btn" onClick={() => setIsModalOpen(false)}>&times;</button>
@@ -416,7 +428,7 @@ const DNList = ({ isSplitMode = false }) => {
                   <span className="summary-label" style={{ margin: 0 }}>客戶對象:</span>
                   <span className="summary-value" style={{ fontSize: '0.85rem' }}>
                     {selectedDN.customer} 
-                    {selectedDN.contact_info && <span style={{ color: '#64748b', fontWeight: 400, marginLeft: '8px' }}>({selectedDN.contact_info})</span>}
+                    {selectedDN.contact_info && <span style={{ color: 'var(--text-muted)', fontWeight: 400, marginLeft: '8px' }}>({selectedDN.contact_info})</span>}
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -430,41 +442,41 @@ const DNList = ({ isSplitMode = false }) => {
               </div>
 
               <div className="dn-items-list">
-                <h4 style={{ marginBottom: '8px', fontSize: '0.85rem', color: '#334155', fontWeight: 800 }}>項目清單 ({dnItems.length})</h4>
+                <h4 style={{ marginBottom: '8px', fontSize: '0.85rem', color: 'var(--text-main)', fontWeight: 800 }}>項目清單 ({dnItems.length})</h4>
                 <div className="dn-items-list-container" style={{ maxHeight: '420px', overflowY: 'auto' }}>
                   <table className="dn-items-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead style={{ position: 'sticky', top: 0, backgroundColor: '#f8fafc', zIndex: 10 }}>
-                      <tr style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>
-                        <th style={{ padding: '8px 12px', fontSize: '0.75rem', color: '#64748b' }}>類型</th>
-                        <th style={{ padding: '8px 12px', fontSize: '0.75rem', color: '#64748b' }}>項目詳情</th>
-                        <th style={{ padding: '8px 12px', fontSize: '0.75rem', color: '#64748b' }}>序號 (S/N)</th>
-                        <th style={{ padding: '8px 12px', fontSize: '0.75rem', color: '#64748b', textAlign: 'center' }}>數量</th>
-                        <th style={{ padding: '8px 12px', fontSize: '0.75rem', color: '#64748b' }}>發送位置</th>
+                    <thead style={{ position: 'sticky', top: 0, backgroundColor: 'var(--table-header-bg)', zIndex: 10 }}>
+                      <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border-color)' }}>
+                        <th style={{ padding: '8px 12px', fontSize: '0.75rem', color: 'var(--table-header-text)' }}>類型</th>
+                        <th style={{ padding: '8px 12px', fontSize: '0.75rem', color: 'var(--table-header-text)' }}>項目詳情</th>
+                        <th style={{ padding: '8px 12px', fontSize: '0.75rem', color: 'var(--table-header-text)' }}>序號 (S/N)</th>
+                        <th style={{ padding: '8px 12px', fontSize: '0.75rem', color: 'var(--table-header-text)', textAlign: 'center' }}>數量</th>
+                        <th style={{ padding: '8px 12px', fontSize: '0.75rem', color: 'var(--table-header-text)' }}>發送位置</th>
                       </tr>
                     </thead>
                     <tbody>
                       {isDetailLoading ? (
-                        <tr><td colSpan="4" style={{ textAlign: 'center', padding: '20px' }}>讀取中...</td></tr>
+                        <tr><td colSpan="5" style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)' }}>讀取中...</td></tr>
                       ) : dnItems.map((item, idx) => (
-                        <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <tr key={idx} style={{ borderBottom: '1px solid var(--table-border)' }}>
                           <td style={{ padding: '6px 12px' }}>
                             <span className="type-badge-mini">{item.type}</span>
                           </td>
                           <td style={{ padding: '6px 12px' }}>
-                            <div style={{ fontWeight: 700, fontSize: '0.8rem', color: '#1e293b' }}>{item.brand} {item.model}</div>
-                            <div style={{ fontSize: '0.7rem', color: '#64748b' }}>{item.specification}</div>
+                            <div style={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--text-main)' }}>{item.brand} {item.model}</div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{item.specification}</div>
                           </td>
                           <td style={{ padding: '6px 12px' }}>
                             {item.sn && (
-                              <code style={{ fontSize: '0.75rem', backgroundColor: '#f1f5f9', padding: '1px 4px', borderRadius: '3px', color: '#475569', border: '1px solid #e2e8f0' }}>
+                              <code style={{ fontSize: '0.75rem', backgroundColor: 'var(--bg-surface-subtle)', padding: '1px 4px', borderRadius: '3px', color: 'var(--text-main)', border: '1px solid var(--border-color)' }}>
                                 {item.sn}
                               </code>
                             )}
                           </td>
                           <td style={{ padding: '6px 12px', textAlign: 'center' }}>
-                            <span style={{ fontWeight: 800, fontSize: '0.85rem' }}>{item.quantity}</span> <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{item.unit}</span>
+                            <span style={{ fontWeight: 800, fontSize: '0.85rem', color: 'var(--text-main)' }}>{item.quantity}</span> <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{item.unit}</span>
                           </td>
-                          <td style={{ padding: '6px 12px', fontSize: '0.8rem', color: '#475569' }}>
+                          <td style={{ padding: '6px 12px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                             {item.location || '-'}
                           </td>
                         </tr>
@@ -476,7 +488,7 @@ const DNList = ({ isSplitMode = false }) => {
             </div>
 
             {selectedDN.status === 'PENDING' && (
-              <div className="modal-footer" style={{ padding: '12px 20px', borderTop: '1px solid #e2e8f0', backgroundColor: '#f8fafc', display: 'flex', justifyContent: 'flex-end' }}>
+              <div className="modal-footer" style={{ padding: '12px 20px', borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)', display: 'flex', justifyContent: 'flex-end' }}>
                 <button 
                   className="btn-primary" 
                   onClick={handleConfirmDelivery}
@@ -492,7 +504,7 @@ const DNList = ({ isSplitMode = false }) => {
       )}
 
       <style>{`
-        .row-hover:hover { background-color: #f0f7ff; }
+        .row-hover:hover { background-color: var(--table-row-hover, rgba(59, 130, 246, 0.05)); }
         .spinner { animation: spin 1s linear infinite; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         
@@ -509,27 +521,29 @@ const DNList = ({ isSplitMode = false }) => {
         }
 
         .btn-action-view {
-          background-color: #e0e7ff;
-          color: #4338ca;
+          background-color: var(--primary-bg);
+          color: var(--primary-color);
+          border: 1px solid rgba(59, 130, 246, 0.2);
         }
 
         .btn-action-view:hover {
-          background-color: #4338ca;
+          background-color: var(--primary-color);
           color: white;
           transform: translateY(-2px) scale(1.05);
-          box-shadow: 0 4px 6px -1px rgba(67, 56, 202, 0.3);
+          box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.3);
         }
 
         .btn-action-delete {
-          background-color: #fee2e2;
-          color: #b91c1c;
+          background-color: rgba(239, 68, 68, 0.12);
+          color: #ef4444;
+          border: 1px solid rgba(239, 68, 68, 0.25);
         }
 
         .btn-action-delete:hover {
-          background-color: #b91c1c;
+          background-color: #ef4444;
           color: white;
           transform: translateY(-2px) scale(1.05);
-          box-shadow: 0 4px 6px -1px rgba(185, 28, 28, 0.3);
+          box-shadow: 0 4px 6px -1px rgba(239, 68, 68, 0.3);
         }
 
         .btn-primary, .btn-secondary {
@@ -542,13 +556,14 @@ const DNList = ({ isSplitMode = false }) => {
         .dn-modal { 
           width: 60vw; 
           max-width: 95vw; 
-          background-color: white;
+          background-color: var(--bg-surface);
           border-radius: 12px;
-          box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1);
-          border: 1px solid #e2e8f0;
+          box-shadow: var(--modal-shadow);
+          border: 1px solid var(--border-color);
           overflow: hidden;
           position: relative;
           animation: modalFadeIn 0.3s ease-out;
+          color: var(--text-main);
         }
 
         .modal-overlay {
@@ -557,7 +572,7 @@ const DNList = ({ isSplitMode = false }) => {
           left: 0;
           right: 0;
           bottom: 0;
-          background-color: rgba(15, 23, 42, 0.6);
+          background-color: var(--bg-modal-overlay);
           backdrop-filter: blur(4px);
           display: flex;
           justify-content: center;
@@ -578,21 +593,21 @@ const DNList = ({ isSplitMode = false }) => {
 
         .dn-summary {
           border-left: 4px solid var(--primary-color);
-          background: linear-gradient(to right, #f8fafc, #ffffff);
-          box-shadow: inset 0 0 0 1px #e2e8f0;
+          background: var(--bg-surface-subtle);
+          box-shadow: inset 0 0 0 1px var(--border-color);
         }
 
         .dn-items-table tr:nth-child(even) {
-          background-color: #f9fafb;
+          background-color: var(--bg-surface-subtle);
         }
 
         .dn-items-table tr:hover {
-          background-color: #f1f5f9;
+          background-color: var(--table-row-hover);
         }
         
         .summary-label { 
           font-size: 0.7rem; 
-          color: #64748b; 
+          color: var(--text-muted); 
           font-weight: 800; 
           text-transform: uppercase; 
           letter-spacing: 0.025em;
@@ -601,7 +616,7 @@ const DNList = ({ isSplitMode = false }) => {
 
         .summary-value { 
           font-weight: 700; 
-          color: #0f172a; 
+          color: var(--text-main); 
         }
         
         .type-badge-mini {
@@ -609,27 +624,27 @@ const DNList = ({ isSplitMode = false }) => {
           border-radius: 4px;
           font-size: 0.65rem;
           font-weight: 800;
-          background-color: #e2e8f0;
-          color: #475569;
-          border: 1px solid #cbd5e1;
+          background-color: var(--bg-surface-subtle);
+          color: var(--text-main);
+          border: 1px solid var(--border-color);
           display: inline-block;
           white-space: nowrap;
         }
 
         .dn-items-list-container {
-          border: 1px solid #e2e8f0;
+          border: 1px solid var(--border-color);
           border-radius: 8px;
           overflow: hidden;
-          background-color: #ffffff;
+          background-color: var(--bg-surface);
         }
 
         .close-btn {
           position: absolute;
           top: 12px;
           right: 16px;
-          background: #f1f5f9;
-          border: 1px solid #e2e8f0;
-          color: #64748b;
+          background: var(--bg-surface-subtle);
+          border: 1px solid var(--border-color);
+          color: var(--text-muted);
           width: 28px;
           height: 28px;
           border-radius: 50%;

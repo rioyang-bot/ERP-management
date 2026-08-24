@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Plus, Edit2, Trash2, X, Upload, Download } from 'lucide-react';
+import { logCreate, logUpdate, logDelete } from '../utils/auditLogger';
 import './ProjectList.css'; // Basic CSS for specific elements if needed
 
 const ProjectList = () => {
@@ -149,6 +150,7 @@ const ProjectList = () => {
           JSON.stringify(formData.documents),
           editingId
         ]);
+        logUpdate('PROJECT', formData.project_no || editingId, formData.name, `編輯專案 [${formData.project_no}] ${formData.name}`, formData);
       } else {
         await window.electronAPI.namedQuery('createProject', [
           formData.project_no,
@@ -160,6 +162,7 @@ const ProjectList = () => {
           formData.remarks,
           formData.status
         ]);
+        logCreate('PROJECT', formData.project_no, formData.name, `建立專案 [${formData.project_no}] ${formData.name} (客戶: ${formData.customer_name || '未指定'})`, formData);
       }
       setShowModal(false);
       fetchProjects();
@@ -185,6 +188,7 @@ const ProjectList = () => {
           await window.electronAPI.namedQuery('clearProjectFromAssets', [projectName]);
         }
         await window.electronAPI.namedQuery('deleteProject', [id]);
+        logDelete('PROJECT', id, projectName, `刪除專案 [${projectName}] (已清空關聯 ${count} 台設備專案標籤)`, { id, projectName, affectedAssetsCount: count });
         fetchProjects();
       }
     } catch (error) {

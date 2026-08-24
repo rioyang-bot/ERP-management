@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useContext } from 'react';
 import { Plus, Search, FileText, ShoppingCart, CheckCircle, Clock, AlertCircle, Trash2, DollarSign, Package, Tag, Filter, X, Save, Settings2, Trash } from 'lucide-react';
 import { RoleContext } from '../context/RoleContext';
 import { useNavigate } from 'react-router-dom';
+import { logCreate, logUpdate } from '../utils/auditLogger';
 
 const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose = null, isSplitMode = false }) => {
   const { authUser } = useContext(RoleContext);
@@ -238,6 +239,13 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
              if (!res.success) throw new Error(`更新品項失敗: ${res.error}`);
            }
          }
+         logUpdate(
+           'PURCHASE',
+           initOrderNo,
+           '採購單',
+           `修改採購單 [${initOrderNo}] 共 ${items.length} 個品項`,
+           { orderNo: initOrderNo, itemsCount: items.length, items: items.map(i => ({ model: i.model, brand: i.brand, qty: i.quantity })), remarks }
+         );
          alert('採購單修改成功！');
          if (onClose) onClose();
       } else {
@@ -250,7 +258,13 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
            );
            if (!res.success) throw new Error(`品項 ${item.model || '未指定型號'} 儲存失敗: ${res.error}`);
          }
-   
+         logCreate(
+           'PURCHASE',
+           orderNo,
+           '採購單',
+           `建立採購單 [${orderNo}] 共 ${items.length} 個品項`,
+           { orderNo, itemsCount: items.length, items: items.map(i => ({ model: i.model, brand: i.brand, qty: i.quantity })), remarks }
+         );
          alert('採購建檔成功！');
          setRemarks('');
          setItems([]); 

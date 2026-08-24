@@ -18,3 +18,20 @@ export function sanitizeParams(params) {
     return s.trim();
   });
 }
+
+export function sanitizeInput(val) {
+  if (typeof val !== 'string') return val;
+  let s = val.replace(/[|&;$%@'\\()+\r\n]/g, '');
+  const sqlKeywords = /\b(Select|Insert|Dbo|Declare|Cast|Drop|Union|Exec|Nvarchar)\b/gi;
+  return s.replace(sqlKeywords, '').trim();
+}
+
+export function sanitizeSearchInput(val) {
+  return sanitizeInput(val);
+}
+
+export default {
+  sanitizeParams,
+  sanitizeInput,
+  sanitizeSearchInput
+};

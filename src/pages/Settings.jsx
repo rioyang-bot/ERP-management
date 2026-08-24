@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useContext } from 'react';
 import { RoleContext } from '../context/RoleContext';
 import { hashPassword, validatePassword } from '../utils/auth';
 import { Shield, User, Settings as SettingsIcon, CheckSquare, Square, X, Save, Key, Lock } from 'lucide-react';
+import { logCreate, logUpdate, logDelete, logStatusChange } from '../utils/auditLogger';
 
 const MENU_OPTIONS = [
   { id: 'inboundList', label: '進貨單列表 (S/I List)' },
@@ -98,6 +99,12 @@ const Settings = () => {
       );
 
       if (res.success) {
+        logCreate('USER', newUser.username, newUser.full_name || newUser.username, `建立使用者帳號 [${newUser.username}] (${newUser.role})`, {
+          username: newUser.username,
+          full_name: newUser.full_name,
+          role: newUser.role,
+          menu_access: defaultAccess
+        });
         alert('控制台：帳號已成功寫入資料庫');
         await fetchUsers();
         setNewUser({ username: '', password: '', role: 'IT', full_name: '' });
@@ -112,6 +119,8 @@ const Settings = () => {
   const handleToggleActive = async (id, currentStatus) => {
     const res = await window.electronAPI.namedQuery('updateUserActive', [!currentStatus, id]);
     if (res.success) {
+      const u = users.find(item => item.id === id);
+      logStatusChange('USER', id, u?.username || '帳號', currentStatus ? '啟用' : '停用', !currentStatus ? '啟用' : '停用', `${!currentStatus ? '啟用' : '停用'}使用者帳號 [${u?.username || id}]`, { id, username: u?.username, newStatus: !currentStatus });
       await fetchUsers();
     }
   };
@@ -121,6 +130,7 @@ const Settings = () => {
     if (window.confirm(`確定要永久刪除帳號 [${username}] 嗎？此動作無法復原。`)) {
       const res = await window.electronAPI.namedQuery('deleteUser', [id]);
       if (res.success) {
+        logDelete('USER', username, '使用者帳號', `刪除使用者帳號 [${username}]`, { id, username });
         await fetchUsers();
       }
     }
@@ -176,6 +186,10 @@ const Settings = () => {
     );
 
     if (res.success) {
+      logUpdate('USER', editingUser.username, editingUser.full_name || editingUser.username, `修改使用者 [${editingUser.username}] 選單權限設定`, {
+        username: editingUser.username,
+        menu_access: updatedAccess
+      });
       alert('權限更新成功');
       
       // 如果更新的是當前登入者，同步更新 Session
@@ -206,6 +220,7 @@ const Settings = () => {
       const hashedNew = await hashPassword(adminResetPwd);
       const updateRes = await window.electronAPI.namedQuery('updateUserPassword', [hashedNew, resetUser.id]);
       if (updateRes.success) {
+        logUpdate('USER', resetUser.username, '重設密碼', `管理員重設使用者 [${resetUser.username}] 登入密碼`, { username: resetUser.username });
         alert(`已經成功將使用者 [${resetUser.username}] 的密碼重設！`);
         setResetUser(null);
         setAdminResetPwd('');
@@ -228,6 +243,7 @@ const Settings = () => {
     setIsSavingPolicy(true);
     try {
       await window.electronAPI.namedQuery('upsertSystemSetting', ['password_policy', passwordPolicy]);
+      logUpdate('SETTING', 'password_policy', '密碼原則設定', '更新系統密碼安全性原則', passwordPolicy);
       alert('密碼安全原則已儲存');
     } catch(err) {
       alert('儲存失敗');

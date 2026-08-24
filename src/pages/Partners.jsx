@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { UserPlus, Trash2, Edit2, Search, X, Save, UserCheck, Truck, Users } from 'lucide-react';
+import { logCreate, logUpdate, logDelete, logStatusChange } from '../utils/auditLogger';
 
 const Partners = () => {
   const [partners, setPartners] = useState([]);
@@ -62,6 +63,7 @@ const Partners = () => {
     );
 
     if (res.success) {
+      logCreate('PARTNER', cleanName, formData.type === 'CUSTOMER' ? '客戶' : '供應商', `新增夥伴 [${cleanName}] 類別: ${formData.type === 'CUSTOMER' ? '客戶' : '供應商'}`, { type: formData.type, name: cleanName, contact: formData.contact, phone: formData.phone });
       await fetchPartners();
       setFormData({ type: 'CUSTOMER', name: '', contact: '', phone: '' });
     } else {
@@ -73,6 +75,8 @@ const Partners = () => {
   const handleToggleActive = async (id, currentStatus) => {
     const res = await window.electronAPI.namedQuery('updatePartnerActive', [!currentStatus, id]);
     if (res.success) {
+      const p = partners.find(item => item.id === id);
+      logStatusChange('PARTNER', id, p?.name || '夥伴', currentStatus ? '啟用' : '停用', !currentStatus ? '啟用' : '停用', `${!currentStatus ? '啟用' : '停用'}夥伴 [${p?.name || id}]`, { id, name: p?.name, newStatus: !currentStatus });
       await fetchPartners();
     } else {
       alert('系統訊息：狀態更新失敗。');
@@ -94,6 +98,12 @@ const Partners = () => {
       ]
     );
     if (res.success) {
+      logUpdate('PARTNER', editingItem.id, cleanName, `編輯夥伴資料 [${cleanName}]`, {
+        type: editingItem.type,
+        name: cleanName,
+        contact: editingItem.contact,
+        phone: editingItem.phone
+      });
       setShowEditModal(false);
       await fetchPartners();
     } else {
@@ -105,6 +115,7 @@ const Partners = () => {
     if (window.confirm(`確定要徹底刪除夥伴 [${name}] 嗎？`)) {
       const res = await window.electronAPI.namedQuery('deletePartner', [id]);
       if (res.success) {
+        logDelete('PARTNER', id, name, `刪除夥伴 [${name}]`, { id, name });
         await fetchPartners();
       } else {
         // 安全原則：不揭露資料庫關聯錯誤細節，但引導使用者解決問題

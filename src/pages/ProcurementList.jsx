@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Search, FileText, ShoppingCart, Filter, Calendar, ExternalLink, ChevronDown, ChevronRight, Package, Truck, CheckCircle2, Trash2, Edit2, X, Save, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import ProcurementRegistration from './Purchasing';
+import { logDelete } from '../utils/auditLogger';
 
 const ProcurementList = ({ isSplitMode = false }) => {
   const navigate = useNavigate();
@@ -61,6 +62,7 @@ const ProcurementList = ({ isSplitMode = false }) => {
       );
       
       if (res.success) {
+        logDelete('PURCHASE', orderNo, '採購單', `刪除整筆採購單 [${orderNo}]`, { orderNo });
         alert('刪除成功');
         fetchRecords();
       } else {

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useContext } from 'react';
 import { ClipboardList, Search, Plus, Trash2, Send, Calendar, MapPin, User, Package, Cpu, ChevronRight, AlertCircle, Loader2, Truck } from 'lucide-react';
 import { RoleContext } from '../context/RoleContext';
 import { useNavigate } from 'react-router-dom';
+import { logCreate } from '../utils/auditLogger';
 import './Outbound.css';
 
 const Outbound = ({ isSplitMode = false }) => {
@@ -259,6 +260,14 @@ const Outbound = ({ isSplitMode = false }) => {
             }
           }
         }
+
+        logCreate(
+          'OUTBOUND',
+          dnNumber,
+          header.customer || '出貨單',
+          `建立出貨申請單 [${dnNumber}] 對象: ${header.customer} 共 ${outboundItems.length} 個品項 (${header.request_type === 'LEND' ? '借用單' : '一般銷貨'})`,
+          { dnNumber, customer: header.customer, location: header.location, request_type: header.request_type, expected_return_date: header.expected_return_date, itemsCount: outboundItems.length, items: outboundItems.map(i => ({ model: i.model, brand: i.brand, sn: i.sn, qty: i.qty })) }
+        );
 
         alert(`出貨單 [${dnNumber}] 已成功建立！\n請至 D/N List 查看審核進度。`);
         

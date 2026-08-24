@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowDownToLine, Search, Filter, Eye, RefreshCw, AlertCircle, Trash2, Calendar, Hash, FileText, Plus, Edit2, Save, X } from 'lucide-react';
+import { logUpdate } from '../utils/auditLogger';
 
 const InboundList = ({ isSplitMode = false }) => {
   const navigate = useNavigate();
@@ -143,6 +144,13 @@ const InboundList = ({ isSplitMode = false }) => {
         selectedOrder.id
       ]);
       if (res.success) {
+        logUpdate(
+          'INBOUND',
+          selectedOrder.order_no,
+          selectedOrder.partner_name || '進貨單',
+          `修改進貨單 [${selectedOrder.order_no}] 發票/供應商/附件`,
+          { orderNo: selectedOrder.order_no, partnerId: editData.partner_id, invoiceNo: editData.invoice_no, attachmentsCount: editData.attachments.length }
+        );
         alert('儲存成功！');
         setIsEditing(false);
         fetchRecords();
@@ -298,7 +306,7 @@ const InboundList = ({ isSplitMode = false }) => {
 
         <div style={{ padding: '24px' }}>
           {error && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '16px', backgroundColor: '#fff5f5', color: '#d32f2f', borderRadius: '8px', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '16px', backgroundColor: 'rgba(239, 68, 68, 0.12)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '8px', marginBottom: '20px' }}>
               <AlertCircle size={20} />
               <span>{error}</span>
             </div>
@@ -549,11 +557,11 @@ const InboundList = ({ isSplitMode = false }) => {
         </div>
       )}
       {previewFile && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'rgba(0, 0, 0, 0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1100 }} onClick={() => setPreviewFile(null)}>
-          <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '12px', maxWidth: '90vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'var(--bg-modal-overlay)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1100, backdropFilter: 'blur(4px)' }} onClick={() => setPreviewFile(null)}>
+          <div style={{ backgroundColor: 'var(--bg-surface)', color: 'var(--text-main)', border: '1px solid var(--border-color)', boxShadow: 'var(--modal-shadow)', padding: '16px', borderRadius: '12px', maxWidth: '90vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 style={{ margin: 0 }}>預覽附件：{previewFile.originalName}</h3>
-              <button onClick={() => setPreviewFile(null)} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer' }}>&times;</button>
+              <h3 style={{ margin: 0, color: 'var(--text-main)' }}>預覽附件：{previewFile.originalName}</h3>
+              <button onClick={() => setPreviewFile(null)} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: 'var(--text-muted)' }}>&times;</button>
             </div>
             <div style={{ flex: 1, overflow: 'auto', display: 'flex', justifyContent: 'center' }}>
               {previewFile.type?.startsWith('image/') ? (
@@ -561,7 +569,7 @@ const InboundList = ({ isSplitMode = false }) => {
               ) : previewFile.type === 'application/pdf' ? (
                 <iframe src={getMediaSrc(previewFile.fileName)} style={{ width: '80vw', height: '70vh', border: 'none' }} title={previewFile.originalName} />
               ) : (
-                <div style={{ padding: '40px', color: '#64748b' }}>此檔案類型不支援預覽，請下載後檢視。</div>
+                <div style={{ padding: '40px', color: 'var(--text-muted)' }}>此檔案類型不支援預覽，請下載後檢視。</div>
               )}
             </div>
           </div>
@@ -603,7 +611,7 @@ const InboundList = ({ isSplitMode = false }) => {
           100% { transform: rotate(360deg); }
         }
         .row-hover:hover {
-          background-color: #f8fafc;
+          background-color: var(--table-row-hover);
         }
       `}</style>
     </div>

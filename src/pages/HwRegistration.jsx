@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Save, Trash2, Cpu, Settings2, X, Server, Clock, User, MapPin, Layers, ListFilter } from 'lucide-react';
+import { sanitizeInput, sanitizeSearchInput } from '../utils/security';
+import { logCreate } from '../utils/auditLogger';
 
 const HwRegistration = ({ isSplitMode = false }) => {
   const navigate = useNavigate();
@@ -202,6 +204,13 @@ const HwRegistration = ({ isSplitMode = false }) => {
       }
 
       if (successCount > 0) {
+        logCreate(
+          'HARDWARE',
+          isBulkMode ? `批次 ${snList.length} 件` : (formData.sn || '無序號'),
+          `${safeBrand} ${safeModel}`,
+          `登錄硬體零組件 [${safeBrand} ${safeModel}] ${isBulkMode ? `批次建立 ${successCount} 筆` : `序號: ${formData.sn || '未指定'}`}`,
+          { isBulkMode, count: successCount, brand: safeBrand, type: safeType, model: safeModel, snList: isBulkMode ? snList : [formData.sn], server_sn: safeServerSn, project_name: formData.project_name }
+        );
         alert(`成功建檔 ${successCount} 筆資料${failCount > 0 ? `，失敗 ${failCount} 筆` : ''}。`);
         setFormData({ ...formData, sn: '', server_sn: '', project_name: '' });
         setBulkSns('');

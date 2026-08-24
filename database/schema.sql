@@ -254,16 +254,28 @@ LEFT JOIN (
     GROUP BY oi.item_id
 ) outbound ON i.id = outbound.item_id;
 
--- 稽核日誌 (Audit Logs)
-CREATE TABLE IF NOT EXISTS audit_logs (
-    id SERIAL PRIMARY KEY,
-    user_role VARCHAR(50) NOT NULL,
+-- 全系統操作異動稽核日誌 (System Audit Logs)
+CREATE TABLE IF NOT EXISTS system_audit_logs (
+    id BIGSERIAL PRIMARY KEY,
+    timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    user_id INTEGER,
     user_name VARCHAR(100) NOT NULL,
-    action VARCHAR(50) NOT NULL,
-    target_id INTEGER,
-    description TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    user_role VARCHAR(50),
+    action_type VARCHAR(20) NOT NULL,
+    module VARCHAR(50) NOT NULL,
+    module_label VARCHAR(50) NOT NULL,
+    target_id VARCHAR(100),
+    target_name VARCHAR(255),
+    summary TEXT NOT NULL,
+    details JSONB DEFAULT '{}'::jsonb,
+    ip_address VARCHAR(50) DEFAULT 'Local'
 );
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON system_audit_logs(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_module ON system_audit_logs(module);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON system_audit_logs(action_type);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_target ON system_audit_logs(target_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON system_audit_logs(user_name);
 
 
 

@@ -9,7 +9,8 @@ import {
   Search, 
   Sparkles,
   TrendingUp,
-  FileSpreadsheet
+  FileSpreadsheet,
+  ShieldCheck
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import './Reports.css';
@@ -61,17 +62,17 @@ const Reports = () => {
       path: '/flow-history'
     },
     {
-      id: 'client-delivery',
-      title: '客戶專案交付分析',
-      category: 'PROJECT',
-      categoryLabel: '專案進銷存',
-      icon: <Building2 size={28} />,
+      id: 'event-logs',
+      title: '事件紀錄查詢 (Event Log Query)',
+      category: 'AUDIT',
+      categoryLabel: '歷史稽核',
+      icon: <ShieldCheck size={28} />,
       iconBg: 'linear-gradient(135deg, #ea580c, #c2410c)',
-      status: 'UPCOMING',
-      statusText: '即將推出',
-      desc: '分析各客戶專案設備之履約交付狀態、保固到期追蹤與待交付設備清單。',
-      tags: ['客戶交付履約', '保固期追蹤', '專案結案分析'],
-      path: null
+      status: 'ACTIVE',
+      statusText: '已上線',
+      desc: '全系統資料異動與操作稽核日誌，即時追蹤設備、硬體、耗材、採購、進出貨與系統設定之新增、變更與刪除事件。',
+      tags: ['操作稽核', '新增變更刪除', '異動追蹤', '全系統日誌', 'CSV 匯出'],
+      path: '/event-logs'
     }
   ];
 
@@ -165,9 +166,11 @@ const Reports = () => {
                 <div className="report-icon-wrapper" style={{ background: card.iconBg }}>
                   {card.icon}
                 </div>
-                <span className={`report-badge-status ${isActive ? 'report-badge-active' : 'report-badge-upcoming'}`}>
-                  {card.statusText}
-                </span>
+                {!isActive && card.statusText && (
+                  <span className="report-badge-status report-badge-upcoming">
+                    {card.statusText}
+                  </span>
+                )}
               </div>
 
               <h2 className="report-card-title">

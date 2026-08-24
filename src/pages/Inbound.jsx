@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Trash2, Save, FileText, ShoppingBag, Layers, AlertCircle, ArrowDownToLine } from 'lucide-react';
+import { logCreate } from '../utils/auditLogger';
 
 const Inbound = () => {
   const [availableItems, setAvailableItems] = useState([]);
@@ -249,6 +250,14 @@ const Inbound = () => {
             await window.electronAPI.namedQuery('updatePurchaseRecordStatus', [item.qty, item.purchaseRecordId]);
           }
         }
+        const partner = partners.find(p => p.id.toString() === partnerId.toString());
+        logCreate(
+          'INBOUND',
+          orderNo,
+          partner?.name || '進貨單',
+          `建立進貨單 [${orderNo}] 供應商: ${partner?.name || '未指定'} 共 ${items.length} 個品項${invoiceNo ? ` (發票號: ${invoiceNo})` : ''}`,
+          { orderNo, partnerId, partnerName: partner?.name, invoiceNo, itemsCount: items.length, items: items.map(i => ({ itemId: i.itemId, sn: i.sn, qty: i.qty, poNo: i.selectedOrderNo })) }
+        );
         alert('進貨入庫成功！');
         setItems([{ id: Date.now(), selectedOrderNo: '', itemId: '', purchaseRecordId: '', cat_name: '', unit: '', sn: '', qty: 1 }]);
         setInvoiceNo('');

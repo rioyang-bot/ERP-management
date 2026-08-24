@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Save, Settings2, Trash2, X, Monitor, Clock, User, MapPin, ListFilter, Layers, Server } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { logCreate } from '../utils/auditLogger';
 
 const Devices = ({ isSplitMode = false }) => {
   const navigate = useNavigate();
@@ -241,19 +242,29 @@ const Devices = ({ isSplitMode = false }) => {
       if (!masterId) throw new Error('建立物料主檔失敗');
 
       let successCount = 0;
+      const updatedCustomAttributes = {
+        ...formData.custom_attributes,
+        contact_person: formData.contact_person || '',
+        contact_phone: formData.contact_phone || '',
+        project_name: formData.project_name || ''
+      };
       for (const sn of snList) {
-        const updatedCustomAttributes = {
-          ...formData.custom_attributes,
-          contact_person: formData.contact_person || '',
-          contact_phone: formData.contact_phone || '',
-          project_name: formData.project_name || ''
-        };
         const res = await window.electronAPI.namedQuery('insertAssetRecord', [
           masterId, sn || null, formData.client, formData.hostname, formData.location, formData.installed_date || null,
           formData.customer_warranty_expire || null, formData.system_date || null, formData.warranty_expire || null,
           formData.os, formData.nic, updatedCustomAttributes, formData.ownership || 'FOR_SALE'
         ]);
         if (res.success) successCount++;
+      }
+
+      if (successCount > 0) {
+        logCreate(
+          'DEVICE',
+          isBulkMode ? `批次 ${snList.length} 台` : (formData.sn || '無序號'),
+          `${formData.brand} ${formData.model}`,
+          `新增設備 [${formData.brand} ${formData.model}] ${isBulkMode ? `批次建立 ${successCount} 筆` : `序號: ${formData.sn || '未指定'}`}`,
+          { isBulkMode, count: successCount, brand: formData.brand, type: formData.type, model: formData.model, snList: isBulkMode ? snList : [formData.sn], client: formData.client, location: formData.location }
+        );
       }
 
       alert(isBulkMode ? `批次建檔完成！成功建立 ${successCount} 筆設備紀錄。` : '設備建檔成功！');

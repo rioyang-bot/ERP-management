@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Search, Edit2, Trash2, X, Save, MoreHorizontal, ArrowLeftRight, ClipboardList, ShoppingBag, AlertTriangle, Archive, RotateCcw, Package, History } from 'lucide-react';
 import ItemLedgerModal from '../components/ItemLedgerModal';
+import { logUpdate, logDelete } from '../utils/auditLogger';
 
 const editLabelStyle = { display: 'block', fontWeight: 800, fontSize: '13px', marginBottom: '6px', color: 'var(--text-muted)' };
 const editInputStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', outline: 'none', fontSize: '13px', boxSizing: 'border-box' };
@@ -69,6 +70,7 @@ const ConsumableList = ({ isSplitMode = false }) => {
     if (!window.confirm(`確定要刪除耗材 [${specification}] 嗎？`)) return;
     const res = await window.electronAPI.namedQuery('deleteConsumableMaster', [id]);
     if (res.success) {
+      logDelete('CONSUMABLE', id, specification, `刪除耗材品項 [${specification}]`, { id, specification });
       fetchConsumables();
     }
   };
@@ -80,7 +82,18 @@ const ConsumableList = ({ isSplitMode = false }) => {
         editItem.specification, editItem.unit, editItem.safety_stock,
         editItem.id
     ]);
-    if (res.success) { setShowEditModal(false); fetchConsumables(); }
+    if (res.success) {
+      logUpdate('CONSUMABLE', editItem.id, `${editItem.brand} ${editItem.model}`, `編輯耗材規格/型號 [${editItem.brand} ${editItem.model}]`, {
+        brand: editItem.brand,
+        type: editItem.type,
+        model: editItem.model,
+        specification: editItem.specification,
+        unit: editItem.unit,
+        safety_stock: editItem.safety_stock
+      });
+      setShowEditModal(false);
+      fetchConsumables();
+    }
   };
 
   const handleTransferSubmit = async () => {
@@ -117,6 +130,13 @@ const ConsumableList = ({ isSplitMode = false }) => {
     const res = await window.electronAPI.namedQuery(query, [quantity, itemId]);
     
     if (res.success) {
+      logUpdate(
+        'CONSUMABLE',
+        itemId,
+        `${targetItem.brand} ${targetItem.model}`,
+        `耗材庫存調撥 [${targetItem.brand} ${targetItem.model}]: ${direction === 'TO_LAB' ? 'Stock ➔ LAB' : 'LAB ➔ Stock'} 數量 ${quantity} ${targetItem.unit || ''}${currentDeviceSn ? ` (對應設備: ${currentDeviceSn})` : ''}`,
+        { direction, quantity, deviceSn: currentDeviceSn, note, prevStock: targetItem.stock_qty, prevLab: targetItem.lab_qty }
+      );
       // 只有在有選擇設備或移至 LAB 時才紀錄詳細 assignment
       if (finalAssetId || direction === 'TO_LAB') {
         const insertRes = await window.electronAPI.namedQuery('insertLabAssignment', [

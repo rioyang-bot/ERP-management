@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Save, Settings2, Trash2, X, Package, Clock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { logCreate } from '../utils/auditLogger';
 
 const Consumables = ({ isSplitMode = false }) => {
   const navigate = useNavigate();
@@ -231,6 +232,13 @@ const Consumables = ({ isSplitMode = false }) => {
     ]);
 
     if (res.success) {
+      logCreate(
+        'CONSUMABLE',
+        `${formData.brand}-${formData.model}`,
+        `${formData.brand} ${formData.model}`,
+        `建立耗材物料 [${formData.brand} ${formData.model}] 初始庫存: ${formData.stock_qty || 0} ${formData.unit || ''}`,
+        { brand: formData.brand, type: formData.type, model: formData.model, spec: formData.spec, unit: formData.unit, stock_qty: formData.stock_qty, safety_stock: formData.safety_stock }
+      );
       alert('耗材建檔成功！');
       fetchConsumables();
       // 重置欄位，保留廠牌/類型/單位，方便連續建檔
