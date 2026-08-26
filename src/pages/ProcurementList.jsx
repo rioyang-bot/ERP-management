@@ -179,13 +179,35 @@ const ProcurementList = ({ isSplitMode = false }) => {
   return (
     <div className="procurement-list-container">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div>
             <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
               <ShoppingCart size={26} color="var(--primary-color)" /> 採購列表(Purchase Order List)
             </h1>
             <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>管理所有採購單 (PO) 的品項分佈與入庫進度。</p>
           </div>
+          {!isSplitMode && (
+            <div style={{ display: 'flex', backgroundColor: 'var(--bg-surface-subtle)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+              <button 
+                onClick={() => navigate('/procurement-split')} 
+                style={{ 
+                  padding: '8px 16px', 
+                  backgroundColor: 'var(--primary-color)', 
+                  color: '#fff', 
+                  border: 'none', 
+                  borderRadius: '8px', 
+                  cursor: 'pointer', 
+                  fontWeight: 700, 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '8px', 
+                  boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)' 
+                }}
+              >
+                新增採購單(P/O Reg)
+              </button>
+            </div>
+          )}
         </div>
         
         <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
@@ -197,11 +219,6 @@ const ProcurementList = ({ isSplitMode = false }) => {
                 </div>
               </div>
            </div>
-           {!isSplitMode && (
-             <button onClick={() => navigate('/procurement-split')} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '12px', border: 'none', backgroundColor: 'var(--primary-color)', color: '#fff', fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer', boxShadow: '0 4px 12px rgba(37, 99, 235, 0.2)' }}>
-               <ShoppingCart size={18} /> 新增採購單(P/O Reg)
-             </button>
-           )}
         </div>
       </div>
 

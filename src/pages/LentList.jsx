@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { FileText, Search, RefreshCw, Eye, CornerDownLeft, AlertCircle, History, Clock, CheckCircle } from 'lucide-react';
+import { FileText, Search, Eye, CornerDownLeft, AlertCircle, History, Clock, CheckCircle } from 'lucide-react';
 import { logStatusChange } from '../utils/auditLogger';
 
 const LentList = () => {
@@ -134,9 +134,9 @@ const LentList = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <div>
             <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
-              <FileText size={26} color="#f59e0b" /> 硬體/設備借用列表
+              <FileText size={26} color="#f59e0b" /> 設備/硬體借用列表 (Device/HW Lent List)
             </h1>
-            <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>檢視所有借出中的設備紀錄，並可查詢歷史歸還紀錄。</p>
+            <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>檢視所有借出中的設備與硬體紀錄，並可查詢歷史歸還紀錄。</p>
           </div>
         </div>
         <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
@@ -148,9 +148,6 @@ const LentList = () => {
                 </div>
               </div>
            </div>
-           <button onClick={fetchRecords} className="btn-refresh-vibrant">
-             <RefreshCw size={18} className={loading ? 'spinner' : ''} /> 重新整理
-           </button>
         </div>
       </div>
 

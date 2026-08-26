@@ -7,10 +7,11 @@ import {
   Building2, 
   ArrowRight, 
   Search, 
-  Sparkles,
-  TrendingUp,
-  FileSpreadsheet,
-  ShieldCheck
+  Sparkles, 
+  TrendingUp, 
+  FileSpreadsheet, 
+  ShieldCheck, 
+  Network 
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import './Reports.css';
@@ -22,6 +23,19 @@ const Reports = () => {
 
   // 報表卡片設定清單
   const reportCards = [
+    {
+      id: 'system-flow',
+      title: '系統架構與流程導覽 (Process Map)',
+      category: 'ARCHITECTURE',
+      categoryLabel: '架構與流程',
+      icon: <Network size={28} />,
+      iconBg: 'linear-gradient(135deg, #4f46e5, #3730a3)',
+      status: 'ACTIVE',
+      statusText: '已上線',
+      desc: '全模組視覺化架構方塊圖、端到端業務生命週期（單據/物料/報表流）、資產狀態轉移機與角色作業指南，支援一鍵直接跳轉至各功能頁面。',
+      tags: ['全模組方塊圖', '業務生命週期', '單據與物料流', '資產狀態機', '角色作業指引'],
+      path: '/process-flow'
+    },
     {
       id: 'pj-report',
       title: '專案報表 (PJ Report)',
@@ -111,6 +125,13 @@ const Reports = () => {
             onClick={() => setSelectedCategory('ALL')}
           >
             全部報表
+          </button>
+          <button 
+            type="button" 
+            className={`category-pill ${selectedCategory === 'ARCHITECTURE' ? 'active' : ''}`}
+            onClick={() => setSelectedCategory('ARCHITECTURE')}
+          >
+            架構與流程
           </button>
           <button 
             type="button" 

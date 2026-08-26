@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
 import Devices from '../pages/Devices';
 
 describe('設備建檔聯絡人連動整合測試', () => {
@@ -50,7 +51,11 @@ describe('設備建檔聯絡人連動整合測試', () => {
 
   it('選擇僅有單一聯絡人的客戶時，應能自動帶入聯絡人姓名', async () => {
     const user = userEvent.setup();
-    render(<Devices />);
+    render(
+      <MemoryRouter>
+        <Devices />
+      </MemoryRouter>
+    );
 
     // 等待下拉選單等初始化載入完畢
     await waitFor(() => {
@@ -70,7 +75,11 @@ describe('設備建檔聯絡人連動整合測試', () => {
 
   it('選擇擁有多個聯絡人的客戶時，聯絡人應轉換成下拉選單供選擇', async () => {
     const user = userEvent.setup();
-    render(<Devices />);
+    render(
+      <MemoryRouter>
+        <Devices />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByLabelText(/客戶名稱/)).toBeInTheDocument();

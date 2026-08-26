@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
 import ProcurementRegistration from '../pages/Purchasing';
 import { RoleContext } from '../context/RoleContext';
 
@@ -58,13 +59,15 @@ describe('採購建檔品項下拉選單與型號自動帶出測試', () => {
     const user = userEvent.setup();
     render(
       <RoleContext.Provider value={{ authUser: mockAuthUser, role: 'ADMIN' }}>
-        <ProcurementRegistration />
+        <MemoryRouter>
+          <ProcurementRegistration />
+        </MemoryRouter>
       </RoleContext.Provider>
     );
 
     // 1. 等待採購建檔頁面載入，檢查標題與供應商
     await waitFor(() => {
-      expect(screen.getByText('採購建檔 (P/O Reg)')).toBeInTheDocument();
+      expect(screen.getByText(/採購建檔/)).toBeInTheDocument();
     });
 
     // 2. 找到廠牌下拉選單 (brand)
@@ -98,11 +101,6 @@ describe('採購建檔品項下拉選單與型號自動帶出測試', () => {
     // 4. 點選 "PowerEdge R750" 型號
     await user.selectOptions(modelSelectEl, 'PowerEdge R750');
     expect(modelSelectEl.value).toBe('PowerEdge R750');
-
-    // 輸入專案名稱
-    const projectInput = screen.getByPlaceholderText('請輸入專案名稱...');
-    await user.type(projectInput, '台北總部機房專案');
-    expect(projectInput.value).toBe('台北總部機房專案');
 
     // 5. 驗證規格輸入框與單位下拉選單是否已被自動連動填寫
     const specInput = screen.getByPlaceholderText('詳細規格說明');

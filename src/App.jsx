@@ -31,6 +31,7 @@ import DeviceSplitView from './pages/DeviceSplitView';
 import ConsumableSplitView from './pages/ConsumableSplitView';
 import OutboundSplitView from './pages/OutboundSplitView';
 import ProcurementSplitView from './pages/ProcurementSplitView';
+import ProcessFlow from './pages/ProcessFlow';
 import './index.css';
 
 function App() {
@@ -79,6 +80,7 @@ function App() {
               <Route path="partners" element={<Partners />} />
               <Route path="reports" element={<Reports />} />
               <Route path="pj-report" element={<PJReport />} />
+              <Route path="process-flow" element={<ProcessFlow />} />
               <Route path="flow-history" element={<FlowHistory />} />
               <Route path="event-logs" element={<EventLogs />} />
               <Route path="purchasing" element={<Purchasing />} />

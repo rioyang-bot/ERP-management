@@ -214,13 +214,35 @@ const DNList = ({ isSplitMode = false }) => {
   return (
     <div className="page-container">
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div>
             <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
               <FileText size={26} color="var(--primary-color)" /> 出貨單列表 (Delivery Note List)
             </h1>
             <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>檢視所有出貨紀錄、追蹤出單進度並執行扣庫存作業。</p>
           </div>
+          {!isSplitMode && (
+            <div style={{ display: 'flex', backgroundColor: 'var(--bg-surface-subtle)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+              <button
+                onClick={() => navigate('/outbound-split')}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: 'var(--primary-color)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)'
+                }}
+              >
+                <FileText size={18} /> 新增出貨單 (D/N Reg)
+              </button>
+            </div>
+          )}
         </div>
         <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
            <div style={{ backgroundColor: 'var(--bg-surface)', padding: '12px 24px', borderRadius: '12px', border: '1px solid var(--border-color)', display: 'flex', gap: '24px', boxShadow: 'var(--card-shadow)' }}>
@@ -232,26 +254,6 @@ const DNList = ({ isSplitMode = false }) => {
               </div>
 
            </div>
-           {!isSplitMode && (
-             <button
-               onClick={() => navigate('/outbound-split')}
-               style={{
-                 padding: '8px 16px',
-                 backgroundColor: 'var(--primary-color)',
-                 color: '#fff',
-                 border: 'none',
-                 borderRadius: '8px',
-                 cursor: 'pointer',
-                 fontWeight: 700,
-                 display: 'flex',
-                 alignItems: 'center',
-                 gap: '8px',
-                 boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)'
-               }}
-             >
-               <FileText size={18} /> 新增出貨單 (D/N Reg)
-             </button>
-           )}
         </div>
       </div>
 

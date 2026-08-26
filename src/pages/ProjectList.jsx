@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, Edit2, Trash2, X, Upload, Download } from 'lucide-react';
+import { Search, Plus, Edit2, Trash2, X, Upload, Download, FolderGit2 } from 'lucide-react';
 import { logCreate, logUpdate, logDelete } from '../utils/auditLogger';
 import './ProjectList.css'; // Basic CSS for specific elements if needed
 
@@ -175,7 +175,6 @@ const ProjectList = () => {
   const handleDelete = async (id, projectName) => {
     try {
       const countRes = await window.electronAPI.namedQuery('countProjectAssets', [projectName]);
-      // The backend returns { success: true, rows: [...] }
       const count = countRes?.rows?.[0]?.count ? parseInt(countRes.rows[0].count, 10) : 0;
       
       let confirmMsg = '確定要刪除這筆專案嗎？';
@@ -198,43 +197,58 @@ const ProjectList = () => {
   };
 
   const handleFileUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
 
-    const data = new FormData();
-    data.append('projectName', formData.project_no);
-    data.append('file', file);
-    
     setUploading(true);
     try {
-      const response = await fetch('http://localhost:3000/api/upload', {
-        method: 'POST',
-        body: data
-      });
-      const result = await response.json();
-      if (result.success) {
-        setFormData(prev => ({
-          ...prev,
-          documents: [...prev.documents, { name: file.name, url: result.url || `/uploads/${result.fileName}` }]
-        }));
-      } else {
-        alert('上傳失敗');
+      const newDocs = [...formData.documents];
+      for (const file of files) {
+        const reader = new FileReader();
+        const fileDataPromise = new Promise((resolve) => {
+          reader.onload = () => resolve(reader.result);
+        });
+        reader.readAsDataURL(file);
+        const base64Data = await fileDataPromise;
+
+        newDocs.push({
+          id: Date.now() + Math.random(),
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          data: base64Data,
+          uploaded_at: new Date().toISOString()
+        });
       }
+      setFormData(prev => ({ ...prev, documents: newDocs }));
     } catch (error) {
-      console.error('Upload error:', error);
-      alert('上傳發生錯誤');
+      console.error('File upload failed', error);
+      alert('檔案上傳失敗');
     } finally {
       setUploading(false);
-      e.target.value = '';
     }
   };
 
-  const removeDocument = (index) => {
-    setFormData(prev => {
-      const newDocs = [...prev.documents];
-      newDocs.splice(index, 1);
-      return { ...prev, documents: newDocs };
-    });
+  const handleDeleteFile = (docId, idx) => {
+    setFormData(prev => ({
+      ...prev,
+      documents: prev.documents.filter((d, i) => (d.id ? d.id !== docId : i !== idx))
+    }));
+  };
+
+  const handleDownloadFile = (doc) => {
+    if (doc.url) {
+      window.open(`http://localhost:3000${doc.url}`, '_blank');
+      return;
+    }
+    if (doc.data) {
+      const link = document.createElement('a');
+      link.href = doc.data;
+      link.download = doc.name;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
   };
 
   const filteredProjects = projects.filter(p => 
@@ -253,8 +267,36 @@ const ProjectList = () => {
 
   return (
     <div className="page-container">
-      <div className="page-header">
-        <h1>專案列表</h1>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div>
+            <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
+              <FolderGit2 size={26} color="var(--primary-color)" /> 專案列表 (Project List)
+            </h1>
+            <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>管理各項專案基本資料、進度與相關文件附件。</p>
+          </div>
+          <div style={{ display: 'flex', backgroundColor: 'var(--bg-surface-subtle)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+            <button
+              onClick={() => handleOpenModal()}
+              style={{
+                padding: '8px 16px',
+                backgroundColor: 'var(--primary-color)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)'
+              }}
+            >
+              <Plus size={18} /> 新增專案 (Project Reg)
+            </button>
+          </div>
+        </div>
+
         <div className="header-actions">
           <div className="search-bar">
             <Search size={20} className="search-icon" />
@@ -265,7 +307,7 @@ const ProjectList = () => {
               onChange={e => setSearch(e.target.value)} 
             />
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#64748b' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--text-muted)' }}>
             顯示
             <select
               value={itemsPerPage}
@@ -273,7 +315,7 @@ const ProjectList = () => {
                 setItemsPerPage(Number(e.target.value));
                 setCurrentPage(1);
               }}
-              style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none', backgroundColor: '#fff', cursor: 'pointer' }}
+              style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--input-border)', outline: 'none', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', cursor: 'pointer' }}
             >
               <option value={10}>10</option>
               <option value={20}>20</option>
@@ -282,9 +324,6 @@ const ProjectList = () => {
             </select>
             筆/頁
           </div>
-          <button className="primary-btn" onClick={() => handleOpenModal()}>
-            <Plus size={20} /> 新增專案
-          </button>
         </div>
       </div>
 
@@ -460,28 +499,34 @@ const ProjectList = () => {
                   </div>
                   <ul className="document-list" style={{ marginTop: '10px', listStyle: 'none', padding: 0 }}>
                     {formData.documents.map((doc, idx) => (
-                      <li key={idx} className="document-item" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px', borderBottom: '1px solid #e2e8f0' }}>
-                        <a href={`http://localhost:3000${doc.url}`} target="_blank" rel="noopener noreferrer" style={{ color: '#2563eb', textDecoration: 'none' }}>
+                      <li key={doc.id || idx} className="document-item" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px', borderBottom: '1px solid var(--border-color, #e2e8f0)' }}>
+                        <span style={{ color: 'var(--text-main)', fontSize: '13px', fontWeight: 500 }}>
                           {doc.name}
-                        </a>
+                        </span>
                         <div style={{ display: 'flex', gap: '8px' }}>
-                          <a 
-                            href={`http://localhost:3000${doc.url}`} 
-                            download={doc.name}
+                          <button 
+                            type="button"
+                            onClick={() => handleDownloadFile(doc)}
                             className="icon-btn edit" 
                             title="下載檔案" 
-                            style={{ padding: '4px' }}
+                            style={{ padding: '4px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--primary-color)' }}
                           >
                             <Download size={14} />
-                          </a>
-                          <button type="button" className="remove-doc-btn" onClick={() => removeDocument(idx)} title="刪除檔案">
+                          </button>
+                          <button 
+                            type="button" 
+                            className="remove-doc-btn" 
+                            onClick={() => handleDeleteFile(doc.id || idx)} 
+                            title="刪除檔案"
+                            style={{ padding: '4px', background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444' }}
+                          >
                             <X size={14} />
                           </button>
                         </div>
                       </li>
                     ))}
                     {formData.documents.length === 0 && (
-                      <li className="empty-docs" style={{ color: '#64748b', fontSize: '0.9em' }}>目前沒有上傳的文件</li>
+                      <li className="empty-docs" style={{ color: 'var(--text-muted, #64748b)', fontSize: '0.9em' }}>目前沒有上傳的文件</li>
                     )}
                   </ul>
                 </div>

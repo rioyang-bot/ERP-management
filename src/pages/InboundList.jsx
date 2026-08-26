@@ -220,7 +220,7 @@ const InboundList = ({ isSplitMode = false }) => {
   return (
     <div className="inbound-list-container">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div>
             <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
               <ArrowDownToLine size={26} color="#10b981" />
@@ -230,6 +230,28 @@ const InboundList = ({ isSplitMode = false }) => {
               追查所有入庫單據明細、核銷與對帳關聯。
             </p>
           </div>
+          {!isSplitMode && (
+            <div style={{ display: 'flex', backgroundColor: 'var(--bg-surface-subtle)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+              <button
+                onClick={() => navigate('/inbound-split')}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: '#10b981',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
+                }}
+              >
+                <Plus size={18} /> 進貨入庫 (S/I Reg)
+              </button>
+            </div>
+          )}
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
@@ -241,26 +263,6 @@ const InboundList = ({ isSplitMode = false }) => {
                 </div>
               </div>
            </div>
-          {!isSplitMode && (
-            <button
-              onClick={() => navigate('/inbound-split')}
-              style={{
-                padding: '8px 16px',
-                backgroundColor: '#10b981',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontWeight: 700,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
-              }}
-            >
-              <Plus size={18} /> 進貨入庫 (S/I Reg)
-            </button>
-          )}
         </div>
       </div>
 
