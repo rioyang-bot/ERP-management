@@ -114,7 +114,7 @@ const LiveEventDrawer = ({ isOpen, onClose }) => {
       case 'CREATE':
         return {
           label: '新增',
-          icon: <PlusCircle size={13} />,
+          icon: <PlusCircle size={13} style={{ flexShrink: 0 }} />,
           bg: 'rgba(16, 185, 129, 0.15)',
           color: '#10b981',
           border: '1px solid rgba(16, 185, 129, 0.3)'
@@ -122,7 +122,7 @@ const LiveEventDrawer = ({ isOpen, onClose }) => {
       case 'UPDATE':
         return {
           label: '變更',
-          icon: <Edit size={13} />,
+          icon: <Edit size={13} style={{ flexShrink: 0 }} />,
           bg: 'rgba(59, 130, 246, 0.15)',
           color: '#3b82f6',
           border: '1px solid rgba(59, 130, 246, 0.3)'
@@ -130,7 +130,7 @@ const LiveEventDrawer = ({ isOpen, onClose }) => {
       case 'DELETE':
         return {
           label: '移除',
-          icon: <Trash2 size={13} />,
+          icon: <Trash2 size={13} style={{ flexShrink: 0 }} />,
           bg: 'rgba(239, 68, 68, 0.15)',
           color: '#ef4444',
           border: '1px solid rgba(239, 68, 68, 0.3)'
@@ -138,7 +138,7 @@ const LiveEventDrawer = ({ isOpen, onClose }) => {
       case 'STATUS_CHANGE':
         return {
           label: '狀態',
-          icon: <ArrowRightLeft size={13} />,
+          icon: <ArrowRightLeft size={13} style={{ flexShrink: 0 }} />,
           bg: 'rgba(245, 158, 11, 0.15)',
           color: '#f59e0b',
           border: '1px solid rgba(245, 158, 11, 0.3)'
@@ -146,7 +146,7 @@ const LiveEventDrawer = ({ isOpen, onClose }) => {
       default:
         return {
           label: actionType || '操作',
-          icon: <Clock size={13} />,
+          icon: <Clock size={13} style={{ flexShrink: 0 }} />,
           bg: 'var(--bg-surface-subtle)',
           color: 'var(--text-muted)',
           border: '1px solid var(--border-color)'
@@ -396,6 +396,7 @@ const LiveEventDrawer = ({ isOpen, onClose }) => {
                       <span style={{
                         display: 'inline-flex',
                         alignItems: 'center',
+                        flexDirection: 'row',
                         gap: '4px',
                         padding: '2px 7px',
                         borderRadius: '5px',
@@ -403,9 +404,12 @@ const LiveEventDrawer = ({ isOpen, onClose }) => {
                         fontWeight: 800,
                         backgroundColor: actionBadge.bg,
                         color: actionBadge.color,
-                        border: actionBadge.border
+                        border: actionBadge.border,
+                        whiteSpace: 'nowrap',
+                        wordBreak: 'keep-all',
+                        flexShrink: 0
                       }}>
-                        {actionBadge.icon} {actionBadge.label}
+                        {actionBadge.icon} <span style={{ whiteSpace: 'nowrap' }}>{actionBadge.label}</span>
                       </span>
 
                       <span style={{

@@ -90,6 +90,18 @@ const EventLogs = () => {
     return Array.from(set);
   }, [logs]);
 
+  // 24 小時內統計數據 (若 stats 有回傳則優先使用，若無則依 logs 進行計算)
+  const stats24h = useMemo(() => {
+    const twentyFourHoursAgo = Date.now() - 24 * 60 * 60 * 1000;
+    const logs24h = logs.filter(l => new Date(l.timestamp).getTime() >= twentyFourHoursAgo);
+    return {
+      today_count: stats?.today_count !== undefined ? stats.today_count : logs24h.length,
+      create_count: stats?.create_count !== undefined ? stats.create_count : logs24h.filter(l => l.action_type === 'CREATE').length,
+      update_count: stats?.update_count !== undefined ? stats.update_count : logs24h.filter(l => l.action_type === 'UPDATE' || l.action_type === 'STATUS_CHANGE').length,
+      delete_count: stats?.delete_count !== undefined ? stats.delete_count : logs24h.filter(l => l.action_type === 'DELETE').length
+    };
+  }, [logs, stats]);
+
   // 快速日期範圍設定
   const handleQuickDate = (type) => {
     const today = new Date();
@@ -177,7 +189,7 @@ const EventLogs = () => {
       case 'CREATE':
         return {
           label: '新增',
-          icon: <PlusCircle size={14} />,
+          icon: <PlusCircle size={14} style={{ flexShrink: 0 }} />,
           bg: 'rgba(16, 185, 129, 0.12)',
           color: '#10b981',
           border: '1px solid rgba(16, 185, 129, 0.25)'
@@ -185,7 +197,7 @@ const EventLogs = () => {
       case 'UPDATE':
         return {
           label: '變更',
-          icon: <Edit size={14} />,
+          icon: <Edit size={14} style={{ flexShrink: 0 }} />,
           bg: 'rgba(59, 130, 246, 0.12)',
           color: '#3b82f6',
           border: '1px solid rgba(59, 130, 246, 0.25)'
@@ -193,7 +205,7 @@ const EventLogs = () => {
       case 'DELETE':
         return {
           label: '移除',
-          icon: <Trash2 size={14} />,
+          icon: <Trash2 size={14} style={{ flexShrink: 0 }} />,
           bg: 'rgba(239, 68, 68, 0.12)',
           color: '#ef4444',
           border: '1px solid rgba(239, 68, 68, 0.25)'
@@ -201,7 +213,7 @@ const EventLogs = () => {
       case 'STATUS_CHANGE':
         return {
           label: '狀態',
-          icon: <ArrowRightLeft size={14} />,
+          icon: <ArrowRightLeft size={14} style={{ flexShrink: 0 }} />,
           bg: 'rgba(245, 158, 11, 0.15)',
           color: '#f59e0b',
           border: '1px solid rgba(245, 158, 11, 0.3)'
@@ -209,7 +221,7 @@ const EventLogs = () => {
       case 'BATCH_IMPORT':
         return {
           label: '批次',
-          icon: <Layers size={14} />,
+          icon: <Layers size={14} style={{ flexShrink: 0 }} />,
           bg: 'rgba(139, 92, 246, 0.15)',
           color: '#8b5cf6',
           border: '1px solid rgba(139, 92, 246, 0.3)'
@@ -217,7 +229,7 @@ const EventLogs = () => {
       default:
         return {
           label: actionType || '操作',
-          icon: <FileText size={14} />,
+          icon: <FileText size={14} style={{ flexShrink: 0 }} />,
           bg: 'var(--bg-surface-subtle)',
           color: 'var(--text-muted)',
           border: '1px solid var(--border-color)'
@@ -359,20 +371,12 @@ const EventLogs = () => {
         </div>
       </div>
 
-      {/* KPI 統計卡片 */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+      {/* 24 小時內 KPI 統計卡片 */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '24px' }}>
         <div style={{ backgroundColor: 'var(--bg-surface)', padding: '16px 20px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: 'var(--card-shadow)' }}>
-          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '6px' }}>歷史事件總筆數</div>
-          <div style={{ fontSize: '1.75rem', fontWeight: 900, color: 'var(--text-main)' }}>
-            {stats?.total_count || logs.length}
-            <span style={{ fontSize: '0.8rem', fontWeight: 400, color: 'var(--text-muted)', marginLeft: '6px' }}>筆</span>
-          </div>
-        </div>
-
-        <div style={{ backgroundColor: 'var(--bg-surface)', padding: '16px 20px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: 'var(--card-shadow)' }}>
-          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '6px' }}>今日新增異動</div>
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '6px' }}>24小時內異動總數</div>
           <div style={{ fontSize: '1.75rem', fontWeight: 900, color: '#f59e0b' }}>
-            {stats?.today_count || 0}
+            {stats24h.today_count}
             <span style={{ fontSize: '0.8rem', fontWeight: 400, color: 'var(--text-muted)', marginLeft: '6px' }}>筆</span>
           </div>
         </div>
@@ -380,7 +384,7 @@ const EventLogs = () => {
         <div style={{ backgroundColor: 'var(--bg-surface)', padding: '16px 20px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: 'var(--card-shadow)' }}>
           <div style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: 700, marginBottom: '6px' }}>新增建立 (CREATE)</div>
           <div style={{ fontSize: '1.75rem', fontWeight: 900, color: '#10b981' }}>
-            {stats?.create_count || 0}
+            {stats24h.create_count}
             <span style={{ fontSize: '0.8rem', fontWeight: 400, color: 'var(--text-muted)', marginLeft: '6px' }}>筆</span>
           </div>
         </div>
@@ -388,7 +392,7 @@ const EventLogs = () => {
         <div style={{ backgroundColor: 'var(--bg-surface)', padding: '16px 20px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: 'var(--card-shadow)' }}>
           <div style={{ fontSize: '0.8rem', color: '#3b82f6', fontWeight: 700, marginBottom: '6px' }}>資料變更 (UPDATE)</div>
           <div style={{ fontSize: '1.75rem', fontWeight: 900, color: '#3b82f6' }}>
-            {stats?.update_count || 0}
+            {stats24h.update_count}
             <span style={{ fontSize: '0.8rem', fontWeight: 400, color: 'var(--text-muted)', marginLeft: '6px' }}>筆</span>
           </div>
         </div>
@@ -396,7 +400,7 @@ const EventLogs = () => {
         <div style={{ backgroundColor: 'var(--bg-surface)', padding: '16px 20px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: 'var(--card-shadow)' }}>
           <div style={{ fontSize: '0.8rem', color: '#ef4444', fontWeight: 700, marginBottom: '6px' }}>刪除移除 (DELETE)</div>
           <div style={{ fontSize: '1.75rem', fontWeight: 900, color: '#ef4444' }}>
-            {stats?.delete_count || 0}
+            {stats24h.delete_count}
             <span style={{ fontSize: '0.8rem', fontWeight: 400, color: 'var(--text-muted)', marginLeft: '6px' }}>筆</span>
           </div>
         </div>
@@ -556,13 +560,13 @@ const EventLogs = () => {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ backgroundColor: 'var(--table-header-bg)', borderBottom: '2px solid var(--border-color)', textAlign: 'left' }}>
-                <th style={{ padding: '14px 16px', fontSize: '0.85rem', color: 'var(--table-header-text)', fontWeight: 800, width: '170px' }}>時間戳記</th>
-                <th style={{ padding: '14px 16px', fontSize: '0.85rem', color: 'var(--table-header-text)', fontWeight: 800, width: '90px' }}>動作</th>
-                <th style={{ padding: '14px 16px', fontSize: '0.85rem', color: 'var(--table-header-text)', fontWeight: 800, width: '120px' }}>功能模組</th>
-                <th style={{ padding: '14px 16px', fontSize: '0.85rem', color: 'var(--table-header-text)', fontWeight: 800, width: '180px' }}>標的識別 (SN/單號)</th>
+                <th style={{ padding: '14px 16px', fontSize: '0.85rem', color: 'var(--table-header-text)', fontWeight: 800, width: '160px', whiteSpace: 'nowrap' }}>時間戳記</th>
+                <th style={{ padding: '14px 16px', fontSize: '0.85rem', color: 'var(--table-header-text)', fontWeight: 800, width: '100px', minWidth: '95px', whiteSpace: 'nowrap' }}>動作</th>
+                <th style={{ padding: '14px 16px', fontSize: '0.85rem', color: 'var(--table-header-text)', fontWeight: 800, width: '120px', whiteSpace: 'nowrap' }}>功能模組</th>
+                <th style={{ padding: '14px 16px', fontSize: '0.85rem', color: 'var(--table-header-text)', fontWeight: 800, width: '180px', whiteSpace: 'nowrap' }}>標的識別 (SN/單號)</th>
                 <th style={{ padding: '14px 16px', fontSize: '0.85rem', color: 'var(--table-header-text)', fontWeight: 800 }}>操作摘要與異動內容</th>
-                <th style={{ padding: '14px 16px', fontSize: '0.85rem', color: 'var(--table-header-text)', fontWeight: 800, width: '130px' }}>操作人員</th>
-                <th style={{ padding: '14px 16px', fontSize: '0.85rem', color: 'var(--table-header-text)', fontWeight: 800, textAlign: 'center', width: '90px' }}>操作</th>
+                <th style={{ padding: '14px 16px', fontSize: '0.85rem', color: 'var(--table-header-text)', fontWeight: 800, width: '140px', whiteSpace: 'nowrap' }}>操作人員</th>
+                <th style={{ padding: '14px 16px', fontSize: '0.85rem', color: 'var(--table-header-text)', fontWeight: 800, textAlign: 'center', width: '90px', whiteSpace: 'nowrap' }}>操作</th>
               </tr>
             </thead>
             <tbody>
@@ -603,20 +607,25 @@ const EventLogs = () => {
                       </td>
 
                       {/* 動作 */}
-                      <td style={{ padding: '12px 16px' }}>
+                      <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
                         <span style={{
                           display: 'inline-flex',
                           alignItems: 'center',
-                          gap: '4px',
+                          flexDirection: 'row',
+                          gap: '5px',
                           padding: '3px 8px',
                           borderRadius: '6px',
                           fontSize: '0.75rem',
                           fontWeight: 700,
                           backgroundColor: actionStyle.bg,
                           color: actionStyle.color,
-                          border: actionStyle.border
+                          border: actionStyle.border,
+                          whiteSpace: 'nowrap',
+                          wordBreak: 'keep-all',
+                          flexShrink: 0
                         }}>
-                          {actionStyle.icon} {actionStyle.label}
+                          {actionStyle.icon}
+                          <span style={{ whiteSpace: 'nowrap' }}>{actionStyle.label}</span>
                         </span>
                       </td>
 
@@ -650,40 +659,54 @@ const EventLogs = () => {
                       </td>
 
                       {/* 操作者 */}
-                      <td style={{ padding: '12px 16px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <User size={14} color="var(--text-muted)" />
-                          <span style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text-main)' }}>
+                      <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
+                          <User size={14} color="var(--text-muted)" style={{ flexShrink: 0 }} />
+                          <span style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text-main)', whiteSpace: 'nowrap' }}>
                             {log.user_name || '系統'}
                           </span>
+                          {log.user_role && (
+                            <span style={{ 
+                              fontSize: '0.72rem', 
+                              color: 'var(--text-muted)',
+                              backgroundColor: 'var(--bg-surface-subtle)',
+                              padding: '1px 6px',
+                              borderRadius: '4px',
+                              border: '1px solid var(--border-color)',
+                              fontWeight: 600,
+                              whiteSpace: 'nowrap',
+                              flexShrink: 0
+                            }}>
+                              ({log.user_role})
+                            </span>
+                          )}
                         </div>
-                        {log.user_role && (
-                          <span style={{ fontSize: '0.7rem', color: 'var(--text-subtle)', paddingLeft: '20px' }}>
-                            ({log.user_role})
-                          </span>
-                        )}
                       </td>
 
                       {/* 操作 */}
-                      <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                      <td style={{ padding: '12px 16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                         <button
                           onClick={() => setSelectedLog(log)}
                           title="查看詳細異動 Payload"
                           style={{
                             display: 'inline-flex',
                             alignItems: 'center',
+                            flexDirection: 'row',
                             gap: '4px',
-                            padding: '5px 10px',
+                            padding: '5px 12px',
                             backgroundColor: 'var(--primary-bg)',
                             color: 'var(--primary-color)',
                             border: '1px solid rgba(59, 130, 246, 0.25)',
                             borderRadius: '6px',
                             cursor: 'pointer',
                             fontSize: '0.8rem',
-                            fontWeight: 600
+                            fontWeight: 600,
+                            whiteSpace: 'nowrap',
+                            wordBreak: 'keep-all',
+                            flexShrink: 0
                           }}
                         >
-                          <Eye size={14} /> 檢視
+                          <Eye size={14} style={{ flexShrink: 0 }} /> <span style={{ whiteSpace: 'nowrap' }}>檢視</span>
                         </button>
                       </td>
                     </tr>
@@ -802,8 +825,8 @@ const EventLogs = () => {
                     {(() => {
                       const b = getActionBadge(selectedLog.action_type);
                       return (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 700, backgroundColor: b.bg, color: b.color, border: b.border }}>
-                          {b.icon} {b.label} ({selectedLog.action_type})
+                        <span style={{ display: 'inline-flex', alignItems: 'center', flexDirection: 'row', gap: '5px', padding: '3px 10px', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 700, backgroundColor: b.bg, color: b.color, border: b.border, whiteSpace: 'nowrap', wordBreak: 'keep-all', flexShrink: 0 }}>
+                          {b.icon} <span style={{ whiteSpace: 'nowrap' }}>{b.label} ({selectedLog.action_type})</span>
                         </span>
                       );
                     })()}

@@ -290,10 +290,11 @@ const FlowHistory = () => {
                       <td style={{ fontWeight: 600, color: 'var(--text-muted)' }}>
                         {formatDate(rec.transaction_date)}
                       </td>
-                      <td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
                         <span style={{ 
                           display: 'inline-flex', 
                           alignItems: 'center', 
+                          flexDirection: 'row',
                           gap: '6px', 
                           padding: '4px 10px', 
                           borderRadius: '20px', 
@@ -301,9 +302,12 @@ const FlowHistory = () => {
                           color: display.color,
                           border: `1px solid ${display.border}`,
                           fontWeight: 700, 
-                          fontSize: '12px' 
+                          fontSize: '12px',
+                          whiteSpace: 'nowrap',
+                          wordBreak: 'keep-all',
+                          flexShrink: 0
                         }}>
-                          {display.icon} {display.label}
+                          {display.icon} <span style={{ whiteSpace: 'nowrap' }}>{display.label}</span>
                         </span>
                       </td>
                       <td style={{ fontWeight: 700, color: 'var(--text-main)' }}>{rec.order_no}</td>

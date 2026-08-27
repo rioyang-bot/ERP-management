@@ -12,9 +12,11 @@ import {
   TrendingUp,
   Inbox,
   Building2,
-  X
+  X,
+  Camera
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import html2canvas from 'html2canvas';
 import './PJReport.css';
 
 const PJReport = () => {
@@ -32,6 +34,10 @@ const PJReport = () => {
 
   // Row Expand State
   const [expandedRows, setExpandedRows] = useState({});
+
+  // Image Export State
+  const [exportingId, setExportingId] = useState(null);
+  const [exportingProject, setExportingProject] = useState(null);
 
   // 1. Fetch Report Data & Projects
   const fetchReport = async () => {
@@ -154,93 +160,141 @@ const PJReport = () => {
       LENT: { label: '借出/借用' }
     };
 
-    let csvRows = [];
+    // Header definition
+    const headers = [
+      '專案編號',
+      '專案名稱',
+      '客戶名稱',
+      '專案窗口',
+      '專案建立日期',
+      '專案總分配資產數',
+      '已出庫總數',
+      '未出庫庫存餘額',
+      '出庫進度率(%)',
+      '出庫狀態',
+      '明細類別',
+      '單據/SN',
+      '分類/廠牌/型號',
+      '明細狀態/數量',
+      '明細日期'
+    ];
 
-    // Header indicating the report nature
-    csvRows.push(['專案詳細報表 (Project Detailed Report)']);
-    csvRows.push([`匯出日期: ${new Date().toLocaleDateString()}`]);
-    csvRows.push([]);
+    const rows = [];
 
     filteredData.forEach(item => {
       const allocated = Number(item.allocated_assets || 0);
       const outbound = Number(item.outbound_quantity || 0);
-      const balance = Math.max(0, allocated - outbound);
-      const rate = allocated > 0 ? Math.round((outbound / allocated) * 100) : 0;
+      const stockBalance = Math.max(0, allocated - outbound);
+      const outPercent = allocated > 0 ? Math.min(100, Math.round((outbound / allocated) * 100)) : 0;
 
-      // --- 1. Project Summary ---
-      csvRows.push(['========== 專案摘要 ==========']);
-      csvRows.push(['專案編號', '專案名稱', '客戶名稱', '建立日期', '專案總分配資產數', '已出庫數量', '未出庫庫存數', '出庫進度'].join(','));
-      csvRows.push([
-        `"${item.project_no || '-'}"`,
-        `"${(item.project_name || '-').replace(/"/g, '""')}"`,
-        `"${(item.project_customer || '-').replace(/"/g, '""')}"`,
-        item.created_at ? new Date(item.created_at).toLocaleDateString() : '-',
+      let statusLabel = '未出貨';
+      if (allocated === 0) statusLabel = '無分配資產';
+      else if (outbound >= allocated) statusLabel = '已全數出貨';
+      else if (outbound > 0) statusLabel = '部分出貨';
+
+      const baseRow = [
+        `"${item.project_no || ''}"`,
+        `"${(item.project_name || '').replace(/"/g, '""')}"`,
+        `"${(item.project_customer || '').replace(/"/g, '""')}"`,
+        `"${(item.project_contact || '').replace(/"/g, '""')}"`,
+        `"${item.created_at ? new Date(item.created_at).toLocaleDateString() : ''}"`,
         allocated,
         outbound,
-        balance,
-        `${rate}%`
-      ].join(','));
-      csvRows.push([]); // spacer
+        stockBalance,
+        `"${outPercent}%"`,
+        `"${statusLabel}"`
+      ];
 
-      // --- 2. Allocated Assets ---
+      // Summary row
+      rows.push([...baseRow, '"專案總覽"', '""', '""', '""', '""'].join(','));
+
+      // Allocated assets history
       if (item.allocated_assets_history && item.allocated_assets_history.length > 0) {
-        csvRows.push(['--- 分配資產清單 ---']);
-        csvRows.push(['序號 (SN)', '分類 (Category)', '廠牌 (Brand)', '類型 (Type)', '型號 (Model)', '狀態'].join(','));
         item.allocated_assets_history.forEach(a => {
-           const statusLabel = statusConfig[a.status]?.label || a.status || '-';
-           csvRows.push([
-             `"${a.sn || '-'}"`,
-             `"${a.category_name || '-'}"`,
-             `"${(a.brand || '-').replace(/"/g, '""')}"`,
-             `"${(a.type || '-').replace(/"/g, '""')}"`,
-             `"${(a.model || '-').replace(/"/g, '""')}"`,
-             `"${statusLabel}"`
-           ].join(','));
+          const aStatus = statusConfig[a.status]?.label || a.status || '';
+          const aDesc = `${a.category_name || ''} / ${a.brand || ''} / ${a.model || ''}`;
+          rows.push([
+            ...baseRow,
+            '"分配資產"',
+            `"${a.sn || ''}"`,
+            `"${aDesc.replace(/"/g, '""')}"`,
+            `"${aStatus}"`,
+            '""'
+          ].join(','));
         });
-        csvRows.push([]); // spacer
-      } else {
-        csvRows.push(['--- 分配資產清單 ---']);
-        csvRows.push(['(目前無分配任何資產)']);
-        csvRows.push([]); // spacer
       }
 
-      // --- 3. Outbound History ---
+      // Outbound history
       if (item.outbound_history && item.outbound_history.length > 0) {
-        csvRows.push(['--- 出貨建檔歷程 ---']);
-        csvRows.push(['出貨單號', '出貨日期', '序號(SN)', '分類 (Category)', '廠牌 (Brand)', '類型 (Type)', '型號 (Model)', '數量'].join(','));
         item.outbound_history.forEach(o => {
-           csvRows.push([
-             `"${o.request_no || '-'}"`, 
-             o.shipping_date ? new Date(o.shipping_date).toLocaleDateString() : '-', 
-             `"${o.sn || '(無序號)'}"`,
-             `"${o.category_name || '-'}"`,
-             `"${(o.brand || '-').replace(/"/g, '""')}"`,
-             `"${(o.type || '-').replace(/"/g, '""')}"`,
-             `"${(o.model || '-').replace(/"/g, '""')}"`,
-             o.quantity || 0
-           ].join(','));
+          const oDesc = `${o.category_name || ''} / ${o.brand || ''} / ${o.model || ''}`;
+          const oDate = o.shipping_date ? new Date(o.shipping_date).toLocaleDateString() : '';
+          rows.push([
+            ...baseRow,
+            '"出庫歷程"',
+            `"${o.request_no || ''} (${o.sn || '無SN'})"`,
+            `"${oDesc.replace(/"/g, '""')}"`,
+            `"出貨數量: ${o.quantity}"`,
+            `"${oDate}"`
+          ].join(','));
         });
-        csvRows.push([]); // spacer
-      } else {
-        csvRows.push(['--- 出貨建檔歷程 ---']);
-        csvRows.push(['(尚未有出貨紀錄)']);
-        csvRows.push([]); // spacer
       }
-      
-      // Large spacer between projects
-      csvRows.push(['']);
     });
 
-    const csvContent = '\uFEFF' + csvRows.join('\n');
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\r\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    const today = new Date().toISOString().slice(0, 10);
     link.setAttribute('href', url);
+    const today = new Date().toISOString().split('T')[0];
     link.setAttribute('download', `專案報表_PJ_Report_${today}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  // 5. Single Project Export as PNG Image
+  const handleExportProjectImage = async (projectItem) => {
+    if (!projectItem) return;
+    setExportingProject(projectItem);
+    setExportingId(projectItem.id);
+
+    setTimeout(async () => {
+      try {
+        const cardElem = document.getElementById('pj-export-card-active');
+        if (!cardElem) {
+          alert('無法取得專案圖檔節點，請重試。');
+          return;
+        }
+
+        const canvas = await html2canvas(cardElem, {
+          scale: 2, // High resolution (2x Retina)
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: '#ffffff',
+          logging: false,
+          windowWidth: 1200
+        });
+
+        const imgData = canvas.toDataURL('image/png');
+        const safeProjectNo = (projectItem.project_no || 'PROJECT').replace(/[/\\?%*:|"<>]/g, '_');
+        const safeProjectName = (projectItem.project_name || '').replace(/[/\\?%*:|"<>]/g, '_');
+        const fileName = `${safeProjectNo}_${safeProjectName}_專案報表.png`;
+
+        const link = document.createElement('a');
+        link.href = imgData;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } catch (err) {
+        console.error('Export project image failed:', err);
+        alert('匯出圖片時發生錯誤：' + err.message);
+      } finally {
+        setExportingId(null);
+        setExportingProject(null);
+      }
+    }, 120);
   };
 
   const handleResetFilters = () => {
@@ -425,12 +479,13 @@ const PJReport = () => {
                 <th style={{ textAlign: 'center' }}>未出庫庫存</th>
                 <th style={{ textAlign: 'center' }}>出庫進度</th>
                 <th style={{ textAlign: 'center' }}>狀態</th>
+                <th style={{ textAlign: 'center', width: '110px' }}>操作</th>
               </tr>
             </thead>
             <tbody>
               {filteredData.length === 0 ? (
                 <tr>
-                  <td colSpan="8">
+                  <td colSpan="9">
                     <div className="pj-empty-state">
                       <Inbox size={48} opacity={0.4} />
                       <div>沒有符合篩選條件的專案資料</div>
@@ -513,129 +568,182 @@ const PJReport = () => {
                         <td style={{ textAlign: 'center' }}>
                           {getItemStatusBadge(item)}
                         </td>
+                        <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleExportProjectImage(item);
+                            }}
+                            disabled={exportingId === item.id}
+                            className="pj-btn-capture"
+                            title="匯出此專案圖檔 (PNG)"
+                          >
+                            {exportingId === item.id ? (
+                              <>
+                                <RotateCw size={13} className="spin" />
+                                <span>產生中</span>
+                              </>
+                            ) : (
+                              <>
+                                <Camera size={13} />
+                                <span>匯出圖片</span>
+                              </>
+                            )}
+                          </button>
+                        </td>
                       </tr>
 
                       {/* 展開之歷程明細 */}
                       {isExpanded && (
                         <tr>
-                          <td colSpan="8" style={{ padding: 0 }}>
+                          <td colSpan="9" style={{ padding: 0 }}>
                             <div className="pj-detail-box">
-                              
-                                {/* 📥 分配資產清單 */}
-                                <div className="pj-detail-section" style={{ minWidth: 0, overflowX: 'auto' }}>
-                                  <div className="pj-detail-title">
-                                    <Package size={16} color="#059669" /> 硬體設備清單 ({item.allocated_assets_history?.length || 0})
-                                  </div>
-                                  {item.allocated_assets_history && item.allocated_assets_history.length > 0 ? (
-                                    <table className="pj-history-table">
-                                      <thead>
-                                        <tr>
-                                          <th>序號 (SN)</th>
-                                          <th>分類</th>
-                                          <th>廠牌</th>
-                                          <th>類型</th>
-                                          <th>型號</th>
-                                          <th>狀態</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody>
-                                        {item.allocated_assets_history.map((a, aIdx) => (
-                                          <tr key={aIdx}>
-                                            <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{a.sn || '-'}</td>
-                                            <td>
-                                              {a.category_name ? (
-                                                <span className="pj-badge pj-badge-slate" style={{ fontSize: '10px', padding: '2px 6px' }}>
-                                                  {a.category_name}
-                                                </span>
-                                              ) : '-'}
-                                            </td>
-                                            <td>{a.brand || '-'}</td>
-                                            <td>{a.type || '-'}</td>
-                                            <td>{a.model || '-'}</td>
-                                            <td>
-                                              {(() => {
-                                                const statusConfig = {
-                                                  ACTIVE: { label: '在庫', color: '#047857', bgColor: '#dcfce7', borderColor: '#bbf7d0' },
-                                                  REPAIRING: { label: '維修中', color: '#fa8c16', bgColor: '#fff7e6', borderColor: '#ffd591' },
-                                                  PENDING_SCRAP: { label: '待報廢', color: '#595959', bgColor: '#f5f5f5', borderColor: '#d9d9d9' },
-                                                  SCRAPPED: { label: '已報廢', color: '#f5222d', bgColor: '#fff1f0', borderColor: '#ffccc7' },
-                                                  SHIPPED: { label: '已出貨', color: '#1d4ed8', bgColor: '#dbeafe', borderColor: '#bfdbfe' },
-                                                  LENT: { label: '借出/借用', color: '#b45309', bgColor: '#fef3c7', borderColor: '#fde68a' }
-                                                };
-                                                const config = statusConfig[a.status] || { label: a.status, color: '#334155', bgColor: '#f8fafc', borderColor: '#cbd5e1' };
-                                                return (
-                                                  <span style={{ 
-                                                    padding: '2px 8px', 
-                                                    borderRadius: '4px', 
-                                                    fontSize: '0.85rem', 
-                                                    fontWeight: 600,
-                                                    color: config.color,
-                                                    backgroundColor: config.bgColor,
-                                                    border: `1px solid ${config.borderColor}`,
-                                                    display: 'inline-block'
-                                                  }}>
-                                                    {config.label}
-                                                  </span>
-                                                );
-                                              })()}
-                                            </td>
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
-                                  ) : (
-                                    <div style={{ color: '#94a3b8', fontSize: '13px', padding: '12px 0' }}>
-                                      目前無分配任何資產
-                                    </div>
-                                  )}
+                              {/* 明細頂部功能條 */}
+                              <div className="pj-detail-header-bar">
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                  <Layers size={18} color="#2563eb" />
+                                  <span style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--text-main)' }}>
+                                    [{item.project_no}] {item.project_name} 專案進銷存明細
+                                  </span>
+                                  {getItemStatusBadge(item)}
                                 </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleExportProjectImage(item)}
+                                  disabled={exportingId === item.id}
+                                  className="pj-btn pj-btn-primary"
+                                  style={{ padding: '6px 14px', fontSize: '13px' }}
+                                >
+                                  {exportingId === item.id ? (
+                                    <>
+                                      <RotateCw size={14} className="spin" />
+                                      <span>產生圖片中...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Camera size={14} />
+                                      <span>匯出專案圖檔 (PNG)</span>
+                                    </>
+                                  )}
+                                </button>
+                              </div>
 
-                                {/* 📤 出貨單明細歷程 */}
-                                <div className="pj-detail-section" style={{ minWidth: 0, overflowX: 'auto' }}>
-                                  <div className="pj-detail-title">
-                                    <Truck size={16} color="#7c3aed" /> 出貨建檔歷程 ({item.outbound_history?.length || 0})
-                                  </div>
-                                  {item.outbound_history && item.outbound_history.length > 0 ? (
-                                    <table className="pj-history-table">
-                                      <thead>
-                                        <tr>
-                                          <th>出貨單號</th>
-                                          <th>出貨日期</th>
-                                          <th>序號(SN)</th>
-                                          <th>分類</th>
-                                          <th>廠牌</th>
-                                          <th>類型</th>
-                                          <th>型號</th>
-                                          <th style={{ textAlign: 'right' }}>數量</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody>
-                                        {item.outbound_history.map((o, oIdx) => (
-                                          <tr key={oIdx}>
-                                            <td style={{ fontWeight: 600, color: '#7c3aed' }}>{o.request_no}</td>
-                                            <td>{o.shipping_date ? new Date(o.shipping_date).toLocaleDateString() : '-'}</td>
-                                            <td style={{ fontFamily: 'monospace' }}>{o.sn || '(無序號)'}</td>
-                                            <td>
-                                              {o.category_name ? (
-                                                <span className="pj-badge pj-badge-slate" style={{ fontSize: '10px', padding: '2px 6px' }}>
-                                                  {o.category_name}
-                                                </span>
-                                              ) : '-'}
-                                            </td>
-                                            <td>{o.brand || '-'}</td>
-                                            <td>{o.type || '-'}</td>
-                                            <td>{o.model || '-'}</td>
-                                            <td style={{ textAlign: 'right', fontWeight: 700 }}>{o.quantity}</td>
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
-                                  ) : (
-                                    <div style={{ color: '#94a3b8', fontSize: '13px', padding: '12px 0' }}>
-                                      尚未有出貨紀錄
-                                    </div>
-                                  )}
+                              {/* 📥 分配資產清單 */}
+                              <div className="pj-detail-section" style={{ minWidth: 0, overflowX: 'auto' }}>
+                                <div className="pj-detail-title">
+                                  <Package size={16} color="#059669" /> 硬體設備清單 ({item.allocated_assets_history?.length || 0})
                                 </div>
+                                {item.allocated_assets_history && item.allocated_assets_history.length > 0 ? (
+                                  <table className="pj-history-table">
+                                    <thead>
+                                      <tr>
+                                        <th>序號 (SN)</th>
+                                        <th>分類</th>
+                                        <th>廠牌</th>
+                                        <th>類型</th>
+                                        <th>型號</th>
+                                        <th>狀態</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {item.allocated_assets_history.map((a, aIdx) => (
+                                        <tr key={aIdx}>
+                                          <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{a.sn || '-'}</td>
+                                          <td>
+                                            {a.category_name ? (
+                                              <span className="pj-badge pj-badge-slate" style={{ fontSize: '10px', padding: '2px 6px' }}>
+                                                {a.category_name}
+                                              </span>
+                                            ) : '-'}
+                                          </td>
+                                          <td>{a.brand || '-'}</td>
+                                          <td>{a.type || '-'}</td>
+                                          <td>{a.model || '-'}</td>
+                                          <td>
+                                            {(() => {
+                                              const statusConfig = {
+                                                ACTIVE: { label: '在庫', color: '#047857', bgColor: '#dcfce7', borderColor: '#bbf7d0' },
+                                                REPAIRING: { label: '維修中', color: '#fa8c16', bgColor: '#fff7e6', borderColor: '#ffd591' },
+                                                PENDING_SCRAP: { label: '待報廢', color: '#595959', bgColor: '#f5f5f5', borderColor: '#d9d9d9' },
+                                                SCRAPPED: { label: '已報廢', color: '#f5222d', bgColor: '#fff1f0', borderColor: '#ffccc7' },
+                                                SHIPPED: { label: '已出貨', color: '#1d4ed8', bgColor: '#dbeafe', borderColor: '#bfdbfe' },
+                                                LENT: { label: '借出/借用', color: '#b45309', bgColor: '#fef3c7', borderColor: '#fde68a' }
+                                              };
+                                              const config = statusConfig[a.status] || { label: a.status, color: '#334155', bgColor: '#f8fafc', borderColor: '#cbd5e1' };
+                                              return (
+                                                <span style={{ 
+                                                  padding: '2px 8px', 
+                                                  borderRadius: '4px', 
+                                                  fontSize: '0.85rem', 
+                                                  fontWeight: 600,
+                                                  color: config.color,
+                                                  backgroundColor: config.bgColor,
+                                                  border: `1px solid ${config.borderColor}`,
+                                                  display: 'inline-block'
+                                                }}>
+                                                  {config.label}
+                                                </span>
+                                              );
+                                            })()}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                ) : (
+                                  <div style={{ color: '#94a3b8', fontSize: '13px', padding: '12px 0' }}>
+                                    目前無分配任何資產
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* 📤 出貨單明細歷程 */}
+                              <div className="pj-detail-section" style={{ minWidth: 0, overflowX: 'auto' }}>
+                                <div className="pj-detail-title">
+                                  <Truck size={16} color="#7c3aed" /> 出貨建檔歷程 ({item.outbound_history?.length || 0})
+                                </div>
+                                {item.outbound_history && item.outbound_history.length > 0 ? (
+                                  <table className="pj-history-table">
+                                    <thead>
+                                      <tr>
+                                        <th>出貨單號</th>
+                                        <th>出貨日期</th>
+                                        <th>序號(SN)</th>
+                                        <th>分類</th>
+                                        <th>廠牌</th>
+                                        <th>類型</th>
+                                        <th>型號</th>
+                                        <th style={{ textAlign: 'right' }}>數量</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {item.outbound_history.map((o, oIdx) => (
+                                        <tr key={oIdx}>
+                                          <td style={{ fontWeight: 600, color: '#7c3aed' }}>{o.request_no}</td>
+                                          <td>{o.shipping_date ? new Date(o.shipping_date).toLocaleDateString() : '-'}</td>
+                                          <td style={{ fontFamily: 'monospace' }}>{o.sn || '(無序號)'}</td>
+                                          <td>
+                                            {o.category_name ? (
+                                              <span className="pj-badge pj-badge-slate" style={{ fontSize: '10px', padding: '2px 6px' }}>
+                                                {o.category_name}
+                                              </span>
+                                            ) : '-'}
+                                          </td>
+                                          <td>{o.brand || '-'}</td>
+                                          <td>{o.type || '-'}</td>
+                                          <td>{o.model || '-'}</td>
+                                          <td style={{ textAlign: 'right', fontWeight: 700 }}>{o.quantity}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                ) : (
+                                  <div style={{ color: '#94a3b8', fontSize: '13px', padding: '12px 0' }}>
+                                    尚未有出貨紀錄
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </td>
                         </tr>
@@ -648,8 +756,192 @@ const PJReport = () => {
           </table>
         </div>
       </div>
+
+      {/* 專案圖片匯出專用隱藏渲染節點 (Off-screen Capture Template) */}
+      {exportingProject && (
+        <div className="pj-export-capture-container">
+          <div id="pj-export-card-active" className="pj-export-card">
+            {/* 1. Header */}
+            <div className="pj-export-header">
+              <div className="pj-export-title-group">
+                <div className="pj-export-system-tag">
+                  <Layers size={16} color="#2563eb" /> METECH ERP 企業管理系統
+                </div>
+                <h1 className="pj-export-main-title">
+                  專案進銷存與資產報表 (Project Report)
+                </h1>
+              </div>
+              <div className="pj-export-meta-group">
+                <div>產出時間：{new Date().toLocaleString('zh-TW')}</div>
+                <div>文件編號：RPT-{exportingProject.project_no || 'PJ'}-{new Date().toISOString().slice(0, 10).replace(/-/g, '')}</div>
+              </div>
+            </div>
+
+            {/* 2. Project Profile Info Grid */}
+            <div className="pj-export-info-grid">
+              <div className="pj-export-info-item">
+                <span className="pj-export-info-label">專案編號</span>
+                <span className="pj-export-info-value" style={{ color: '#2563eb', fontFamily: 'monospace' }}>
+                  {exportingProject.project_no || '-'}
+                </span>
+              </div>
+              <div className="pj-export-info-item">
+                <span className="pj-export-info-label">專案名稱</span>
+                <span className="pj-export-info-value">{exportingProject.project_name || '-'}</span>
+              </div>
+              <div className="pj-export-info-item">
+                <span className="pj-export-info-label">客戶名稱 / 窗口</span>
+                <span className="pj-export-info-value">
+                  {exportingProject.project_customer || '-'} {exportingProject.project_contact ? `(${exportingProject.project_contact})` : ''}
+                </span>
+              </div>
+              <div className="pj-export-info-item">
+                <span className="pj-export-info-label">出庫狀態</span>
+                <div>{getItemStatusBadge(exportingProject)}</div>
+              </div>
+            </div>
+
+            {/* 3. KPI Metrics Row */}
+            {(() => {
+              const allocated = Number(exportingProject.allocated_assets || 0);
+              const outbound = Number(exportingProject.outbound_quantity || 0);
+              const stockBalance = Math.max(0, allocated - outbound);
+              const outPercent = allocated > 0 ? Math.min(100, Math.round((outbound / allocated) * 100)) : 0;
+
+              return (
+                <div className="pj-export-kpi-row">
+                  <div className="pj-export-kpi-box">
+                    <div className="pj-export-kpi-title">專案分配總資產</div>
+                    <div className="pj-export-kpi-num" style={{ color: '#0f172a' }}>
+                      {allocated} <span style={{ fontSize: '13px', fontWeight: 600, color: '#64748b' }}>台/件</span>
+                    </div>
+                  </div>
+                  <div className="pj-export-kpi-box">
+                    <div className="pj-export-kpi-title">已出庫數量</div>
+                    <div className="pj-export-kpi-num" style={{ color: '#7c3aed' }}>
+                      {outbound} <span style={{ fontSize: '13px', fontWeight: 600, color: '#64748b' }}>台/件</span>
+                    </div>
+                  </div>
+                  <div className="pj-export-kpi-box">
+                    <div className="pj-export-kpi-title">在庫未出庫餘額</div>
+                    <div className="pj-export-kpi-num" style={{ color: '#d97706' }}>
+                      {stockBalance} <span style={{ fontSize: '13px', fontWeight: 600, color: '#64748b' }}>台/件</span>
+                    </div>
+                  </div>
+                  <div className="pj-export-kpi-box">
+                    <div className="pj-export-kpi-title">出庫達成率</div>
+                    <div className="pj-export-kpi-num" style={{ color: outPercent >= 100 ? '#7c3aed' : '#2563eb' }}>
+                      {outPercent}%
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* 4. Table 1: 分配硬體設備清單 */}
+            <div className="pj-export-section-card">
+              <div className="pj-export-section-title">
+                <Package size={17} color="#059669" />
+                <span>硬體設備分配清單 ({exportingProject.allocated_assets_history?.length || 0})</span>
+              </div>
+              {exportingProject.allocated_assets_history && exportingProject.allocated_assets_history.length > 0 ? (
+                <table className="pj-export-table">
+                  <thead>
+                    <tr>
+                      <th>序號 (SN)</th>
+                      <th>分類</th>
+                      <th>廠牌</th>
+                      <th>類型</th>
+                      <th>型號</th>
+                      <th>目前狀態</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {exportingProject.allocated_assets_history.map((a, idx) => (
+                      <tr key={idx}>
+                        <td style={{ fontFamily: 'monospace', fontWeight: 700, color: '#2563eb' }}>{a.sn || '-'}</td>
+                        <td>{a.category_name || '-'}</td>
+                        <td>{a.brand || '-'}</td>
+                        <td>{a.type || '-'}</td>
+                        <td>{a.model || '-'}</td>
+                        <td>
+                          {(() => {
+                            const statusConfig = {
+                              ACTIVE: { label: '在庫', color: '#047857', bgColor: '#dcfce7', borderColor: '#bbf7d0' },
+                              REPAIRING: { label: '維修中', color: '#fa8c16', bgColor: '#fff7e6', borderColor: '#ffd591' },
+                              PENDING_SCRAP: { label: '待報廢', color: '#595959', bgColor: '#f5f5f5', borderColor: '#d9d9d9' },
+                              SCRAPPED: { label: '已報廢', color: '#f5222d', bgColor: '#fff1f0', borderColor: '#ffccc7' },
+                              SHIPPED: { label: '已出貨', color: '#1d4ed8', bgColor: '#dbeafe', borderColor: '#bfdbfe' },
+                              LENT: { label: '借出/借用', color: '#b45309', bgColor: '#fef3c7', borderColor: '#fde68a' }
+                            };
+                            const cfg = statusConfig[a.status] || { label: a.status || '-', color: '#334155', bgColor: '#f8fafc', borderColor: '#cbd5e1' };
+                            return (
+                              <span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '11.5px', fontWeight: 700, color: cfg.color, backgroundColor: cfg.bgColor, border: `1px solid ${cfg.borderColor}` }}>
+                                {cfg.label}
+                              </span>
+                            );
+                          })()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div style={{ padding: '20px', color: '#94a3b8', textAlign: 'center', fontSize: '13px' }}>
+                  目前無分配任何硬體設備資產
+                </div>
+              )}
+            </div>
+
+            {/* 5. Table 2: 出貨建檔歷程 */}
+            <div className="pj-export-section-card">
+              <div className="pj-export-section-title">
+                <Truck size={17} color="#7c3aed" />
+                <span>出貨建檔與交付歷程 ({exportingProject.outbound_history?.length || 0})</span>
+              </div>
+              {exportingProject.outbound_history && exportingProject.outbound_history.length > 0 ? (
+                <table className="pj-export-table">
+                  <thead>
+                    <tr>
+                      <th>出貨單號</th>
+                      <th>出貨日期</th>
+                      <th>序號 (SN)</th>
+                      <th>分類</th>
+                      <th>廠牌 / 型號</th>
+                      <th style={{ textAlign: 'right' }}>出貨數量</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {exportingProject.outbound_history.map((o, idx) => (
+                      <tr key={idx}>
+                        <td style={{ fontWeight: 700, color: '#7c3aed', fontFamily: 'monospace' }}>{o.request_no}</td>
+                        <td>{o.shipping_date ? new Date(o.shipping_date).toLocaleDateString('zh-TW') : '-'}</td>
+                        <td style={{ fontFamily: 'monospace' }}>{o.sn || '(無序號)'}</td>
+                        <td>{o.category_name || '-'}</td>
+                        <td>{o.brand ? `${o.brand} ${o.model || ''}` : (o.model || '-')}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 800, color: '#0f172a' }}>{o.quantity}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div style={{ padding: '20px', color: '#94a3b8', textAlign: 'center', fontSize: '13px' }}>
+                  尚未有任何出貨單據紀錄
+                </div>
+              )}
+            </div>
+
+            {/* 6. Footer */}
+            <div className="pj-export-footer">
+              <div>METECH ERP 企業專案營運進銷存系統 • 專案報表</div>
+              <div>機密文件 • 僅供內部與專案客戶核對使用</div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 export default PJReport;
+

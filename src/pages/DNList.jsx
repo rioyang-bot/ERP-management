@@ -360,21 +360,21 @@ const DNList = ({ isSplitMode = false }) => {
                       {dn.status === 'PENDING' ? '已建立' : (dn.status === 'SHIPPED' ? '已出貨' : dn.status)}
                     </span>
                   </td>
-                  <td style={{ padding: '12px' }}>
-                    <div style={{ display: 'flex', gap: '10px' }}>
+                  <td style={{ padding: '12px', whiteSpace: 'nowrap' }}>
+                    <div style={{ display: 'flex', gap: '10px', whiteSpace: 'nowrap' }}>
                       <button 
-                        style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', backgroundColor: 'var(--primary-bg)', color: 'var(--primary-color)', border: '1px solid rgba(59, 130, 246, 0.2)', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', backgroundColor: 'var(--primary-bg)', color: 'var(--primary-color)', border: '1px solid rgba(59, 130, 246, 0.2)', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', flexShrink: 0 }}
                         title="查看詳情"
                         onClick={() => handleViewDetails(dn)}
                       >
-                        <Eye size={16} /> 檢視
+                        <Eye size={16} style={{ flexShrink: 0 }} /> <span>檢視</span>
                       </button>
                       <button 
-                        style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', backgroundColor: 'rgba(239, 68, 68, 0.12)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', backgroundColor: 'rgba(239, 68, 68, 0.12)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', flexShrink: 0 }}
                         title="刪除單據"
                         onClick={() => handleDelete(dn)}
                       >
-                        <Trash2 size={16} /> 刪除
+                        <Trash2 size={16} style={{ flexShrink: 0 }} /> <span>刪除</span>
                       </button>
                     </div>
                   </td>

@@ -45,22 +45,21 @@ const ProcessFlow = () => {
     {
       id: 'master-data',
       blockIndex: '01',
-      title: '基礎主檔層 (Master Data)',
+      title: '關係主體 (Party Data)',
       category: 'BASE',
       color: '#4f46e5',
       badge: '系統基石',
       icon: <Database size={24} />,
-      desc: '維護客戶廠商、品項規格、品牌型號與專案代碼，為全系統單據提供標準化資料來源。',
+      desc: '維護客戶廠商資料與系統帳號權限，為全系統單據與安全提供標準化主體資料來源。',
       subModules: [
         { name: '客戶 / 廠商管理 (Partners)', path: '/partners', desc: '維護供應商與客戶聯絡資訊、地址與統編' },
-        { name: '專案列表 (Projects)', path: '/projects', desc: '建立與追蹤專案名稱、代碼及狀態' },
-        { name: '品項與規格主檔 (Categories)', path: '/settings', desc: '定義設備/硬體/耗材之規格、品牌與單位' }
+        { name: '權限管理 (User Access Control)', path: '/settings', desc: '維護系統帳號、使用者模組存取權限與密碼安全原則' }
       ],
-      inputs: ['外部廠商資訊', '客戶聯絡名冊', '原廠規格書', '業務專案委託'],
-      outputs: ['合作夥伴主檔', '專案代號', '分類規格標準'],
+      inputs: ['外部廠商資訊', '客戶聯絡名冊', '系統操作人員名冊'],
+      outputs: ['合作夥伴主檔 (Partners)', '系統使用者與權限原則 (RBAC)'],
       businessRules: [
-        '所有採購單 (P/O) 必須指定有效之供應商與規格類別。',
-        '出貨單 (D/N) 綁定專案後，其品項料件將自動納入專案報表 (PJ Report) 進行進銷存扣減與追蹤。'
+        '所有單據（採購、進貨、出貨）皆需指定有效之合作夥伴（客戶或廠商）。',
+        '系統依據使用者角色與權限設定，嚴格控管各功能模組之讀取與異動權限。'
       ]
     },
     {
@@ -74,8 +73,7 @@ const ProcessFlow = () => {
       desc: '向供應商建立 P/O 採購單，記錄預計採購品項規格、採購數量、預計交期與附件憑證。',
       subModules: [
         { name: '採購登記 (Purchasing)', path: '/purchasing', desc: '建立新採購單，設定料件規格、數量與預計到貨量' },
-        { name: '採購單列表 (P/O List)', path: '/procurement-list', desc: '清單檢視、篩選與到貨狀態追蹤' },
-        { name: '採購拆分檢視 (Split View)', path: '/procurement-split', desc: '左側選單、右側即時編輯之高效率雙欄模式' }
+        { name: '採購單列表 (P/O List)', path: '/procurement-list', desc: '清單檢視、篩選與到貨狀態追蹤' }
       ],
       inputs: ['專案料件需求', '供應商報價單', '內部庫存補貨提醒'],
       outputs: ['採購單號 (PO-YYYYMMDD-XX)', '待到貨料件清單', '採購附件憑證'],
@@ -96,7 +94,6 @@ const ProcessFlow = () => {
       subModules: [
         { name: '進貨單建立 (Inbound)', path: '/inbound', desc: '核對送貨單據，一鍵展開每台設備之專屬 SN 序號' },
         { name: '進貨單列表 (S/I List)', path: '/inbound-list', desc: '查詢歷史進貨單據、供應商與進貨批號' },
-        { name: '進貨拆分檢視 (Split View)', path: '/inbound-split', desc: '支援雙欄同步驗收與即時修改' },
         { name: '設備建檔(Device Reg)', path: '/devices', desc: '伺服器、主機、交換器等單機設備與 SN 序號獨立建檔' },
         { name: '硬體建檔 (HW Reg)', path: '/hw-registration', desc: '專門針對網卡、加速卡等模組進行細部規格登記' },
         { name: '耗材建檔 (Consumables)', path: '/consumables', desc: '非序列號之耗材、線材與配件批次入庫' }
@@ -121,8 +118,7 @@ const ProcessFlow = () => {
         { name: '設備列表 (Device List)', path: '/device-list', desc: '伺服器/主機資產清冊、狀態過濾與詳細規格檢視' },
         { name: '硬體列表 (HW List)', path: '/hw-list', desc: '網卡、模組等硬體庫存與可用狀態清單' },
         { name: '耗材列表 (Consumable List)', path: '/consumable-list', desc: '耗材現存量、安全水位警戒與批次出入庫' },
-        { name: '實體庫存盤點 (Stocktaking)', path: '/stocktaking', desc: '定期盤點全廠資產，支援內部公司資產核對' },
-        { name: '資產雙欄檢視 (Split Views)', path: '/device-split', desc: '提供快速清冊切換與右側資產編輯' }
+        { name: '實體庫存盤點 (Stocktaking)', path: '/stocktaking', desc: '定期盤點全廠資產，支援內部公司資產核對' }
       ],
       inputs: ['進貨驗收完成資產', '借用歸還驗收合格品', '盤點實盤數據'],
       outputs: ['在庫可用資產清單', '品項異動台帳 (Item Ledger)', '盤點實盤比對總表'],
@@ -143,7 +139,6 @@ const ProcessFlow = () => {
       subModules: [
         { name: '出貨單建立 (Outbound)', path: '/outbound', desc: '建立 D/N 單，掃描/選擇在庫 SN，指派客戶與專案' },
         { name: '出貨單列表 (D/N List)', path: '/dn-list', desc: '銷貨出貨單總覽與列印/PDF' },
-        { name: '出貨拆分檢視 (Split View)', path: '/outbound-split', desc: '雙欄快速出貨作業與單據維護' },
         { name: '設備/硬體借用列表 (Device/HW Lent List)', path: '/lent-list', desc: '追蹤借出設備與硬體、預計歸還日、逾期警示與一鍵歸還驗收' }
       ],
       inputs: ['客戶/專案出貨需求', '內部/外部借用申請', '在庫狀態設備/硬體/耗材'],
@@ -161,15 +156,17 @@ const ProcessFlow = () => {
       color: '#db2777',
       badge: '價值呈現',
       icon: <BarChart2 size={24} />,
-      desc: '自動交叉比對採購、進貨與出貨單據，即時產出專案到貨達成率、進出貨歷程與庫存統計報表。',
+      desc: '管理專案立案與代碼，並自動交叉比對採購、進貨與出貨單據，即時產出專案到貨達成率、進出貨歷程與庫存統計報表。',
       subModules: [
+        { name: '專案列表 (Projects)', path: '/projects', desc: '建立與追蹤專案名稱、代碼及執行狀態' },
         { name: '專案報表 (PJ Report)', path: '/pj-report', desc: '專案進銷存主軸：採購數、到貨達成率、出貨數與庫存餘額' },
         { name: '報表中心 (Reports)', path: '/reports', desc: '全方位的營運數據總覽與多維度卡片導覽' },
         { name: '進出貨日誌 (Flow History)', path: '/flow-history', desc: '按時間序列追蹤全廠料件進出與異動流水' }
       ],
-      inputs: ['採購單預計量', '進貨單實際到貨量', '出貨單專案交付量'],
-      outputs: ['專案到貨達成率分析', '料件庫存餘額表', 'CSV / Excel 報表匯出'],
+      inputs: ['專案立案與代碼', '採購單預計量', '進貨單實際到貨量', '出貨單專案交付量'],
+      outputs: ['專案清冊與狀態追蹤', '專案到貨達成率分析', '料件庫存餘額表', 'CSV / Excel 報表匯出'],
       businessRules: [
+        '出貨單 (D/N) 綁定專案後，其品項料件將自動納入專案報表 (PJ Report) 進行進銷存扣減與追蹤。',
         '專案進銷存公式：到貨率 = (已進貨數量 / 採購總數量) × 100%，庫存餘額 = 進貨量 - 出貨量。',
         '支援多層級展開，可直探至各筆採購明細與出貨單對應關聯。'
       ]

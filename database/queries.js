@@ -594,12 +594,12 @@ export const queries = {
   `,
   fetchAuditLogStats: `
     SELECT 
-      COUNT(*) as total_count,
+      COUNT(*) as today_count,
       COUNT(CASE WHEN action_type = 'CREATE' THEN 1 END) as create_count,
       COUNT(CASE WHEN action_type = 'UPDATE' OR action_type = 'STATUS_CHANGE' THEN 1 END) as update_count,
       COUNT(CASE WHEN action_type = 'DELETE' THEN 1 END) as delete_count,
-      COUNT(DISTINCT user_name) as active_users,
-      COUNT(CASE WHEN timestamp >= CURRENT_DATE THEN 1 END) as today_count
+      COUNT(DISTINCT user_name) as active_users
     FROM system_audit_logs
+    WHERE timestamp >= NOW() - INTERVAL '24 hours'
   `
 };

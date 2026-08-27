@@ -434,3 +434,228 @@
   align-items: center;
   gap: 12px;
 }
+
+/* Image Export Capture Styling */
+.pj-btn-capture {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  background-color: var(--primary-bg);
+  color: var(--primary-color);
+  border: 1px solid rgba(37, 99, 235, 0.25);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.pj-btn-capture:hover:not(:disabled) {
+  background-color: var(--primary-color);
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.25);
+}
+
+.pj-btn-capture:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.pj-detail-header-bar {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: var(--bg-surface);
+  padding: 12px 18px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+/* Off-screen Capture Container */
+.pj-export-capture-container {
+  position: fixed;
+  left: -9999px;
+  top: 0;
+  width: 1100px;
+  z-index: -9999;
+  opacity: 1;
+  pointer-events: none;
+  background-color: #ffffff;
+}
+
+.pj-export-card {
+  background: #ffffff;
+  color: #0f172a;
+  padding: 36px 40px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.pj-export-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding-bottom: 20px;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.pj-export-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pj-export-system-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 800;
+  color: #2563eb;
+  letter-spacing: 0.5px;
+}
+
+.pj-export-main-title {
+  font-size: 26px;
+  font-weight: 900;
+  color: #0f172a;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pj-export-meta-group {
+  text-align: right;
+  font-size: 12px;
+  color: #64748b;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pj-export-info-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  background: #f8fafc;
+  padding: 18px 22px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+}
+
+.pj-export-info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pj-export-info-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.pj-export-info-value {
+  font-size: 15px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.pj-export-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.pj-export-kpi-box {
+  background: #ffffff;
+  padding: 16px 20px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pj-export-kpi-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.pj-export-kpi-num {
+  font-size: 26px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.pj-export-section-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.pj-export-section-title {
+  background: #f8fafc;
+  padding: 14px 20px;
+  font-size: 15px;
+  font-weight: 800;
+  color: #0f172a;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.pj-export-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  text-align: left;
+}
+
+.pj-export-table th {
+  background: #f1f5f9;
+  color: #334155;
+  font-weight: 700;
+  padding: 10px 14px;
+  border-bottom: 1px solid #cbd5e1;
+}
+
+.pj-export-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid #f1f5f9;
+  color: #1e293b;
+}
+
+.pj-export-table tr:nth-child(even) {
+  background-color: #fafafa;
+}
+
+.pj-export-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 18px;
+  border-top: 1px solid #e2e8f0;
+  font-size: 11.5px;
+  color: #94a3b8;
+  font-weight: 600;
+}
+

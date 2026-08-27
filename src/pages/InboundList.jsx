@@ -336,19 +336,19 @@ const InboundList = ({ isSplitMode = false }) => {
                     <td style={{ padding: '12px', color: 'var(--text-muted)' }}>{new Date(order.created_at).toLocaleString()}</td>
                     <td style={{ padding: '12px', color: order.partner_name ? 'var(--text-main)' : 'var(--text-subtle)', fontWeight: 600 }}>{order.partner_name || '無紀錄'}</td>
                     <td style={{ padding: '12px', color: order.invoice_no ? 'var(--text-main)' : 'var(--text-subtle)' }}>{order.invoice_no || '--'}</td>
-                    <td style={{ padding: '12px' }}>
-                      <div style={{ display: 'flex', gap: '8px' }}>
+                    <td style={{ padding: '12px', whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'flex', gap: '8px', whiteSpace: 'nowrap' }}>
                         <button
                           onClick={() => handleViewDetails(order, false)}
-                          style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', backgroundColor: 'var(--primary-bg)', color: 'var(--primary-color)', border: '1px solid rgba(59, 130, 246, 0.2)', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', backgroundColor: 'var(--primary-bg)', color: 'var(--primary-color)', border: '1px solid rgba(59, 130, 246, 0.2)', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', flexShrink: 0 }}
                         >
-                          <Eye size={16} /> 檢視
+                          <Eye size={16} style={{ flexShrink: 0 }} /> <span>檢視</span>
                         </button>
                         <button
                           onClick={() => handleViewDetails(order, true)}
-                          style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', backgroundColor: 'rgba(16, 185, 129, 0.12)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', backgroundColor: 'rgba(16, 185, 129, 0.12)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', flexShrink: 0 }}
                         >
-                          <Edit2 size={16} /> 編輯
+                          <Edit2 size={16} style={{ flexShrink: 0 }} /> <span>編輯</span>
                         </button>
                       </div>
                     </td>
