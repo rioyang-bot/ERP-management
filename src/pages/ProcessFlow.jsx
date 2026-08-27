@@ -90,19 +90,21 @@ const ProcessFlow = () => {
       color: '#059669',
       badge: '實物入庫',
       icon: <Boxes size={24} />,
-      desc: '實體貨品到港後進行點收驗收，可直接自 P/O 轉單，並支援單機設備與硬體 SN 序號展開建檔。',
+      desc: '實體貨品到港後進行點收驗收，可直接自 P/O 轉單，並支援單機設備、硬體模組手動建檔與 Excel/CSV 批次快速匯入。',
       subModules: [
         { name: '進貨單建立 (Inbound)', path: '/inbound', desc: '核對送貨單據，一鍵展開每台設備之專屬 SN 序號' },
         { name: '進貨單列表 (S/I List)', path: '/inbound-list', desc: '查詢歷史進貨單據、供應商與進貨批號' },
-        { name: '設備建檔(Device Reg)', path: '/devices', desc: '伺服器、主機、交換器等單機設備與 SN 序號獨立建檔' },
-        { name: '硬體建檔 (HW Reg)', path: '/hw-registration', desc: '專門針對網卡、加速卡等模組進行細部規格登記' },
+        { name: '設備建檔(Device Reg)', path: '/devices', desc: '伺服器、主機、交換器等單機設備獨立建檔（右上角支援 Excel/CSV 批次匯入）' },
+        { name: '硬體建檔 (HW Reg)', path: '/hw-registration', desc: '網卡、加速卡等模組規格登記（右上角支援 Excel/CSV 批次匯入）' },
         { name: '耗材建檔 (Consumables)', path: '/consumables', desc: '非序列號之耗材、線材與配件批次入庫' }
       ],
-      inputs: ['實體到貨料件', '原廠外箱序號 (SN)', '供應商送貨/進貨單', '關聯 P/O 採購單'],
-      outputs: ['進貨單 (IN-YYYYMMDD-XX)', '單機資產實體 (AVAILABLE)', '品項進貨履歷'],
+      inputs: ['實體到貨料件', '原廠外箱序號 (SN)', '供應商送貨/進貨單', '關聯 P/O 採購單', '外部 Excel / CSV 設備與硬體資產清冊'],
+      outputs: ['進貨單 (IN-YYYYMMDD-XX)', '單機/模組資產實體 (AVAILABLE/SHIPPED)', '品項進貨履歷', '批次匯入稽核紀錄'],
       businessRules: [
         '「設備建檔」與「硬體建檔」支援唯一 SN 序號管控，進貨時可一鍵展開分別填寫獨立序號。',
-        '完成進貨驗收與設備/硬體建檔後，庫存池狀態立即更新為「在庫 (AVAILABLE)」，並自動發送即時事件日誌。'
+        '只要 「廠牌」、「類型」、「型號」 這三者之中有 任一個不同，系統就會自動為其生成一張全新的獨立卡片。',
+        '支援「Excel / CSV 批次匯入」：具備中文字元編碼自動校正 (Mojibake Fix)、重複序號阻擋與廠牌/類型/型號缺一不建檢核，並直接依據檔案內 Status 欄位自動判定「已出貨 (SHIPPED)」或「在庫 (ACTIVE)」。',
+        '完成進貨驗收與設備/硬體建檔（含批次匯入）後，庫存池狀態立即同步更新，並自動發送即時事件與稽核日誌。'
       ]
     },
     {
@@ -458,31 +460,34 @@ const ProcessFlow = () => {
                     <Boxes size={20} color="#fff" />
                   </div>
                   <div>
-                    <h3 className="step-name">2. 貨到驗收與 SN 展開 (S/I)</h3>
-                    <span className="step-tag">入庫驗收</span>
+                    <h3 className="step-name">2. 貨到驗收與 SN 建檔 (S/I & Batch Import)</h3>
+                    <span className="step-tag">入庫與批次匯入</span>
                   </div>
                 </div>
                 <div className="step-body">
-                  <p>實體貨品抵達，核對單據，並透過「明細展開」為每台設備錄入唯一 SN 序號。</p>
+                  <p>實體貨品抵達後進行驗收與序號展開，亦可透過 Excel/CSV 批次匯入整批設備與硬體，自動識別已出貨或在庫狀態。</p>
                   {(flowStreamType === 'ALL' || flowStreamType === 'DOC') && (
                     <div className="stream-item doc">
-                      <strong>📄 單據流：</strong> 產出進貨單 <code>IN-YYYYMMDD-XX</code>，結案 P/O
+                      <strong>📄 單據流：</strong> 產出進貨單 <code>IN-YYYYMMDD-XX</code>（結案 P/O）或記錄批次匯入稽核日誌
                     </div>
                   )}
                   {(flowStreamType === 'ALL' || flowStreamType === 'ASSET') && (
                     <div className="stream-item asset">
-                      <strong>📦 物料流：</strong> 建立單機資產主檔，狀態設為 <code>AVAILABLE (在庫)</code>
+                      <strong>📦 物料流：</strong> 建立單機與模組資產，依檔案標記為 <code>AVAILABLE (在庫)</code> 或 <code>SHIPPED (已出貨)</code>
                     </div>
                   )}
                   {(flowStreamType === 'ALL' || flowStreamType === 'REPORT') && (
                     <div className="stream-item report">
-                      <strong>📊 進銷存流：</strong> 寫入進貨履歷，即時計算專案到貨達成率
+                      <strong>📊 進銷存流：</strong> 寫入進貨與資產履歷，即時同步專案到貨達成率與庫存池
                     </div>
                   )}
                 </div>
-                <div className="step-action-row">
+                <div className="step-action-row" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   <button className="step-nav-btn" onClick={() => navigate('/inbound')}>
                     前往進貨單登記 <ArrowRight size={14} />
+                  </button>
+                  <button className="step-nav-btn" onClick={() => navigate('/devices')} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-main)' }}>
+                    設備建檔/匯入 <ArrowRight size={14} />
                   </button>
                 </div>
               </div>
@@ -741,8 +746,8 @@ const ProcessFlow = () => {
                   <div className="checklist-item">
                     <CheckCircle2 size={18} color="#059669" />
                     <div>
-                      <strong>貨到驗收與序號建檔：</strong>
-                      進入 <button className="inline-link" onClick={() => navigate('/inbound')}>進貨登記</button> 點選「展開明細」，或透過 <button className="inline-link" onClick={() => navigate('/devices')}>設備建檔(Device Reg)</button>、<button className="inline-link" onClick={() => navigate('/hw-registration')}>硬體建檔 (HW Reg)</button> 依序填寫單機 SN 序號。
+                      <strong>貨到驗收、序號建檔與批次匯入：</strong>
+                      進入 <button className="inline-link" onClick={() => navigate('/inbound')}>進貨登記</button> 點選「展開明細」，或透過 <button className="inline-link" onClick={() => navigate('/devices')}>設備建檔</button>、<button className="inline-link" onClick={() => navigate('/hw-registration')}>硬體建檔</button> 右上角之「📊 批次匯入 (Excel/CSV)」功能快速大量導入現有或新到貨資產。
                     </div>
                   </div>
                   <div className="checklist-item">

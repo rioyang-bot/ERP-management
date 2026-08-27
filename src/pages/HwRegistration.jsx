@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Save, Trash2, Cpu, Settings2, X, Server, Clock, User, MapPin, Layers, ListFilter } from 'lucide-react';
+import { Plus, Save, Trash2, Cpu, Settings2, X, Server, Clock, User, MapPin, Layers, ListFilter, FileSpreadsheet } from 'lucide-react';
 import { sanitizeInput, sanitizeSearchInput } from '../utils/security';
 import { logCreate } from '../utils/auditLogger';
+import HwBatchImportModal from '../components/HwBatchImportModal';
 
 const HwRegistration = ({ isSplitMode = false }) => {
   const navigate = useNavigate();
@@ -12,6 +13,7 @@ const HwRegistration = ({ isSplitMode = false }) => {
   const [recentItems, setRecentItems] = useState([]);
   const [projects, setProjects] = useState([]);
   const [showProjectDropdown, setShowProjectDropdown] = useState(false);
+  const [showBatchImport, setShowBatchImport] = useState(false);
 
   const [activeMgmt, setActiveMgmt] = useState(null);
   const [activeAdd, setActiveAdd] = useState(null);
@@ -268,19 +270,43 @@ const HwRegistration = ({ isSplitMode = false }) => {
               </h2>
               <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>新增硬體元件（如網卡、記憶體等）並建立獨立序號進行管理。</p>
             </div>
-            {!isSplitMode && (
-              <div style={{ display: 'flex', backgroundColor: 'var(--bg-surface-subtle)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
-                <button style={{ padding: '6px 14px', backgroundColor: 'var(--bg-surface)', color: 'var(--primary-color)', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '800', boxShadow: 'var(--card-shadow)', cursor: 'default' }}>
-                  📝 建檔
-                </button>
-                <button onClick={() => navigate('/hw-split')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: 'var(--text-muted)', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
-                  ◫ 雙開
-                </button>
-                <button onClick={() => navigate('/hw-list')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: 'var(--text-muted)', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
-                  📋 清單
-                </button>
-              </div>
-            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <button
+                type="button"
+                onClick={() => setShowBatchImport(true)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '8px 16px',
+                  borderRadius: '10px',
+                  backgroundColor: '#059669',
+                  color: '#ffffff',
+                  border: 'none',
+                  fontWeight: '700',
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 6px rgba(5, 150, 105, 0.25)',
+                  transition: 'all 0.2s'
+                }}
+                title="上傳 Excel/CSV 檔案進行硬體批次建檔"
+              >
+                <FileSpreadsheet size={16} /> 批次匯入 (Excel/CSV)
+              </button>
+              {!isSplitMode && (
+                <div style={{ display: 'flex', backgroundColor: 'var(--bg-surface-subtle)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+                  <button style={{ padding: '6px 14px', backgroundColor: 'var(--bg-surface)', color: 'var(--primary-color)', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '800', boxShadow: 'var(--card-shadow)', cursor: 'default' }}>
+                    📝 建檔
+                  </button>
+                  <button onClick={() => navigate('/hw-split')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: 'var(--text-muted)', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
+                    ◫ 雙開
+                  </button>
+                  <button onClick={() => navigate('/hw-list')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: 'var(--text-muted)', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
+                    📋 清單
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
           <form onSubmit={handleSubmit}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' }}>
@@ -484,6 +510,17 @@ const HwRegistration = ({ isSplitMode = false }) => {
           </div>
         </div>
       </div>
+
+      {/* 硬體清單批次匯入彈窗 */}
+      <HwBatchImportModal
+        isOpen={showBatchImport}
+        onClose={() => setShowBatchImport(false)}
+        onSuccess={() => {
+          fetchRecentItems();
+          window.dispatchEvent(new CustomEvent('db-update'));
+        }}
+        existingBrands={brands}
+      />
     </div>
   );
 };

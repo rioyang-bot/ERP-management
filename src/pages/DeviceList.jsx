@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Search, Edit2, X, Save, MoreHorizontal, MoreVertical, MapPin, User, Trash2, CheckCircle, ShoppingBag, Wrench, ShieldAlert, Cpu, Archive, RotateCcw, Server, Send, History } from 'lucide-react';
+import { Search, Edit2, X, Save, MoreHorizontal, MoreVertical, MapPin, User, Trash2, CheckCircle, ShoppingBag, Wrench, ShieldAlert, Cpu, Archive, RotateCcw, Server, Send, History, Building2 } from 'lucide-react';
 import ItemLedgerModal from '../components/ItemLedgerModal';
 import { logUpdate, logDelete, logStatusChange } from '../utils/auditLogger';
 
@@ -86,6 +86,7 @@ const DeviceList = ({ isSplitMode = false }) => {
 
   const handleEditClick = (item) => {
     const f = { ...item };
+    f.ownership = f.ownership || 'FOR_SALE';
     ['installed_date', 'customer_warranty_expire', 'system_date', 'warranty_expire'].forEach(k => {
       if (f[k]) {
         try { f[k] = new Date(f[k]).toISOString().split('T')[0]; } catch { f[k] = ''; }
@@ -99,6 +100,19 @@ const DeviceList = ({ isSplitMode = false }) => {
     setEditItem(f);
     setShowEditModal(true);
     setActiveMenuId(null);
+  };
+
+  const handleUpdateOwnership = async (id, sn, newOwnership, label) => {
+    if (!window.confirm(`確定要將設備 [${sn || id}] 的資產歸屬變更為「${label}」嗎？`)) return;
+    const res = await window.electronAPI.namedQuery('updateAssetOwnership', [newOwnership, id]);
+    if (res.success) {
+      logUpdate('DEVICE', sn || id, '設備', `變更設備資產歸屬為「${label}」`, { id, sn, newOwnership, label });
+      window.dispatchEvent(new CustomEvent('db-update'));
+      setActiveMenuId(null);
+      fetchAssets();
+    } else {
+      alert('變更資產歸屬失敗：' + (res.error || '未知錯誤'));
+    }
   };
 
   const handleDelete = async (id, sn) => {
@@ -142,7 +156,7 @@ const DeviceList = ({ isSplitMode = false }) => {
     const res = await window.electronAPI.namedQuery('updateAssetDetails', [
         editItem.sn, editItem.client, editItem.hostname, editItem.location, editItem.installed_date || null,
         editItem.customer_warranty_expire || null, editItem.system_date || null, editItem.warranty_expire || null,
-        editItem.os, editItem.nic, updatedCustomAttributes, editItem.id
+        editItem.os, editItem.nic, updatedCustomAttributes, editItem.ownership || 'FOR_SALE', editItem.id
     ]);
     if (res.success) {
       logUpdate('DEVICE', editItem.sn || editItem.id, `${editItem.brand || ''} ${editItem.model || ''}`, `編輯設備詳細資訊 [${editItem.sn || editItem.id}]`, {
@@ -150,11 +164,15 @@ const DeviceList = ({ isSplitMode = false }) => {
         client: editItem.client,
         hostname: editItem.hostname,
         location: editItem.location,
+        ownership: editItem.ownership,
         os: editItem.os,
         nic: editItem.nic
       });
       setShowEditModal(false);
+      window.dispatchEvent(new CustomEvent('db-update'));
       fetchAssets();
+    } else {
+      alert('儲存失敗：' + (res.error || '未知錯誤'));
     }
   };
 
@@ -654,6 +672,22 @@ const DeviceList = ({ isSplitMode = false }) => {
                                     </button>
                                     <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '2px 0' }} />
                                     <button onClick={() => handleEditClick(item)} style={menuButtonStyle}><Edit2 size={14} /> 編輯詳細資訊</button>
+                                    <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '2px 0' }} />
+                                    {item.ownership === 'COMPANY' ? (
+                                      <button 
+                                        onClick={() => handleUpdateOwnership(item.id, item.sn, 'FOR_SALE', '一般銷售')} 
+                                        style={{ ...menuButtonStyle, color: '#3b82f6', fontWeight: '700' }}
+                                      >
+                                        <RotateCcw size={14} /> 轉為一般銷售
+                                      </button>
+                                    ) : (
+                                      <button 
+                                        onClick={() => handleUpdateOwnership(item.id, item.sn, 'COMPANY', '公司資產')} 
+                                        style={{ ...menuButtonStyle, color: '#8b5cf6', fontWeight: '700' }}
+                                      >
+                                        <Building2 size={14} /> 轉為公司資產
+                                      </button>
+                                    )}
                                     <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '4px 0' }} />
                                     <button onClick={() => handleUpdateStatus(item.id, item.sn, 'ACTIVE', '在庫')} style={{ ...menuButtonStyle, color: '#10b981' }}><CheckCircle size={14} /> 標記為在庫</button>
                                     <button onClick={() => handleUpdateStatus(item.id, item.sn, 'SHIPPED', '已出貨')} style={{ ...menuButtonStyle, color: '#3b82f6' }}><ShoppingBag size={14} /> 標記為出貨</button>
@@ -710,6 +744,46 @@ const DeviceList = ({ isSplitMode = false }) => {
                   <input type="text" value={editItem.brand || ''} disabled style={{ ...editInputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', width: '30%', cursor: 'not-allowed' }} />
                   <input type="text" value={editItem.type || ''} disabled style={{ ...editInputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', width: '30%', cursor: 'not-allowed' }} />
                   <input type="text" value={editItem.model || ''} disabled style={{ ...editInputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', flex: 1, cursor: 'not-allowed' }} />
+                </div>
+              </div>
+
+              <div>
+                <label style={editLabelStyle}>資產歸屬 (Ownership)</label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setEditItem({ ...editItem, ownership: 'FOR_SALE' })}
+                    style={{
+                      flex: 1,
+                      padding: '8px',
+                      borderRadius: '6px',
+                      border: editItem.ownership !== 'COMPANY' ? '2px solid var(--primary-color)' : '1px solid var(--border-color)',
+                      backgroundColor: editItem.ownership !== 'COMPANY' ? 'rgba(37, 99, 235, 0.1)' : 'var(--bg-surface-subtle)',
+                      color: editItem.ownership !== 'COMPANY' ? 'var(--primary-color)' : 'var(--text-muted)',
+                      fontWeight: '700',
+                      fontSize: '12px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    一般銷售 (FOR_SALE)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditItem({ ...editItem, ownership: 'COMPANY' })}
+                    style={{
+                      flex: 1,
+                      padding: '8px',
+                      borderRadius: '6px',
+                      border: editItem.ownership === 'COMPANY' ? '2px solid #8b5cf6' : '1px solid var(--border-color)',
+                      backgroundColor: editItem.ownership === 'COMPANY' ? 'rgba(139, 92, 246, 0.1)' : 'var(--bg-surface-subtle)',
+                      color: editItem.ownership === 'COMPANY' ? '#8b5cf6' : 'var(--text-muted)',
+                      fontWeight: '700',
+                      fontSize: '12px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    🏢 公司資產 (COMPANY)
+                  </button>
                 </div>
               </div>
 

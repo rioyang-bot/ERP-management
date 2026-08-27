@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Search, Edit2, X, Server, User, MapPin, MoreHorizontal, Trash2, ShoppingBag, AlertTriangle, CheckCircle, Save, Monitor, Settings, ShieldAlert, Archive, RotateCcw, Cpu, Send, History } from 'lucide-react';
+import { Search, Edit2, X, Server, User, MapPin, MoreHorizontal, Trash2, ShoppingBag, AlertTriangle, CheckCircle, Save, Monitor, Settings, ShieldAlert, Archive, RotateCcw, Cpu, Send, History, Building2 } from 'lucide-react';
 import ItemLedgerModal from '../components/ItemLedgerModal';
 import { logUpdate, logDelete, logStatusChange } from '../utils/auditLogger';
 
@@ -81,12 +81,25 @@ const HwList = ({ isSplitMode = false }) => {
   const handleEdit = (nic) => {
     setEditItem({
       ...nic,
+      ownership: nic.ownership || 'FOR_SALE',
       temp_server_sn: nic.custom_attributes?.server_sn || '',
       temp_order_date: nic.custom_attributes?.order_date || '',
       temp_project_name: nic.custom_attributes?.project_name || ''
     });
     setShowEditModal(true);
     setActiveMenuId(null);
+  };
+
+  const handleUpdateOwnership = async (id, sn, newOwnership, label) => {
+    if (!confirm(`確定要將硬體 [${sn || id}] 的資產歸屬變更為「${label}」嗎？`)) return;
+    const res = await window.electronAPI.namedQuery('updateAssetOwnership', [newOwnership, id]);
+    if (res.success) {
+      logUpdate('HARDWARE', sn || id, '硬體零組件', `變更硬體資產歸屬為「${label}」`, { id, sn, newOwnership, label });
+      window.dispatchEvent(new CustomEvent('db-update'));
+      setActiveMenuId(null);
+    } else {
+      alert('變更資產歸屬失敗：' + (res.error || '未知錯誤'));
+    }
   };
 
   const handleSave = async () => {
@@ -108,13 +121,15 @@ const HwList = ({ isSplitMode = false }) => {
       editItem.temp_order_date || null,
       editItem.hostname || null,
       parseInt(editItem.id, 10),
-      editItem.temp_project_name || null
+      editItem.temp_project_name || null,
+      editItem.ownership || 'FOR_SALE'
     ]);
     if (res.success) { 
       logUpdate('HARDWARE', editItem.sn || editItem.id, `${editItem.brand || ''} ${editItem.model || ''}`, `編輯硬體詳細資訊 [${editItem.sn || editItem.id}]`, {
         sn: editItem.sn,
         client: editItem.client,
         location: editItem.location,
+        ownership: editItem.ownership,
         server_sn: editItem.temp_server_sn,
         project_name: editItem.temp_project_name
       });
@@ -628,6 +643,22 @@ const HwList = ({ isSplitMode = false }) => {
                       </button>
                       <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '2px 0' }} />
                       <button onClick={() => { setActiveMenuId(null); handleEdit(nic); }} style={menuButtonStyle}><Edit2 size={14} /> 編輯詳細資訊</button>
+                      <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '2px 0' }} />
+                      {nic.ownership === 'COMPANY' ? (
+                        <button 
+                          onClick={() => handleUpdateOwnership(nic.id, nic.sn, 'FOR_SALE', '一般銷售')} 
+                          style={{ ...menuButtonStyle, color: '#3b82f6', fontWeight: '700' }}
+                        >
+                          <RotateCcw size={14} /> 轉為一般銷售
+                        </button>
+                      ) : (
+                        <button 
+                          onClick={() => handleUpdateOwnership(nic.id, nic.sn, 'COMPANY', '公司資產')} 
+                          style={{ ...menuButtonStyle, color: '#8b5cf6', fontWeight: '700' }}
+                        >
+                          <Building2 size={14} /> 轉為公司資產
+                        </button>
+                      )}
                       <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '4px 0' }} />
                       <button onClick={() => handleUpdateStatus(nic.id, nic.sn, 'ACTIVE', '在庫')} style={{ ...menuButtonStyle, color: '#10b981' }}><CheckCircle size={14} /> 標記為在庫</button>
                       <button onClick={() => handleUpdateStatus(nic.id, nic.sn, 'SHIPPED', '已出貨')} style={{ ...menuButtonStyle, color: '#3b82f6' }}><ShoppingBag size={14} /> 標記為出貨</button>
@@ -711,6 +742,46 @@ const HwList = ({ isSplitMode = false }) => {
                   <input type="text" value={editItem.brand || ''} disabled style={{ ...editInputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', width: '30%', cursor: 'not-allowed' }} />
                   <input type="text" value={editItem.type || ''} disabled style={{ ...editInputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', width: '30%', cursor: 'not-allowed' }} />
                   <input type="text" value={editItem.model || ''} disabled style={{ ...editInputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', flex: 1, cursor: 'not-allowed' }} />
+                </div>
+              </div>
+
+              <div>
+                <label style={editLabelStyle}>資產歸屬 (Ownership)</label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setEditItem({ ...editItem, ownership: 'FOR_SALE' })}
+                    style={{
+                      flex: 1,
+                      padding: '8px',
+                      borderRadius: '6px',
+                      border: editItem.ownership !== 'COMPANY' ? '2px solid var(--primary-color)' : '1px solid var(--border-color)',
+                      backgroundColor: editItem.ownership !== 'COMPANY' ? 'rgba(37, 99, 235, 0.1)' : 'var(--bg-surface-subtle)',
+                      color: editItem.ownership !== 'COMPANY' ? 'var(--primary-color)' : 'var(--text-muted)',
+                      fontWeight: '700',
+                      fontSize: '12px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    一般銷售 (FOR_SALE)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditItem({ ...editItem, ownership: 'COMPANY' })}
+                    style={{
+                      flex: 1,
+                      padding: '8px',
+                      borderRadius: '6px',
+                      border: editItem.ownership === 'COMPANY' ? '2px solid #8b5cf6' : '1px solid var(--border-color)',
+                      backgroundColor: editItem.ownership === 'COMPANY' ? 'rgba(139, 92, 246, 0.1)' : 'var(--bg-surface-subtle)',
+                      color: editItem.ownership === 'COMPANY' ? '#8b5cf6' : 'var(--text-muted)',
+                      fontWeight: '700',
+                      fontSize: '12px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    🏢 公司資產 (COMPANY)
+                  </button>
                 </div>
               </div>
 

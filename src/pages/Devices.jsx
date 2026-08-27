@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Save, Settings2, Trash2, X, Monitor, Clock, User, MapPin, ListFilter, Layers, Server } from 'lucide-react';
+import { Plus, Save, Settings2, Trash2, X, Monitor, Clock, User, MapPin, ListFilter, Layers, Server, FileSpreadsheet } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { logCreate } from '../utils/auditLogger';
+import DeviceBatchImportModal from '../components/DeviceBatchImportModal';
 
 const Devices = ({ isSplitMode = false }) => {
   const navigate = useNavigate();
@@ -9,6 +10,7 @@ const Devices = ({ isSplitMode = false }) => {
   const [types, setTypes] = useState([]);
   const [brands, setBrands] = useState([]);
   const [customers, setCustomers] = useState([]);
+  const [showBatchImport, setShowBatchImport] = useState(false);
   const [showAddType, setShowAddType] = useState(false);
   const [showAddBrand, setShowAddBrand] = useState(false);
   const [showAddModel, setShowAddModel] = useState(false);
@@ -303,26 +305,50 @@ const Devices = ({ isSplitMode = false }) => {
     <div style={containerStyle}>
       <div style={leftSectionStyle}>
         <div style={cardStyle}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
             <div>
               <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
                 <Monitor size={26} color="var(--primary-color)" /> 設備建檔 (Device Registration)
               </h1>
               <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>新增具備獨立序號配置的主硬體設備，並提供序號追蹤管理。</p>
             </div>
-            {!isSplitMode && (
-              <div style={{ display: 'flex', backgroundColor: 'var(--bg-surface-subtle)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
-                <button style={{ padding: '6px 14px', backgroundColor: 'var(--bg-surface)', color: 'var(--primary-color)', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '800', boxShadow: 'var(--card-shadow)', cursor: 'default' }}>
-                  📝 建檔
-                </button>
-                <button onClick={() => navigate('/device-split')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: 'var(--text-muted)', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
-                  ◫ 雙開
-                </button>
-                <button onClick={() => navigate('/device-list')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: 'var(--text-muted)', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
-                  📋 清單
-                </button>
-              </div>
-            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <button
+                type="button"
+                onClick={() => setShowBatchImport(true)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '8px 16px',
+                  borderRadius: '10px',
+                  backgroundColor: '#059669',
+                  color: '#ffffff',
+                  border: 'none',
+                  fontWeight: '700',
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 6px rgba(5, 150, 105, 0.25)',
+                  transition: 'all 0.2s'
+                }}
+                title="上傳 Excel/CSV 檔案進行設備批次建檔"
+              >
+                <FileSpreadsheet size={16} /> 批次匯入 (Excel/CSV)
+              </button>
+              {!isSplitMode && (
+                <div style={{ display: 'flex', backgroundColor: 'var(--bg-surface-subtle)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+                  <button style={{ padding: '6px 14px', backgroundColor: 'var(--bg-surface)', color: 'var(--primary-color)', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '800', boxShadow: 'var(--card-shadow)', cursor: 'default' }}>
+                    📝 建檔
+                  </button>
+                  <button onClick={() => navigate('/device-split')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: 'var(--text-muted)', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
+                    ◫ 雙開
+                  </button>
+                  <button onClick={() => navigate('/device-list')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: 'var(--text-muted)', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
+                    📋 清單
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
           <div key={formKey} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
@@ -567,6 +593,21 @@ const Devices = ({ isSplitMode = false }) => {
           </div>
         </div>
       </div>
+
+      <DeviceBatchImportModal
+        isOpen={showBatchImport}
+        onClose={() => setShowBatchImport(false)}
+        onSuccess={async () => {
+          await fetchAssets();
+          await fetchBrands();
+          if (formData.brand) {
+            const { nextType } = await fetchTypes(formData.brand, formData.type);
+            if (nextType) await fetchModels(formData.brand, nextType);
+          }
+          window.dispatchEvent(new CustomEvent('db-update'));
+        }}
+        existingBrands={brands}
+      />
     </div>
   );
 };

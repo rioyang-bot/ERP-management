@@ -46,9 +46,10 @@ export const queries = {
       WHERE c.name = '設備' AND i.brand = $1 ORDER BY i.id DESC`,
   deleteAsset: `DELETE FROM assets WHERE id = $1`,
   updateAssetStatus: `UPDATE assets SET status = $1 WHERE id = $2`,
+  updateAssetOwnership: `UPDATE assets SET ownership = $1 WHERE id = $2`,
   updateMountedHardwareStatus: `UPDATE assets SET status = $1 WHERE custom_attributes->>'server_sn' = $2`,
   updateItemMasterSpecs: `UPDATE item_master SET specification = $1, model = $2 WHERE id = $3`,
-  updateAssetDetails: `UPDATE assets SET sn = $1, client = $2, hostname = $3, location = $4, installed_date = $5, customer_warranty_expire = $6, system_date = $7, warranty_expire = $8, os = $9, nic = $10, custom_attributes = $11 WHERE id = $12`,
+  updateAssetDetails: `UPDATE assets SET sn = $1, client = $2, hostname = $3, location = $4, installed_date = $5, customer_warranty_expire = $6, system_date = $7, warranty_expire = $8, os = $9, nic = $10, custom_attributes = $11, ownership = COALESCE($12, 'FOR_SALE') WHERE id = $13`,
   
   fetchCompanyAssets: `
     SELECT 
@@ -83,6 +84,8 @@ export const queries = {
   
   // Dashboard / Misc
   fetchCustomers: `SELECT id, name, contact_person as contact, phone FROM partners WHERE partner_type = 'CUSTOMER' AND COALESCE(is_active, TRUE) = true ORDER BY name ASC`,
+  fetchAssetSns: `SELECT sn FROM assets WHERE sn IS NOT NULL AND sn != ''`,
+  insertCustomerIfNotExist: `INSERT INTO partners (partner_type, name) SELECT 'CUSTOMER', $1 WHERE NOT EXISTS (SELECT 1 FROM partners WHERE name = $1 AND partner_type = 'CUSTOMER')`,
   
   // Assets.jsx
   fetchRecentAssets: `
@@ -114,7 +117,7 @@ export const queries = {
   
   findItemMaster: `SELECT id FROM item_master WHERE specification = $1 AND type = $2 AND brand = $3 AND model = $4`,
   insertItemMaster: `INSERT INTO item_master (specification, type, brand, model, unit, category_id, purchase_price) VALUES ($1, $2, $3, $4, $5, (SELECT id FROM categories WHERE name = $6), 0) RETURNING id`,
-  insertAssetRecord: `INSERT INTO assets (item_master_id, sn, client, hostname, location, installed_date, customer_warranty_expire, system_date, warranty_expire, os, nic, custom_attributes, ownership) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+  insertAssetRecord: `INSERT INTO assets (item_master_id, sn, client, hostname, location, installed_date, customer_warranty_expire, system_date, warranty_expire, os, nic, custom_attributes, ownership, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14, 'ACTIVE'))`,
 
   // ConsumableList.jsx
   fetchConsumablesList: `SELECT v.*, i.id as id, i.stock_qty, i.lab_qty, c.name as category_name FROM v_inventory_summary v JOIN item_master i ON v.item_id = i.id LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '耗材' ORDER BY i.id DESC`,
@@ -227,6 +230,8 @@ export const queries = {
   fetchNicModelsByBrandType: `
       SELECT m.name FROM item_models m JOIN item_types t ON m.type_id = t.id JOIN item_brands b ON t.brand_id = b.id
       WHERE b.name = $1 AND t.name = $2 AND b.category_id = (SELECT id FROM categories WHERE name = '硬體') AND t.category_id = (SELECT id FROM categories WHERE name = '硬體') ORDER BY m.name ASC`,
+  fetchNicSpecByBrandTypeModel: `
+      SELECT specification FROM item_master WHERE brand = $1 AND type = $2 AND model = $3 AND category_id = (SELECT id FROM categories WHERE name = '硬體') LIMIT 1`,
   fetchNicListByType: `
       SELECT a.*, i.specification, i.type, i.brand, i.model, i.unit, 
              s.client as server_client, s.location as server_location,
@@ -263,7 +268,7 @@ export const queries = {
       )
       WHERE i.category_id = (SELECT id FROM categories WHERE name = '硬體')
       ORDER BY a.id DESC`,
-  updateNicDetails: `UPDATE assets SET sn = $1, client = $2, location = $3, custom_attributes = COALESCE(custom_attributes, '{}'::jsonb) || jsonb_build_object('server_sn', $4::text, 'order_date', $5::text, 'project_name', $8::text), hostname = $6 WHERE id = $7`,
+  updateNicDetails: `UPDATE assets SET sn = $1, client = $2, location = $3, custom_attributes = COALESCE(custom_attributes, '{}'::jsonb) || jsonb_build_object('server_sn', $4::text, 'order_date', $5::text, 'project_name', $8::text), hostname = $6, ownership = COALESCE($9, 'FOR_SALE') WHERE id = $7`,
   updateAssetProjectName: `UPDATE assets SET custom_attributes = COALESCE(custom_attributes, '{}'::jsonb) || jsonb_build_object('project_name', $1::text) WHERE id = $2`,
   updateNicSn: `UPDATE assets SET sn = $1 WHERE id = $2`,
   findAssetBySn: `SELECT id FROM assets WHERE TRIM(LOWER(sn)) = TRIM(LOWER($1))`,
