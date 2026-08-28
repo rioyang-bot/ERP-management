@@ -425,7 +425,6 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
                   <th style={{ ...thStyle, width: '230px' }}>廠牌 / 類型</th>
                   <th style={{ ...thStyle, width: '230px' }}>型號</th>
                   <th style={{ ...thStyle, width: '220px' }}>規格 (Specification)</th>
-                  <th style={{ ...thStyle, width: '100px' }}>單位</th>
                   <th style={{ ...thStyle, width: '100px' }}>數量</th>
                   <th style={{ ...thStyle, width: '60px', textAlign: 'center' }}></th>
                 </tr>
@@ -507,16 +506,6 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
                         placeholder="詳細規格說明"
                         disabled={isReadonly}
                       />
-                    </td>
-                    <td style={tdStyle}>
-                      <select 
-                        value={row.unit} 
-                        onChange={e => handleItemChange(row.id, 'unit', e.target.value)}
-                        style={inputStyle}
-                        disabled={isReadonly}
-                      >
-                        {UNIFIED_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
-                      </select>
                     </td>
                     <td style={tdStyle}>
                       <input 
@@ -613,7 +602,7 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
                     </div>
                     <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px' }}>
                       <span style={{ color: 'var(--text-subtle)' }}>{record.partner_name}</span> · 
-                      <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>{record.quantity} {record.unit}</span>
+                      <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>{record.quantity}</span>
                     </div>
                     {record.project_name && (
                       <div style={{ marginBottom: '4px', fontSize: '12px', color: 'var(--primary-color)', fontWeight: 600 }}>

@@ -16,7 +16,6 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
   const [selectedType, setSelectedType] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
   const [specification, setSpecification] = useState('');
-  const [defaultOwnership, setDefaultOwnership] = useState('FOR_SALE');
 
   // 動態連動資料
   const [brandList, setBrandList] = useState([]);
@@ -129,7 +128,6 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
     setSelectedType('');
     setSelectedModel('');
     setSpecification('');
-    setDefaultOwnership('FOR_SALE');
     setRawJsonData([]);
     setIsProcessingFile(false);
     setIsImporting(false);
@@ -265,7 +263,7 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
       let status = 'VALID';
       let skipReason = '';
 
-      // 規則 1：廠牌 / 型號 / 類型 缺一不建立
+      // 規則 1：廠牌 / 類型 / 型號 / 規格 / 序號 缺一不建立
       if (!brand) {
         status = 'SKIPPED';
         skipReason = '缺少廠牌 (Brand)';
@@ -275,6 +273,9 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
       } else if (!model) {
         status = 'SKIPPED';
         skipReason = '缺少型號 (Model)';
+      } else if (!spec) {
+        status = 'SKIPPED';
+        skipReason = '缺少規格 (Specification)';
       } else if (!sn) {
         status = 'SKIPPED';
         skipReason = '缺少硬體序號 (SN)';
@@ -384,7 +385,7 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
   const executeImport = async () => {
     const validItems = parsedRows.filter(r => r.status === 'VALID');
     if (validItems.length === 0) {
-      alert('目前沒有符合建立條件的有效硬體資料。請確認已設定「廠牌 / 類型 / 型號」且序號無重複。');
+      alert('目前沒有符合建立條件的硬體資料（請確認是否已填寫廠牌、類型、型號、規格與序號，或檢查是否序號重複）。');
       return;
     }
 
@@ -449,20 +450,32 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
       }
 
       // 2. 逐筆建立 item_master 與 assets
-      const masterCache = new Map();
+      const masterCache = new Map(); // `${brand}___${type}___${model}___${spec}` -> masterId
 
       for (let i = 0; i < validItems.length; i++) {
         const item = validItems[i];
-        const masterKey = `${item.brand}___${item.type}___${item.model}___${item.specification || ''}`;
+        const masterKey = `${item.brand}___${item.type}___${item.model}___${item.specification}`;
 
         try {
           let masterId = masterCache.get(masterKey);
           if (!masterId) {
-            const findRes = await window.electronAPI.namedQuery('findItemMaster', [item.specification || '', item.type, item.brand, item.model]);
+            const findRes = await window.electronAPI.namedQuery('findItemMaster', [
+              item.specification || '',
+              item.type,
+              item.brand,
+              item.model
+            ]);
             if (findRes.success && findRes.rows.length > 0) {
               masterId = findRes.rows[0].id;
             } else {
-              const createMasterRes = await window.electronAPI.namedQuery('insertItemMaster', [item.specification || '', item.type, item.brand, item.model, '個', '硬體']);
+              const createMasterRes = await window.electronAPI.namedQuery('insertItemMaster', [
+                item.specification || '',
+                item.type,
+                item.brand,
+                item.model,
+                '個',
+                '硬體'
+              ]);
               if (createMasterRes.success && createMasterRes.rows.length > 0) {
                 masterId = createMasterRes.rows[0].id;
               }
@@ -497,7 +510,7 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
             null, // os
             null, // nic
             customAttributes,
-            defaultOwnership,
+            'FOR_SALE',
             item.itemStatus || 'ACTIVE'
           ]);
 
@@ -534,7 +547,7 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
           type: selectedType,
           model: selectedModel,
           spec: specification,
-          ownership: defaultOwnership,
+          ownership: 'FOR_SALE',
           errors
         }
       });
@@ -661,7 +674,7 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
               </span>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.2fr 1.5fr 2fr 1.5fr', gap: '12px', alignItems: 'flex-start' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.2fr 1.5fr 2.5fr', gap: '12px', alignItems: 'flex-start' }}>
               {/* 廠牌 (Brand) */}
               <div>
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '6px' }}>
@@ -758,7 +771,7 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
               {/* 規格 (Specification) */}
               <div>
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '6px' }}>
-                  規格內容 (Specification)
+                  規格 (Specification) <span style={{ color: '#ef4444' }}>*</span>
                 </label>
                 <input
                   type="text"
@@ -776,49 +789,6 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
                     outline: 'none'
                   }}
                 />
-              </div>
-
-              {/* 資產歸屬 (Ownership) */}
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '6px' }}>
-                  資產歸屬 (Ownership)
-                </label>
-                <div style={{ display: 'flex', gap: '4px' }}>
-                  <button
-                    type="button"
-                    onClick={() => setDefaultOwnership('FOR_SALE')}
-                    style={{
-                      flex: 1,
-                      padding: '7px 2px',
-                      borderRadius: '6px',
-                      border: defaultOwnership === 'FOR_SALE' ? '2px solid var(--primary-color)' : '1px solid var(--border-color)',
-                      backgroundColor: defaultOwnership === 'FOR_SALE' ? 'rgba(37, 99, 235, 0.1)' : 'var(--bg-surface)',
-                      color: defaultOwnership === 'FOR_SALE' ? 'var(--primary-color)' : 'var(--text-muted)',
-                      fontWeight: '700',
-                      fontSize: '11px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    一般銷售
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDefaultOwnership('COMPANY')}
-                    style={{
-                      flex: 1,
-                      padding: '7px 2px',
-                      borderRadius: '6px',
-                      border: defaultOwnership === 'COMPANY' ? '2px solid #8b5cf6' : '1px solid var(--border-color)',
-                      backgroundColor: defaultOwnership === 'COMPANY' ? 'rgba(139, 92, 246, 0.1)' : 'var(--bg-surface)',
-                      color: defaultOwnership === 'COMPANY' ? '#8b5cf6' : 'var(--text-muted)',
-                      fontWeight: '700',
-                      fontSize: '11px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    🏢 公司資產
-                  </button>
-                </div>
               </div>
             </div>
           </div>
@@ -1083,6 +1053,9 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
                             </div>
                             <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                               {row.type || <span style={{ color: '#ef4444' }}>[未填類型]</span>} - {row.model || <span style={{ color: '#ef4444' }}>[未填型號]</span>}
+                            </div>
+                            <div style={{ fontSize: '10px', color: row.specification ? 'var(--text-subtle)' : '#ef4444' }}>
+                              {row.specification ? `規格: ${row.specification}` : '[未填規格]'}
                             </div>
                           </td>
                           <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: '700', color: row.sn ? 'var(--primary-color)' : '#ef4444' }}>

@@ -11,7 +11,6 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
   const [file, setFile] = useState(null);
   const [fileName, setFileName] = useState('');
   const [brandInput, setBrandInput] = useState(''); // 廠牌 (Brand) - 無預設值
-  const [defaultOwnership, setDefaultOwnership] = useState('FOR_SALE');
   const [rawJsonData, setRawJsonData] = useState([]);
   const [isProcessingFile, setIsProcessingFile] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -47,7 +46,6 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
     setFile(null);
     setFileName('');
     setBrandInput('');
-    setDefaultOwnership('FOR_SALE');
     setRawJsonData([]);
     setIsProcessingFile(false);
     setIsImporting(false);
@@ -171,6 +169,9 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
       const rawBrand = findColumnValue(row, ['Brand', '廠牌', '品牌']);
       const brand = (rawBrand || brandInput || '').trim();
 
+      const rawSpec = findColumnValue(row, ['Specification', 'Spec', '規格', '設備規格', '規格內容']);
+      const spec = (rawSpec || '').trim();
+
       const installedDateRaw = row['Project Date ( Installed )'] || row['Project Date( Installed )'] || row['Project Date (Installed)'] || findColumnValue(row, ['Project Date ( Installed )', 'Installed Date', '安裝日期', 'Project Date']);
       const customerWarrantyRaw = row['Customer Warranty Expire'] || findColumnValue(row, ['Customer Warranty Expire', 'Customer Warranty', '客戶保固到期', '客戶保固']);
       const systemDateRaw = row['BlackCore System Date'] || findColumnValue(row, ['BlackCore System Date', 'System Date', '系統日期', '原廠系統日期']);
@@ -229,6 +230,7 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
         brand,
         type: (systemType || '').trim(),
         model: (model || '').trim(),
+        specification: spec,
         sn: (sn || '').trim(),
         client: (customer || '').trim(),
         hostname: (hostname || '').trim(),
@@ -351,20 +353,20 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
       }
 
       // 2. 逐筆建立 item_master 與 assets
-      const masterCache = new Map(); // `${brand}___${type}___${model}` -> masterId
+      const masterCache = new Map(); // `${brand}___${type}___${model}___${spec}` -> masterId
 
       for (let i = 0; i < validItems.length; i++) {
         const item = validItems[i];
-        const masterKey = `${item.brand}___${item.type}___${item.model}`;
+        const masterKey = `${item.brand}___${item.type}___${item.model}___${item.specification || ''}`;
 
         try {
           let masterId = masterCache.get(masterKey);
           if (!masterId) {
-            const findRes = await window.electronAPI.namedQuery('findItemMaster', ['', item.type, item.brand, item.model]);
+            const findRes = await window.electronAPI.namedQuery('findItemMaster', [item.specification || '', item.type, item.brand, item.model]);
             if (findRes.success && findRes.rows.length > 0) {
               masterId = findRes.rows[0].id;
             } else {
-              const createMasterRes = await window.electronAPI.namedQuery('insertItemMaster', ['', item.type, item.brand, item.model, '台', '設備']);
+              const createMasterRes = await window.electronAPI.namedQuery('insertItemMaster', [item.specification || '', item.type, item.brand, item.model, '台', '設備']);
               if (createMasterRes.success && createMasterRes.rows.length > 0) {
                 masterId = createMasterRes.rows[0].id;
               }
@@ -396,7 +398,7 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
             null, // os
             null, // nic
             customAttributes,
-            defaultOwnership,
+            'FOR_SALE',
             item.itemStatus || 'ACTIVE'
           ]);
 
@@ -430,7 +432,7 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
           skippedCount: stats.skipped,
           duplicateCount: stats.duplicate,
           brand: brandInput,
-          ownership: defaultOwnership,
+          ownership: 'FOR_SALE',
           errors
         }
       });
@@ -578,48 +580,6 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
                   <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
                     若檔案中無「廠牌」欄位，將以此處填寫之廠牌建檔；若檔案與此處皆未填寫，將判定為缺少廠牌並略過。
                   </span>
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '6px' }}>
-                    資產歸屬 (Ownership)
-                  </label>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button
-                      type="button"
-                      onClick={() => setDefaultOwnership('FOR_SALE')}
-                      style={{
-                        flex: 1,
-                        padding: '8px',
-                        borderRadius: '6px',
-                        border: defaultOwnership === 'FOR_SALE' ? '2px solid var(--primary-color)' : '1px solid var(--border-color)',
-                        backgroundColor: defaultOwnership === 'FOR_SALE' ? 'rgba(37, 99, 235, 0.1)' : 'var(--bg-surface)',
-                        color: defaultOwnership === 'FOR_SALE' ? 'var(--primary-color)' : 'var(--text-main)',
-                        fontWeight: '700',
-                        fontSize: '12px',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      一般銷售 (FOR_SALE)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDefaultOwnership('COMPANY')}
-                      style={{
-                        flex: 1,
-                        padding: '8px',
-                        borderRadius: '6px',
-                        border: defaultOwnership === 'COMPANY' ? '2px solid var(--primary-color)' : '1px solid var(--border-color)',
-                        backgroundColor: defaultOwnership === 'COMPANY' ? 'rgba(37, 99, 235, 0.1)' : 'var(--bg-surface)',
-                        color: defaultOwnership === 'COMPANY' ? 'var(--primary-color)' : 'var(--text-main)',
-                        fontWeight: '700',
-                        fontSize: '12px',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      公司資產 (COMPANY)
-                    </button>
-                  </div>
                 </div>
 
                 {/* 規則說明小提示 */}

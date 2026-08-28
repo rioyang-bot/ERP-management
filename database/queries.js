@@ -140,7 +140,7 @@ export const queries = {
   fetchAllAssetsForSelect: `SELECT a.id, a.sn, a.hostname, i.brand, i.model FROM assets a JOIN item_master i ON a.item_master_id = i.id ORDER BY a.hostname ASC, a.sn ASC`,
 
   // Consumables.jsx
-  checkDuplicateConsumable: `SELECT id, specification, stock_qty, lab_qty FROM item_master WHERE brand = $1 AND type = $2 AND model = $3 AND category_id = (SELECT id FROM categories WHERE name = '耗材')`,
+  checkDuplicateConsumable: `SELECT id, specification, stock_qty, lab_qty FROM item_master WHERE brand = $1 AND type = $2 AND model = $3 AND specification = $4 AND category_id = (SELECT id FROM categories WHERE name = '耗材')`,
   fetchRecentConsumables: `SELECT i.* FROM item_master i LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '耗材' ORDER BY i.id DESC LIMIT 10`,
   insertConsumableMaster: `INSERT INTO item_master (specification, type, brand, model, unit, safety_stock, stock_qty, category_id, purchase_price) VALUES ($1, $2, $3, $4, $5, $6, $7, (SELECT id FROM categories WHERE name = $8), 0)`,
   fetchConsumableModelsByBrandType: `

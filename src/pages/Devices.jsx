@@ -34,7 +34,6 @@ const Devices = ({ isSplitMode = false }) => {
   const [bulkSns, setBulkSns] = useState('');
   const [brandFieldConfigs, setBrandFieldConfigs] = useState({});
   const [customFieldDefs, setCustomFieldDefs] = useState([]);
-  const UNIFIED_UNITS = ['個', '台', '盒', '包', '支', '組', '瓶', '卷', '張', '份'];
   const [formKey, setFormKey] = useState(0); // 用於強制重整表單區域
 
   const validateAndSanitize = (val, fieldName = '欄位') => {
@@ -218,7 +217,9 @@ const Devices = ({ isSplitMode = false }) => {
   };
 
   const handleAddAsset = async () => {
-    if (!formData.brand || !formData.type) return alert('請填寫必填欄位 (廠牌與類型)');
+    if (!formData.brand || !formData.type || !formData.model || !formData.specification?.trim()) {
+      return alert('請填寫必填欄位 (廠牌、類型、型號、規格為必填)');
+    }
 
     // 解析序號清單
     let snList = [];
@@ -234,11 +235,11 @@ const Devices = ({ isSplitMode = false }) => {
 
     try {
       let masterId;
-      const findRes = await window.electronAPI.namedQuery('findItemMaster', [formData.specification || '', formData.type, formData.brand, formData.model]);
+      const findRes = await window.electronAPI.namedQuery('findItemMaster', [formData.specification.trim(), formData.type, formData.brand, formData.model]);
       if (findRes.success && findRes.rows.length > 0) {
         masterId = findRes.rows[0].id;
       } else {
-        const res = await window.electronAPI.namedQuery('insertItemMaster', [formData.specification || '', formData.type, formData.brand, formData.model, '台', '設備']);
+        const res = await window.electronAPI.namedQuery('insertItemMaster', [formData.specification.trim(), formData.type, formData.brand, formData.model, '台', '設備']);
         if (res.success) masterId = res.rows[0].id;
       }
       if (!masterId) throw new Error('建立物料主檔失敗');
@@ -393,7 +394,7 @@ const Devices = ({ isSplitMode = false }) => {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 1.5fr) 1fr 1fr', gap: '16px' }}>
-              <div><label style={labelStyle}>規格 (Specification)</label><input type="text" name="specification" value={formData.specification} onChange={handleChange} style={inputStyle} placeholder="例如: 伺服器主機規格" /></div>
+              <div><label style={labelStyle}>規格 (Specification) <span style={{ color: '#ef4444' }}>*</span></label><input type="text" name="specification" value={formData.specification} onChange={handleChange} style={inputStyle} placeholder="例如: 伺服器主機規格" required /></div>
               <div>
                 <label style={labelStyle}>資產歸屬</label>
                 <div style={{ display: 'flex', gap: '4px', backgroundColor: 'var(--bg-surface-subtle)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>

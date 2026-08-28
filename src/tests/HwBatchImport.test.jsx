@@ -39,6 +39,9 @@ describe('HwBatchImportModal 硬體批次匯入（自選/建立主檔與格式�
         });
       }
       if (query === 'fetchNicSpecByBrandTypeModel') {
+        if (params && params[0] === 'Mellanox') {
+          return Promise.resolve({ success: true, rows: [] });
+        }
         return Promise.resolve({
           success: true,
           rows: [{ specification: 'Solarflare 25GbE Dual-Port SFP28' }]
@@ -66,7 +69,7 @@ describe('HwBatchImportModal 硬體批次匯入（自選/建立主檔與格式�
     });
   });
 
-  it('應正確呈現「選擇或建立硬體主檔」之廠牌/類型/型號/規格/歸屬欄位', () => {
+  it('應正確呈現「選擇或建立硬體主檔」之廠牌/類型/型號/規格欄位，且不呈現資產歸屬選擇器', () => {
     render(
       <HwBatchImportModal
         isOpen={true}
@@ -80,8 +83,9 @@ describe('HwBatchImportModal 硬體批次匯入（自選/建立主檔與格式�
     expect(screen.getByPlaceholderText('輸入或選取類型 (例: NIC)')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('輸入或選取型號 (例: SF2541)')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('例: Dual-Port 25GbE SFP28 PCIe')).toBeInTheDocument();
-    expect(screen.getByText('一般銷售')).toBeInTheDocument();
-    expect(screen.getByText('🏢 公司資產')).toBeInTheDocument();
+    // 確認資產歸屬功能已移除，不顯示切換按鈕
+    expect(screen.queryByText('一般銷售')).not.toBeInTheDocument();
+    expect(screen.queryByText('🏢 公司資產')).not.toBeInTheDocument();
   });
 
   it('應能正確解析使用者清單格式（SF2541 SN, Cusomter, Hostname, Server-SN, Order Source）並依 Excel Status 欄位設定狀態', async () => {
@@ -137,14 +141,16 @@ describe('HwBatchImportModal 硬體批次匯入（自選/建立主檔與格式�
       expect(screen.getByText(/序號重複 \(1\)/i)).toBeInTheDocument();
     });
 
-    // 填寫 廠牌 / 類型 / 型號
+    // 填寫 廠牌 / 類型 / 型號 / 規格
     const brandInput = screen.getByPlaceholderText('輸入或選取廠牌 (例: Solarflare)');
     const typeInput = screen.getByPlaceholderText('輸入或選取類型 (例: NIC)');
     const modelInput = screen.getByPlaceholderText('輸入或選取型號 (例: SF2541)');
+    const specInput = screen.getByPlaceholderText('例: Dual-Port 25GbE SFP28 PCIe');
 
     await userEvent.type(brandInput, 'Solarflare');
     await userEvent.type(typeInput, 'NIC');
     await userEvent.type(modelInput, 'SF2541');
+    await userEvent.type(specInput, '25GbE Dual-Port SFP28');
 
     await waitFor(() => {
       // 驗證即時動態重算統計：2 筆可建立，0 筆略過，1 筆重複序號
@@ -162,5 +168,55 @@ describe('HwBatchImportModal 硬體批次匯入（自選/建立主檔與格式�
     expect(screen.getAllByText('XeAU Nov2022').length).toBeGreaterThan(0);
     expect(screen.getAllByText(/📦 已出貨/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/🟢 在庫/i).length).toBeGreaterThan(0);
+  });
+
+  it('未填寫規格 (Specification) 時應標記為略過並顯示缺少規格', async () => {
+    const testData = [
+      {
+        'SF2541 SN': 'HW-SN-SPEC-TEST-001',
+        'Customer': 'Test Customer',
+        'Status': 'ACTIVE'
+      }
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(testData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Hardware');
+    const u8 = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+    const file = new File([u8], 'test_spec.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+    const { container } = render(
+      <HwBatchImportModal
+        isOpen={true}
+        onClose={vi.fn()}
+        onSuccess={vi.fn()}
+      />
+    );
+
+    const fileInput = container.querySelector('input[type="file"]');
+    await userEvent.upload(fileInput, file);
+
+    const brandInput = screen.getByPlaceholderText('輸入或選取廠牌 (例: Solarflare)');
+    const typeInput = screen.getByPlaceholderText('輸入或選取類型 (例: NIC)');
+    const modelInput = screen.getByPlaceholderText('輸入或選取型號 (例: SF2541)');
+
+    await userEvent.type(brandInput, 'Mellanox');
+    await userEvent.type(typeInput, 'NIC');
+    await userEvent.type(modelInput, 'MCX512A');
+
+    // 尚未填寫規格時，應被標記為缺少規格略過
+    await waitFor(() => {
+      expect(screen.getByText(/略過項目 \(1\)/i)).toBeInTheDocument();
+      expect(screen.getByText(/缺少規格/i)).toBeInTheDocument();
+    });
+
+    // 填寫規格後，應轉為可建立
+    const specInput = screen.getByPlaceholderText('例: Dual-Port 25GbE SFP28 PCIe');
+    await userEvent.type(specInput, 'Dual-Port 25GbE');
+
+    await waitFor(() => {
+      expect(screen.getByText(/待建立 \(1\)/i)).toBeInTheDocument();
+      expect(screen.getByText(/略過項目 \(0\)/i)).toBeInTheDocument();
+    });
   });
 });

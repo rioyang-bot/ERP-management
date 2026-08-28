@@ -345,11 +345,11 @@ const Stocktaking = () => {
                         {item.specification}
                       </td>
                       <td style={{ textAlign: 'right', fontWeight: '700', color: 'var(--text-main)' }}>
-                        {item.stock_qty} {item.unit || ''}
+                        {item.stock_qty}
                       </td>
                       {activeTab === 'consumables' && (
                         <td style={{ textAlign: 'right', fontWeight: '600', color: '#64748b' }}>
-                          {item.lab_qty} {item.unit || ''}
+                          {item.lab_qty}
                         </td>
                       )}
                       <td style={{ textAlign: 'center' }}><span className="st-print-blank"></span></td>

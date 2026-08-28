@@ -14,15 +14,11 @@ const Consumables = ({ isSplitMode = false }) => {
   const [showManageType, setShowManageType] = useState(false);
   const [showManageBrand, setShowManageBrand] = useState(false);
   const [showManageModel, setShowManageModel] = useState(false);
-  const [showAddUnit, setShowAddUnit] = useState(false);
-  const [showManageUnit, setShowManageUnit] = useState(false);
   const [newTypeName, setNewTypeName] = useState('');
   const [newBrandName, setNewBrandName] = useState('');
   const [newModelName, setNewModelName] = useState('');
-  const [newUnitName, setNewUnitName] = useState('');
   const [models, setModels] = useState([]);
-  const [units, setUnits] = useState(['個', '台', '盒', '包', '支', '組', '瓶', '卷', '張', '份']);
-  const [formData, setFormData] = useState({ type: '', brand: '', model: '', spec: '', unit: '個', safety_stock: 0, stock_qty: 0 });
+  const [formData, setFormData] = useState({ type: '', brand: '', model: '', spec: '', safety_stock: 0, stock_qty: 0 });
   const [formKey, setFormKey] = useState(0); // 用於強制重整表單區域
 
   const validateAndSanitize = (val, fieldName = '欄位') => {
@@ -66,13 +62,6 @@ const Consumables = ({ isSplitMode = false }) => {
     return { modelNames: [] };
   }, []);
 
-  const fetchUnits = useCallback(async () => {
-    const res = await window.electronAPI.namedQuery('getSystemSetting', ['unified_units']);
-    if (res.success && res.rows.length > 0) {
-      setUnits(res.rows[0].value || ['個', '台', '盒', '包', '支', '組', '瓶', '卷', '張', '份']);
-    }
-  }, []);
-
   const fetchBrands = useCallback(async () => {
     const res = await window.electronAPI.namedQuery('fetchConsumableBrands');
     if (res.success) {
@@ -90,12 +79,11 @@ const Consumables = ({ isSplitMode = false }) => {
     const initData = async () => {
       await Promise.all([
         fetchConsumables(),
-        fetchBrands(),
-        fetchUnits()
+        fetchBrands()
       ]);
     };
     initData();
-  }, [fetchConsumables, fetchBrands, fetchUnits]);
+  }, [fetchConsumables, fetchBrands]);
 
   const handleAddType = async () => {
     const name = validateAndSanitize(newTypeName, '類型名稱');
@@ -152,29 +140,6 @@ const Consumables = ({ isSplitMode = false }) => {
     }
   };
 
-  const handleAddUnit = async () => {
-    const name = validateAndSanitize(newUnitName, '單位名稱');
-    if (!name) return;
-    const updatedUnits = [...new Set([...units, name])];
-    const res = await window.electronAPI.namedQuery('upsertSystemSetting', ['unified_units', updatedUnits]);
-    if (res.success) {
-      setUnits(updatedUnits);
-      setFormData(prev => ({ ...prev, unit: name }));
-      setNewUnitName('');
-      setShowAddUnit(false);
-    }
-  };
-
-  const handleDeleteUnit = async (unitName) => {
-    if (!confirm(`確定要刪除單位「${unitName}」嗎？`)) return;
-    const updatedUnits = units.filter(u => u !== unitName);
-    const res = await window.electronAPI.namedQuery('upsertSystemSetting', ['unified_units', updatedUnits]);
-    if (res.success) {
-      setUnits(updatedUnits);
-      if (formData.unit === unitName) setFormData(prev => ({ ...prev, unit: updatedUnits[0] || '' }));
-    }
-  };
-
   const handleDeleteBrand = async (brandName) => {
     if (!confirm(`確定要刪除「${brandName}」嗎？`)) return;
     const res = await window.electronAPI.namedQuery('deleteDeviceBrand', [brandName, '耗材']);
@@ -197,13 +162,16 @@ const Consumables = ({ isSplitMode = false }) => {
   };
 
   const handleAddConsumable = async () => {
-    if (!formData.type || !formData.brand || !formData.model) return alert('請填寫必填欄位 (廠牌、類型、型號為必填)');
+    if (!formData.type || !formData.brand || !formData.model || !formData.spec?.trim()) {
+      return alert('請填寫必填欄位 (廠牌、類型、型號、規格為必填)');
+    }
 
-    // 檢查現有系統中是否已有相同的「廠牌 + 類型 + 型號」
+    // 檢查現有系統中是否已有相同的「廠牌 + 類型 + 型號 + 規格」
     const checkRes = await window.electronAPI.namedQuery('checkDuplicateConsumable', [
       formData.brand.trim(),
       formData.type.trim(),
-      formData.model.trim()
+      formData.model.trim(),
+      formData.spec.trim()
     ]);
 
     if (checkRes.success && checkRes.rows && checkRes.rows.length > 0) {
@@ -214,18 +182,18 @@ const Consumables = ({ isSplitMode = false }) => {
         `• 廠牌：${formData.brand}\n` +
         `• 類型：${formData.type}\n` +
         `• 型號：${formData.model}\n` +
-        `• 規格說明：${existing.specification || '(無)'}\n` +
+        `• 規格：${existing.specification || '(無)'}\n` +
         `• 目前 Stock 庫存：${existing.stock_qty || 0} / LAB：${existing.lab_qty || 0}\n\n` +
-        `系統不允許建立重複的「廠牌 + 類型 + 型號」，如需補充庫存請至「進貨入庫」作業。`
+        `系統不允許建立重複的「廠牌 + 類型 + 型號 + 規格」，如需補充庫存請至「進貨入庫」作業。`
       );
     }
 
     const res = await window.electronAPI.namedQuery('insertConsumableMaster', [
-      formData.spec || '',
+      formData.spec.trim(),
       formData.type,
       formData.brand,
       formData.model,
-      formData.unit,
+      '個',
       Number(formData.safety_stock || 0),
       Number(formData.stock_qty || 0),
       '耗材'
@@ -236,12 +204,12 @@ const Consumables = ({ isSplitMode = false }) => {
         'CONSUMABLE',
         `${formData.brand}-${formData.model}`,
         `${formData.brand} ${formData.model}`,
-        `建立耗材物料 [${formData.brand} ${formData.model}] 初始庫存: ${formData.stock_qty || 0} ${formData.unit || ''}`,
-        { brand: formData.brand, type: formData.type, model: formData.model, spec: formData.spec, unit: formData.unit, stock_qty: formData.stock_qty, safety_stock: formData.safety_stock }
+        `建立耗材物料 [${formData.brand} ${formData.model}] 規格: ${formData.spec.trim()} 初始庫存: ${formData.stock_qty || 0}`,
+        { brand: formData.brand, type: formData.type, model: formData.model, spec: formData.spec.trim(), stock_qty: formData.stock_qty, safety_stock: formData.safety_stock }
       );
       alert('耗材建檔成功！');
       fetchConsumables();
-      // 重置欄位，保留廠牌/類型/單位，方便連續建檔
+      // 重置欄位，保留廠牌/類型，方便連續建檔
       setFormData(prev => ({
         ...prev,
         model: '',
@@ -336,28 +304,10 @@ const Consumables = ({ isSplitMode = false }) => {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '16px' }}>
-              <div><label style={labelStyle}>規格內容 (Specification)</label><input type="text" name="spec" value={formData.spec} onChange={handleChange} style={inputStyle} placeholder="請輸入詳細規格..." /></div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr', gap: '16px' }}>
+              <div><label style={labelStyle}>規格 (Specification) <span style={{ color: '#ef4444' }}>*</span></label><input type="text" name="spec" value={formData.spec} onChange={handleChange} style={inputStyle} placeholder="請輸入詳細規格..." /></div>
               <div><label style={labelStyle}>初始庫存數量 (Initial Stock)</label><input type="number" name="stock_qty" value={formData.stock_qty} onChange={handleChange} style={inputStyle} placeholder="0" /></div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
-              <div>
-                <label style={labelStyle}>單位 (Unit)</label>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <select name="unit" value={formData.unit} onChange={handleChange} style={inputStyle}>
-                    {units.map(u => <option key={u} value={u}>{u}</option>)}
-                  </select>
-                  <button onClick={() => setShowAddUnit(!showAddUnit)} style={iconButtonStyle}><Plus size={18} /></button>
-                  <button onClick={() => setShowManageUnit(!showManageUnit)} style={iconButtonStyle}><Settings2 size={18} /></button>
-                </div>
-                {showAddUnit && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newUnitName} onChange={e => setNewUnitName(e.target.value)} style={inputStyle} /><button onClick={handleAddUnit} style={{ ...iconButtonStyle, background: 'var(--primary-color)', color: '#fff' }}><Plus size={18} /></button></div>}
-                {showManageUnit && <div style={{ marginTop: '8px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-surface-subtle)' }}>{units.map(u => (<div key={u} style={manageItemStyle}><span>{u}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteUnit(u)} /></div>))}</div>}
-              </div>
-              <div>
-                <label style={labelStyle}>安全庫存 (Safety Stock)</label>
-                <input type="number" name="safety_stock" value={formData.safety_stock} onChange={handleChange} style={inputStyle} />
-              </div>
+              <div><label style={labelStyle}>安全庫存 (Safety Stock)</label><input type="number" name="safety_stock" value={formData.safety_stock} onChange={handleChange} style={inputStyle} placeholder="0" /></div>
             </div>
 
             <div style={{ textAlign: 'right' }}>
@@ -389,7 +339,7 @@ const Consumables = ({ isSplitMode = false }) => {
                   {(item.specification || '').replace(`${item.type} ${item.brand}`, '').trim().replace(/^\(|\)$/g, '') || '--'}
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: 'var(--text-subtle)' }}>
-                  <span>單位: {item.unit} | 安全庫存: {item.safety_stock}</span>
+                  <span>安全庫存: {item.safety_stock}</span>
                 </div>
               </div>
             ))}

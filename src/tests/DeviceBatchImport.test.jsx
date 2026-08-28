@@ -42,7 +42,7 @@ describe('DeviceBatchImportModal 設備批次匯入檢核與建立測試', () =>
     });
   });
 
-  it('應正確呈現彈窗並顯示「廠牌 (Brand)」與「資產歸屬」欄位且無預設廠牌', () => {
+  it('應正確呈現彈窗並顯示「廠牌 (Brand)」欄位且無預設廠牌，且不呈現資產歸屬選擇器', () => {
     render(
       <DeviceBatchImportModal
         isOpen={true}
@@ -55,8 +55,9 @@ describe('DeviceBatchImportModal 設備批次匯入檢核與建立測試', () =>
     const brandInput = screen.getByPlaceholderText('請輸入或選擇廠牌 (例: BlackCore)');
     expect(brandInput).toBeInTheDocument();
     expect(brandInput.value).toBe(''); // 確認無預設值
-    expect(screen.getByText('一般銷售 (FOR_SALE)')).toBeInTheDocument();
-    expect(screen.getByText('公司資產 (COMPANY)')).toBeInTheDocument();
+    // 確認資產歸屬功能已移除，不顯示切換按鈕
+    expect(screen.queryByText('一般銷售 (FOR_SALE)')).not.toBeInTheDocument();
+    expect(screen.queryByText('公司資產 (COMPANY)')).not.toBeInTheDocument();
   });
 
   it('應能正確解析 Excel 檔案並直接依據 Excel 內 Status 欄位判定出貨狀態', async () => {

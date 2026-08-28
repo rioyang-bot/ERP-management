@@ -7,6 +7,7 @@ const DNList = ({ isSplitMode = false }) => {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [searchField, setSearchField] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('ALL');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
@@ -29,7 +30,7 @@ const DNList = ({ isSplitMode = false }) => {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, searchField, startDate, endDate]);
+  }, [searchTerm, searchField, statusFilter, startDate, endDate]);
 
   const fetchRecords = useCallback(async () => {
     setLoading(true);
@@ -180,6 +181,10 @@ const DNList = ({ isSplitMode = false }) => {
 
     if (!matchSearch) return false;
 
+    if (statusFilter !== 'ALL') {
+      if (dn.status !== statusFilter) return false;
+    }
+
     if (startDate || endDate) {
       const dnDate = new Date(dn.created_at || dn.shipping_date);
       dnDate.setHours(0,0,0,0);
@@ -278,6 +283,17 @@ const DNList = ({ isSplitMode = false }) => {
               />
             </div>
             
+            <select
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value)}
+              style={{ padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--input-border)', outline: 'none', fontSize: '0.9rem', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', cursor: 'pointer', minWidth: '130px' }}
+            >
+              <option value="ALL">全部狀態</option>
+              <option value="PENDING">已建立 (待出貨)</option>
+              <option value="SHIPPED">已出貨</option>
+              <option value="RETURNED">已歸還</option>
+            </select>
+            
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '10px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)' }}>
               <Calendar size={18} color="var(--text-subtle)" />
               <input 
@@ -354,10 +370,10 @@ const DNList = ({ isSplitMode = false }) => {
                       borderRadius: '12px', 
                       fontSize: '0.8rem',
                       fontWeight: 600,
-                      backgroundColor: dn.status === 'SHIPPED' ? 'rgba(34, 197, 94, 0.15)' : 'rgba(249, 115, 22, 0.15)',
-                      color: dn.status === 'SHIPPED' ? '#22c55e' : '#f97316'
+                      backgroundColor: dn.status === 'SHIPPED' ? 'rgba(34, 197, 94, 0.15)' : (dn.status === 'RETURNED' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(249, 115, 22, 0.15)'),
+                      color: dn.status === 'SHIPPED' ? '#22c55e' : (dn.status === 'RETURNED' ? '#3b82f6' : '#f97316')
                     }}>
-                      {dn.status === 'PENDING' ? '已建立' : (dn.status === 'SHIPPED' ? '已出貨' : dn.status)}
+                      {dn.status === 'PENDING' ? '已建立' : (dn.status === 'SHIPPED' ? '已出貨' : (dn.status === 'RETURNED' ? '已歸還' : dn.status))}
                     </span>
                   </td>
                   <td style={{ padding: '12px', whiteSpace: 'nowrap' }}>
@@ -476,7 +492,7 @@ const DNList = ({ isSplitMode = false }) => {
                             )}
                           </td>
                           <td style={{ padding: '6px 12px', textAlign: 'center' }}>
-                            <span style={{ fontWeight: 800, fontSize: '0.85rem', color: 'var(--text-main)' }}>{item.quantity}</span> <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{item.unit}</span>
+                            <span style={{ fontWeight: 800, fontSize: '0.85rem', color: 'var(--text-main)' }}>{item.quantity}</span>
                           </td>
                           <td style={{ padding: '6px 12px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                             {item.location || '-'}

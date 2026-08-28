@@ -17,7 +17,6 @@ const Inbound = () => {
     name: '', type_cat: '設備', type: '', brand: '', 
     custodian: '', spec: '', unit: '個' 
   });
-  const UNIFIED_UNITS = ['個', '台', '盒', '包', '支', '組', '瓶', '卷', '張', '份'];
   const [activeRowId, setActiveRowId] = useState(null);
 
   const fetchData = useCallback(async () => {
@@ -403,7 +402,7 @@ const Inbound = () => {
                 {row.cat_name ? <span style={{ padding: '4px 10px', backgroundColor: '#f0f0f0', borderRadius: '6px', fontSize: '0.8rem', color: '#555', fontWeight: 600 }}>{row.cat_name}</span> : <span style={{ color: '#ccc', fontSize: '0.8rem' }}>--</span>}
               </td>
               <td style={tdStyle}>{(row.cat_name === '設備' || row.cat_name === '硬體') ? <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><input placeholder="SN / 序號" value={row.sn} onChange={(e) => handleRowChange(row.id, 'sn', e.target.value)} style={{ ...inputStyle, border: '1px solid #ddd' }} />{row.qty > 1 && <button onClick={() => handleExpandRow(row.id)} title="展開為獨立序號" style={expandButtonStyle}><Layers size={16} /></button>}</div> : <span style={{ color: '#aaa', fontSize: '0.8rem' }}>耗材無需序號</span>}</td>
-              <td style={tdStyle}><div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><input type="number" value={row.qty} onChange={(e) => handleRowChange(row.id,'qty', parseInt(e.target.value)||0)} style={{ ...inputStyle, width: '70px' }} /><span style={{ fontSize: '0.85rem', color: '#666' }}>{row.unit || '個'}</span></div></td>
+              <td style={tdStyle}><input type="number" value={row.qty} onChange={(e) => handleRowChange(row.id,'qty', parseInt(e.target.value)||0)} style={{ ...inputStyle, width: '80px' }} /></td>
               <td style={{ ...tdStyle, textAlign: 'center' }}><button onClick={() => handleRemove(row.id)} style={deleteButtonStyle}><Trash2 size={20} /></button></td>
             </tr>
           ))}
@@ -419,9 +418,13 @@ const Inbound = () => {
             <h2 style={{ marginBottom: '24px', fontSize: '1.2rem', fontWeight: 800 }}>快速建檔品項範本</h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div><label style={labelStyle}>品項名稱 *</label><input type="text" value={quickAddData.name} onChange={(e) => setQuickAddData({...quickAddData, name: e.target.value})} style={inputStyle} /></div>
-              <div style={{ display: 'flex', gap: '16px' }}>
-                <div style={{ flex: 1 }}><label style={labelStyle}>類別</label><div style={{ display: 'flex', gap: '16px', marginTop: '8px' }}><label style={radioLabelStyle}><input type="radio" checked={quickAddData.type_cat === '設備'} onChange={() => setQuickAddData({...quickAddData, type_cat: '設備'})} /> 設備</label><label style={radioLabelStyle}><input type="radio" checked={quickAddData.type_cat === '硬體'} onChange={() => setQuickAddData({...quickAddData, type_cat: '硬體'})} /> 硬體</label><label style={radioLabelStyle}><input type="radio" checked={quickAddData.type_cat === '耗材'} onChange={() => setQuickAddData({...quickAddData, type_cat: '耗材'})} /> 耗材</label></div></div>
-                <div><label style={labelStyle}>單位</label><select value={quickAddData.unit} onChange={(e) => setQuickAddData({...quickAddData, unit: e.target.value})} style={inputStyle}>{UNIFIED_UNITS.map(u => <option key={u} value={u}>{u}</option>)}</select></div>
+              <div>
+                <label style={labelStyle}>類別</label>
+                <div style={{ display: 'flex', gap: '16px', marginTop: '8px' }}>
+                  <label style={radioLabelStyle}><input type="radio" checked={quickAddData.type_cat === '設備'} onChange={() => setQuickAddData({...quickAddData, type_cat: '設備'})} /> 設備</label>
+                  <label style={radioLabelStyle}><input type="radio" checked={quickAddData.type_cat === '硬體'} onChange={() => setQuickAddData({...quickAddData, type_cat: '硬體'})} /> 硬體</label>
+                  <label style={radioLabelStyle}><input type="radio" checked={quickAddData.type_cat === '耗材'} onChange={() => setQuickAddData({...quickAddData, type_cat: '耗材'})} /> 耗材</label>
+                </div>
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '32px' }}>

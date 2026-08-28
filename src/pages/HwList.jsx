@@ -198,6 +198,7 @@ const HwList = ({ isSplitMode = false }) => {
         (n.sn || '').toLowerCase().includes(term) ||
         (n.brand || '').toLowerCase().includes(term) ||
         (n.model || '').toLowerCase().includes(term) ||
+        (n.specification || '').toLowerCase().includes(term) ||
         (n.custom_attributes?.server_sn || '').toLowerCase().includes(term)
       );
     })
@@ -259,7 +260,7 @@ const HwList = ({ isSplitMode = false }) => {
 
 
   const handleCardClick = (st) => {
-    const target = `${st.brand} ${st.model}`;
+    const target = [st.brand, st.model, st.specification].filter(Boolean).join(' ');
     if (searchTerm === target && filterType === st.type) {
       // 如果完全相同，則清除
       setSearchTerm('');
@@ -338,8 +339,9 @@ const HwList = ({ isSplitMode = false }) => {
       const brandStr = curr.brand || '未知';
       const typeStr = curr.type || '未分類';
       const modelStr = curr.model || '未設定型號';
-      const key = `${brandStr} - ${typeStr} - ${modelStr}`;
-      if (!acc[key]) acc[key] = { key, brand: brandStr, type: typeStr, model: modelStr, active: 0, shipped: 0, repair: 0, scrapped: 0 };
+      const specStr = (curr.specification || '').trim();
+      const key = `${brandStr} - ${typeStr} - ${modelStr} - ${specStr}`;
+      if (!acc[key]) acc[key] = { key, brand: brandStr, type: typeStr, model: modelStr, specification: specStr, active: 0, shipped: 0, repair: 0, scrapped: 0 };
       const status = curr.status || 'ACTIVE';
       if (status === 'ACTIVE') acc[key].active++;
       else if (status === 'SHIPPED') acc[key].shipped++;
@@ -375,9 +377,14 @@ const HwList = ({ isSplitMode = false }) => {
                 <div style={{ fontSize: '12px', fontWeight: '900', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <Monitor size={12} color="var(--text-muted)" /> {st.brand}
                 </div>
-                <div style={{ color: 'var(--text-muted)', fontSize: '10px', fontWeight: '500', marginTop: '2px', paddingLeft: '16px' }}>
+                <div style={{ color: 'var(--text-muted)', fontSize: '10px', fontWeight: '700', marginTop: '2px', paddingLeft: '16px' }}>
                   {st.type} - {st.model}
                 </div>
+                {st.specification && (
+                  <div style={{ color: 'var(--text-subtle)', fontSize: '9px', fontWeight: '500', marginTop: '2px', paddingLeft: '16px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }} title={st.specification}>
+                    {st.specification}
+                  </div>
+                )}
               </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>在庫</span><span style={{ color: '#16a34a', fontWeight: '800' }}>{st.active}</span></div>
@@ -401,7 +408,8 @@ const HwList = ({ isSplitMode = false }) => {
         <div style={{ position: 'relative' }}>
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '24px', padding: '16px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '16px', border: '1px solid var(--border-color)' }}>
             {activeMatches.map(st => {
-              const isSelected = searchTerm && (`${st.brand} ${st.model}`).toLowerCase() === searchTerm.toLowerCase();
+              const target = [st.brand, st.model, st.specification].filter(Boolean).join(' ');
+              const isSelected = searchTerm && target && searchTerm.toLowerCase() === target.toLowerCase();
               return (
                 <div 
                   key={st.key}
@@ -428,9 +436,14 @@ const HwList = ({ isSplitMode = false }) => {
                     <div style={{ fontSize: '13px', fontWeight: '900', color: isSelected ? 'var(--primary-color)' : 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '4px' }}>
                       <Monitor size={12} color={isSelected ? 'var(--primary-color)' : 'var(--text-muted)'} /> {st.brand}
                     </div>
-                    <div style={{ color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', fontSize: '11px', fontWeight: '500', marginTop: '2px', paddingLeft: '16px' }}>
+                    <div style={{ color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', fontSize: '10px', fontWeight: '700', marginTop: '2px', paddingLeft: '16px' }}>
                       {st.type} - {st.model}
                     </div>
+                    {st.specification && (
+                      <div style={{ color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', fontSize: '9px', fontWeight: '500', marginTop: '2px', paddingLeft: '16px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }} title={st.specification}>
+                        {st.specification}
+                      </div>
+                    )}
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span style={{ color: 'var(--text-muted)' }}>在庫</span><span style={{ color: '#16a34a', fontWeight: '800' }}>{st.active}</span></div>
@@ -490,9 +503,14 @@ const HwList = ({ isSplitMode = false }) => {
                     <div style={{ fontSize: '12px', fontWeight: '900', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
                       <Monitor size={12} color="var(--text-muted)" /> {st.brand}
                     </div>
-                    <div style={{ color: 'var(--text-muted)', fontSize: '10px', fontWeight: '500', marginTop: '1px', paddingLeft: '16px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                    <div style={{ color: 'var(--text-muted)', fontSize: '10px', fontWeight: '700', marginTop: '1px', paddingLeft: '16px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
                       {st.type} - {st.model}
                     </div>
+                    {st.specification && (
+                      <div style={{ color: 'var(--text-subtle)', fontSize: '9px', fontWeight: '500', marginTop: '1px', paddingLeft: '16px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }} title={st.specification}>
+                        {st.specification}
+                      </div>
+                    )}
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>在庫</span><span style={{ color: '#16a34a', fontWeight: '800' }}>{st.active}</span></div>

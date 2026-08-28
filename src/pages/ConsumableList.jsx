@@ -76,10 +76,10 @@ const ConsumableList = ({ isSplitMode = false }) => {
   };
 
   const handleUpdate = async () => {
-    if (!editItem.model) return alert('請填寫型號 (必填)');
+    if (!editItem.model || !editItem.specification?.trim()) return alert('請填寫型號與規格 (必填)');
     const res = await window.electronAPI.namedQuery('updateConsumableMaster', [
         editItem.brand, editItem.type, editItem.model, 
-        editItem.specification, editItem.unit, editItem.safety_stock,
+        editItem.specification.trim(), editItem.unit || '個', editItem.safety_stock,
         editItem.id
     ]);
     if (res.success) {
@@ -88,7 +88,6 @@ const ConsumableList = ({ isSplitMode = false }) => {
         type: editItem.type,
         model: editItem.model,
         specification: editItem.specification,
-        unit: editItem.unit,
         safety_stock: editItem.safety_stock
       });
       setShowEditModal(false);
@@ -134,7 +133,7 @@ const ConsumableList = ({ isSplitMode = false }) => {
         'CONSUMABLE',
         itemId,
         `${targetItem.brand} ${targetItem.model}`,
-        `耗材庫存調撥 [${targetItem.brand} ${targetItem.model}]: ${direction === 'TO_LAB' ? 'Stock ➔ LAB' : 'LAB ➔ Stock'} 數量 ${quantity} ${targetItem.unit || ''}${currentDeviceSn ? ` (對應設備: ${currentDeviceSn})` : ''}`,
+        `耗材庫存調撥 [${targetItem.brand} ${targetItem.model}]: ${direction === 'TO_LAB' ? 'Stock ➔ LAB' : 'LAB ➔ Stock'} 數量 ${quantity}${currentDeviceSn ? ` (對應設備: ${currentDeviceSn})` : ''}`,
         { direction, quantity, deviceSn: currentDeviceSn, note, prevStock: targetItem.stock_qty, prevLab: targetItem.lab_qty }
       );
       // 只有在有選擇設備或移至 LAB 時才紀錄詳細 assignment
@@ -523,11 +522,10 @@ const ConsumableList = ({ isSplitMode = false }) => {
                 <thead>
                   <tr style={{ borderBottom: '2px solid var(--border-color)', backgroundColor: 'var(--table-header-bg)' }}>
                     <th style={{ ...thStyle, width: '220px' }}>廠牌 / 型號 / 類型</th>
-                    <th style={{ ...thStyle, width: '150px' }}>規格內容</th>
+                    <th style={{ ...thStyle, width: '150px' }}>規格</th>
                     <th style={{ ...thStyle, width: '80px', textAlign: 'center', color: 'var(--primary-color)' }}>Stock</th>
                     <th style={{ ...thStyle, width: '80px', textAlign: 'center', color: '#a855f7' }}>LAB</th>
                     <th style={{ ...thStyle, width: '80px', textAlign: 'center' }}>Total</th>
-                    <th style={{ ...thStyle, width: '60px', textAlign: 'center' }}>單位</th>
                     <th style={{ ...thStyle, width: '100px', textAlign: 'center' }}>安全庫存</th>
                     <th style={{ ...thStyle, textAlign: 'center', width: '120px' }}>操作</th>
                   </tr>
@@ -543,7 +541,6 @@ const ConsumableList = ({ isSplitMode = false }) => {
                       <td style={{ ...tdStyle, fontWeight: 700, color: 'var(--primary-color)', textAlign: 'center' }}>{item.stock_qty || 0}</td>
                       <td style={{ ...tdStyle, fontWeight: 700, color: '#a855f7', cursor: 'pointer', textDecoration: 'underline', textAlign: 'center' }} onClick={() => viewAssignments(item)}>{item.lab_qty || 0}</td>
                       <td style={{ ...tdStyle, fontWeight: 800, color: (Number(item.stock_qty)+Number(item.lab_qty)) <= Number(item.safety_stock) ? '#ef4444' : '#10b981', textAlign: 'center' }}>{(Number(item.stock_qty)||0) + (Number(item.lab_qty)||0)}</td>
-                      <td style={{ ...tdStyle, textAlign: 'center', color: 'var(--text-muted)' }}>{item.unit}</td>
                       <td style={{ ...tdStyle, color: 'var(--text-muted)', textAlign: 'center' }}>{item.safety_stock}</td>
                       <td style={{ ...tdStyle, textAlign: 'center', width: '120px', position: 'relative' }}>
                         <button onClick={() => setActiveMenuId(activeMenuId === item.id ? null : item.id)} style={{ border: 'none', background: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}><MoreHorizontal size={20} /></button>
@@ -609,13 +606,13 @@ const ConsumableList = ({ isSplitMode = false }) => {
               </div>
               
               <div>
-                <label style={editLabelStyle}>規格內容</label>
+                <label style={editLabelStyle}>規格 <span style={{ color: '#ef4444' }}>*</span></label>
                 <textarea value={editItem.specification} onChange={(e) => setEditItem({...editItem, specification: e.target.value})} style={{ ...editInputStyle, minHeight: '80px', lineHeight: '1.5' }} />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                <div><label style={editLabelStyle}>單位</label><input type="text" value={editItem.unit || ''} onChange={(e) => setEditItem({...editItem, unit: e.target.value})} style={editInputStyle} /></div>
-                <div><label style={editLabelStyle}>安全庫存</label><input type="number" value={editItem.safety_stock} onChange={(e) => setEditItem({...editItem, safety_stock: parseInt(e.target.value) || 0})} style={editInputStyle} /></div>
+              <div>
+                <label style={editLabelStyle}>安全庫存</label>
+                <input type="number" value={editItem.safety_stock} onChange={(e) => setEditItem({...editItem, safety_stock: parseInt(e.target.value) || 0})} style={editInputStyle} />
               </div>
 
               <div style={{ display: 'flex', gap: '12px', marginTop: '12px', borderTop: '1px solid #f1f5f9', paddingTop: '24px' }}>

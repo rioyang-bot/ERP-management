@@ -151,8 +151,8 @@ const HwRegistration = ({ isSplitMode = false }) => {
     const safeSpec = validateAndSanitize(formData.specification, '規格');
     const safeServerSn = validateAndSanitize(formData.server_sn, 'Server SN');
 
-    if (!safeBrand || !safeType || !safeModel) {
-      return alert('請填寫必填欄位 (*) 並確保符合安全規範');
+    if (!safeBrand || !safeType || !safeModel || !safeSpec?.trim()) {
+      return alert('請填寫必填欄位 (廠牌、類型、型號、規格為必填) 並確保符合安全規範');
     }
 
     // 解析序號清單
@@ -355,8 +355,8 @@ const HwRegistration = ({ isSplitMode = false }) => {
 
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 1fr) 1fr 1fr', gap: '16px', marginBottom: '24px' }}>
               <div>
-                <label style={labelStyle}>規格 (Specification)</label>
-                <input type="text" name="specification" value={formData.specification} onChange={handleChange} style={inputStyle} placeholder="例如: 10GbE SFP+ Dual Port" />
+                <label style={labelStyle}>規格 (Specification) <span style={{ color: '#ef4444' }}>*</span></label>
+                <input type="text" name="specification" value={formData.specification} onChange={handleChange} style={inputStyle} placeholder="例如: 10GbE SFP+ Dual Port" required />
               </div>
               <div>
                 <label style={labelStyle}>資產歸屬</label>

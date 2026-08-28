@@ -398,7 +398,7 @@ const ProcurementList = ({ isSplitMode = false }) => {
                                       <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-main)' }}>{item.specification}</div>
                                       <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{item.category_name}</div>
                                     </td>
-                                    <td style={{ ...innerTdStyle, textAlign: 'center', color: 'var(--text-main)' }}>{item.quantity} {item.unit}</td>
+                                    <td style={{ ...innerTdStyle, textAlign: 'center', color: 'var(--text-main)' }}>{item.quantity}</td>
                                     <td style={{ ...innerThStyle, textAlign: 'center', fontWeight: 700, color: item.received_quantity === item.quantity ? '#22c55e' : '#f97316' }}>{item.received_quantity}</td>
                                     <td style={innerTdStyle}>
                                       <span style={{ fontSize: '0.75rem', color: statusColors[item.status]?.color, fontWeight: 600 }}>● {statusColors[item.status]?.label}</span>
