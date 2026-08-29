@@ -357,13 +357,23 @@ const ProjectList = () => {
                   </span>
                 </td>
                 <td>{proj.remarks}</td>
-                <td>
-                  <div className="action-buttons">
-                    <button className="icon-btn edit" onClick={() => handleOpenModal(proj)} title="編輯">
-                      <Edit2 size={18} />
+                <td style={{ whiteSpace: 'nowrap' }}>
+                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center', whiteSpace: 'nowrap' }}>
+                    <button 
+                      style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', padding: 0, backgroundColor: 'rgba(16, 185, 129, 0.12)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: '6px', cursor: 'pointer', flexShrink: 0 }}
+                      onClick={() => handleOpenModal(proj)} 
+                      title="編輯專案"
+                      aria-label="編輯專案"
+                    >
+                      <Edit2 size={16} />
                     </button>
-                    <button className="icon-btn delete" onClick={() => handleDelete(proj.id, proj.name)} title="刪除">
-                      <Trash2 size={18} />
+                    <button 
+                      style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', padding: 0, backgroundColor: 'rgba(239, 68, 68, 0.12)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '6px', cursor: 'pointer', flexShrink: 0 }}
+                      onClick={() => handleDelete(proj.id, proj.name)} 
+                      title="刪除專案"
+                      aria-label="刪除專案"
+                    >
+                      <Trash2 size={16} />
                     </button>
                   </div>
                 </td>

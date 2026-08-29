@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Save, Settings2, Trash2, X, Package, Clock } from 'lucide-react';
+import { Plus, Save, Settings2, Trash2, X, Package } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { logCreate } from '../utils/auditLogger';
 
 const Consumables = ({ isSplitMode = false }) => {
   const navigate = useNavigate();
-  const [items, setItems] = useState([]);
   const [types, setTypes] = useState([]);
   const [brands, setBrands] = useState([]);
   const [showAddType, setShowAddType] = useState(false);
@@ -31,11 +30,6 @@ const Consumables = ({ isSplitMode = false }) => {
     }
     return val.trim();
   };
-
-  const fetchConsumables = useCallback(async () => {
-    const res = await window.electronAPI.namedQuery('fetchRecentConsumables');
-    if (res.success) setItems(res.rows);
-  }, []);
 
   const fetchTypes = useCallback(async (brandName, currentType = '') => {
     if (!brandName) { setTypes([]); return { typeNames: [], nextType: '' }; }
@@ -78,12 +72,11 @@ const Consumables = ({ isSplitMode = false }) => {
   useEffect(() => {
     const initData = async () => {
       await Promise.all([
-        fetchConsumables(),
         fetchBrands()
       ]);
     };
     initData();
-  }, [fetchConsumables, fetchBrands]);
+  }, [fetchBrands]);
 
   const handleAddType = async () => {
     const name = validateAndSanitize(newTypeName, '類型名稱');
@@ -208,7 +201,6 @@ const Consumables = ({ isSplitMode = false }) => {
         { brand: formData.brand, type: formData.type, model: formData.model, spec: formData.spec.trim(), stock_qty: formData.stock_qty, safety_stock: formData.safety_stock }
       );
       alert('耗材建檔成功！');
-      fetchConsumables();
       // 重置欄位，保留廠牌/類型，方便連續建檔
       setFormData(prev => ({
         ...prev,
@@ -225,10 +217,24 @@ const Consumables = ({ isSplitMode = false }) => {
   };
 
   // Styles
-  const containerStyle = { padding: '24px', backgroundColor: 'var(--bg-app)', minHeight: '100vh', display: 'flex', flexDirection: isSplitMode ? 'column' : 'row', gap: '24px' };
-  const leftSectionStyle = isSplitMode ? { width: '100%' } : { flex: '0 0 60%' };
-  const rightSectionStyle = isSplitMode ? { width: '100%' } : { flex: '1' };
-  const cardStyle = { backgroundColor: 'var(--bg-surface)', borderRadius: '16px', padding: '24px', boxShadow: 'var(--card-shadow)', border: '1px solid var(--border-color)', marginBottom: '24px', color: 'var(--text-main)' };
+  const containerStyle = {
+    padding: isSplitMode ? '0' : '24px',
+    backgroundColor: isSplitMode ? 'transparent' : 'var(--bg-app)',
+    minHeight: isSplitMode ? 'auto' : '100vh',
+    width: '100%',
+    boxSizing: 'border-box'
+  };
+  const cardStyle = {
+    backgroundColor: 'var(--bg-surface)',
+    borderRadius: '16px',
+    padding: '24px',
+    boxShadow: 'var(--card-shadow)',
+    border: '1px solid var(--border-color)',
+    marginBottom: isSplitMode ? '0' : '24px',
+    color: 'var(--text-main)',
+    width: '100%',
+    boxSizing: 'border-box'
+  };
   const labelStyle = { display: 'block', fontSize: '14px', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '8px' };
   const inputStyle = { width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', fontSize: '14px', outline: 'none', boxSizing: 'border-box' };
   const iconButtonStyle = { padding: '8px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-main)', cursor: 'pointer' };
@@ -236,7 +242,7 @@ const Consumables = ({ isSplitMode = false }) => {
 
   return (
     <div style={containerStyle}>
-      <div style={leftSectionStyle}>
+      <div style={{ width: '100%' }}>
         <div style={cardStyle}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
             <div>
@@ -261,7 +267,7 @@ const Consumables = ({ isSplitMode = false }) => {
           </div>
 
           <div key={formKey} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
               <div>
                 <label style={labelStyle}>廠牌 (Brand) <span style={{ color: '#ef4444' }}>*</span></label>
                 <div style={{ display: 'flex', gap: '8px' }}>
@@ -304,7 +310,7 @@ const Consumables = ({ isSplitMode = false }) => {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
               <div><label style={labelStyle}>規格 (Specification) <span style={{ color: '#ef4444' }}>*</span></label><input type="text" name="spec" value={formData.spec} onChange={handleChange} style={inputStyle} placeholder="請輸入詳細規格..." /></div>
               <div><label style={labelStyle}>初始庫存數量 (Initial Stock)</label><input type="number" name="stock_qty" value={formData.stock_qty} onChange={handleChange} style={inputStyle} placeholder="0" /></div>
               <div><label style={labelStyle}>安全庫存 (Safety Stock)</label><input type="number" name="safety_stock" value={formData.safety_stock} onChange={handleChange} style={inputStyle} placeholder="0" /></div>
@@ -315,35 +321,6 @@ const Consumables = ({ isSplitMode = false }) => {
                 <Save size={20} style={{ marginRight: '8px', verticalAlign: 'middle' }} /> 儲存耗材資料
               </button>
             </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Right Section: Recent 10 Items */}
-      <div style={rightSectionStyle}>
-        <div style={cardStyle}>
-          <h3 style={{ fontSize: '16px', fontWeight: '800', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-main)' }}>
-            <Clock size={18} color="var(--text-muted)" /> 最新 10 筆建檔記錄
-          </h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {items.map(item => (
-              <div key={item.id} style={{ padding: '12px 16px', borderRadius: '12px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)' }}>
-                <div style={{ fontWeight: '800', fontSize: '13px', marginBottom: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  <span style={{ color: 'var(--primary-color)' }}>{item.brand}</span>
-                  <span style={{ color: 'var(--text-subtle)', margin: '0 4px' }}>/</span>
-                  <span style={{ color: 'var(--text-muted)' }}>{item.type}</span>
-                  <span style={{ color: 'var(--text-subtle)', margin: '0 4px' }}>/</span>
-                  <span style={{ color: 'var(--text-main)' }}>{item.model}</span>
-                </div>
-                <div style={{ color: 'var(--text-muted)', fontSize: '12px', fontWeight: '500', marginBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {(item.specification || '').replace(`${item.type} ${item.brand}`, '').trim().replace(/^\(|\)$/g, '') || '--'}
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: 'var(--text-subtle)' }}>
-                  <span>安全庫存: {item.safety_stock}</span>
-                </div>
-              </div>
-            ))}
-            {items.length === 0 && <div style={{ textAlign: 'center', color: 'var(--text-subtle)', padding: '20px', fontSize: '13px' }}>尚無建檔資料</div>}
           </div>
         </div>
       </div>

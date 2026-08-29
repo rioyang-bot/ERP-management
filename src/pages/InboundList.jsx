@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowDownToLine, Search, Filter, Eye, RefreshCw, AlertCircle, Trash2, Calendar, Hash, FileText, Plus, Edit2, Save, X } from 'lucide-react';
 import { logUpdate } from '../utils/auditLogger';
+import InboundRegistrationModal from '../components/InboundRegistrationModal';
 
 const InboundList = ({ isSplitMode = false }) => {
   const navigate = useNavigate();
@@ -9,6 +10,7 @@ const InboundList = ({ isSplitMode = false }) => {
   const [searchField, setSearchField] = useState('all');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [showAddModal, setShowAddModal] = useState(false);
 
   const searchOptions = [
     { value: 'all', label: '全部欄位' },
@@ -218,7 +220,7 @@ const InboundList = ({ isSplitMode = false }) => {
   const pendingCount = inboundRecords.filter(order => order.status !== 'COMPLETED').length;
 
   return (
-    <div className="inbound-list-container">
+    <div className="inbound-list-container" style={isSplitMode ? { padding: 0, minHeight: 'auto', backgroundColor: 'transparent' } : {}}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div>
@@ -233,7 +235,7 @@ const InboundList = ({ isSplitMode = false }) => {
           {!isSplitMode && (
             <div style={{ display: 'flex', backgroundColor: 'var(--bg-surface-subtle)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
               <button
-                onClick={() => navigate('/inbound-split')}
+                onClick={() => setShowAddModal(true)}
                 style={{
                   padding: '8px 16px',
                   backgroundColor: '#10b981',
@@ -248,7 +250,7 @@ const InboundList = ({ isSplitMode = false }) => {
                   boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
                 }}
               >
-                <Plus size={18} /> 進貨入庫 (S/I Reg)
+                <Plus size={18} /> 新增進貨入庫 (New Stock In)
               </button>
             </div>
           )}
@@ -337,18 +339,22 @@ const InboundList = ({ isSplitMode = false }) => {
                     <td style={{ padding: '12px', color: order.partner_name ? 'var(--text-main)' : 'var(--text-subtle)', fontWeight: 600 }}>{order.partner_name || '無紀錄'}</td>
                     <td style={{ padding: '12px', color: order.invoice_no ? 'var(--text-main)' : 'var(--text-subtle)' }}>{order.invoice_no || '--'}</td>
                     <td style={{ padding: '12px', whiteSpace: 'nowrap' }}>
-                      <div style={{ display: 'flex', gap: '8px', whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center', whiteSpace: 'nowrap' }}>
                         <button
                           onClick={() => handleViewDetails(order, false)}
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', backgroundColor: 'var(--primary-bg)', color: 'var(--primary-color)', border: '1px solid rgba(59, 130, 246, 0.2)', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', flexShrink: 0 }}
+                          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', padding: 0, backgroundColor: 'var(--primary-bg)', color: 'var(--primary-color)', border: '1px solid rgba(59, 130, 246, 0.25)', borderRadius: '6px', cursor: 'pointer', flexShrink: 0 }}
+                          title="查看進貨明細"
+                          aria-label="查看進貨明細"
                         >
-                          <Eye size={16} style={{ flexShrink: 0 }} /> <span>檢視</span>
+                          <Eye size={16} />
                         </button>
                         <button
                           onClick={() => handleViewDetails(order, true)}
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', backgroundColor: 'rgba(16, 185, 129, 0.12)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', flexShrink: 0 }}
+                          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', padding: 0, backgroundColor: 'rgba(16, 185, 129, 0.12)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: '6px', cursor: 'pointer', flexShrink: 0 }}
+                          title="編輯進貨單"
+                          aria-label="編輯進貨單"
                         >
-                          <Edit2 size={16} style={{ flexShrink: 0 }} /> <span>編輯</span>
+                          <Edit2 size={16} />
                         </button>
                       </div>
                     </td>
@@ -577,6 +583,13 @@ const InboundList = ({ isSplitMode = false }) => {
           </div>
         </div>
       )}
+
+      {/* 新增進貨入庫 Modal */}
+      <InboundRegistrationModal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        onSuccess={fetchRecords}
+      />
 
       <style>{`
         .btn-refresh-vibrant {

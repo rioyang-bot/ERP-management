@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Search, Edit2, Trash2, X, Save, MoreHorizontal, ArrowLeftRight, ClipboardList, ShoppingBag, AlertTriangle, Archive, RotateCcw, Package, History } from 'lucide-react';
 import ItemLedgerModal from '../components/ItemLedgerModal';
+import ConsumableRegistrationModal from '../components/ConsumableRegistrationModal';
 import { logUpdate, logDelete } from '../utils/auditLogger';
 
 const editLabelStyle = { display: 'block', fontWeight: 800, fontSize: '13px', marginBottom: '6px', color: 'var(--text-muted)' };
@@ -14,17 +15,45 @@ const ConsumableList = ({ isSplitMode = false }) => {
   const [items, setItems] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
+  const [showAddModal, setShowAddModal] = useState(false);
   const [searchParams] = useSearchParams();
   const typeFilter = searchParams.get('type');
   const [selectedType, setSelectedType] = useState(typeFilter || null);
   const [showAll, setShowAll] = useState(false);
-  
+  const [activeMenuId, setActiveMenuId] = useState(null);
+  const [menuPosition, setMenuPosition] = useState(null);
+  const [ledgerItem, setLedgerItem] = useState(null);
+
   // 當側邊欄分類變動時，清除搜尋關鍵字並同步選取類型
   useEffect(() => {
     setSearchTerm('');
     setSelectedType(typeFilter || null);
     setShowAll(false);
+    setActiveMenuId(null);
+    setMenuPosition(null);
   }, [typeFilter]);
+
+  // 監聽外部點擊與視窗滾動以關閉選單
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (activeMenuId && !e.target.closest('.dropdown-action-menu') && !e.target.closest('.action-menu-btn')) {
+        setActiveMenuId(null);
+        setMenuPosition(null);
+      }
+    };
+    const handleScroll = () => {
+      if (activeMenuId) {
+        setActiveMenuId(null);
+        setMenuPosition(null);
+      }
+    };
+    window.addEventListener('click', handleClickOutside);
+    window.addEventListener('scroll', handleScroll, true);
+    return () => {
+      window.removeEventListener('click', handleClickOutside);
+      window.removeEventListener('scroll', handleScroll, true);
+    };
+  }, [activeMenuId]);
   
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
@@ -46,8 +75,6 @@ const ConsumableList = ({ isSplitMode = false }) => {
   const [labAssignments, setLabAssignments] = useState([]);
   const [showAssignmentModal, setShowAssignmentModal] = useState(false);
   const [activeItemName, setActiveItemName] = useState('');
-  const [activeMenuId, setActiveMenuId] = useState(null);
-  const [ledgerItem, setLedgerItem] = useState(null);
 
   const fetchConsumables = useCallback(async () => {
     setLoading(true);
@@ -432,7 +459,11 @@ const ConsumableList = ({ isSplitMode = false }) => {
     );
   };
 
-  const containerStyle = { padding: '24px', backgroundColor: 'var(--bg-app)', minHeight: '100vh' };
+  const containerStyle = {
+    padding: isSplitMode ? '0' : '24px',
+    backgroundColor: isSplitMode ? 'transparent' : 'var(--bg-app)',
+    minHeight: isSplitMode ? 'auto' : '100vh'
+  };
   const cardStyle = { backgroundColor: 'var(--bg-surface)', borderRadius: '16px', padding: '24px', boxShadow: 'var(--card-shadow)', border: '1px solid var(--border-color)' };
   const thStyle = { textAlign: 'left', padding: '14px', borderBottom: '2px solid var(--border-color)', color: 'var(--text-main)', fontSize: '12px', fontWeight: '900' };
   const tdStyle = { padding: '14px', fontSize: '13px' };
@@ -468,7 +499,7 @@ const ConsumableList = ({ isSplitMode = false }) => {
             {!isSplitMode && (
               <div style={{ display: 'flex', backgroundColor: 'var(--bg-surface-subtle)', padding: '4px', borderRadius: '10px' }}>
                 <button
-                  onClick={() => navigate('/consumable-split')}
+                  onClick={() => setShowAddModal(true)}
                   style={{
                     padding: '8px 16px',
                     backgroundColor: 'var(--primary-color)',
@@ -483,7 +514,7 @@ const ConsumableList = ({ isSplitMode = false }) => {
                     boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)'
                   }}
                 >
-                  新增耗材 (CSM Reg)
+                  ➕ 新增耗材 (Add Consumable)
                 </button>
               </div>
             )}
@@ -543,12 +574,55 @@ const ConsumableList = ({ isSplitMode = false }) => {
                       <td style={{ ...tdStyle, fontWeight: 800, color: (Number(item.stock_qty)+Number(item.lab_qty)) <= Number(item.safety_stock) ? '#ef4444' : '#10b981', textAlign: 'center' }}>{(Number(item.stock_qty)||0) + (Number(item.lab_qty)||0)}</td>
                       <td style={{ ...tdStyle, color: 'var(--text-muted)', textAlign: 'center' }}>{item.safety_stock}</td>
                       <td style={{ ...tdStyle, textAlign: 'center', width: '120px', position: 'relative' }}>
-                        <button onClick={() => setActiveMenuId(activeMenuId === item.id ? null : item.id)} style={{ border: 'none', background: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}><MoreHorizontal size={20} /></button>
-                        {activeMenuId === item.id && (
-                          <div style={{ position: 'absolute', right: 0, top: '100%', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '12px', boxShadow: 'var(--modal-shadow)', zIndex: 9999, padding: '8px', minWidth: '160px', display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                        <button 
+                          className="action-menu-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (activeMenuId === item.id) {
+                              setActiveMenuId(null);
+                              setMenuPosition(null);
+                            } else {
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              const menuHeight = 220;
+                              const isUpward = rect.bottom + menuHeight > window.innerHeight && rect.top > menuHeight;
+                              setActiveMenuId(item.id);
+                              setMenuPosition({
+                                top: isUpward ? rect.top - 4 : rect.bottom + 4,
+                                right: window.innerWidth - rect.right,
+                                isUpward
+                              });
+                            }
+                          }} 
+                          style={{ border: 'none', background: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+                        >
+                          <MoreHorizontal size={20} />
+                        </button>
+                        {activeMenuId === item.id && menuPosition && (
+                          <div 
+                            className="dropdown-action-menu"
+                            style={{ 
+                              position: 'fixed', 
+                              top: menuPosition.isUpward ? 'auto' : `${menuPosition.top}px`,
+                              bottom: menuPosition.isUpward ? `${window.innerHeight - menuPosition.top}px` : 'auto',
+                              right: `${menuPosition.right}px`, 
+                              backgroundColor: 'var(--bg-surface)', 
+                              border: '1px solid var(--border-color)', 
+                              borderRadius: '12px', 
+                              boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3)', 
+                              zIndex: 99999, 
+                              padding: '8px', 
+                              minWidth: '160px', 
+                              display: 'flex', 
+                              flexDirection: 'column', 
+                              gap: '4px',
+                              maxHeight: '80vh',
+                              overflowY: 'auto'
+                            }}
+                          >
                             <button 
                               onClick={() => {
                                 setActiveMenuId(null);
+                                setMenuPosition(null);
                                 setLedgerItem({ item_master_id: item.id, brand: item.brand, model: item.model, type: item.type, current_stock: item.stock_qty });
                               }} 
                               style={{ ...menuButtonStyle, color: 'var(--text-main)' }}
@@ -556,10 +630,10 @@ const ConsumableList = ({ isSplitMode = false }) => {
                               <History size={14} /> 履歷 (History)
                             </button>
                             <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '2px 0' }} />
-                            <button onClick={() => { setActiveMenuId(null); setEditItem({ ...item }); setShowEditModal(true); }} style={menuButtonStyle}><Edit2 size={14} /> 編輯詳細資訊</button>
-                            <button onClick={() => { setActiveMenuId(null); setTransferData({ itemId: item.id, direction: 'TO_LAB', quantity: 1, deviceSn: '', note: '' }); setShowTransferModal(true); }} style={{ ...menuButtonStyle, color: 'var(--primary-color)' }}><ArrowLeftRight size={14} /> 庫存異動 (Stock↔LAB)</button>
+                            <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); setEditItem({ ...item }); setShowEditModal(true); }} style={menuButtonStyle}><Edit2 size={14} /> 編輯詳細資訊</button>
+                            <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); setTransferData({ itemId: item.id, direction: 'TO_LAB', quantity: 1, deviceSn: '', note: '' }); setShowTransferModal(true); }} style={{ ...menuButtonStyle, color: 'var(--primary-color)' }}><ArrowLeftRight size={14} /> 庫存異動 (Stock↔LAB)</button>
                             <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '4px 0' }} />
-                            <button onClick={() => { setActiveMenuId(null); handleDelete(item.item_id || item.id, item.specification); }} style={{ ...menuButtonStyle, color: '#f43f5e', backgroundColor: 'rgba(244,63,94,0.1)' }}><Trash2 size={14} /> 刪除耗材</button>
+                            <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); handleDelete(item.item_id || item.id, item.specification); }} style={{ ...menuButtonStyle, color: '#f43f5e', backgroundColor: 'rgba(244,63,94,0.1)' }}><Trash2 size={14} /> 刪除耗材</button>
                           </div>
                         )}
                       </td>
@@ -769,6 +843,13 @@ const ConsumableList = ({ isSplitMode = false }) => {
         isOpen={!!ledgerItem}
         onClose={() => setLedgerItem(null)}
         item={ledgerItem}
+      />
+
+      {/* 新增耗材彈窗 Modal */}
+      <ConsumableRegistrationModal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        onSuccess={fetchConsumables}
       />
     </div>
   );

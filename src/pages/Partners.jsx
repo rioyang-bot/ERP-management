@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { UserPlus, Trash2, Edit2, Search, X, Save, UserCheck, Truck, Users } from 'lucide-react';
+import { UserPlus, Trash2, Edit2, Search, X, Save, UserCheck, Truck, Users, MapPin } from 'lucide-react';
 import { logCreate, logUpdate, logDelete, logStatusChange } from '../utils/auditLogger';
 
 const Partners = () => {
   const [partners, setPartners] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [formData, setFormData] = useState({ type: 'CUSTOMER', name: '', contact: '', phone: '' });
+  const [formData, setFormData] = useState({ type: 'CUSTOMER', name: '', contact: '', phone: '', address: '' });
   
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -20,11 +20,12 @@ const Partners = () => {
     setLoading(true);
     // 嘗試建立欄位 (如果已存在則會報錯但不影響後續)
     try { await window.electronAPI.namedQuery('migratePartnersActive'); } catch(e) {}
+    try { await window.electronAPI.namedQuery('migratePartnersAddress'); } catch(e) {}
     // 確保現有資料的 is_active 不是 NULL
     try { await window.electronAPI.namedQuery('initPartnersActive'); } catch(e) {}
     
     const res = await window.electronAPI.namedQuery('fetchPartners');
-    if (res.success) setPartners(res.rows);
+    if (res.success) setPartners(res.rows || []);
     setLoading(false);
   }, []);
 
@@ -39,7 +40,7 @@ const Partners = () => {
       .trim()
       .replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gim, "") // 移除 Script
       .replace(/[<>'"\\;\%]/g, "") // 移除特殊字元
-      .substring(0, 200); // 限制長度防止惡意攻擊
+      .substring(0, 300); // 限制長度防止惡意攻擊
   };
 
   const handleChange = (e) => {
@@ -49,23 +50,46 @@ const Partners = () => {
 
   const handleAdd = async () => {
     const cleanName = sanitizeValue(formData.name);
-    if (!cleanName) return alert('請填寫有效的夥伴名稱');
+    const cleanContact = sanitizeValue(formData.contact);
+    const cleanPhone = sanitizeValue(formData.phone);
+    const cleanAddress = sanitizeValue(formData.address);
+
+    // 必填欄位驗證：公司名稱(全稱)與聯絡人
+    if (!cleanName) return alert('請填寫公司名稱(全稱) (必填)');
+    if (!cleanContact) return alert('請填寫聯絡人 (必填)');
     
+    // 重複性檢查：不可重複建立相同的 (類型 + 公司名稱 + 聯絡人)
+    try {
+      const dupRes = await window.electronAPI.namedQuery('checkDuplicatePartner', [formData.type, cleanName, cleanContact]);
+      if (dupRes.success && dupRes.rows.length > 0) {
+        return alert(`系統訊息：[${formData.type === 'CUSTOMER' ? '客戶' : '供應商'}]「${cleanName}」已存在聯絡人「${cleanContact}」，不可重複建立！`);
+      }
+    } catch(err) {
+      console.error('Duplicate check error:', err);
+    }
+
     setLoading(true);
     const res = await window.electronAPI.namedQuery(
       'insertPartner',
       [
         formData.type, 
         cleanName, 
-        sanitizeValue(formData.contact), 
-        sanitizeValue(formData.phone)
+        cleanContact, 
+        cleanPhone,
+        cleanAddress
       ]
     );
 
     if (res.success) {
-      logCreate('PARTNER', cleanName, formData.type === 'CUSTOMER' ? '客戶' : '供應商', `新增夥伴 [${cleanName}] 類別: ${formData.type === 'CUSTOMER' ? '客戶' : '供應商'}`, { type: formData.type, name: cleanName, contact: formData.contact, phone: formData.phone });
+      logCreate(
+        'PARTNER', 
+        cleanName, 
+        formData.type === 'CUSTOMER' ? '客戶' : '供應商', 
+        `新增夥伴 [${cleanName}] 聯絡人: [${cleanContact}] 類別: ${formData.type === 'CUSTOMER' ? '客戶' : '供應商'}`, 
+        { type: formData.type, name: cleanName, contact: cleanContact, phone: cleanPhone, address: cleanAddress }
+      );
       await fetchPartners();
-      setFormData({ type: 'CUSTOMER', name: '', contact: '', phone: '' });
+      setFormData({ type: 'CUSTOMER', name: '', contact: '', phone: '', address: '' });
     } else {
       alert('系統訊息：資料庫寫入失敗，請檢查資料格式或聯絡系統管理員。');
     }
@@ -85,24 +109,42 @@ const Partners = () => {
 
   const handleUpdate = async () => {
     const cleanName = sanitizeValue(editingItem.name);
-    if (!cleanName) return alert('夥伴名稱不可為空且不能包含非法字元');
+    const cleanContact = sanitizeValue(editingItem.contact);
+    const cleanPhone = sanitizeValue(editingItem.phone);
+    const cleanAddress = sanitizeValue(editingItem.address);
+
+    // 必填欄位驗證：公司名稱(全稱)與聯絡人
+    if (!cleanName) return alert('請填寫公司名稱(全稱) (必填)');
+    if (!cleanContact) return alert('請填寫聯絡人 (必填)');
+
+    // 重複性檢查 (排除自身 id)
+    try {
+      const dupRes = await window.electronAPI.namedQuery('checkDuplicatePartnerForUpdate', [editingItem.type, cleanName, cleanContact, editingItem.id]);
+      if (dupRes.success && dupRes.rows.length > 0) {
+        return alert(`系統訊息：[${editingItem.type === 'CUSTOMER' ? '客戶' : '供應商'}]「${cleanName}」已存在聯絡人「${cleanContact}」，不可重複建立！`);
+      }
+    } catch(err) {
+      console.error('Duplicate check error on update:', err);
+    }
     
     const res = await window.electronAPI.namedQuery(
       'updatePartner',
       [
         editingItem.type, 
         cleanName, 
-        sanitizeValue(editingItem.contact), 
-        sanitizeValue(editingItem.phone), 
+        cleanContact, 
+        cleanPhone, 
+        cleanAddress,
         editingItem.id
       ]
     );
     if (res.success) {
-      logUpdate('PARTNER', editingItem.id, cleanName, `編輯夥伴資料 [${cleanName}]`, {
+      logUpdate('PARTNER', editingItem.id, cleanName, `編輯夥伴資料 [${cleanName}] 聯絡人: [${cleanContact}]`, {
         type: editingItem.type,
         name: cleanName,
-        contact: editingItem.contact,
-        phone: editingItem.phone
+        contact: cleanContact,
+        phone: cleanPhone,
+        address: cleanAddress
       });
       setShowEditModal(false);
       await fetchPartners();
@@ -111,11 +153,12 @@ const Partners = () => {
     }
   };
 
-  const handleDelete = async (id, name) => {
-    if (window.confirm(`確定要徹底刪除夥伴 [${name}] 嗎？`)) {
+  const handleDelete = async (id, name, contact) => {
+    const targetDesc = contact ? `${name} (${contact})` : name;
+    if (window.confirm(`確定要徹底刪除夥伴 [${targetDesc}] 嗎？`)) {
       const res = await window.electronAPI.namedQuery('deletePartner', [id]);
       if (res.success) {
-        logDelete('PARTNER', id, name, `刪除夥伴 [${name}]`, { id, name });
+        logDelete('PARTNER', id, targetDesc, `刪除夥伴 [${targetDesc}]`, { id, name, contact });
         await fetchPartners();
       } else {
         // 安全原則：不揭露資料庫關聯錯誤細節，但引導使用者解決問題
@@ -129,39 +172,42 @@ const Partners = () => {
     const s = searchTerm.toLowerCase();
     return (p.name || '').toLowerCase().includes(s) || 
            (p.contact || '').toLowerCase().includes(s) || 
-           (p.phone || '').toLowerCase().includes(s);
+           (p.phone || '').toLowerCase().includes(s) ||
+           (p.address || '').toLowerCase().includes(s);
   });
 
   const totalPages = Math.ceil(filteredPartners.length / itemsPerPage);
   const paginatedPartners = filteredPartners.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   const cardStyle = { backgroundColor: 'var(--bg-surface)', borderRadius: '16px', padding: '24px', boxShadow: 'var(--card-shadow)', border: '1px solid var(--border-color)', color: 'var(--text-main)' };
-  const thStyle = { textAlign: 'left', padding: '14px', borderBottom: '2px solid var(--border-color)', color: 'var(--table-header-text)', fontSize: '12px', fontWeight: '700', backgroundColor: 'var(--table-header-bg)' };
+  const thStyle = { textAlign: 'left', padding: '14px', borderBottom: '2px solid var(--border-color)', color: 'var(--table-header-text, var(--text-muted))', fontSize: '12px', fontWeight: '800', backgroundColor: 'var(--table-header-bg)' };
   const tdStyle = { padding: '14px', fontSize: '13px', color: 'var(--text-main)', borderBottom: '1px solid var(--table-border)' };
 
   return (
     <div style={{ padding: '24px', backgroundColor: 'var(--bg-app)', minHeight: '100vh' }}>
       <div style={cardStyle}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
           <div>
-          <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
-            <Users size={26} color="var(--primary-color)" /> 客戶/廠商管理 (Partners)
-          </h1>
-            <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>管理合作夥伴的基本資料，以便在進出貨時快速帶入功能。</p>
+            <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
+              <Users size={26} color="var(--primary-color)" /> 客戶/廠商管理 (Partners)
+            </h1>
+            <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>
+              管理客戶與供應商之公司名稱(全稱)、聯絡人、電話與公司地址。同一公司可建立多位聯絡人，系統將自動校驗防止重複。
+            </p>
           </div>
           <div style={{ position: 'relative' }}>
             <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-subtle)' }} />
             <input 
               type="text" 
-              placeholder="搜尋夥伴名稱、聯絡人..." 
+              placeholder="搜尋公司名稱、聯絡人、地址..." 
               value={searchTerm}
               onChange={(e) => {setSearchTerm(e.target.value); setCurrentPage(1);}}
-              style={{ padding: '10px 12px 10px 42px', borderRadius: '30px', border: '1.5px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', width: '300px', outline: 'none' }}
+              style={{ padding: '10px 12px 10px 42px', borderRadius: '30px', border: '1.5px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', width: '320px', outline: 'none' }}
             />
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '32px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: '32px' }}>
           {/* 左側：新增表單 */}
           <div style={{ backgroundColor: 'var(--bg-surface-subtle)', padding: '24px', borderRadius: '16px', border: '1px solid var(--border-color)', alignSelf: 'start' }}>
             <h3 style={{ marginBottom: '20px', fontSize: '16px', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-main)' }}>
@@ -169,23 +215,51 @@ const Partners = () => {
             </h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
-                <label style={labelStyle}>夥伴類型</label>
+                <label style={labelStyle}>夥伴類型 *</label>
                 <select name="type" value={formData.type} onChange={handleChange} style={inputStyle}>
                   <option value="CUSTOMER">客戶 (Customer)</option>
                   <option value="SUPPLIER">供應商 (Supplier)</option>
                 </select>
               </div>
               <div>
-                <label style={labelStyle}>名稱 *</label>
-                <input type="text" name="name" value={formData.name} onChange={handleChange} placeholder="公司或人員名稱" style={inputStyle} />
+                <label style={labelStyle}>公司名稱(全稱) *</label>
+                <input 
+                  type="text" 
+                  name="name" 
+                  value={formData.name} 
+                  onChange={handleChange} 
+                  style={inputStyle} 
+                />
               </div>
               <div>
-                <label style={labelStyle}>聯絡人</label>
-                <input type="text" name="contact" value={formData.contact} onChange={handleChange} style={inputStyle} />
+                <label style={labelStyle}>聯絡人 *</label>
+                <input 
+                  type="text" 
+                  name="contact" 
+                  value={formData.contact} 
+                  onChange={handleChange} 
+                  style={inputStyle} 
+                />
               </div>
               <div>
                 <label style={labelStyle}>聯絡電話</label>
-                <input type="text" name="phone" value={formData.phone} onChange={handleChange} style={inputStyle} />
+                <input 
+                  type="text" 
+                  name="phone" 
+                  value={formData.phone} 
+                  onChange={handleChange} 
+                  style={inputStyle} 
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>公司地址</label>
+                <input 
+                  type="text" 
+                  name="address" 
+                  value={formData.address || ''} 
+                  onChange={handleChange} 
+                  style={inputStyle} 
+                />
               </div>
               <button 
                 onClick={handleAdd}
@@ -206,10 +280,11 @@ const Partners = () => {
                   <thead>
                     <tr>
                       <th style={thStyle}>夥伴類型</th>
-                      <th style={thStyle}>名稱 (Name)</th>
-                      <th style={thStyle}>聯絡資訊</th>
+                      <th style={thStyle}>公司名稱(全稱)</th>
+                      <th style={thStyle}>聯絡人與電話</th>
+                      <th style={thStyle}>公司地址</th>
                       <th style={{ ...thStyle, textAlign: 'center' }}>狀態</th>
-                      <th style={{ ...thStyle, textAlign: 'center', width: '100px' }}>管理</th>
+                      <th style={{ ...thStyle, textAlign: 'center', width: '100px' }}>操作</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -226,10 +301,18 @@ const Partners = () => {
                             {p.type === 'CUSTOMER' ? '客戶' : '供應商'}
                           </span>
                         </td>
-                        <td style={{ ...tdStyle, fontWeight: '700', color: 'var(--text-main)' }}>{p.name}</td>
+                        <td style={{ ...tdStyle, fontWeight: '800', color: 'var(--text-main)' }}>{p.name}</td>
                         <td style={tdStyle}>
-                          <div style={{ fontWeight: '600', color: 'var(--text-main)' }}>{p.contact || '--'}</div>
+                          <div style={{ fontWeight: '700', color: 'var(--text-main)' }}>{p.contact || '--'}</div>
                           <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{p.phone || '--'}</div>
+                        </td>
+                        <td style={{ ...tdStyle, color: 'var(--text-muted)', fontSize: '12px', maxWidth: '200px' }} title={p.address}>
+                          {p.address ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              <MapPin size={13} color="var(--primary-color)" style={{ flexShrink: 0 }} />
+                              <span>{p.address}</span>
+                            </div>
+                          ) : '--'}
                         </td>
                         <td style={{ ...tdStyle, textAlign: 'center' }}>
                           <button 
@@ -244,10 +327,24 @@ const Partners = () => {
                             {p.is_active ? '使用中' : '已停用'}
                           </button>
                         </td>
-                        <td style={{ ...tdStyle, textAlign: 'center' }}>
-                          <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
-                            <button onClick={() => { setEditingItem({ ...p }); setShowEditModal(true); }} style={actionButtonStyle} title="修改"><Edit2 size={16} /></button>
-                            <button onClick={() => handleDelete(p.id, p.name)} style={{ ...actionButtonStyle, color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.3)' }} title="刪除"><Trash2 size={16} /></button>
+                        <td style={{ ...tdStyle, textAlign: 'center', whiteSpace: 'nowrap' }}>
+                          <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
+                            <button 
+                              onClick={() => { setEditingItem({ ...p }); setShowEditModal(true); }} 
+                              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', padding: 0, backgroundColor: 'rgba(16, 185, 129, 0.12)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: '6px', cursor: 'pointer', flexShrink: 0 }} 
+                              title="修改夥伴資訊"
+                              aria-label="修改夥伴資訊"
+                            >
+                              <Edit2 size={16} />
+                            </button>
+                            <button 
+                              onClick={() => handleDelete(p.id, p.name, p.contact)} 
+                              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', padding: 0, backgroundColor: 'rgba(239, 68, 68, 0.12)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '6px', cursor: 'pointer', flexShrink: 0 }} 
+                              title="刪除夥伴"
+                              aria-label="刪除夥伴"
+                            >
+                              <Trash2 size={16} />
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -271,30 +368,34 @@ const Partners = () => {
       {/* 編輯 Modal */}
       {showEditModal && editingItem && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'var(--bg-modal-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
-          <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-main)', width: '450px', padding: '32px', borderRadius: '16px', boxShadow: 'var(--modal-shadow)' }}>
+          <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-main)', width: '480px', padding: '32px', borderRadius: '16px', boxShadow: 'var(--modal-shadow)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
               <h2 style={{ fontSize: '20px', fontWeight: '900', color: 'var(--text-main)', margin: 0 }}>修改夥伴資訊</h2>
               <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setShowEditModal(false)} />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
-                <label style={labelStyle}>夥伴類型</label>
+                <label style={labelStyle}>夥伴類型 *</label>
                 <select value={editingItem.type} onChange={(e) => setEditingItem({...editingItem, type: e.target.value})} style={inputStyle}>
                   <option value="CUSTOMER">客戶 (Customer)</option>
                   <option value="SUPPLIER">供應商 (Supplier)</option>
                 </select>
               </div>
               <div>
-                <label style={labelStyle}>名稱 *</label>
-                <input type="text" value={editingItem.name} onChange={(e) => setEditingItem({...editingItem, name: e.target.value})} style={inputStyle} />
+                <label style={labelStyle}>公司名稱(全稱) *</label>
+                <input type="text" name="name" value={editingItem.name} onChange={(e) => setEditingItem({...editingItem, name: e.target.value})} style={inputStyle} />
               </div>
               <div>
-                <label style={labelStyle}>聯絡人</label>
-                <input type="text" value={editingItem.contact || ''} onChange={(e) => setEditingItem({...editingItem, contact: e.target.value})} style={inputStyle} />
+                <label style={labelStyle}>聯絡人 *</label>
+                <input type="text" name="contact" value={editingItem.contact || ''} onChange={(e) => setEditingItem({...editingItem, contact: e.target.value})} style={inputStyle} />
               </div>
               <div>
                 <label style={labelStyle}>聯絡電話</label>
-                <input type="text" value={editingItem.phone || ''} onChange={(e) => setEditingItem({...editingItem, phone: e.target.value})} style={inputStyle} />
+                <input type="text" name="phone" value={editingItem.phone || ''} onChange={(e) => setEditingItem({...editingItem, phone: e.target.value})} style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>公司地址</label>
+                <input type="text" name="address" value={editingItem.address || ''} onChange={(e) => setEditingItem({...editingItem, address: e.target.value})} style={inputStyle} />
               </div>
               <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
                 <button onClick={handleUpdate} style={{ flex: 1, padding: '14px', backgroundColor: 'var(--primary-color)', color: 'white', border: 'none', borderRadius: '10px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>

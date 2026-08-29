@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback, useContext } from 'react';
 import { Plus, Search, FileText, ShoppingCart, CheckCircle, Clock, AlertCircle, Trash2, DollarSign, Package, Tag, Filter, X, Save, Settings2, Trash } from 'lucide-react';
 import { RoleContext } from '../context/RoleContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { logCreate, logUpdate } from '../utils/auditLogger';
 
-const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose = null, isSplitMode = false }) => {
+const ProcurementRegistration = ({ editMode = false, isModalMode = false, initOrderNo = null, onClose = null, isSplitMode = false }) => {
   const { authUser } = useContext(RoleContext);
   const navigate = useNavigate();
+  const location = useLocation();
   const [purchaseRecords, setPurchaseRecords] = useState([]);
   const [partners, setPartners] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -104,8 +105,23 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
             setOrderNo(prev => prev || `PO-${today}-${paddedNum}`);
           }
   
+          const prefill = location.state?.prefillItem;
           // Only init items if they are empty
           setItems(prev => {
+            if (prefill) {
+              const csmCat = catsRes.rows.find(c => c.name === '耗材') || catsRes.rows[0];
+              return [{ 
+                id: Date.now(), 
+                category_id: csmCat ? csmCat.id.toString() : (catsRes.rows[0]?.id.toString() || ''), 
+                partner_id: '', 
+                item_type: prefill.type || '', 
+                brand: prefill.brand || '', 
+                model: prefill.model || '', 
+                specification: prefill.specification || '', 
+                unit: prefill.unit || '個', 
+                quantity: prefill.quantity || 1 
+              }];
+            }
             if (prev.length === 0 || (prev.length === 1 && !prev[0].specification)) {
                return [{ id: Date.now(), category_id: catsRes.rows[0].id.toString(), partner_id: '', item_type: '', brand: '', model: '', specification: '', unit: '個', quantity: 1 }];
             }
@@ -269,6 +285,7 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
          setRemarks('');
          setItems([]); 
          await fetchData(true);
+         if (onClose) onClose();
       }
     } catch (err) {
       console.error("Submit Error:", err);
@@ -324,16 +341,31 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
     return window.getMediaUrl ? window.getMediaUrl(rawUrl) : rawUrl;
   };
 
-  const containerStyle = editMode ? { padding: 0 } : { padding: '24px', backgroundColor: 'var(--bg-app)', minHeight: '100vh', display: 'flex', flexDirection: isSplitMode ? 'column' : 'row', gap: '24px' };
+  const containerStyle = editMode ? { padding: 0 } : {
+    padding: isSplitMode ? '0' : '24px',
+    backgroundColor: isSplitMode ? 'transparent' : 'var(--bg-app)',
+    minHeight: isSplitMode ? 'auto' : '100vh',
+    display: 'flex',
+    flexDirection: isSplitMode ? 'column' : 'row',
+    gap: '24px'
+  };
   const leftSectionStyle = editMode ? { width: '100%' } : (isSplitMode ? { width: '100%' } : { flex: '0 0 60%' });
   const rightSectionStyle = isSplitMode ? { width: '100%' } : { flex: '1' };
-  const cardStyle = editMode ? {} : { backgroundColor: 'var(--bg-surface)', borderRadius: '16px', padding: '24px', boxShadow: 'var(--card-shadow)', border: '1px solid var(--border-color)', marginBottom: '24px', color: 'var(--text-main)' };
+  const cardStyle = editMode ? {} : {
+    backgroundColor: 'var(--bg-surface)',
+    borderRadius: '16px',
+    padding: '24px',
+    boxShadow: 'var(--card-shadow)',
+    border: '1px solid var(--border-color)',
+    marginBottom: isSplitMode ? '0' : '24px',
+    color: 'var(--text-main)'
+  };
 
   return (
     <div style={containerStyle}>
       <div style={leftSectionStyle}>
         <div style={cardStyle}>
-          {!editMode && (
+          {!editMode && !isModalMode && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
               <div>
                 <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
@@ -433,7 +465,7 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
                 {items.map((row) => {
                   const isReadonly = row.status && row.status !== 'ORDERED';
                   return (
-                  <tr key={row.id} style={{ borderBottom: '1px solid #eee' }}>
+                  <tr key={row.id} style={{ borderBottom: '1px solid var(--table-border)' }}>
                     <td style={tdStyle}>
                       <select 
                         value={row.category_id} 
@@ -651,15 +683,15 @@ const ProcurementRegistration = ({ editMode = false, initOrderNo = null, onClose
       {/* Preview Modal */}
       {previewFile && (
         <div style={{ 
-          position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.75)', 
-          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000, padding: '24px' 
+          position: 'fixed', inset: 0, backgroundColor: 'var(--bg-modal-overlay)', 
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000, padding: '24px', backdropFilter: 'blur(5px)' 
         }}>
-          <div style={{ backgroundColor: '#fff', width: '80vw', height: '80vh', borderRadius: '12px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div style={{ padding: '16px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: 0, fontSize: '16px' }}>{previewFile.originalName}</h3>
-              <button onClick={() => setPreviewFile(null)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={24} /></button>
+          <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-main)', width: '80vw', height: '80vh', borderRadius: '12px', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: 'var(--modal-shadow)' }}>
+            <div style={{ padding: '16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--text-main)' }}>{previewFile.originalName}</h3>
+              <button onClick={() => setPreviewFile(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={24} /></button>
             </div>
-            <div style={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f0f0f0' }}>
+            <div style={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--bg-surface-subtle)' }}>
               {previewFile.type === 'application/pdf' ? (
                 <iframe 
                   src={getMediaSrc(previewFile.fileName)} 

@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Save, Settings2, Trash2, X, Monitor, Clock, User, MapPin, ListFilter, Layers, Server, FileSpreadsheet } from 'lucide-react';
+import { Plus, Save, Settings2, Trash2, X, Monitor, User, MapPin, ListFilter, Layers, Server, FileSpreadsheet } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { logCreate } from '../utils/auditLogger';
 import DeviceBatchImportModal from '../components/DeviceBatchImportModal';
 
 const Devices = ({ isSplitMode = false }) => {
   const navigate = useNavigate();
-  const [items, setItems] = useState([]);
   const [types, setTypes] = useState([]);
   const [brands, setBrands] = useState([]);
   const [customers, setCustomers] = useState([]);
@@ -46,11 +45,6 @@ const Devices = ({ isSplitMode = false }) => {
     }
     return val.trim();
   };
-
-  const fetchAssets = useCallback(async () => {
-    const res = await window.electronAPI.namedQuery('fetchRecentAssets');
-    if (res.success) setItems(res.rows);
-  }, []);
 
   const fetchModels = useCallback(async (brandName, typeName) => {
     if (!brandName || !typeName) { setModels([]); return { modelNames: [] }; }
@@ -116,7 +110,6 @@ const Devices = ({ isSplitMode = false }) => {
   useEffect(() => {
     const initData = async () => {
       await Promise.all([
-        fetchAssets(),
         fetchCustomers(),
         fetchSettings(),
         fetchBrands(),
@@ -124,7 +117,7 @@ const Devices = ({ isSplitMode = false }) => {
       ]);
     };
     initData();
-  }, [fetchAssets, fetchCustomers, fetchSettings, fetchBrands, fetchProjects]);
+  }, [fetchCustomers, fetchSettings, fetchBrands, fetchProjects]);
 
   const handleAddType = async () => {
     const name = validateAndSanitize(newTypeName, '類型名稱');
@@ -285,11 +278,24 @@ const Devices = ({ isSplitMode = false }) => {
     }
   };
 
-  // Styles
-  const containerStyle = { padding: '24px', backgroundColor: 'var(--bg-app)', minHeight: '100vh', display: 'flex', flexDirection: isSplitMode ? 'column' : 'row', gap: '24px' };
-  const leftSectionStyle = isSplitMode ? { width: '100%' } : { flex: '0 0 60%' };
-  const rightSectionStyle = isSplitMode ? { width: '100%' } : { flex: '1' };
-  const cardStyle = { backgroundColor: 'var(--bg-surface)', borderRadius: '16px', padding: '24px', boxShadow: 'var(--card-shadow)', border: '1px solid var(--border-color)', marginBottom: '24px', color: 'var(--text-main)' };
+  const containerStyle = {
+    padding: isSplitMode ? '0' : '24px',
+    backgroundColor: isSplitMode ? 'transparent' : 'var(--bg-app)',
+    minHeight: isSplitMode ? 'auto' : '100vh',
+    width: '100%',
+    boxSizing: 'border-box'
+  };
+  const cardStyle = {
+    backgroundColor: 'var(--bg-surface)',
+    borderRadius: '16px',
+    padding: '24px',
+    boxShadow: 'var(--card-shadow)',
+    border: '1px solid var(--border-color)',
+    marginBottom: isSplitMode ? '0' : '24px',
+    color: 'var(--text-main)',
+    width: '100%',
+    boxSizing: 'border-box'
+  };
   const labelStyle = { display: 'block', fontSize: '13px', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '8px' };
   const inputStyle = { width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', fontSize: '14px', boxSizing: 'border-box', outline: 'none' };
   const iconButtonStyle = { padding: '8px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-main)', cursor: 'pointer' };
@@ -304,7 +310,7 @@ const Devices = ({ isSplitMode = false }) => {
 
   return (
     <div style={containerStyle}>
-      <div style={leftSectionStyle}>
+      <div style={{ width: '100%' }}>
         <div style={cardStyle}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
             <div>
@@ -318,27 +324,26 @@ const Devices = ({ isSplitMode = false }) => {
                 type="button"
                 onClick={() => setShowBatchImport(true)}
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
                   padding: '8px 16px',
                   borderRadius: '10px',
-                  backgroundColor: '#059669',
+                  backgroundColor: '#10b981',
                   color: '#ffffff',
                   border: 'none',
                   fontWeight: '700',
                   fontSize: '13px',
                   cursor: 'pointer',
-                  boxShadow: '0 2px 6px rgba(5, 150, 105, 0.25)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: '0 2px 8px rgba(16, 185, 129, 0.25)',
                   transition: 'all 0.2s'
                 }}
-                title="上傳 Excel/CSV 檔案進行設備批次建檔"
               >
-                <FileSpreadsheet size={16} /> 批次匯入 (Excel/CSV)
+                <FileSpreadsheet size={16} /> 批次匯入 (Excel)
               </button>
               {!isSplitMode && (
-                <div style={{ display: 'flex', backgroundColor: 'var(--bg-surface-subtle)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
-                  <button style={{ padding: '6px 14px', backgroundColor: 'var(--bg-surface)', color: 'var(--primary-color)', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '800', boxShadow: 'var(--card-shadow)', cursor: 'default' }}>
+                <div style={{ display: 'flex', backgroundColor: 'var(--bg-surface-subtle)', padding: '4px', borderRadius: '10px' }}>
+                  <button style={{ padding: '6px 14px', backgroundColor: 'var(--bg-surface)', color: 'var(--primary-color)', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '800', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', cursor: 'default' }}>
                     📝 建檔
                   </button>
                   <button onClick={() => navigate('/device-split')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: 'var(--text-muted)', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
@@ -351,21 +356,27 @@ const Devices = ({ isSplitMode = false }) => {
               )}
             </div>
           </div>
+
+          <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', backgroundColor: 'var(--bg-surface-subtle)', padding: '4px', borderRadius: '10px', maxWidth: '300px' }}>
+            <button onClick={() => setIsBulkMode(false)} style={modeBtnStyle(!isBulkMode)}>單筆建檔</button>
+            <button onClick={() => setIsBulkMode(true)} style={modeBtnStyle(isBulkMode)}>多筆/批次建檔</button>
+          </div>
+
           <div key={formKey} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
               <div>
                 <label style={labelStyle}>廠牌 (Brand) <span style={{ color: '#ef4444' }}>*</span></label>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <select name="brand" value={formData.brand} onChange={handleChange} style={inputStyle}>
-                    <option value="">請選擇</option>
                     {brands.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}
                   </select>
                   <button onClick={() => setShowAddBrand(!showAddBrand)} style={iconButtonStyle}><Plus size={18} /></button>
                   <button onClick={() => setShowManageBrand(!showManageBrand)} style={iconButtonStyle}><Settings2 size={18} /></button>
                 </div>
-                {showAddBrand && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newBrandName} onChange={e => setNewBrandName(e.target.value)} style={inputStyle} /><button onClick={handleAddBrand} style={{ ...iconButtonStyle, background: '#2563eb', color: '#fff' }}><Plus size={18} /></button></div>}
-                {showManageBrand && <div style={{ marginTop: '8px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>{brands.map(b => (<div key={b.id} style={manageItemStyle}><span>{b.name}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteBrand(b.name)} /></div>))}</div>}
+                {showAddBrand && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newBrandName} onChange={e => setNewBrandName(e.target.value)} style={inputStyle} /><button onClick={handleAddBrand} style={{ ...iconButtonStyle, background: 'var(--primary-color)', color: '#fff' }}><Plus size={18} /></button></div>}
+                {showManageBrand && <div style={{ marginTop: '8px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-surface-subtle)' }}>{brands.map(b => (<div key={b.id} style={manageItemStyle}><span>{b.name}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteBrand(b.name)} /></div>))}</div>}
               </div>
+
               <div>
                 <label style={labelStyle}>類型 (Type) <span style={{ color: '#ef4444' }}>*</span></label>
                 <div style={{ display: 'flex', gap: '8px' }}>
@@ -375,39 +386,22 @@ const Devices = ({ isSplitMode = false }) => {
                   <button onClick={() => setShowAddType(!showAddType)} style={iconButtonStyle}><Plus size={18} /></button>
                   <button onClick={() => setShowManageType(!showManageType)} style={iconButtonStyle}><Settings2 size={18} /></button>
                 </div>
-                {showAddType && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newTypeName} onChange={e => setNewTypeName(e.target.value)} style={inputStyle} /><button onClick={handleAddType} style={{ ...iconButtonStyle, background: '#2563eb', color: '#fff' }}><Plus size={18} /></button></div>}
-                {showManageType && <div style={{ marginTop: '8px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>{types.map(t => (<div key={t} style={manageItemStyle}><span>{t}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteType(t)} /></div>))}</div>}
+                {showAddType && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newTypeName} onChange={e => setNewTypeName(e.target.value)} style={inputStyle} /><button onClick={handleAddType} style={{ ...iconButtonStyle, background: 'var(--primary-color)', color: '#fff' }}><Plus size={18} /></button></div>}
+                {showManageType && <div style={{ marginTop: '8px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-surface-subtle)' }}>{types.map(t => (<div key={t} style={manageItemStyle}><span>{t}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteType(t)} /></div>))}</div>}
               </div>
+
               <div>
                 <label style={labelStyle}>型號 (Model) <span style={{ color: '#ef4444' }}>*</span></label>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <select name="model" value={formData.model} onChange={handleChange} style={inputStyle}>
-                    <option value="">請選擇</option>
+                    <option value="">請選擇型號</option>
                     {models.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                   <button onClick={() => setShowAddModel(!showAddModel)} style={iconButtonStyle}><Plus size={18} /></button>
                   <button onClick={() => setShowManageModel(!showManageModel)} style={iconButtonStyle}><Settings2 size={18} /></button>
                 </div>
-                {showAddModel && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newModelName} onChange={e => setNewModelName(e.target.value)} style={inputStyle} /><button onClick={handleAddModel} style={{ ...iconButtonStyle, background: '#2563eb', color: '#fff' }}><Plus size={18} /></button></div>}
-                {showManageModel && <div style={{ marginTop: '8px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>{models.map(m => (<div key={m} style={manageItemStyle}><span>{m}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteModel(m)} /></div>))}</div>}
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 1.5fr) 1fr 1fr', gap: '16px' }}>
-              <div><label style={labelStyle}>規格 (Specification) <span style={{ color: '#ef4444' }}>*</span></label><input type="text" name="specification" value={formData.specification} onChange={handleChange} style={inputStyle} placeholder="例如: 伺服器主機規格" required /></div>
-              <div>
-                <label style={labelStyle}>資產歸屬</label>
-                <div style={{ display: 'flex', gap: '4px', backgroundColor: 'var(--bg-surface-subtle)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
-                  <button type="button" onClick={() => setFormData(prev => ({ ...prev, ownership: 'FOR_SALE' }))} style={modeBtnStyle(formData.ownership === 'FOR_SALE')}>一般銷售</button>
-                  <button type="button" onClick={() => setFormData(prev => ({ ...prev, ownership: 'COMPANY' }))} style={modeBtnStyle(formData.ownership === 'COMPANY')}>公司資產</button>
-                </div>
-              </div>
-              <div>
-                <label style={labelStyle}>建檔模式</label>
-                <div style={{ display: 'flex', gap: '4px', backgroundColor: 'var(--bg-surface-subtle)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
-                  <button type="button" onClick={() => setIsBulkMode(false)} style={modeBtnStyle(!isBulkMode)}><ListFilter size={14} /> 單筆</button>
-                  <button type="button" onClick={() => setIsBulkMode(true)} style={modeBtnStyle(isBulkMode)}><Layers size={14} /> 多筆</button>
-                </div>
+                {showAddModel && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newModelName} onChange={e => setNewModelName(e.target.value)} style={inputStyle} /><button onClick={handleAddModel} style={{ ...iconButtonStyle, background: 'var(--primary-color)', color: '#fff' }}><Plus size={18} /></button></div>}
+                {showManageModel && <div style={{ marginTop: '8px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-surface-subtle)' }}>{models.map(m => (<div key={m} style={manageItemStyle}><span>{m}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteModel(m)} /></div>))}</div>}
               </div>
             </div>
 
@@ -560,46 +554,10 @@ const Devices = ({ isSplitMode = false }) => {
         </div>
       </div>
 
-      <div style={rightSectionStyle}>
-        <div style={cardStyle}>
-          <h3 style={{ fontSize: '16px', fontWeight: '800', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-main)' }}>
-            <Clock size={18} color="var(--text-muted)" /> 最新 10 筆建檔記錄
-          </h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {items.map(item => (
-              <div key={item.id} style={{ padding: '12px 16px', borderRadius: '12px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)' }}>
-                <div style={{ fontWeight: '800', fontSize: '13px', marginBottom: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  <span style={{ color: 'var(--primary-color)' }}>{item.brand}</span>
-                  <span style={{ color: 'var(--text-subtle)', margin: '0 4px' }}>/</span>
-                  <span style={{ color: 'var(--text-muted)' }}>{item.type}</span>
-                  <span style={{ color: 'var(--text-subtle)', margin: '0 4px' }}>/</span>
-                  <span style={{ color: 'var(--text-main)' }}>{item.model}</span>
-                </div>
-                <div style={{ color: 'var(--text-muted)', fontSize: '12px', fontWeight: '500', marginBottom: '6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {(item.specification || '').replace(`${item.type} ${item.brand}`, '').trim().replace(/^\(|\)$/g, '') || '--'}
-                </div>
-                <div style={{ fontSize: '12px', color: 'var(--text-main)', fontWeight: '600' }}>SN: {item.sn || '無序號'}</div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--text-subtle)' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-main)' }}><User size={12} /> {item.client || '--'}</span>
-                    {(item.partner_contact || item.partner_phone) && (
-                      <span style={{ fontSize: '11px', color: 'var(--text-muted)', paddingLeft: '16px' }}>{item.partner_contact} {item.partner_phone}</span>
-                    )}
-                  </div>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-muted)' }}><MapPin size={12} /> {item.location || '--'}</span>
-                </div>
-              </div>
-            ))}
-            {items.length === 0 && <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>尚無資料</div>}
-          </div>
-        </div>
-      </div>
-
       <DeviceBatchImportModal
         isOpen={showBatchImport}
         onClose={() => setShowBatchImport(false)}
         onSuccess={async () => {
-          await fetchAssets();
           await fetchBrands();
           if (formData.brand) {
             const { nextType } = await fetchTypes(formData.brand, formData.type);

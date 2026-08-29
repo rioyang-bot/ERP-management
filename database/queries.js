@@ -83,7 +83,7 @@ export const queries = {
   upsertSystemSetting: `INSERT INTO system_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
   
   // Dashboard / Misc
-  fetchCustomers: `SELECT id, name, contact_person as contact, phone FROM partners WHERE partner_type = 'CUSTOMER' AND COALESCE(is_active, TRUE) = true ORDER BY name ASC`,
+  fetchCustomers: `SELECT id, name, contact_person as contact, phone, address FROM partners WHERE partner_type = 'CUSTOMER' AND COALESCE(is_active, TRUE) = true ORDER BY name ASC, contact_person ASC`,
   fetchAssetSns: `SELECT sn FROM assets WHERE sn IS NOT NULL AND sn != ''`,
   insertCustomerIfNotExist: `INSERT INTO partners (partner_type, name) SELECT 'CUSTOMER', $1 WHERE NOT EXISTS (SELECT 1 FROM partners WHERE name = $1 AND partner_type = 'CUSTOMER')`,
   
@@ -159,7 +159,7 @@ export const queries = {
       FROM purchase_records pr LEFT JOIN partners p ON pr.partner_id = p.id LEFT JOIN categories c ON pr.category_id = c.id LEFT JOIN users u ON pr.purchaser_id = u.id 
       WHERE pr.order_no = $1 ORDER BY pr.id ASC`,
   deletePurchaseRecordById: `DELETE FROM purchase_records WHERE id = $1`,
-  fetchSuppliers: `SELECT id, name FROM partners WHERE partner_type = 'SUPPLIER' ORDER BY name ASC`,
+  fetchSuppliers: `SELECT id, name, contact_person as contact, phone, address FROM partners WHERE partner_type = 'SUPPLIER' AND COALESCE(is_active, TRUE) = true ORDER BY name ASC, contact_person ASC`,
   fetchCategories: `SELECT id, name FROM categories`,
   fetchBrandsByCategory: `SELECT name FROM item_brands WHERE category_id = $1 ORDER BY name ASC`,
   updatePurchaseRecordFull: `UPDATE purchase_records SET partner_id = $1, category_id = $2, item_type = $3, brand = $4, model = $5, specification = $6, unit = $7, quantity = $8, remarks = $9, project_name = $10, attachments = $11::jsonb WHERE id = $12`,
@@ -207,12 +207,15 @@ export const queries = {
   // Inventory.jsx
 
   // Partners.jsx
-  fetchPartners: `SELECT id, partner_type as type, name, contact_person as contact, phone, COALESCE(is_active, TRUE) as is_active FROM partners ORDER BY id DESC`,
-  insertPartner: `INSERT INTO partners (partner_type, name, contact_person, phone, is_active) VALUES ($1, $2, $3, $4, TRUE)`,
-  updatePartner: `UPDATE partners SET partner_type = $1, name = $2, contact_person = $3, phone = $4 WHERE id = $5`,
+  fetchPartners: `SELECT id, partner_type as type, name, contact_person as contact, phone, address, COALESCE(is_active, TRUE) as is_active FROM partners ORDER BY name ASC, contact_person ASC, id DESC`,
+  insertPartner: `INSERT INTO partners (partner_type, name, contact_person, phone, address, is_active) VALUES ($1, $2, $3, $4, $5, TRUE)`,
+  updatePartner: `UPDATE partners SET partner_type = $1, name = $2, contact_person = $3, phone = $4, address = $5 WHERE id = $6`,
+  checkDuplicatePartner: `SELECT id FROM partners WHERE partner_type = $1 AND LOWER(TRIM(name)) = LOWER(TRIM($2)) AND LOWER(TRIM(contact_person)) = LOWER(TRIM($3))`,
+  checkDuplicatePartnerForUpdate: `SELECT id FROM partners WHERE partner_type = $1 AND LOWER(TRIM(name)) = LOWER(TRIM($2)) AND LOWER(TRIM(contact_person)) = LOWER(TRIM($3)) AND id != $4`,
   updatePartnerActive: `UPDATE partners SET is_active = $1 WHERE id = $2`,
   deletePartner: `DELETE FROM partners WHERE id = $1`,
   migratePartnersActive: `ALTER TABLE partners ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE`,
+  migratePartnersAddress: `ALTER TABLE partners ADD COLUMN IF NOT EXISTS address TEXT`,
   initPartnersActive: `UPDATE partners SET is_active = TRUE WHERE is_active IS NULL`,
 
   // Settings.jsx
@@ -296,6 +299,8 @@ export const queries = {
   countOutboundRequests: `WITH seqs AS (SELECT CAST(SUBSTRING(request_no FROM '-([0-9]+)$') AS INTEGER) as sq FROM outbound_requests WHERE request_no LIKE $1 || '%') SELECT s.val as count FROM generate_series(1, 1000) as s(val) WHERE NOT EXISTS (SELECT 1 FROM seqs WHERE seqs.sq = s.val) ORDER BY s.val ASC LIMIT 1`,
   insertOutboundRequest: `INSERT INTO outbound_requests (request_no, customer, location, shipping_date, status, creator_id, contact_info, request_type, expected_return_date) VALUES ($1, $2, $3, $4, 'PENDING', $5, $6, $7, $8) RETURNING id`,
   insertOutboundItem: `INSERT INTO outbound_items (request_id, item_id, sn, quantity, location) VALUES ($1, $2, $3, $4, $5)`,
+  insertLendOutboundItem: `INSERT INTO outbound_items (request_id, item_id, sn, quantity, location, purpose) VALUES ($1, $2, $3, $4, $5, COALESCE($6, '運作測試'))`,
+  migrateOutboundItemPurpose: `ALTER TABLE outbound_items ADD COLUMN IF NOT EXISTS purpose VARCHAR(255) DEFAULT '運作測試'`,
   searchActiveAssetSNs: `
     SELECT a.sn, c.name as category_name, i.brand, i.model 
     FROM assets a 
@@ -353,14 +358,17 @@ export const queries = {
             WHERE oi.request_id = r.id) as searchable_items
     FROM outbound_requests r
     LEFT JOIN users u ON r.creator_id = u.id
-    WHERE r.request_type = 'LEND' AND r.status IN ('SHIPPED', 'RETURNED')
-    ORDER BY r.expected_return_date ASC NULLS LAST, r.shipping_date DESC
+    WHERE r.request_type = 'LEND' AND r.status IN ('PENDING', 'SHIPPED', 'RETURNED')
+    ORDER BY r.created_at DESC, r.expected_return_date ASC NULLS LAST
   `,
   fetchDNItems: `
-    SELECT oi.*, i.brand, i.model, i.specification, i.type, i.unit, c.name as category_name
+    SELECT oi.*, i.brand, i.model, i.specification, i.type, i.unit, c.name as category_name,
+           a.system_date, a.customer_warranty_expire, a.warranty_expire, a.installed_date,
+           a.custom_attributes->>'project_name' as asset_project_name
     FROM outbound_items oi
     JOIN item_master i ON oi.item_id = i.id
     LEFT JOIN categories c ON i.category_id = c.id
+    LEFT JOIN assets a ON oi.sn = a.sn
     WHERE oi.request_id = $1
     ORDER BY oi.id ASC
   `,
@@ -371,6 +379,9 @@ export const queries = {
   updateOutboundRequestStatus: `UPDATE outbound_requests SET status = $1 WHERE id = $2`,
   updateOutboundRequestReturned: `UPDATE outbound_requests SET status = 'RETURNED', actual_return_date = $2 WHERE id = $1`,
   deleteOutboundRequest: `DELETE FROM outbound_requests WHERE id = $1`,
+  migrateOutboundSignedDoc: `ALTER TABLE outbound_requests ADD COLUMN IF NOT EXISTS signed_doc_url TEXT; ALTER TABLE outbound_requests ADD COLUMN IF NOT EXISTS signed_doc_name TEXT;`,
+  updateOutboundSignedDoc: `UPDATE outbound_requests SET signed_doc_url = $1, signed_doc_name = $2 WHERE id = $3`,
+  removeOutboundSignedDoc: `UPDATE outbound_requests SET signed_doc_url = NULL, signed_doc_name = NULL WHERE id = $1`,
   
   // --- Projects ---
   fetchProjects: `SELECT * FROM projects ORDER BY created_at DESC`,
@@ -606,5 +617,82 @@ export const queries = {
       COUNT(DISTINCT user_name) as active_users
     FROM system_audit_logs
     WHERE timestamp >= NOW() - INTERVAL '24 hours'
+  `,
+
+  // Overview.jsx (營運總覽)
+  fetchOverviewStats: `
+    SELECT 
+      (SELECT COUNT(*) FROM purchase_records WHERE status != 'COMPLETED') as pending_purchases_count,
+      (SELECT COUNT(*) FROM inbound_orders WHERE status = 'DRAFT') as draft_inbounds_count,
+      (SELECT COUNT(*) FROM outbound_requests WHERE request_type = 'SALE' AND status = 'PENDING') as pending_outbounds_count,
+      (SELECT COUNT(*) FROM outbound_requests WHERE request_type = 'LEND' AND status = 'SHIPPED') as active_lents_count,
+      (SELECT COUNT(*) FROM outbound_requests WHERE request_type = 'LEND' AND status = 'SHIPPED' AND expected_return_date < CURRENT_DATE) as overdue_lents_count,
+      (SELECT COUNT(*) FROM item_master i JOIN categories c ON i.category_id = c.id WHERE c.name = '耗材' AND (COALESCE(i.stock_qty, 0) + COALESCE(i.lab_qty, 0)) <= COALESCE(i.safety_stock, 0)) as low_stock_consumables_count,
+      (SELECT COUNT(*) FROM projects WHERE status = 'IN_PROGRESS') as active_projects_count
+  `,
+  fetchOverviewPendingPurchases: `
+    SELECT pr.*, p.name as partner_name, c.name as category_name, u.full_name as purchaser_name
+    FROM purchase_records pr
+    LEFT JOIN partners p ON pr.partner_id = p.id
+    LEFT JOIN categories c ON pr.category_id = c.id
+    LEFT JOIN users u ON pr.purchaser_id = u.id
+    WHERE pr.status != 'COMPLETED'
+    ORDER BY pr.created_at DESC
+    LIMIT 100
+  `,
+  fetchOverviewDraftInbounds: `
+    SELECT io.*, p.name as partner_name,
+      (SELECT COUNT(*) FROM inbound_items WHERE inbound_order_id = io.id) as item_count,
+      (SELECT COALESCE(SUM(quantity), 0) FROM inbound_items WHERE inbound_order_id = io.id) as total_quantity
+    FROM inbound_orders io
+    LEFT JOIN partners p ON io.partner_id = p.id
+    WHERE io.status = 'DRAFT'
+    ORDER BY io.created_at DESC
+    LIMIT 100
+  `,
+  fetchOverviewPendingOutbounds: `
+    SELECT r.*, u.full_name as creator_name,
+      (SELECT COUNT(*) FROM outbound_items WHERE request_id = r.id) as item_count,
+      (SELECT COALESCE(SUM(quantity), 0) FROM outbound_items WHERE request_id = r.id) as total_quantity
+    FROM outbound_requests r
+    LEFT JOIN users u ON r.creator_id = u.id
+    WHERE r.request_type = 'SALE' AND r.status = 'PENDING'
+    ORDER BY r.created_at DESC
+    LIMIT 100
+  `,
+  fetchOverviewActiveLents: `
+    SELECT r.*, u.full_name as creator_name,
+      (SELECT COUNT(*) FROM outbound_items WHERE request_id = r.id) as item_count,
+      (SELECT string_agg(COALESCE(im.brand, '') || ' ' || COALESCE(im.model, ''), ', ') 
+       FROM outbound_items oi 
+       JOIN item_master im ON oi.item_id = im.id 
+       WHERE oi.request_id = r.id) as item_summary,
+      CASE WHEN r.expected_return_date < CURRENT_DATE THEN TRUE ELSE FALSE END as is_overdue
+    FROM outbound_requests r
+    LEFT JOIN users u ON r.creator_id = u.id
+    WHERE r.request_type = 'LEND' AND r.status = 'SHIPPED'
+    ORDER BY (CASE WHEN r.expected_return_date < CURRENT_DATE THEN 0 ELSE 1 END) ASC, r.expected_return_date ASC NULLS LAST, r.shipping_date DESC
+    LIMIT 100
+  `,
+  fetchOverviewLowStockConsumables: `
+    SELECT 
+      i.id,
+      i.brand,
+      i.type,
+      i.model,
+      i.specification,
+      i.unit,
+      COALESCE(i.stock_qty, 0) as stock_qty,
+      COALESCE(i.lab_qty, 0) as lab_qty,
+      (COALESCE(i.stock_qty, 0) + COALESCE(i.lab_qty, 0)) as total_qty,
+      COALESCE(i.safety_stock, 0) as safety_stock,
+      (COALESCE(i.safety_stock, 0) - (COALESCE(i.stock_qty, 0) + COALESCE(i.lab_qty, 0))) as shortage_qty,
+      c.name as category_name
+    FROM item_master i
+    JOIN categories c ON i.category_id = c.id
+    WHERE c.name = '耗材'
+      AND (COALESCE(i.stock_qty, 0) + COALESCE(i.lab_qty, 0)) <= COALESCE(i.safety_stock, 0)
+    ORDER BY shortage_qty DESC, total_qty ASC, i.id DESC
+    LIMIT 200
   `
 };

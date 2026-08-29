@@ -2,12 +2,14 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Search, FileText, ShoppingCart, Filter, Calendar, ExternalLink, ChevronDown, ChevronRight, Package, Truck, CheckCircle2, Trash2, Edit2, X, Save, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import ProcurementRegistration from './Purchasing';
+import PurchaseOrderRegistrationModal from '../components/PurchaseOrderRegistrationModal';
 import { logDelete } from '../utils/auditLogger';
 
 const ProcurementList = ({ isSplitMode = false }) => {
   const navigate = useNavigate();
   const [purchaseRecords, setPurchaseRecords] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showAddModal, setShowAddModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [searchField, setSearchField] = useState('all');
   const [searchStatus, setSearchStatus] = useState('ALL');
@@ -177,7 +179,7 @@ const ProcurementList = ({ isSplitMode = false }) => {
   const currentOrders = filteredOrders.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
   return (
-    <div className="procurement-list-container">
+    <div className="procurement-list-container" style={isSplitMode ? { padding: 0, minHeight: 'auto', backgroundColor: 'transparent' } : {}}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div>
@@ -189,7 +191,7 @@ const ProcurementList = ({ isSplitMode = false }) => {
           {!isSplitMode && (
             <div style={{ display: 'flex', backgroundColor: 'var(--bg-surface-subtle)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
               <button 
-                onClick={() => navigate('/procurement-split')} 
+                onClick={() => setShowAddModal(true)} 
                 style={{ 
                   padding: '8px 16px', 
                   backgroundColor: 'var(--primary-color)', 
@@ -204,7 +206,7 @@ const ProcurementList = ({ isSplitMode = false }) => {
                   boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)' 
                 }}
               >
-                新增採購單(P/O Reg)
+                ➕ 新增採購單 (New PO)
               </button>
             </div>
           )}
@@ -347,22 +349,24 @@ const ProcurementList = ({ isSplitMode = false }) => {
                         </span>
                       </td>
                       <td style={{ padding: '16px 24px', textAlign: 'center' }}>
-                          <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
                             {order.status !== 'COMPLETED' ? (
                               <>
                                 <button 
                                   onClick={(e) => { e.stopPropagation(); handleEditOrder(order); }} 
-                                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', backgroundColor: 'rgba(16, 185, 129, 0.12)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
+                                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', padding: 0, backgroundColor: 'rgba(16, 185, 129, 0.12)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: '6px', cursor: 'pointer', flexShrink: 0 }}
                                   title="修改採購單"
+                                  aria-label="修改採購單"
                                 >
-                                  <Edit2 size={16} /> 編輯
+                                  <Edit2 size={16} />
                                 </button>
                                 <button 
                                   onClick={(e) => { e.stopPropagation(); handleDeleteOrder(order.order_no); }} 
-                                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', backgroundColor: 'rgba(239, 68, 68, 0.12)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
+                                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', padding: 0, backgroundColor: 'rgba(239, 68, 68, 0.12)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '6px', cursor: 'pointer', flexShrink: 0 }}
                                   title="刪除採購單"
+                                  aria-label="刪除採購單"
                                 >
-                                  <Trash2 size={16} /> 刪除
+                                  <Trash2 size={16} />
                                 </button>
                               </>
                             ) : (
@@ -456,6 +460,13 @@ const ProcurementList = ({ isSplitMode = false }) => {
           </div>
         </div>
       )}
+
+      {/* 新增採購單 Modal */}
+      <PurchaseOrderRegistrationModal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        onSuccess={fetchRecords}
+      />
 
       <style>{`
         .row-hover-effect:hover {

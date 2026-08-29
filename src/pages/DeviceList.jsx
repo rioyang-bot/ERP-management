@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Search, Edit2, X, Save, MoreHorizontal, MoreVertical, MapPin, User, Trash2, CheckCircle, ShoppingBag, Wrench, ShieldAlert, Cpu, Archive, RotateCcw, Server, Send, History, Building2 } from 'lucide-react';
 import ItemLedgerModal from '../components/ItemLedgerModal';
+import DeviceRegistrationModal from '../components/DeviceRegistrationModal';
 import { logUpdate, logDelete, logStatusChange } from '../utils/auditLogger';
 
 const DeviceList = ({ isSplitMode = false }) => {
@@ -9,16 +10,42 @@ const DeviceList = ({ isSplitMode = false }) => {
   const [items, setItems] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
+  const [showAddModal, setShowAddModal] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const [customers, setCustomers] = useState([]);
   const [projects, setProjects] = useState([]);
   const [activeMenuId, setActiveMenuId] = useState(null); 
+  const [menuPosition, setMenuPosition] = useState(null);
   const brandFilter = searchParams.get('brand');
   
   // 當側邊欄分類變動時，清除搜尋關鍵字
   useEffect(() => {
     setSearchTerm('');
+    setActiveMenuId(null);
+    setMenuPosition(null);
   }, [brandFilter]);
+
+  // 監聽外部點擊與視窗滾動以關閉選單
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (activeMenuId && !e.target.closest('.dropdown-action-menu') && !e.target.closest('.action-menu-btn')) {
+        setActiveMenuId(null);
+        setMenuPosition(null);
+      }
+    };
+    const handleScroll = () => {
+      if (activeMenuId) {
+        setActiveMenuId(null);
+        setMenuPosition(null);
+      }
+    };
+    window.addEventListener('click', handleClickOutside);
+    window.addEventListener('scroll', handleScroll, true);
+    return () => {
+      window.removeEventListener('click', handleClickOutside);
+      window.removeEventListener('scroll', handleScroll, true);
+    };
+  }, [activeMenuId]);
   
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
@@ -147,7 +174,6 @@ const DeviceList = ({ isSplitMode = false }) => {
   };
 
   const handleUpdate = async () => {
-    await window.electronAPI.namedQuery('updateItemMasterSpecs', [editItem.specification || '', editItem.model, editItem.item_master_id]);
     const updatedCustomAttributes = {
       ...(editItem.custom_attributes || {}),
       contact_person: editItem.contact_person || '',
@@ -451,7 +477,11 @@ const DeviceList = ({ isSplitMode = false }) => {
     );
   };
 
-  const containerStyle = { padding: '24px', backgroundColor: 'var(--bg-app)', minHeight: '100vh' };
+  const containerStyle = {
+    padding: isSplitMode ? '0' : '24px',
+    backgroundColor: isSplitMode ? 'transparent' : 'var(--bg-app)',
+    minHeight: isSplitMode ? 'auto' : '100vh'
+  };
   const cardStyle = { backgroundColor: 'var(--bg-surface)', borderRadius: '16px', padding: '24px', boxShadow: 'var(--card-shadow)', border: '1px solid var(--border-color)', color: 'var(--text-main)' };
   const menuButtonStyle = { display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', border: 'none', background: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', borderRadius: '8px', textAlign: 'left' };
   const editLabelStyle = { display: 'block', fontWeight: 800, fontSize: '13px', marginBottom: '6px', color: 'var(--text-muted)' };
@@ -474,7 +504,7 @@ const DeviceList = ({ isSplitMode = false }) => {
             {!isSplitMode && (
               <div style={{ display: 'flex', backgroundColor: 'var(--bg-surface-subtle)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
                 <button
-                  onClick={() => navigate('/device-split')}
+                  onClick={() => setShowAddModal(true)}
                   style={{
                     padding: '8px 16px',
                     backgroundColor: 'var(--primary-color)',
@@ -489,7 +519,7 @@ const DeviceList = ({ isSplitMode = false }) => {
                     boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)'
                   }}
                 >
-                  新增設備 (Device Reg)
+                  ➕ 新增設備 (Add Device)
                 </button>
               </div>
             )}
@@ -673,14 +703,55 @@ const DeviceList = ({ isSplitMode = false }) => {
                                 </span>
                               </td>
                               <td style={{ ...tdStyle, textAlign: 'center', width: '80px', position: 'relative' }}>
-                                <button onClick={() => setActiveMenuId(activeMenuId === item.id ? null : item.id)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                                <button 
+                                  className="action-menu-btn"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (activeMenuId === item.id) {
+                                      setActiveMenuId(null);
+                                      setMenuPosition(null);
+                                    } else {
+                                      const rect = e.currentTarget.getBoundingClientRect();
+                                      const menuHeight = 360;
+                                      const isUpward = rect.bottom + menuHeight > window.innerHeight && rect.top > menuHeight;
+                                      setActiveMenuId(item.id);
+                                      setMenuPosition({
+                                        top: isUpward ? rect.top - 4 : rect.bottom + 4,
+                                        right: window.innerWidth - rect.right,
+                                        isUpward
+                                      });
+                                    }
+                                  }} 
+                                  style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+                                >
                                   <MoreHorizontal size={20} />
                                 </button>
-                                {activeMenuId === item.id && (
-                                  <div style={{ position: 'absolute', right: 0, top: '100%', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '12px', boxShadow: 'var(--modal-shadow)', zIndex: 9999, padding: '8px', minWidth: '180px', display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                                {activeMenuId === item.id && menuPosition && (
+                                  <div 
+                                    className="dropdown-action-menu"
+                                    style={{ 
+                                      position: 'fixed', 
+                                      top: menuPosition.isUpward ? 'auto' : `${menuPosition.top}px`,
+                                      bottom: menuPosition.isUpward ? `${window.innerHeight - menuPosition.top}px` : 'auto',
+                                      right: `${menuPosition.right}px`, 
+                                      backgroundColor: 'var(--bg-surface)', 
+                                      border: '1px solid var(--border-color)', 
+                                      borderRadius: '12px', 
+                                      boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3)', 
+                                      zIndex: 99999, 
+                                      padding: '8px', 
+                                      minWidth: '180px', 
+                                      display: 'flex', 
+                                      flexDirection: 'column', 
+                                      gap: '4px',
+                                      maxHeight: '80vh',
+                                      overflowY: 'auto'
+                                    }}
+                                  >
                                     <button 
                                       onClick={() => {
                                         setActiveMenuId(null);
+                                        setMenuPosition(null);
                                         setLedgerItem({ item_master_id: item.item_master_id, sn: item.sn, brand: item.brand, model: item.model, type: item.type, current_stock: 1 });
                                       }} 
                                       style={{ ...menuButtonStyle, color: 'var(--text-main)' }}
@@ -688,31 +759,31 @@ const DeviceList = ({ isSplitMode = false }) => {
                                       <History size={14} /> 履歷 (History)
                                     </button>
                                     <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '2px 0' }} />
-                                    <button onClick={() => handleEditClick(item)} style={menuButtonStyle}><Edit2 size={14} /> 編輯詳細資訊</button>
+                                    <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); handleEditClick(item); }} style={menuButtonStyle}><Edit2 size={14} /> 編輯詳細資訊</button>
                                     <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '2px 0' }} />
                                     {item.ownership === 'COMPANY' ? (
                                       <button 
-                                        onClick={() => handleUpdateOwnership(item.id, item.sn, 'FOR_SALE', '一般銷售')} 
+                                        onClick={() => { setActiveMenuId(null); setMenuPosition(null); handleUpdateOwnership(item.id, item.sn, 'FOR_SALE', '一般銷售'); }} 
                                         style={{ ...menuButtonStyle, color: '#3b82f6', fontWeight: '700' }}
                                       >
                                         <RotateCcw size={14} /> 轉為一般銷售
                                       </button>
                                     ) : (
                                       <button 
-                                        onClick={() => handleUpdateOwnership(item.id, item.sn, 'COMPANY', '公司資產')} 
+                                        onClick={() => { setActiveMenuId(null); setMenuPosition(null); handleUpdateOwnership(item.id, item.sn, 'COMPANY', '公司資產'); }} 
                                         style={{ ...menuButtonStyle, color: '#8b5cf6', fontWeight: '700' }}
                                       >
                                         <Building2 size={14} /> 轉為公司資產
                                       </button>
                                     )}
                                     <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '4px 0' }} />
-                                    <button onClick={() => handleUpdateStatus(item.id, item.sn, 'ACTIVE', '在庫')} style={{ ...menuButtonStyle, color: '#10b981' }}><CheckCircle size={14} /> 標記為在庫</button>
-                                    <button onClick={() => handleUpdateStatus(item.id, item.sn, 'SHIPPED', '已出貨')} style={{ ...menuButtonStyle, color: '#3b82f6' }}><ShoppingBag size={14} /> 標記為出貨</button>
-                                    <button onClick={() => handleUpdateStatus(item.id, item.sn, 'LENT', '借出/借用')} style={{ ...menuButtonStyle, color: '#f59e0b' }}><Send size={14} /> 標記為借出</button>
-                                    <button onClick={() => handleUpdateStatus(item.id, item.sn, 'REPAIRING', '異常維修')} style={{ ...menuButtonStyle, color: '#d97706' }}><Wrench size={14} /> 標記為維修</button>
-                                    <button onClick={() => handleUpdateStatus(item.id, item.sn, 'SCRAPPED', '報廢')} style={{ ...menuButtonStyle, color: '#ef4444' }}><ShieldAlert size={14} /> 標記為報廢</button>
+                                    <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); handleUpdateStatus(item.id, item.sn, 'ACTIVE', '在庫'); }} style={{ ...menuButtonStyle, color: '#10b981' }}><CheckCircle size={14} /> 標記為在庫</button>
+                                    <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); handleUpdateStatus(item.id, item.sn, 'SHIPPED', '已出貨'); }} style={{ ...menuButtonStyle, color: '#3b82f6' }}><ShoppingBag size={14} /> 標記為出貨</button>
+                                    <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); handleUpdateStatus(item.id, item.sn, 'LENT', '借出/借用'); }} style={{ ...menuButtonStyle, color: '#f59e0b' }}><Send size={14} /> 標記為借出</button>
+                                    <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); handleUpdateStatus(item.id, item.sn, 'REPAIRING', '異常維修'); }} style={{ ...menuButtonStyle, color: '#d97706' }}><Wrench size={14} /> 標記為維修</button>
+                                    <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); handleUpdateStatus(item.id, item.sn, 'SCRAPPED', '報廢'); }} style={{ ...menuButtonStyle, color: '#ef4444' }}><ShieldAlert size={14} /> 標記為報廢</button>
                                     <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '4px 0' }} />
-                                    <button onClick={() => handleDelete(item.id, item.sn)} style={{ ...menuButtonStyle, color: '#f43f5e' }}><Trash2 size={14} /> 刪除紀錄</button>
+                                    <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); handleDelete(item.id, item.sn); }} style={{ ...menuButtonStyle, color: '#f43f5e' }}><Trash2 size={14} /> 刪除紀錄</button>
                                   </div>
                                 )}
                               </td>
@@ -755,12 +826,22 @@ const DeviceList = ({ isSplitMode = false }) => {
               <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setShowEditModal(false)} />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <div>
-                <label style={editLabelStyle}>廠牌 / 類型 / 型號 (鎖定)</label>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <input type="text" value={editItem.brand || ''} disabled style={{ ...editInputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', width: '30%', cursor: 'not-allowed' }} />
-                  <input type="text" value={editItem.type || ''} disabled style={{ ...editInputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', width: '30%', cursor: 'not-allowed' }} />
-                  <input type="text" value={editItem.model || ''} disabled style={{ ...editInputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', flex: 1, cursor: 'not-allowed' }} />
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
+                <div>
+                  <label style={editLabelStyle}>廠牌 (Brand) (鎖定)</label>
+                  <input type="text" value={editItem.brand || ''} disabled readOnly style={{ ...editInputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', cursor: 'not-allowed' }} />
+                </div>
+                <div>
+                  <label style={editLabelStyle}>類型 (Type) (鎖定)</label>
+                  <input type="text" value={editItem.type || ''} disabled readOnly style={{ ...editInputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', cursor: 'not-allowed' }} />
+                </div>
+                <div>
+                  <label style={editLabelStyle}>型號 (Model) (鎖定)</label>
+                  <input type="text" value={editItem.model || ''} disabled readOnly style={{ ...editInputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', cursor: 'not-allowed' }} />
+                </div>
+                <div>
+                  <label style={editLabelStyle}>規格 (Specification) (鎖定)</label>
+                  <input type="text" value={editItem.specification || ''} disabled readOnly title={editItem.specification || ''} style={{ ...editInputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', cursor: 'not-allowed' }} />
                 </div>
               </div>
 
@@ -859,8 +940,6 @@ const DeviceList = ({ isSplitMode = false }) => {
                 </div>
                 <div><label style={editLabelStyle}>主機名稱 (HostName)</label><input type="text" value={editItem.hostname || ''} onChange={(e) => setEditItem({...editItem, hostname: e.target.value})} style={editInputStyle} /></div>
               </div>
-
-              <div><label style={editLabelStyle}>規格 (Specification)</label><textarea value={editItem.specification} onChange={(e) => setEditItem({...editItem, specification: e.target.value})} style={{ ...editInputStyle, minHeight: '80px', lineHeight: '1.5' }} /></div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
                 <div>
                   <label htmlFor="edit-client-select" style={editLabelStyle}>客戶名稱</label>
@@ -1079,6 +1158,13 @@ const DeviceList = ({ isSplitMode = false }) => {
         isOpen={!!ledgerItem}
         onClose={() => setLedgerItem(null)}
         item={ledgerItem}
+      />
+
+      {/* 新增設備彈窗 Modal */}
+      <DeviceRegistrationModal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        onSuccess={fetchAssets}
       />
     </div>
   );

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Trash2, Save, FileText, ShoppingBag, Layers, AlertCircle, ArrowDownToLine } from 'lucide-react';
 import { logCreate } from '../utils/auditLogger';
 
-const Inbound = () => {
+const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) => {
   const [availableItems, setAvailableItems] = useState([]);
   const [pendingPurchases, setPendingPurchases] = useState([]);
   const [orderNo, setOrderNo] = useState('');
@@ -263,6 +263,7 @@ const Inbound = () => {
         setAttachments([]);
         setOrderNo(''); // Reset to generate new order no
         fetchData();
+        if (onClose) onClose();
       } else { alert('入庫失敗：' + orderRes.error); }
     }
   };
@@ -294,13 +295,15 @@ const Inbound = () => {
   const hasPOSelected = items.some(i => !!i.selectedOrderNo || !!i.purchaseRecordId);
 
   return (
-    <div className="card-surface">
+    <div className="card-surface" style={isSplitMode ? { marginBottom: 0 } : {}}>
+      {!isModalMode && (
         <div style={{ marginBottom: '24px' }}>
           <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
             <ArrowDownToLine size={26} color="var(--primary-color)" /> 進貨入庫(Stock in Registration)
           </h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px' }}>管理並登記從供應商收到的實體物品與物料，入庫並增加庫存量。</p>
         </div>
+      )}
       {pendingPurchases.length > 0 && (
         <div style={alertContainerStyle}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
@@ -342,12 +345,12 @@ const Inbound = () => {
                 {att.type?.startsWith('image/') ? (
                    <img src={getMediaSrc(att.fileName)} alt={att.originalName} style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px', cursor: 'pointer' }} onClick={() => setPreviewFile(att)} />
                 ) : (
-                   <div style={{ width: '40px', height: '40px', backgroundColor: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '4px', cursor: 'pointer' }} onClick={() => setPreviewFile(att)}>
-                      <FileText size={20} color="#64748b" />
+                   <div style={{ width: '40px', height: '40px', backgroundColor: 'var(--bg-surface-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '4px', cursor: 'pointer' }} onClick={() => setPreviewFile(att)}>
+                      <FileText size={20} color="var(--text-muted)" />
                    </div>
                 )}
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#334155', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '150px' }} title={att.originalName}>{att.originalName}</div>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '150px' }} title={att.originalName}>{att.originalName}</div>
                 </div>
                 <button onClick={() => removeAttachment(index)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '4px' }}>
                   <Trash2 size={16} />
@@ -356,7 +359,7 @@ const Inbound = () => {
             ))}
           </div>
           <div>
-            <label style={{ display: 'inline-block', padding: '8px 16px', backgroundColor: '#e2e8f0', color: '#475569', borderRadius: '8px', fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer' }}>
+            <label style={{ display: 'inline-block', padding: '8px 16px', backgroundColor: 'var(--bg-surface)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer' }}>
               + 新增附件
               <input type="file" multiple style={{ display: 'none' }} onChange={handleFileUpload} />
             </label>
@@ -366,7 +369,7 @@ const Inbound = () => {
       
       <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '20px' }}>
         <thead>
-          <tr style={{ backgroundColor: '#f8f9fa', textAlign: 'left' }}>
+          <tr style={{ backgroundColor: 'var(--table-header-bg)', textAlign: 'left' }}>
             <th style={thStyle}>對應採購單號</th>
             <th style={thStyle}>入庫設備項目</th>
             <th style={{ ...thStyle, width: '80px' }}>類別</th>
@@ -377,21 +380,21 @@ const Inbound = () => {
         </thead>
         <tbody>
           {items.map(row => (
-            <tr key={row.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
+            <tr key={row.id} style={{ borderBottom: '1px solid var(--table-border)' }}>
               <td style={tdStyle}>
-                <select value={row.selectedOrderNo || ''} onChange={(e) => handleOrderNoChange(row.id, e.target.value)} style={{ ...inputStyle, backgroundColor: row.selectedOrderNo ? '#fff8e1' : '#fff' }}>
+                <select value={row.selectedOrderNo || ''} onChange={(e) => handleOrderNoChange(row.id, e.target.value)} style={{ ...inputStyle, backgroundColor: row.selectedOrderNo ? 'var(--primary-bg)' : 'var(--input-bg)', color: 'var(--input-text)' }}>
                   <option value="">-- 非採購單入庫 --</option>
                   {uniqueOrderNos.map(orderNo => <option key={orderNo} value={orderNo}>{orderNo}</option>)}
                 </select>
               </td>
               <td style={tdStyle}>
                 {row.selectedOrderNo ? (
-                  <select value={row.purchaseRecordId} onChange={(e) => handlePurchaseSelect(row.id, e.target.value)} style={{ ...inputStyle, backgroundColor: row.purchaseRecordId ? '#e8f5e9' : '#fff' }}>
+                  <select value={row.purchaseRecordId} onChange={(e) => handlePurchaseSelect(row.id, e.target.value)} style={{ ...inputStyle, backgroundColor: row.purchaseRecordId ? 'rgba(16, 185, 129, 0.15)' : 'var(--input-bg)', color: 'var(--input-text)' }}>
                     <option value="">-- 請選擇採購品項 --</option>
                     {pendingPurchases.filter(p => p.order_no === row.selectedOrderNo).map(p => <option key={p.id} value={p.id}>{[p.brand, p.model, p.specification].filter(Boolean).join(' ')} (未入庫 {p.quantity - (p.received_quantity || 0)})</option>)}
                   </select>
                 ) : (
-                  <select value={row.itemId} onChange={(e) => handleItemSelect(row.id, e.target.value)} style={{ ...inputStyle, backgroundColor: row.itemId ? '#e8f5e9' : '#fff' }}>
+                  <select value={row.itemId} onChange={(e) => handleItemSelect(row.id, e.target.value)} style={{ ...inputStyle, backgroundColor: row.itemId ? 'rgba(16, 185, 129, 0.15)' : 'var(--input-bg)', color: 'var(--input-text)' }}>
                     <option value="">選取庫存品項</option>
                     {availableItems.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
                     <option value="NEW_ITEM" style={{ fontWeight: 800, color: 'var(--primary-color)' }}>+ 快速新增品項</option>
@@ -399,9 +402,9 @@ const Inbound = () => {
                 )}
               </td>
               <td style={tdStyle}>
-                {row.cat_name ? <span style={{ padding: '4px 10px', backgroundColor: '#f0f0f0', borderRadius: '6px', fontSize: '0.8rem', color: '#555', fontWeight: 600 }}>{row.cat_name}</span> : <span style={{ color: '#ccc', fontSize: '0.8rem' }}>--</span>}
+                {row.cat_name ? <span style={{ padding: '4px 10px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '6px', fontSize: '0.8rem', color: 'var(--text-main)', border: '1px solid var(--border-color)', fontWeight: 600 }}>{row.cat_name}</span> : <span style={{ color: 'var(--text-subtle)', fontSize: '0.8rem' }}>--</span>}
               </td>
-              <td style={tdStyle}>{(row.cat_name === '設備' || row.cat_name === '硬體') ? <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><input placeholder="SN / 序號" value={row.sn} onChange={(e) => handleRowChange(row.id, 'sn', e.target.value)} style={{ ...inputStyle, border: '1px solid #ddd' }} />{row.qty > 1 && <button onClick={() => handleExpandRow(row.id)} title="展開為獨立序號" style={expandButtonStyle}><Layers size={16} /></button>}</div> : <span style={{ color: '#aaa', fontSize: '0.8rem' }}>耗材無需序號</span>}</td>
+              <td style={tdStyle}>{(row.cat_name === '設備' || row.cat_name === '硬體') ? <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><input placeholder="SN / 序號" value={row.sn} onChange={(e) => handleRowChange(row.id, 'sn', e.target.value)} style={{ ...inputStyle, border: '1px solid var(--input-border)' }} />{row.qty > 1 && <button onClick={() => handleExpandRow(row.id)} title="展開為獨立序號" style={expandButtonStyle}><Layers size={16} /></button>}</div> : <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>耗材無需序號</span>}</td>
               <td style={tdStyle}><input type="number" value={row.qty} onChange={(e) => handleRowChange(row.id,'qty', parseInt(e.target.value)||0)} style={{ ...inputStyle, width: '80px' }} /></td>
               <td style={{ ...tdStyle, textAlign: 'center' }}><button onClick={() => handleRemove(row.id)} style={deleteButtonStyle}><Trash2 size={20} /></button></td>
             </tr>
@@ -409,12 +412,12 @@ const Inbound = () => {
         </tbody>
       </table>
       <button onClick={handleAddItem} style={addRowsButtonStyle}><Plus size={18} /> 增加品項明細</button>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '16px', borderTop: '2px solid #f8f9fa', paddingTop: '32px' }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '16px', borderTop: '1px solid var(--border-color)', paddingTop: '32px' }}>
         <button onClick={handleSubmit} style={submitButtonStyle}><ShoppingBag size={20} /> 確認入庫作業</button>
       </div>
       {showQuickAdd && (
         <div style={modalOverlayStyle}>
-          <div className="card-surface" style={{ width: '420px', padding: '32px' }}>
+          <div className="card-surface" style={{ width: '420px', padding: '32px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '16px' }}>
             <h2 style={{ marginBottom: '24px', fontSize: '1.2rem', fontWeight: 800 }}>快速建檔品項範本</h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div><label style={labelStyle}>品項名稱 *</label><input type="text" value={quickAddData.name} onChange={(e) => setQuickAddData({...quickAddData, name: e.target.value})} style={inputStyle} /></div>
@@ -436,10 +439,10 @@ const Inbound = () => {
       )}
       {previewFile && (
         <div style={modalOverlayStyle} onClick={() => setPreviewFile(null)}>
-          <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '12px', maxWidth: '90vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+          <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-main)', padding: '16px', borderRadius: '12px', maxWidth: '90vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 style={{ margin: 0 }}>預覽附件：{previewFile.originalName}</h3>
-              <button onClick={() => setPreviewFile(null)} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer' }}>&times;</button>
+              <h3 style={{ margin: 0, color: 'var(--text-main)' }}>預覽附件：{previewFile.originalName}</h3>
+              <button onClick={() => setPreviewFile(null)} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: 'var(--text-muted)' }}>&times;</button>
             </div>
             <div style={{ flex: 1, overflow: 'auto', display: 'flex', justifyContent: 'center' }}>
               {previewFile.type?.startsWith('image/') ? (
@@ -447,7 +450,7 @@ const Inbound = () => {
               ) : previewFile.type === 'application/pdf' ? (
                 <iframe src={getMediaSrc(previewFile.fileName)} style={{ width: '80vw', height: '70vh', border: 'none' }} title={previewFile.originalName} />
               ) : (
-                <div style={{ padding: '40px', color: '#64748b' }}>此檔案類型不支援預覽，請下載後檢視。</div>
+                <div style={{ padding: '40px', color: 'var(--text-muted)' }}>此檔案類型不支援預覽，請下載後檢視。</div>
               )}
             </div>
           </div>

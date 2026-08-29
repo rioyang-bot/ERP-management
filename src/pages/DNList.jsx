@@ -1,7 +1,13 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { FileText, Search, Filter, Eye, RefreshCw, AlertCircle, Trash2, Calendar } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { 
+  FileText, Search, Filter, Eye, RefreshCw, AlertCircle, Trash2, Calendar, 
+  Printer, Paperclip, Upload, FileCheck, ExternalLink, X 
+} from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { logStatusChange, logDelete } from '../utils/auditLogger';
+import { logStatusChange, logDelete, logUpdate } from '../utils/auditLogger';
+import LentOrderPrintModal from '../components/LentOrderPrintModal';
+import DeliveryReceiptPrintModal from '../components/DeliveryReceiptPrintModal';
+import OutboundRegistrationModal from '../components/OutboundRegistrationModal';
 
 const DNList = ({ isSplitMode = false }) => {
   const navigate = useNavigate();
@@ -10,6 +16,7 @@ const DNList = ({ isSplitMode = false }) => {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [showAddModal, setShowAddModal] = useState(false);
 
   const searchOptions = [
     { value: 'all', label: '全部欄位' },
@@ -27,15 +34,31 @@ const DNList = ({ isSplitMode = false }) => {
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [printModal, setPrintModal] = useState({ show: false, dn: null, items: [] });
+  const [deliveryReceiptModal, setDeliveryReceiptModal] = useState({ show: false, dn: null, items: [] });
+  
+  // 客戶簽收單據相關狀態與 Refs
+  const [isUploadingDoc, setIsUploadingDoc] = useState(false);
+  const [docModal, setDocModal] = useState({ show: false, dn: null });
+  const detailFileInputRef = useRef(null);
+  const tableFileInputRef = useRef(null);
 
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, searchField, statusFilter, startDate, endDate]);
 
+  const getMediaSrc = (fileName) => {
+    if (!fileName) return null;
+    const rawUrl = `erp-media:///${encodeURIComponent(fileName)}`;
+    return window.getMediaUrl ? window.getMediaUrl(rawUrl) : rawUrl;
+  };
+
   const fetchRecords = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
+      // 確保 signed_doc 欄位存在
+      try { await window.electronAPI.namedQuery('migrateOutboundSignedDoc'); } catch(e) {}
       const res = await window.electronAPI.namedQuery('fetchDNList');
       if (res.success) {
         setDnRecords(res.rows || []);
@@ -53,6 +76,74 @@ const DNList = ({ isSplitMode = false }) => {
       setLoading(false);
     }
   }, []);
+
+  // 上傳簽收單檔案
+  const handleUploadSignedDoc = async (dn, file) => {
+    if (!file) return;
+    setIsUploadingDoc(true);
+    try {
+      const buffer = await file.arrayBuffer();
+      const saveRes = await window.electronAPI.saveFile(file.name, buffer);
+      if (!saveRes.success) throw new Error(saveRes.error || '檔案儲存失敗');
+
+      const updateRes = await window.electronAPI.namedQuery('updateOutboundSignedDoc', [saveRes.fileName, file.name, dn.id]);
+      if (!updateRes.success) throw new Error(updateRes.error || '資料庫更新失敗');
+
+      logUpdate(
+        'OUTBOUND',
+        dn.id,
+        dn.request_no,
+        `上傳出貨單 [${dn.request_no}] 之客戶已簽收單據 [${file.name}]`,
+        { dnId: dn.id, dnNumber: dn.request_no, customer: dn.customer, fileName: saveRes.fileName, originalName: file.name }
+      );
+
+      alert(`客戶簽收單據 [${file.name}] 上傳成功！`);
+      
+      if (selectedDN && selectedDN.id === dn.id) {
+        setSelectedDN(prev => ({ ...prev, signed_doc_url: saveRes.fileName, signed_doc_name: file.name }));
+      }
+      if (docModal.show && docModal.dn?.id === dn.id) {
+        setDocModal(prev => ({ ...prev, dn: { ...prev.dn, signed_doc_url: saveRes.fileName, signed_doc_name: file.name } }));
+      }
+      await fetchRecords();
+    } catch (err) {
+      console.error('Upload signed doc error:', err);
+      alert('上傳簽收單據失敗：' + err.message);
+    } finally {
+      setIsUploadingDoc(false);
+    }
+  };
+
+  // 刪除簽收單檔案
+  const handleDeleteSignedDoc = async (dn) => {
+    if (!window.confirm(`確定要刪除出貨單 [${dn.request_no}] 的客戶簽收單據 [${dn.signed_doc_name || '附件'}] 嗎？`)) return;
+
+    try {
+      const res = await window.electronAPI.namedQuery('removeOutboundSignedDoc', [dn.id]);
+      if (!res.success) throw new Error(res.error || '刪除失敗');
+
+      logDelete(
+        'OUTBOUND',
+        dn.id,
+        dn.request_no,
+        `刪除出貨單 [${dn.request_no}] 之客戶已簽收單據 [${dn.signed_doc_name}]`,
+        { dnId: dn.id, dnNumber: dn.request_no, customer: dn.customer, deletedDoc: dn.signed_doc_name }
+      );
+
+      alert('簽收單據已成功刪除！');
+
+      if (selectedDN && selectedDN.id === dn.id) {
+        setSelectedDN(prev => ({ ...prev, signed_doc_url: null, signed_doc_name: null }));
+      }
+      if (docModal.show && docModal.dn?.id === dn.id) {
+        setDocModal(prev => ({ ...prev, dn: { ...prev.dn, signed_doc_url: null, signed_doc_name: null } }));
+      }
+      await fetchRecords();
+    } catch (err) {
+      console.error('Delete signed doc error:', err);
+      alert('刪除簽收單據失敗：' + err.message);
+    }
+  };
 
   const handleViewDetails = async (dn) => {
     setSelectedDN(dn);
@@ -74,12 +165,17 @@ const DNList = ({ isSplitMode = false }) => {
   };
 
   const handleDelete = async (dn) => {
-    if (!window.confirm(`確定要刪除出貨單 [${dn.request_no}] 嗎？\n此動作將一併移除所有關聯明細。`)) return;
+    if (dn.status !== 'PENDING') {
+      alert(`出貨單 [${dn.request_no}] 目前狀態為【${dn.status === 'SHIPPED' ? '已出貨' : '已結案'}】，不可直接刪除以維護庫存狀態與歷史紀錄。`);
+      return;
+    }
+
+    if (!window.confirm(`確定要刪除待出貨單據 [${dn.request_no}] 嗎？\n此動作將一併移除所有關聯明細。`)) return;
 
     try {
       const res = await window.electronAPI.namedQuery('deleteOutboundRequest', [dn.id]);
       if (res.success) {
-        logDelete('OUTBOUND', dn.request_no, dn.customer || '出貨單', `刪除出貨單 [${dn.request_no}]`, { dnId: dn.id, dnNumber: dn.request_no, customer: dn.customer });
+        logDelete('OUTBOUND', dn.request_no, dn.customer || '出貨單', `刪除待出貨單據 [${dn.request_no}]`, { dnId: dn.id, dnNumber: dn.request_no, customer: dn.customer });
         alert('刪除成功');
         fetchRecords();
       } else {
@@ -172,7 +268,8 @@ const DNList = ({ isSplitMode = false }) => {
     let matchSearch = true;
     if (searchField === 'all') {
       matchSearch = (dn.request_no || '').toLowerCase().includes(search) ||
-             (dn.customer || '').toLowerCase().includes(search);
+             (dn.customer || '').toLowerCase().includes(search) ||
+             (dn.signed_doc_name || '').toLowerCase().includes(search);
     } else if (searchField === 'request_no') {
       matchSearch = (dn.request_no || '').toLowerCase().includes(search);
     } else if (searchField === 'customer') {
@@ -217,7 +314,7 @@ const DNList = ({ isSplitMode = false }) => {
   const pendingCount = dnRecords.filter(dn => dn.status !== 'SHIPPED').length;
 
   return (
-    <div className="page-container">
+    <div className="page-container" style={isSplitMode ? { padding: 0, minHeight: 'auto', backgroundColor: 'transparent' } : {}}>
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div>
@@ -229,7 +326,7 @@ const DNList = ({ isSplitMode = false }) => {
           {!isSplitMode && (
             <div style={{ display: 'flex', backgroundColor: 'var(--bg-surface-subtle)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
               <button
-                onClick={() => navigate('/outbound-split')}
+                onClick={() => setShowAddModal(true)}
                 style={{
                   padding: '8px 16px',
                   backgroundColor: 'var(--primary-color)',
@@ -244,7 +341,7 @@ const DNList = ({ isSplitMode = false }) => {
                   boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)'
                 }}
               >
-                <FileText size={18} /> 新增出貨單 (D/N Reg)
+                <FileText size={18} /> ➕ 新增出貨單 (New Delivery Note)
               </button>
             </div>
           )}
@@ -331,14 +428,15 @@ const DNList = ({ isSplitMode = false }) => {
                 <th style={{ padding: '14px 12px', fontSize: '0.95rem', color: 'var(--table-header-text)', fontWeight: 800 }}>項目數</th>
                 <th style={{ padding: '14px 12px', fontSize: '0.95rem', color: 'var(--table-header-text)', fontWeight: 800 }}>建立者</th>
                 <th style={{ padding: '14px 12px', fontSize: '0.95rem', color: 'var(--table-header-text)', fontWeight: 800 }}>狀態</th>
+                <th style={{ padding: '14px 12px', fontSize: '0.95rem', color: 'var(--table-header-text)', fontWeight: 800 }}>簽收單據</th>
                 <th style={{ padding: '14px 12px', fontSize: '0.95rem', color: 'var(--table-header-text)', fontWeight: 800 }}>操作</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan="7" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>讀取中...</td></tr>
+                <tr><td colSpan="8" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>讀取中...</td></tr>
               ) : currentRecords.length === 0 ? (
-                <tr><td colSpan="7" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>目前尚無出貨單資料</td></tr>
+                <tr><td colSpan="8" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>目前尚無出貨單資料</td></tr>
               ) : currentRecords.map(dn => (
                 <tr key={dn.id} className="row-hover" style={{ borderBottom: '1px solid var(--table-border)', color: 'var(--text-main)' }}>
                   <td style={{ padding: '12px', fontWeight: 700, color: 'var(--text-main)' }}>
@@ -376,22 +474,69 @@ const DNList = ({ isSplitMode = false }) => {
                       {dn.status === 'PENDING' ? '已建立' : (dn.status === 'SHIPPED' ? '已出貨' : (dn.status === 'RETURNED' ? '已歸還' : dn.status))}
                     </span>
                   </td>
+                  {/* 簽收單據欄位 */}
+                  <td style={{ padding: '12px' }}>
+                    {dn.signed_doc_url ? (
+                      <button
+                        onClick={() => setDocModal({ show: true, dn })}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          padding: '4px 10px',
+                          borderRadius: '16px',
+                          fontSize: '0.78rem',
+                          fontWeight: 700,
+                          backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                          color: '#10b981',
+                          border: '1px solid rgba(16, 185, 129, 0.3)',
+                          cursor: 'pointer'
+                        }}
+                        title={`點選檢視簽收單: ${dn.signed_doc_name || '附件'}`}
+                      >
+                        <FileCheck size={13} /> 已簽收
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setDocModal({ show: true, dn })}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          padding: '4px 8px',
+                          borderRadius: '16px',
+                          fontSize: '0.75rem',
+                          color: 'var(--text-muted)',
+                          backgroundColor: 'var(--bg-surface-subtle)',
+                          border: '1px solid var(--border-color)',
+                          cursor: 'pointer'
+                        }}
+                        title="上傳客戶簽收單據"
+                      >
+                        <Paperclip size={12} /> 未上傳
+                      </button>
+                    )}
+                  </td>
                   <td style={{ padding: '12px', whiteSpace: 'nowrap' }}>
-                    <div style={{ display: 'flex', gap: '10px', whiteSpace: 'nowrap' }}>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center', whiteSpace: 'nowrap' }}>
                       <button 
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', backgroundColor: 'var(--primary-bg)', color: 'var(--primary-color)', border: '1px solid rgba(59, 130, 246, 0.2)', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', flexShrink: 0 }}
+                        style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', padding: 0, backgroundColor: 'var(--primary-bg)', color: 'var(--primary-color)', border: '1px solid rgba(59, 130, 246, 0.25)', borderRadius: '6px', cursor: 'pointer', flexShrink: 0 }}
                         title="查看詳情"
+                        aria-label="檢視"
                         onClick={() => handleViewDetails(dn)}
                       >
-                        <Eye size={16} style={{ flexShrink: 0 }} /> <span>檢視</span>
+                        <Eye size={16} />
                       </button>
-                      <button 
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', backgroundColor: 'rgba(239, 68, 68, 0.12)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', flexShrink: 0 }}
-                        title="刪除單據"
-                        onClick={() => handleDelete(dn)}
-                      >
-                        <Trash2 size={16} style={{ flexShrink: 0 }} /> <span>刪除</span>
-                      </button>
+                      {dn.status === 'PENDING' && (
+                        <button 
+                          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', padding: 0, backgroundColor: 'rgba(239, 68, 68, 0.12)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '6px', cursor: 'pointer', flexShrink: 0 }}
+                          title="刪除單據"
+                          aria-label="刪除"
+                          onClick={() => handleDelete(dn)}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -459,9 +604,10 @@ const DNList = ({ isSplitMode = false }) => {
                 </div>
               </div>
 
-              <div className="dn-items-list">
+              {/* 項目清單 */}
+              <div className="dn-items-list" style={{ marginBottom: '12px' }}>
                 <h4 style={{ marginBottom: '8px', fontSize: '0.85rem', color: 'var(--text-main)', fontWeight: 800 }}>項目清單 ({dnItems.length})</h4>
-                <div className="dn-items-list-container" style={{ maxHeight: '420px', overflowY: 'auto' }}>
+                <div className="dn-items-list-container" style={{ maxHeight: '320px', overflowY: 'auto' }}>
                   <table className="dn-items-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead style={{ position: 'sticky', top: 0, backgroundColor: 'var(--table-header-bg)', zIndex: 10 }}>
                       <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border-color)' }}>
@@ -503,10 +649,86 @@ const DNList = ({ isSplitMode = false }) => {
                   </table>
                 </div>
               </div>
+
+              {/* 客戶已簽收單據區塊 */}
+              <div style={{ padding: '14px 16px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)', marginBottom: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Paperclip size={15} color="#10b981" /> 客戶已簽收單據 (Signed Document)
+                  </span>
+                  <div>
+                    {selectedDN.signed_doc_url ? (
+                      <button
+                        onClick={() => handleDeleteSignedDoc(selectedDN)}
+                        style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid rgba(239, 68, 68, 0.3)', backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                      >
+                        <Trash2 size={13} /> 刪除檔案
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => detailFileInputRef.current?.click()}
+                        disabled={isUploadingDoc}
+                        style={{ padding: '4px 12px', borderRadius: '6px', border: 'none', backgroundColor: '#10b981', color: '#fff', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                      >
+                        <Upload size={13} /> {isUploadingDoc ? '上傳中...' : '上傳簽收單'}
+                      </button>
+                    )}
+                    <input
+                      type="file"
+                      ref={detailFileInputRef}
+                      style={{ display: 'none' }}
+                      accept="image/*,.pdf"
+                      onChange={(e) => {
+                        if (e.target.files?.[0]) {
+                          handleUploadSignedDoc(selectedDN, e.target.files[0]);
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {selectedDN.signed_doc_url ? (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', backgroundColor: 'var(--bg-surface)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+                      <FileCheck size={16} color="#10b981" />
+                      <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-main)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                        {selectedDN.signed_doc_name || '客戶簽收單據'}
+                      </span>
+                    </div>
+                    <a
+                      href={getMediaSrc(selectedDN.signed_doc_url)}
+                      target="_blank"
+                      rel="noreferrer"
+                      download={selectedDN.signed_doc_name || '出貨簽收單'}
+                      style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', color: 'var(--primary-color)', fontWeight: 700, textDecoration: 'none', padding: '4px 8px', borderRadius: '4px', backgroundColor: 'var(--primary-bg)' }}
+                    >
+                      <ExternalLink size={14} /> 開啟 / 下載查驗
+                    </a>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center', padding: '12px' }}>
+                    尚未上傳客戶簽收單據。收到客戶簽名蓋章回傳單據後，請點選上方按鈕上傳儲存供日後稽核查驗。
+                  </div>
+                )}
+              </div>
             </div>
 
-            {selectedDN.status === 'PENDING' && (
-              <div className="modal-footer" style={{ padding: '12px 20px', borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)', display: 'flex', justifyContent: 'flex-end' }}>
+            <div className="modal-footer" style={{ padding: '12px 20px', borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)', display: 'flex', justifyContent: 'flex-end', gap: '12px', flexWrap: 'wrap' }}>
+              {selectedDN.request_type === 'LEND' && (
+                <button 
+                  onClick={() => setPrintModal({ show: true, dn: selectedDN, items: dnItems })}
+                  style={{ padding: '8px 18px', borderRadius: '50px', border: 'none', backgroundColor: '#2563eb', color: 'white', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 2px 8px rgba(37, 99, 235, 0.3)' }}
+                >
+                  <Printer size={16} /> 🖨️ 產生借貨申請單 (PDF)
+                </button>
+              )}
+              <button 
+                onClick={() => setDeliveryReceiptModal({ show: true, dn: selectedDN, items: dnItems })}
+                style={{ padding: '8px 18px', borderRadius: '50px', border: 'none', backgroundColor: '#059669', color: 'white', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 2px 8px rgba(5, 150, 105, 0.3)' }}
+              >
+                <Printer size={16} /> 🖨️ 產生交貨簽收單 (PDF)
+              </button>
+              {selectedDN.status === 'PENDING' && (
                 <button 
                   className="btn-primary" 
                   onClick={handleConfirmDelivery}
@@ -515,8 +737,133 @@ const DNList = ({ isSplitMode = false }) => {
                 >
                   {isConfirming ? '處理中...' : '確認出貨'}
                 </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 借貨申請單列印/預覽 Modal */}
+      {printModal.show && printModal.dn && (
+        <LentOrderPrintModal
+          isOpen={printModal.show}
+          onClose={() => setPrintModal({ show: false, dn: null, items: [] })}
+          dnData={printModal.dn}
+          items={printModal.items}
+        />
+      )}
+
+      {/* 交貨簽收單列印/預覽 Modal */}
+      {deliveryReceiptModal.show && deliveryReceiptModal.dn && (
+        <DeliveryReceiptPrintModal
+          isOpen={deliveryReceiptModal.show}
+          onClose={() => setDeliveryReceiptModal({ show: false, dn: null, items: [] })}
+          dnData={deliveryReceiptModal.dn}
+          items={deliveryReceiptModal.items}
+        />
+      )}
+
+      {/* 新增出貨單 Modal */}
+      <OutboundRegistrationModal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        onSuccess={fetchRecords}
+      />
+
+      {/* 獨立簽收單管理 Modal */}
+      {docModal.show && docModal.dn && (
+        <div className="modal-overlay" onClick={() => setDocModal({ show: false, dn: null })} style={{ zIndex: 9999 }}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ width: '450px', padding: '24px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '12px', color: 'var(--text-main)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Paperclip size={20} color="#10b981" />
+                <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-main)' }}>客戶已簽收單據管理</h3>
+              </div>
+              <X size={20} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setDocModal({ show: false, dn: null })} />
+            </div>
+
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '16px' }}>
+              單號：<strong style={{ color: 'var(--primary-color)' }}>{docModal.dn.request_no}</strong> ({docModal.dn.customer})
+            </p>
+
+            {docModal.dn.signed_doc_url ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ padding: '16px', borderRadius: '12px', backgroundColor: 'var(--bg-surface-subtle)', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
+                  {docModal.dn.signed_doc_url.match(/\.(jpeg|jpg|png|webp|gif)$/i) ? (
+                    <img 
+                      src={getMediaSrc(docModal.dn.signed_doc_url)} 
+                      alt="簽收單預覽" 
+                      style={{ maxHeight: '200px', maxWidth: '100%', borderRadius: '8px', objectFit: 'contain', border: '1px solid var(--border-color)' }} 
+                    />
+                  ) : (
+                    <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                      <FileCheck size={40} color="#10b981" />
+                      <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-main)' }}>{docModal.dn.signed_doc_name || '已簽收 PDF 檔案'}</span>
+                    </div>
+                  )}
+                  <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-main)' }}>{docModal.dn.signed_doc_name}</span>
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <a
+                    href={getMediaSrc(docModal.dn.signed_doc_url)}
+                    target="_blank"
+                    rel="noreferrer"
+                    download={docModal.dn.signed_doc_name || '出貨簽收單'}
+                    style={{ flex: 1, padding: '10px', borderRadius: '8px', backgroundColor: '#2563eb', color: '#fff', textAlign: 'center', textDecoration: 'none', fontWeight: 700, fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                  >
+                    <ExternalLink size={16} /> 開啟 / 下載查驗
+                  </a>
+                  <button
+                    onClick={() => tableFileInputRef.current?.click()}
+                    disabled={isUploadingDoc}
+                    style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-main)', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <Upload size={16} /> 更換
+                  </button>
+                  <button
+                    onClick={() => handleDeleteSignedDoc(docModal.dn)}
+                    style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.3)', backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <Trash2 size={16} /> 刪除
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div 
+                onClick={() => tableFileInputRef.current?.click()}
+                style={{ 
+                  padding: '36px 20px', 
+                  borderRadius: '12px', 
+                  border: '2px dashed var(--border-color)', 
+                  backgroundColor: 'var(--bg-surface-subtle)', 
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  gap: '12px', 
+                  cursor: 'pointer' 
+                }}
+              >
+                <Upload size={32} color="#10b981" />
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--text-main)' }}>點此上傳客戶已簽收的出貨單</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>支援 PNG、JPG、PDF 格式檔案</div>
+                </div>
               </div>
             )}
+
+            <input
+              type="file"
+              ref={tableFileInputRef}
+              style={{ display: 'none' }}
+              accept="image/*,.pdf"
+              onChange={(e) => {
+                if (e.target.files?.[0]) {
+                  handleUploadSignedDoc(docModal.dn, e.target.files[0]);
+                }
+              }}
+            />
           </div>
         </div>
       )}

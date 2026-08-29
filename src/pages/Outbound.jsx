@@ -3,11 +3,13 @@ import { ClipboardList, Search, Plus, Trash2, Send, Calendar, MapPin, User, Pack
 import { RoleContext } from '../context/RoleContext';
 import { useNavigate } from 'react-router-dom';
 import { logCreate } from '../utils/auditLogger';
+import DeliveryReceiptPrintModal from '../components/DeliveryReceiptPrintModal';
 import './Outbound.css';
 
-const Outbound = ({ isSplitMode = false }) => {
-  const { authUser } = useContext(RoleContext);
+const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) => {
+  const { authUser } = useContext(RoleContext) || {};
   const navigate = useNavigate();
+  
   // --- 單據標頭狀態 (從 localStorage 初始化) ---
   const [header, setHeader] = useState(() => {
     const saved = localStorage.getItem('dn_draft_header');
@@ -16,8 +18,6 @@ const Outbound = ({ isSplitMode = false }) => {
       contact_info: '',
       location: '',
       date: new Date().toISOString().split('T')[0],
-      request_type: 'SALE',
-      expected_return_date: '',
       project_name: ''
     };
   });
@@ -26,6 +26,7 @@ const Outbound = ({ isSplitMode = false }) => {
   const [deviceSnInput, setDeviceSnInput] = useState('');
   const [hwSnInput, setHwSnInput] = useState('');
   const [isSearching, setIsSearching] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   // 自動補全相關狀態
   const [activeAssets, setActiveAssets] = useState([]);
@@ -38,6 +39,8 @@ const Outbound = ({ isSplitMode = false }) => {
   const [customers, setCustomers] = useState([]);
   const [projects, setProjects] = useState([]);
   const [consumables, setConsumables] = useState([]);
+  const [deliveryReceiptModal, setDeliveryReceiptModal] = useState({ show: false, dn: null, items: [] });
+  
   const [csmSearchTerm, setCsmSearchTerm] = useState('');
   const [csmFilterBrand, setCsmFilterBrand] = useState('');
   const [csmFilterType, setCsmFilterType] = useState('');
@@ -57,24 +60,22 @@ const Outbound = ({ isSplitMode = false }) => {
     const initData = async () => {
       // 獲取客戶清單
       const custRes = await window.electronAPI.namedQuery('fetchCustomers');
-      if (custRes.success) setCustomers(custRes.rows);
+      if (custRes.success) setCustomers(custRes.rows || []);
 
       // 獲取耗材清單
       const csmRes = await window.electronAPI.namedQuery('fetchConsumablesList');
-      if (csmRes.success) setConsumables(csmRes.rows);
+      if (csmRes.success) setConsumables(csmRes.rows || []);
 
       // 獲取所有啟用中的資產以便提供即時搜尋選項
       const assetRes = await window.electronAPI.namedQuery('searchActiveAssetSNs');
-      if (assetRes.success) setActiveAssets(assetRes.rows);
+      if (assetRes.success) setActiveAssets(assetRes.rows || []);
 
       // 獲取進行中的專案
       const projRes = await window.electronAPI.namedQuery('fetchActiveProjects');
-      if (projRes.success) setProjects(projRes.rows);
+      if (projRes.success) setProjects(projRes.rows || []);
     };
     initData();
   }, []);
-
-
 
   // --- 專案選擇邏輯 ---
   const handleProjectSelect = async (e) => {
@@ -141,8 +142,6 @@ const Outbound = ({ isSplitMode = false }) => {
           if (type === 'device') setDeviceSnInput(''); else setHwSnInput('');
           return;
         }
-
-
 
         // 建立主品項
         const newItem = {
@@ -212,6 +211,7 @@ const Outbound = ({ isSplitMode = false }) => {
     if (!header.customer) return alert('請選擇客戶');
     if (outboundItems.length === 0) return alert('清單中無任何項目');
 
+    setIsSubmitting(true);
     try {
       // 1. 產生 D/N 單號 (DN-YYYYMMDD-XX)
       const dateStr = header.date.replace(/-/g, '');
@@ -220,7 +220,7 @@ const Outbound = ({ isSplitMode = false }) => {
       const nextNum = (parseInt(countRes.rows[0].count) || 1).toString().padStart(2, '0');
       const dnNumber = `DN-${dateStr}-${nextNum}`;
 
-      // 2. 建立出貨單標頭 (Outbound Request)
+      // 2. 建立出貨單標頭 (Outbound Request) - 一律為一般出貨 'SALE'
       const reqRes = await window.electronAPI.namedQuery('insertOutboundRequest', [
         dnNumber,
         header.customer,
@@ -228,8 +228,8 @@ const Outbound = ({ isSplitMode = false }) => {
         header.date,
         authUser?.id || null,
         header.contact_info,
-        header.request_type || 'SALE',
-        header.request_type === 'LEND' ? (header.expected_return_date || null) : null
+        'SALE',
+        null
       ]);
 
       if (reqRes.success) {
@@ -265,12 +265,22 @@ const Outbound = ({ isSplitMode = false }) => {
           'OUTBOUND',
           dnNumber,
           header.customer || '出貨單',
-          `建立出貨申請單 [${dnNumber}] 對象: ${header.customer} 共 ${outboundItems.length} 個品項 (${header.request_type === 'LEND' ? '借用單' : '一般銷貨'})`,
-          { dnNumber, customer: header.customer, location: header.location, request_type: header.request_type, expected_return_date: header.expected_return_date, itemsCount: outboundItems.length, items: outboundItems.map(i => ({ model: i.model, brand: i.brand, sn: i.sn, qty: i.qty })) }
+          `建立出貨申請單 [${dnNumber}] 對象: ${header.customer} 共 ${outboundItems.length} 個品項 (一般銷貨)`,
+          { dnNumber, customer: header.customer, location: header.location, request_type: 'SALE', itemsCount: outboundItems.length, items: outboundItems.map(i => ({ model: i.model, brand: i.brand, sn: i.sn, qty: i.qty })) }
         );
 
-        alert(`出貨單 [${dnNumber}] 已成功建立！\n請至 D/N List 查看審核進度。`);
-        
+        const dnData = {
+          id: requestId,
+          request_no: dnNumber,
+          customer: header.customer,
+          contact_info: header.contact_info,
+          location: header.location,
+          shipping_date: header.date,
+          project_name: header.project_name,
+          creator_name: authUser?.full_name
+        };
+        const currentItems = [...outboundItems];
+
         // 清除清單與快取
         setOutboundItems([]);
         setHeader({
@@ -282,35 +292,20 @@ const Outbound = ({ isSplitMode = false }) => {
         });
         localStorage.removeItem('dn_draft_items');
         localStorage.removeItem('dn_draft_header');
+
+        setDeliveryReceiptModal({ show: true, dn: dnData, items: currentItems });
       } else {
-        alert('建立失敗：' + reqRes.error);
+        alert('建立出貨單失敗: ' + reqRes.error);
       }
     } catch (err) {
       console.error('Submit error:', err);
-      alert('處理出貨單時發生錯誤，請稍後再試。');
+      alert('發生非預期錯誤');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const filteredConsumables = consumables.filter(c => {
-    if (csmFilterBrand && (c.brand || '') !== csmFilterBrand) return false;
-    if (csmFilterType && (c.type || '') !== csmFilterType) return false;
-    if (csmFilterModel && (c.model || '') !== csmFilterModel) return false;
-    if (csmSearchTerm) {
-      const search = csmSearchTerm.toLowerCase();
-      const name = (c.item_name || '').toLowerCase();
-      const model = (c.model || '').toLowerCase();
-      const brand = (c.brand || '').toLowerCase();
-      return name.includes(search) || model.includes(search) || brand.includes(search);
-    }
-    return true;
-  });
-
-  // 動態篩選選項 (後項根據前項過濾)
-  const csmBrands = [...new Set(consumables.map(c => c.brand).filter(Boolean))].sort();
-  const csmTypes = [...new Set(consumables.filter(c => !csmFilterBrand || c.brand === csmFilterBrand).map(c => c.type).filter(Boolean))].sort();
-  const csmModels = [...new Set(consumables.filter(c => (!csmFilterBrand || c.brand === csmFilterBrand) && (!csmFilterType || c.type === csmFilterType)).map(c => c.model).filter(Boolean))].sort();
-
-  // 幫助過濾的函式
+  // 取得建議清單
   const getDeviceSuggestions = () => {
     if (!deviceSnInput.trim()) return [];
     return activeAssets
@@ -325,30 +320,53 @@ const Outbound = ({ isSplitMode = false }) => {
       .slice(0, 5);
   };
 
+  // 耗材篩選邏輯
+  const csmBrands = [...new Set(consumables.map(c => c.brand).filter(Boolean))];
+  const csmTypes = [...new Set(consumables.filter(c => !csmFilterBrand || c.brand === csmFilterBrand).map(c => c.type).filter(Boolean))];
+  const csmModels = [...new Set(consumables.filter(c => (!csmFilterBrand || c.brand === csmFilterBrand) && (!csmFilterType || c.type === csmFilterType)).map(c => c.model).filter(Boolean))];
+
+  const hasCsmFilter = Boolean(csmFilterBrand || csmFilterType || csmFilterModel || csmSearchTerm.trim());
+
+  const filteredConsumables = hasCsmFilter ? consumables.filter(c => {
+    if (csmFilterBrand && c.brand !== csmFilterBrand) return false;
+    if (csmFilterType && c.type !== csmFilterType) return false;
+    if (csmFilterModel && c.model !== csmFilterModel) return false;
+    if (csmSearchTerm) {
+      const term = csmSearchTerm.toLowerCase();
+      return (c.brand || '').toLowerCase().includes(term) ||
+             (c.model || '').toLowerCase().includes(term) ||
+             (c.type || '').toLowerCase().includes(term) ||
+             (c.specification || '').toLowerCase().includes(term);
+    }
+    return true;
+  }) : [];
+
   return (
-    <div className="outbound-registration-container">
-      {/* 1. 頁面標題 */}
-      <div className="dn-header-main" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <div>
-          <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
-            <Truck size={26} color="#2563eb" /> 出貨單建檔 (Delivery Note Registration)
-          </h1>
-          <p style={{ color: '#64748b', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>建立新的出貨申請單，支援設備序號自動導出與耗材選取。</p>
-        </div>
-        {!isSplitMode && (
-          <div style={{ display: 'flex', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>
-            <button style={{ padding: '6px 14px', backgroundColor: '#ffffff', color: '#2563eb', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '800', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', cursor: 'default' }}>
-              📝 建檔
-            </button>
-            <button onClick={() => navigate('/outbound-split')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: '#64748b', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
-              ◫ 雙開
-            </button>
-            <button onClick={() => navigate('/dn-list')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: '#64748b', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
-              📋 清單
-            </button>
+    <div className="outbound-page-container" style={isSplitMode ? { padding: 0, minHeight: 'auto', backgroundColor: 'transparent' } : {}}>
+      {/* 頂部標題 */}
+      {!isModalMode && (
+        <div className="outbound-page-header">
+          <div>
+            <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
+              <Truck size={26} color="var(--primary-color)" /> 出貨單建檔 (Delivery Note Registration)
+            </h1>
+            <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>建立新的出貨申請單（一般銷貨），支援設備序號自動導出與耗材選取。</p>
           </div>
-        )}
-      </div>
+          {!isSplitMode && (
+            <div style={{ display: 'flex', backgroundColor: 'var(--bg-surface-subtle)', padding: '4px', borderRadius: '10px' }}>
+              <button style={{ padding: '6px 14px', backgroundColor: 'var(--bg-surface)', color: 'var(--primary-color)', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '800', boxShadow: 'var(--card-shadow)', cursor: 'default' }}>
+                📝 建檔
+              </button>
+              <button onClick={() => navigate('/outbound-split')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: 'var(--text-muted)', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
+                ◫ 雙開
+              </button>
+              <button onClick={() => navigate('/dn-list')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: 'var(--text-muted)', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
+                📋 清單
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="dn-content-layout">
         {/* 左側：單據標頭與選取區 */}
@@ -373,14 +391,16 @@ const Outbound = ({ isSplitMode = false }) => {
                           ...header, 
                           customerId: selectedId,
                           customer: customerData.name,
-                          contact_info: contactStr
+                          contact_info: contactStr,
+                          location: customerData.address || header.location || ''
                         });
                       } else {
                         setHeader({
-                          ...header,
+                          ...header, 
                           customerId: '',
                           customer: '',
-                          contact_info: ''
+                          contact_info: '',
+                          location: ''
                         });
                       }
                     }}
@@ -388,7 +408,7 @@ const Outbound = ({ isSplitMode = false }) => {
                     <option value="">請選擇客戶...</option>
                     {customers.map(c => (
                       <option key={c.id} value={c.id}>
-                        {c.name} {c.contact ? `(${c.contact})` : ''}
+                        {c.name} {c.contact ? `(${c.contact})` : ''} {c.address ? ` - ${c.address}` : ''}
                       </option>
                     ))}
                   </select>
@@ -414,7 +434,7 @@ const Outbound = ({ isSplitMode = false }) => {
                     placeholder="系統自動帶出..."
                     value={header.contact_info} 
                     readOnly
-                    style={{ backgroundColor: '#f8fafc', color: '#64748b', cursor: 'not-allowed' }}
+                    style={{ backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', cursor: 'not-allowed' }}
                   />
                 </div>
               </div>
@@ -436,32 +456,6 @@ const Outbound = ({ isSplitMode = false }) => {
                 </div>
               </div>
 
-              <div className="dn-field">
-                <label>單據類型</label>
-                <div className="select-wrapper">
-                  <select
-                    className="form-input"
-                    value={header.request_type || 'SALE'}
-                    onChange={e => setHeader({ ...header, request_type: e.target.value })}
-                  >
-                    <option value="SALE">一般出貨 (SALE)</option>
-                    <option value="LEND">借用單 (LEND)</option>
-                  </select>
-                </div>
-              </div>
-              {header.request_type === 'LEND' && (
-                <div className="dn-field">
-                  <label>預計歸還日</label>
-                  <div className="input-with-icon">
-                    <Calendar size={16} />
-                    <input
-                      type="date"
-                      value={header.expected_return_date || ''}
-                      onChange={e => setHeader({ ...header, expected_return_date: e.target.value })}
-                    />
-                  </div>
-                </div>
-              )}
               <div className="dn-field">
                 <label>出貨地點 / 備註</label>
                 <div className="input-with-icon">
@@ -547,183 +541,195 @@ const Outbound = ({ isSplitMode = false }) => {
                 </div>
               )}
             </form>
-            
-            <p className="dn-hint" style={{ marginTop: '12px' }}>系統會識別資產類別並自動帶出型號、規格與搭載硬體</p>
           </div>
 
-          {/* 耗材快選 (AI 設計) */}
+          {/* 耗材庫存快選 */}
           <div className="dn-card">
             <div className="dn-card-header">
-              <Package size={18} /> <span>耗材品項快選 (Consumables)</span>
+              <Package size={18} /> <span>耗材庫存快選 (Consumables)</span>
             </div>
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '10px', flexWrap: 'wrap' }}>
-              <select
-                value={csmFilterBrand}
+            
+            {/* 耗材篩選列 */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', padding: '0 18px 12px' }}>
+              <select 
+                value={csmFilterBrand} 
                 onChange={e => { setCsmFilterBrand(e.target.value); setCsmFilterType(''); setCsmFilterModel(''); }}
-                style={{ flex: 1, minWidth: '100px', padding: '7px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.85rem', outline: 'none', backgroundColor: '#fff' }}
+                style={{ padding: '7px 10px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-main)', outline: 'none' }}
               >
-                <option value="">全部廠牌</option>
+                <option value="">廠牌 (未選擇)</option>
                 {csmBrands.map(b => <option key={b} value={b}>{b}</option>)}
               </select>
-              <select
-                value={csmFilterType}
+
+              <select 
+                value={csmFilterType} 
                 onChange={e => { setCsmFilterType(e.target.value); setCsmFilterModel(''); }}
-                style={{ flex: 1, minWidth: '100px', padding: '7px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.85rem', outline: 'none', backgroundColor: '#fff' }}
+                style={{ padding: '7px 10px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-main)', outline: 'none' }}
               >
-                <option value="">全部類型</option>
+                <option value="">類型 (未選擇)</option>
                 {csmTypes.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
-              <select
-                value={csmFilterModel}
+
+              <select 
+                value={csmFilterModel} 
                 onChange={e => setCsmFilterModel(e.target.value)}
-                style={{ flex: 1, minWidth: '100px', padding: '7px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.85rem', outline: 'none', backgroundColor: '#fff' }}
+                style={{ padding: '7px 10px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-main)', outline: 'none' }}
               >
-                <option value="">全部型號</option>
+                <option value="">型號 (未選擇)</option>
                 {csmModels.map(m => <option key={m} value={m}>{m}</option>)}
               </select>
-            </div>
-            <div className="csm-search-mini">
-              <Search size={14} />
+
               <input 
                 type="text" 
-                placeholder="快速搜尋品名..." 
+                placeholder="搜尋耗材..." 
                 value={csmSearchTerm}
                 onChange={e => setCsmSearchTerm(e.target.value)}
+                style={{ padding: '7px 10px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-main)', outline: 'none' }}
               />
             </div>
-            <div className="csm-fast-grid">
-              {filteredConsumables.length === 0 ? (
-                <div className="csm-empty-hint">
-                  <Package size={24} opacity={0.3} />
-                  <span>{(!csmFilterBrand && !csmFilterType && !csmFilterModel && !csmSearchTerm) ? '請選擇篩選條件或輸入關鍵字...' : '找不到匹配的品項'}</span>
+
+            <div className="consumables-scroll-box">
+              {!hasCsmFilter ? (
+                <div className="empty-hint" style={{ padding: '24px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+                  <Package size={28} style={{ opacity: 0.35, color: 'var(--text-muted)' }} />
+                  <div style={{ fontWeight: 600 }}>請先選擇廠牌 / 類型 / 型號，或輸入關鍵字搜尋耗材</div>
+                  <div style={{ fontSize: '12px', opacity: 0.7 }}>選取條件後將自動顯示對應的耗材庫存卡片供快速點選</div>
                 </div>
+              ) : filteredConsumables.length === 0 ? (
+                <div className="empty-hint">無符合篩選條件之耗材</div>
               ) : (
-                filteredConsumables.slice(0, 20).map(c => (
-                  <div key={c.item_id} className="csm-fast-item" onClick={() => addConsumable(c)}>
-                    <div className="csm-fast-name">{c.item_name}</div>
-                    <div className="csm-fast-model">{c.brand} / {c.model}</div>
-                    <div className="csm-fast-stock">庫存: {c.available_qty}</div>
-                  </div>
-                ))
+                <div className="consumables-grid">
+                  {filteredConsumables.map(csm => (
+                    <div key={csm.item_id} className="csm-btn" onClick={() => addConsumable(csm)}>
+                      <div className="csm-btn-header">
+                        <span className="csm-brand">{csm.brand}</span>
+                        <span className="csm-stock">存: {csm.stock_qty}</span>
+                      </div>
+                      <div className="csm-model">{csm.model}</div>
+                      <div className="csm-spec">{csm.specification}</div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           </div>
         </div>
 
-        {/* 右側：出貨清單預覽 */}
+        {/* 右側：出貨清單與提交區 */}
         <div className="dn-right-panel">
-          <div className="dn-card list-card">
-            <div className="dn-card-header" style={{ justifyContent: 'space-between' }}>
+          <div className="dn-card dn-items-card">
+            <div className="dn-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <ClipboardList size={18} /> <span>出貨單項目清單</span>
+                <ClipboardList size={18} /> <span>已排定出貨品項 ({outboundItems.length})</span>
               </div>
-              <span className="dn-item-count">共 {outboundItems.length} 項</span>
-            </div>
-
-            <div className="dn-table-container">
-              {outboundItems.length === 0 ? (
-                <div className="dn-empty-state">
-                  <AlertCircle size={40} />
-                  <p>尚未加入任何品項</p>
-                  <span>請從左側搜尋序號或選取耗材</span>
-                </div>
-              ) : (
-                <table className="dn-table">
-                  <thead>
-                    <tr>
-                      <th>廠牌</th>
-                      <th>型號</th>
-                      <th>類型</th>
-                      <th>序號 (S/N)</th>
-                      <th>數量</th>
-                      <th>出貨位置</th>
-                      <th>操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {outboundItems.map(item => (
-                      <React.Fragment key={item.tempId}>
-                        <tr className="main-row">
-                          <td className="col-brand">
-                            <div className="model-name" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              {item.brand}
-                              {item.ownership === 'COMPANY' && (
-                                <span style={{ fontSize: '10px', padding: '2px 6px', backgroundColor: '#8b5cf6', color: 'white', borderRadius: '4px', whiteSpace: 'nowrap' }}>公司資產</span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="col-model">
-                            <div className="model-name">{item.model}</div>
-                            <div className="model-specs">{item.specification}</div>
-                          </td>
-                          <td className="col-type">
-                            <span className={`type-badge ${item.isSerialized ? 'serial' : 'cons'}`}>
-                              {item.type}
-                            </span>
-                          </td>
-                          <td className="col-sn"><code>{item.sn}</code></td>
-                          <td className="col-qty">
-                            {item.isSerialized ? (
-                              <span>1</span>
-                            ) : (
-                              <input 
-                                type="number" 
-                                min="1" 
-                                value={item.qty} 
-                                onChange={e => updateQty(item.tempId, parseInt(e.target.value))}
-                                className="qty-input-small"
-                              />
-                            )}
-                          </td>
-                          <td className="col-loc">
-                             {item.isSerialized && (
-                                <input 
-                                  type="text"
-                                  value={item.location || ''}
-                                  onChange={e => updateLocation(item.tempId, e.target.value)}
-                                  style={{ width: '120px', padding: '6px', fontSize: '0.8rem', borderRadius: '6px', border: '1px solid #cbd5e1' }}
-                                  placeholder="未指定"
-                                />
-                             )}
-                          </td>
-                          <td className="col-actions">
-                            <button onClick={() => removeItem(item.tempId)} className="btn-remove">
-                              <Trash2 size={16} />
-                            </button>
-                          </td>
-                        </tr>
-                        {/* 搭載元件顯示 */}
-                        {item.components && item.components.length > 0 && item.components.map(comp => (
-                          <tr key={`${item.tempId}-${comp.sn}`} className="sub-row">
-                            <td><div className="sub-line"></div>{comp.brand}</td>
-                            <td>{comp.model}</td>
-                            <td><span className="type-badge sub">{comp.type}</span></td>
-                            <td><code>{comp.sn}</code></td>
-                            <td>1</td>
-                            <td style={{ fontSize: '0.75rem', color: '#94a3b8' }}>同上</td>
-                            <td></td>
-                          </tr>
-                        ))}
-                      </React.Fragment>
-                    ))}
-                  </tbody>
-                </table>
+              {outboundItems.length > 0 && (
+                <button 
+                  onClick={() => setOutboundItems([])}
+                  style={{ border: 'none', background: 'none', color: '#ef4444', fontSize: '12px', cursor: 'pointer', fontWeight: 600 }}
+                >
+                  清空品項
+                </button>
               )}
             </div>
 
-            <div className="dn-footer">
+            <div className="dn-items-container">
+              {outboundItems.length === 0 ? (
+                <div className="empty-outbound-hint">
+                  <AlertCircle size={32} />
+                  <p>目前尚未加入任何出貨品項</p>
+                  <span>請從左側掃描/輸入設備與硬體序號，或點選耗材加入。</span>
+                </div>
+              ) : (
+                outboundItems.map((item, idx) => (
+                  <div key={item.tempId || idx} className="outbound-item-row">
+                    <div className="item-row-left">
+                      <span className={`cat-pill cat-${item.category_name === '設備' ? 'device' : (item.category_name === '硬體' ? 'hw' : 'csm')}`}>
+                        {item.category_name || '耗材'}
+                      </span>
+                      <div className="item-main-info">
+                        <div className="item-title">{item.brand} {item.model}</div>
+                        <div className="item-subtitle">{item.specification}</div>
+                        {item.sn && (
+                          <div className="item-sn">S/N: <strong>{item.sn}</strong></div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 搭載硬體展開 */}
+                    {item.components && item.components.length > 0 && (
+                      <div className="item-components-box">
+                        <div className="components-title">搭載硬體 ({item.components.length}):</div>
+                        <div className="components-list">
+                          {item.components.map((comp, cIdx) => (
+                            <div key={cIdx} className="comp-badge">
+                              <span>{comp.type} - {comp.brand} {comp.model}</span>
+                              <strong>{comp.sn}</strong>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="item-row-right">
+                      {item.isSerialized ? (
+                        <span className="qty-tag">1 台/件</span>
+                      ) : (
+                        <div className="qty-control">
+                          <button onClick={() => updateQty(item.tempId, item.qty - 1)}>-</button>
+                          <input 
+                            type="number" 
+                            value={item.qty} 
+                            onChange={e => updateQty(item.tempId, parseInt(e.target.value) || 1)}
+                          />
+                          <button onClick={() => updateQty(item.tempId, item.qty + 1)}>+</button>
+                        </div>
+                      )}
+
+                      <input 
+                        type="text" 
+                        className="item-loc-input"
+                        placeholder="出貨地點"
+                        value={item.location || ''}
+                        onChange={e => updateLocation(item.tempId, e.target.value)}
+                      />
+
+                      <button className="btn-del-item" onClick={() => removeItem(item.tempId)}>
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="dn-card-footer">
               <button 
-                className="btn-dn-submit" 
-                onClick={handleSubmit}
-                disabled={outboundItems.length === 0}
+                className="btn-submit-dn" 
+                onClick={handleSubmit} 
+                disabled={isSubmitting || outboundItems.length === 0}
               >
-                <Send size={18} />
-                送出出貨單申請 (Submit D/N)
+                <Send size={18} /> 送出並建立出貨單 (D/N)
               </button>
             </div>
           </div>
         </div>
       </div>
+
+      {/* 交貨簽收單列印/預覽 Modal */}
+      {deliveryReceiptModal.show && deliveryReceiptModal.dn && (
+        <DeliveryReceiptPrintModal
+          isOpen={deliveryReceiptModal.show}
+          onClose={() => {
+            setDeliveryReceiptModal({ show: false, dn: null, items: [] });
+            if (onClose) {
+              onClose();
+            } else if (!isSplitMode) {
+              navigate('/dn-list');
+            }
+          }}
+          dnData={deliveryReceiptModal.dn}
+          items={deliveryReceiptModal.items}
+        />
+      )}
     </div>
   );
 };

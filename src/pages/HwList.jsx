@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Search, Edit2, X, Server, User, MapPin, MoreHorizontal, Trash2, ShoppingBag, AlertTriangle, CheckCircle, Save, Monitor, Settings, ShieldAlert, Archive, RotateCcw, Cpu, Send, History, Building2 } from 'lucide-react';
 import ItemLedgerModal from '../components/ItemLedgerModal';
+import HwRegistrationModal from '../components/HwRegistrationModal';
 import { logUpdate, logDelete, logStatusChange } from '../utils/auditLogger';
 
 const HwList = ({ isSplitMode = false }) => {
@@ -15,13 +16,39 @@ const HwList = ({ isSplitMode = false }) => {
   const [customers, setCustomers] = useState([]);
   const [projects, setProjects] = useState([]);
   const [activeMenuId, setActiveMenuId] = useState(null);
+  const [menuPosition, setMenuPosition] = useState(null);
   const [showServerDetails, setShowServerDetails] = useState(true);
   const [ledgerItem, setLedgerItem] = useState(null);
+  const [showAddModal, setShowAddModal] = useState(false);
 
   // 當側邊欄分類變動時，清除搜尋關鍵字
   useEffect(() => {
     setSearchTerm('');
+    setActiveMenuId(null);
+    setMenuPosition(null);
   }, [filterType]);
+
+  // 監聽外部點擊與視窗滾動以關閉選單
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (activeMenuId && !e.target.closest('.dropdown-action-menu') && !e.target.closest('.action-menu-btn')) {
+        setActiveMenuId(null);
+        setMenuPosition(null);
+      }
+    };
+    const handleScroll = () => {
+      if (activeMenuId) {
+        setActiveMenuId(null);
+        setMenuPosition(null);
+      }
+    };
+    window.addEventListener('click', handleClickOutside);
+    window.addEventListener('scroll', handleScroll, true);
+    return () => {
+      window.removeEventListener('click', handleClickOutside);
+      window.removeEventListener('scroll', handleScroll, true);
+    };
+  }, [activeMenuId]);
 
   const [showSyncConfig, setShowSyncConfig] = useState(false);
   const [availableFieldDefs, setAvailableFieldDefs] = useState([]);
@@ -31,52 +58,49 @@ const HwList = ({ isSplitMode = false }) => {
   const [editItem, setEditItem] = useState(null);
   const [confirmModal, setConfirmModal] = useState({ show: false, msg: '', onConfirm: null });
 
+  const loadData = useCallback(async () => {
+    // 根據是否有 filterType 決定呼叫的查詢
+    let nicsRes;
+    if (filterType) {
+      nicsRes = await window.electronAPI.namedQuery('fetchNicListByType', [filterType]);
+    } else {
+      nicsRes = await window.electronAPI.namedQuery('fetchNicList');
+    }
+    
+    if (nicsRes.success) setNics(nicsRes.rows);
+
+    // 抓取系統設定
+    const defsRes = await window.electronAPI.namedQuery('getSystemSetting', ['customFieldDefinitions']);
+    if (defsRes.success && defsRes.rows.length > 0) {
+      setAvailableFieldDefs(defsRes.rows[0].value || []);
+    }
+
+    const prefRes = await window.electronAPI.namedQuery('getSystemSetting', ['nicSyncFieldPreference']);
+    if (prefRes.success && prefRes.rows.length > 0) {
+      setSelectedSyncFields(prefRes.rows[0].value || ['hostname', 'os']);
+    }
+
+    const custRes = await window.electronAPI.namedQuery('fetchCustomers');
+    if (custRes.success) {
+      setCustomers(custRes.rows.map(r => r.name));
+    }
+
+    const projRes = await window.electronAPI.namedQuery('fetchActiveProjects');
+    if (projRes.success) {
+      setProjects(projRes.rows);
+    }
+  }, [filterType]);
+
   useEffect(() => {
-    let isMounted = true;
-
-    const loadData = async () => {
-      // 根據是否有 filterType 決定呼叫的查詢
-      let nicsRes;
-      if (filterType) {
-        nicsRes = await window.electronAPI.namedQuery('fetchNicListByType', [filterType]);
-      } else {
-        nicsRes = await window.electronAPI.namedQuery('fetchNicList');
-      }
-      
-      if (isMounted && nicsRes.success) setNics(nicsRes.rows);
-
-      // 抓取系統設定
-      const defsRes = await window.electronAPI.namedQuery('getSystemSetting', ['customFieldDefinitions']);
-      if (isMounted && defsRes.success && defsRes.rows.length > 0) {
-        setAvailableFieldDefs(defsRes.rows[0].value || []);
-      }
-
-      const prefRes = await window.electronAPI.namedQuery('getSystemSetting', ['nicSyncFieldPreference']);
-      if (isMounted && prefRes.success && prefRes.rows.length > 0) {
-        setSelectedSyncFields(prefRes.rows[0].value || ['hostname', 'os']);
-      }
-
-      const custRes = await window.electronAPI.namedQuery('fetchCustomers');
-      if (isMounted && custRes.success) {
-        setCustomers(custRes.rows.map(r => r.name));
-      }
-
-      const projRes = await window.electronAPI.namedQuery('fetchActiveProjects');
-      if (isMounted && projRes.success) {
-        setProjects(projRes.rows);
-      }
-    };
-
     loadData();
 
-    const handleDbUpdate = () => { if (isMounted) loadData(); };
+    const handleDbUpdate = () => { loadData(); };
     window.addEventListener('db-update', handleDbUpdate);
 
     return () => {
-      isMounted = false;
       window.removeEventListener('db-update', handleDbUpdate);
     };
-  }, [filterType]); // 當類型變動時，重新載入資料
+  }, [loadData]);
 
   const handleEdit = (nic) => {
     setEditItem({
@@ -105,14 +129,7 @@ const HwList = ({ isSplitMode = false }) => {
   const handleSave = async () => {
     if (!editItem) return;
 
-    // 先更新 item_master 中的規格
-    await window.electronAPI.namedQuery('updateItemMasterSpecs', [
-      editItem.specification || '',
-      editItem.model,
-      editItem.item_master_id
-    ]);
-
-    // 再更新資產明細
+    // 更新資產明細 (規格為唯讀不可變動)
     const res = await window.electronAPI.namedQuery('updateNicDetails', [
       editItem.sn ? editItem.sn.trim() : null,
       editItem.client || null,
@@ -176,7 +193,11 @@ const HwList = ({ isSplitMode = false }) => {
     }
   };
 
-  const containerStyle = { padding: '24px', backgroundColor: 'var(--bg-app)', minHeight: '100vh' };
+  const containerStyle = {
+    padding: isSplitMode ? '0' : '24px',
+    backgroundColor: isSplitMode ? 'transparent' : 'var(--bg-app)',
+    minHeight: isSplitMode ? 'auto' : '100vh'
+  };
   const cardStyle = { backgroundColor: 'var(--bg-surface)', borderRadius: '16px', padding: '24px', boxShadow: 'var(--card-shadow)', border: '1px solid var(--border-color)', color: 'var(--text-main)' };
   const thStyle = { textAlign: 'left', padding: '14px', borderBottom: '2px solid var(--border-color)', color: 'var(--table-header-text)', fontSize: '13px', fontWeight: '900', backgroundColor: 'var(--table-header-bg)' };
   const tdStyle = { padding: '14px', borderBottom: '1px solid var(--table-border)', fontSize: '12px', color: 'var(--text-main)' };
@@ -290,7 +311,7 @@ const HwList = ({ isSplitMode = false }) => {
         {!isSplitMode && (
           <div style={{ display: 'flex', backgroundColor: 'var(--bg-surface-subtle)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
             <button
-              onClick={() => navigate('/hw-split')}
+              onClick={() => setShowAddModal(true)}
               style={{
                 padding: '8px 16px',
                 backgroundColor: 'var(--primary-color)',
@@ -305,7 +326,7 @@ const HwList = ({ isSplitMode = false }) => {
                 boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)'
               }}
             >
-              新增硬體 (HW Reg)
+              ➕ 新增硬體 (Add Hardware)
             </button>
           </div>
         )}
@@ -647,12 +668,55 @@ const HwList = ({ isSplitMode = false }) => {
                 )}
                 <td style={{ ...tdStyle, width: '100px' }}><span style={{ padding: '4px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: '800', backgroundColor: cfg.bgColor, color: cfg.color, border: `1px solid ${cfg.borderColor}`, whiteSpace: 'nowrap' }}>{cfg.label}</span></td>
                 <td style={{ ...tdStyle, textAlign: 'center', width: '80px', position: 'relative' }}>
-                  <button onClick={() => setActiveMenuId(activeMenuId === nic.id ? null : nic.id)} style={{ border: 'none', background: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}><MoreHorizontal size={20} /></button>
-                  {activeMenuId === nic.id && (
-                    <div style={{ position: 'absolute', right: 0, top: '100%', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '12px', boxShadow: 'var(--modal-shadow)', zIndex: 9999, padding: '8px', minWidth: '150px', display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                  <button 
+                    className="action-menu-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (activeMenuId === nic.id) {
+                        setActiveMenuId(null);
+                        setMenuPosition(null);
+                      } else {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const menuHeight = 360;
+                        const isUpward = rect.bottom + menuHeight > window.innerHeight && rect.top > menuHeight;
+                        setActiveMenuId(nic.id);
+                        setMenuPosition({
+                          top: isUpward ? rect.top - 4 : rect.bottom + 4,
+                          right: window.innerWidth - rect.right,
+                          isUpward
+                        });
+                      }
+                    }} 
+                    style={{ border: 'none', background: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+                  >
+                    <MoreHorizontal size={20} />
+                  </button>
+                  {activeMenuId === nic.id && menuPosition && (
+                    <div 
+                      className="dropdown-action-menu"
+                      style={{ 
+                        position: 'fixed', 
+                        top: menuPosition.isUpward ? 'auto' : `${menuPosition.top}px`,
+                        bottom: menuPosition.isUpward ? `${window.innerHeight - menuPosition.top}px` : 'auto',
+                        right: `${menuPosition.right}px`, 
+                        backgroundColor: 'var(--bg-surface)', 
+                        border: '1px solid var(--border-color)', 
+                        borderRadius: '12px', 
+                        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3)', 
+                        zIndex: 99999, 
+                        padding: '8px', 
+                        minWidth: '160px', 
+                        display: 'flex', 
+                        flexDirection: 'column', 
+                        gap: '4px',
+                        maxHeight: '80vh',
+                        overflowY: 'auto'
+                      }}
+                    >
                       <button 
                         onClick={() => {
                           setActiveMenuId(null);
+                          setMenuPosition(null);
                           setLedgerItem({ item_master_id: nic.item_master_id, sn: nic.sn, brand: nic.brand, model: nic.model, type: nic.type, current_stock: 1 });
                         }} 
                         style={{ ...menuButtonStyle, color: 'var(--text-main)' }}
@@ -660,31 +724,31 @@ const HwList = ({ isSplitMode = false }) => {
                         <History size={14} /> 履歷 (History)
                       </button>
                       <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '2px 0' }} />
-                      <button onClick={() => { setActiveMenuId(null); handleEdit(nic); }} style={menuButtonStyle}><Edit2 size={14} /> 編輯詳細資訊</button>
+                      <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); handleEdit(nic); }} style={menuButtonStyle}><Edit2 size={14} /> 編輯詳細資訊</button>
                       <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '2px 0' }} />
                       {nic.ownership === 'COMPANY' ? (
                         <button 
-                          onClick={() => handleUpdateOwnership(nic.id, nic.sn, 'FOR_SALE', '一般銷售')} 
+                          onClick={() => { setActiveMenuId(null); setMenuPosition(null); handleUpdateOwnership(nic.id, nic.sn, 'FOR_SALE', '一般銷售'); }} 
                           style={{ ...menuButtonStyle, color: '#3b82f6', fontWeight: '700' }}
                         >
                           <RotateCcw size={14} /> 轉為一般銷售
                         </button>
                       ) : (
                         <button 
-                          onClick={() => handleUpdateOwnership(nic.id, nic.sn, 'COMPANY', '公司資產')} 
+                          onClick={() => { setActiveMenuId(null); setMenuPosition(null); handleUpdateOwnership(nic.id, nic.sn, 'COMPANY', '公司資產'); }} 
                           style={{ ...menuButtonStyle, color: '#8b5cf6', fontWeight: '700' }}
                         >
                           <Building2 size={14} /> 轉為公司資產
                         </button>
                       )}
                       <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '4px 0' }} />
-                      <button onClick={() => handleUpdateStatus(nic.id, nic.sn, 'ACTIVE', '在庫')} style={{ ...menuButtonStyle, color: '#10b981' }}><CheckCircle size={14} /> 標記為在庫</button>
-                      <button onClick={() => handleUpdateStatus(nic.id, nic.sn, 'SHIPPED', '已出貨')} style={{ ...menuButtonStyle, color: '#3b82f6' }}><ShoppingBag size={14} /> 標記為出貨</button>
-                      <button onClick={() => handleUpdateStatus(nic.id, nic.sn, 'LENT', '借出')} style={{ ...menuButtonStyle, color: '#f59e0b' }}><Send size={14} /> 標記為借出</button>
-                      <button onClick={() => handleUpdateStatus(nic.id, nic.sn, 'REPAIR', '故障')} style={{ ...menuButtonStyle, color: '#ef4444' }}><AlertTriangle size={14} /> 標記為故障</button>
-                      <button onClick={() => handleUpdateStatus(nic.id, nic.sn, 'SCRAPPED', '報廢')} style={{ ...menuButtonStyle, color: 'var(--text-subtle)' }}><ShieldAlert size={14} /> 標記為報廢</button>
+                      <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); handleUpdateStatus(nic.id, nic.sn, 'ACTIVE', '在庫'); }} style={{ ...menuButtonStyle, color: '#10b981' }}><CheckCircle size={14} /> 標記為在庫</button>
+                      <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); handleUpdateStatus(nic.id, nic.sn, 'SHIPPED', '已出貨'); }} style={{ ...menuButtonStyle, color: '#3b82f6' }}><ShoppingBag size={14} /> 標記為出貨</button>
+                      <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); handleUpdateStatus(nic.id, nic.sn, 'LENT', '借出'); }} style={{ ...menuButtonStyle, color: '#f59e0b' }}><Send size={14} /> 標記為借出</button>
+                      <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); handleUpdateStatus(nic.id, nic.sn, 'REPAIR', '故障'); }} style={{ ...menuButtonStyle, color: '#ef4444' }}><AlertTriangle size={14} /> 標記為故障</button>
+                      <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); handleUpdateStatus(nic.id, nic.sn, 'SCRAPPED', '報廢'); }} style={{ ...menuButtonStyle, color: 'var(--text-subtle)' }}><ShieldAlert size={14} /> 標記為報廢</button>
                       <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '4px 0' }} />
-                      <button onClick={() => handleDelete(nic)} style={{ ...menuButtonStyle, color: '#f43f5e' }}><Trash2 size={14} /> 刪除紀錄</button>
+                      <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); handleDelete(nic); }} style={{ ...menuButtonStyle, color: '#f43f5e' }}><Trash2 size={14} /> 刪除紀錄</button>
                     </div>
                   )}
                 </td>
@@ -754,12 +818,22 @@ const HwList = ({ isSplitMode = false }) => {
               <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setShowEditModal(false)} />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <div>
-                <label style={editLabelStyle}>廠牌 / 類型 / 型號 (鎖定)</label>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <input type="text" value={editItem.brand || ''} disabled style={{ ...editInputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', width: '30%', cursor: 'not-allowed' }} />
-                  <input type="text" value={editItem.type || ''} disabled style={{ ...editInputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', width: '30%', cursor: 'not-allowed' }} />
-                  <input type="text" value={editItem.model || ''} disabled style={{ ...editInputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', flex: 1, cursor: 'not-allowed' }} />
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
+                <div>
+                  <label style={editLabelStyle}>廠牌 (Brand) (鎖定)</label>
+                  <input type="text" value={editItem.brand || ''} disabled readOnly style={{ ...editInputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', cursor: 'not-allowed' }} />
+                </div>
+                <div>
+                  <label style={editLabelStyle}>類型 (Type) (鎖定)</label>
+                  <input type="text" value={editItem.type || ''} disabled readOnly style={{ ...editInputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', cursor: 'not-allowed' }} />
+                </div>
+                <div>
+                  <label style={editLabelStyle}>型號 (Model) (鎖定)</label>
+                  <input type="text" value={editItem.model || ''} disabled readOnly style={{ ...editInputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', cursor: 'not-allowed' }} />
+                </div>
+                <div>
+                  <label style={editLabelStyle}>規格 (Specification) (鎖定)</label>
+                  <input type="text" value={editItem.specification || ''} disabled readOnly title={editItem.specification || ''} style={{ ...editInputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', cursor: 'not-allowed' }} />
                 </div>
               </div>
 
@@ -806,16 +880,6 @@ const HwList = ({ isSplitMode = false }) => {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                 <label style={editLabelStyle}>硬體序號<input type="text" value={editItem.sn || ''} onChange={(e) => setEditItem({ ...editItem, sn: e.target.value })} style={editInputStyle} /></label>
                 <label style={editLabelStyle}>主機名稱 (HostName)<input type="text" value={editItem.hostname || ''} onChange={(e) => setEditItem({ ...editItem, hostname: e.target.value })} style={editInputStyle} /></label>
-              </div>
-
-              <div>
-                <label style={editLabelStyle}>硬體規格 (Specification)</label>
-                <textarea 
-                  value={editItem.specification || ''} 
-                  onChange={(e) => setEditItem({ ...editItem, specification: e.target.value })} 
-                  style={{ ...editInputStyle, minHeight: '80px', lineHeight: '1.5' }} 
-                  placeholder="請輸入型號詳細規格內容..."
-                />
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
@@ -918,6 +982,13 @@ const HwList = ({ isSplitMode = false }) => {
         isOpen={!!ledgerItem}
         onClose={() => setLedgerItem(null)}
         item={ledgerItem}
+      />
+
+      {/* 新增硬體彈窗 Modal */}
+      <HwRegistrationModal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        onSuccess={loadData}
       />
     </div>
   );

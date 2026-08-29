@@ -688,25 +688,23 @@ const EventLogs = () => {
                         <button
                           onClick={() => setSelectedLog(log)}
                           title="查看詳細異動 Payload"
+                          aria-label="查看詳細異動 Payload"
                           style={{
                             display: 'inline-flex',
                             alignItems: 'center',
-                            flexDirection: 'row',
-                            gap: '4px',
-                            padding: '5px 12px',
+                            justifyContent: 'center',
+                            width: '32px',
+                            height: '32px',
+                            padding: 0,
                             backgroundColor: 'var(--primary-bg)',
                             color: 'var(--primary-color)',
                             border: '1px solid rgba(59, 130, 246, 0.25)',
                             borderRadius: '6px',
                             cursor: 'pointer',
-                            fontSize: '0.8rem',
-                            fontWeight: 600,
-                            whiteSpace: 'nowrap',
-                            wordBreak: 'keep-all',
                             flexShrink: 0
                           }}
                         >
-                          <Eye size={14} style={{ flexShrink: 0 }} /> <span style={{ whiteSpace: 'nowrap' }}>檢視</span>
+                          <Eye size={15} />
                         </button>
                       </td>
                     </tr>

@@ -48,7 +48,7 @@ describe('Settings 頁面完整流程整合測試', () => {
     expect(await screen.findByText(/系統管理員/)).toBeInTheDocument();
 
     // 2. 點擊「設定權限」按鈕
-    const editBtn = await screen.findByText(/設定權限/);
+    const editBtn = await screen.findByTitle(/設定功能權限/);
     await user.click(editBtn);
 
     // 3. 驗證彈窗是否出現 (使用更精確的 heading role 定位)
@@ -70,7 +70,7 @@ describe('Settings 頁面完整流程整合測試', () => {
     );
 
     expect(await screen.findByText(/系統管理員/)).toBeInTheDocument();
-    const editBtn = await screen.findByText(/設定權限/);
+    const editBtn = await screen.findByTitle(/設定功能權限/);
     await user.click(editBtn);
 
     await screen.findByRole('heading', { name: '權限設定', level: 2 });

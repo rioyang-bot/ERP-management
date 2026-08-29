@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Save, Trash2, Cpu, Settings2, X, Server, Clock, User, MapPin, Layers, ListFilter, FileSpreadsheet } from 'lucide-react';
+import { Plus, Save, Trash2, Cpu, Settings2, X, Server, Layers, ListFilter, FileSpreadsheet } from 'lucide-react';
 import { sanitizeInput, sanitizeSearchInput } from '../utils/security';
 import { logCreate } from '../utils/auditLogger';
 import HwBatchImportModal from '../components/HwBatchImportModal';
@@ -10,7 +10,6 @@ const HwRegistration = ({ isSplitMode = false }) => {
   const [brands, setBrands] = useState([]);
   const [types, setTypes] = useState([]);
   const [models, setModels] = useState([]);
-  const [recentItems, setRecentItems] = useState([]);
   const [projects, setProjects] = useState([]);
   const [showProjectDropdown, setShowProjectDropdown] = useState(false);
   const [showBatchImport, setShowBatchImport] = useState(false);
@@ -47,13 +46,6 @@ const HwRegistration = ({ isSplitMode = false }) => {
     if (res.success) setBrands(res.rows);
   }, []);
 
-  const fetchRecentItems = useCallback(async () => {
-    const res = await window.electronAPI.namedQuery('fetchNicList');
-    if (res.success) {
-      setRecentItems(res.rows.slice(0, 10));
-    }
-  }, []);
-
   const fetchTypes = useCallback(async (brandName) => {
     if (!brandName) return;
     const res = await window.electronAPI.namedQuery('fetchNicTypesByBrand', [brandName]);
@@ -77,9 +69,8 @@ const HwRegistration = ({ isSplitMode = false }) => {
 
   useEffect(() => {
     fetchBrands();
-    fetchRecentItems();
     fetchProjects();
-  }, [fetchBrands, fetchRecentItems, fetchProjects]);
+  }, [fetchBrands, fetchProjects]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -216,7 +207,6 @@ const HwRegistration = ({ isSplitMode = false }) => {
         alert(`成功建檔 ${successCount} 筆資料${failCount > 0 ? `，失敗 ${failCount} 筆` : ''}。`);
         setFormData({ ...formData, sn: '', server_sn: '', project_name: '' });
         setBulkSns('');
-        fetchRecentItems();
         window.dispatchEvent(new CustomEvent('db-update'));
       } else {
         alert('建檔失敗。');
@@ -226,10 +216,24 @@ const HwRegistration = ({ isSplitMode = false }) => {
     }
   };
 
-  const containerStyle = { padding: '24px', backgroundColor: 'var(--bg-app)', minHeight: '100vh', display: 'flex', flexDirection: isSplitMode ? 'column' : 'row', gap: '24px' };
-  const leftSectionStyle = isSplitMode ? { width: '100%' } : { flex: '0 0 60%' };
-  const rightSectionStyle = isSplitMode ? { width: '100%' } : { flex: '1' };
-  const cardStyle = { backgroundColor: 'var(--bg-surface)', borderRadius: '16px', padding: '24px', boxShadow: 'var(--card-shadow)', border: '1px solid var(--border-color)', marginBottom: '24px', color: 'var(--text-main)' };
+  const containerStyle = {
+    padding: isSplitMode ? '0' : '24px',
+    backgroundColor: isSplitMode ? 'transparent' : 'var(--bg-app)',
+    minHeight: isSplitMode ? 'auto' : '100vh',
+    width: '100%',
+    boxSizing: 'border-box'
+  };
+  const cardStyle = {
+    backgroundColor: 'var(--bg-surface)',
+    borderRadius: '16px',
+    padding: '24px',
+    boxShadow: 'var(--card-shadow)',
+    border: '1px solid var(--border-color)',
+    marginBottom: isSplitMode ? '0' : '24px',
+    color: 'var(--text-main)',
+    width: '100%',
+    boxSizing: 'border-box'
+  };
   const labelStyle = { display: 'block', fontSize: '14px', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '6px' };
   const inputStyle = { width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', fontSize: '14px', outline: 'none' };
   const iconBtnStyle = { padding: '8px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-main)', cursor: 'pointer', display: 'flex', alignItems: 'center' };
@@ -261,7 +265,7 @@ const HwRegistration = ({ isSplitMode = false }) => {
 
   return (
     <div style={containerStyle}>
-      <div style={leftSectionStyle}>
+      <div style={{ width: '100%' }}>
         <div style={cardStyle}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
             <div>
@@ -466,57 +470,11 @@ const HwRegistration = ({ isSplitMode = false }) => {
         </div>
       </div>
 
-      <div style={rightSectionStyle}>
-        <div style={cardStyle}>
-          <h3 style={{ fontSize: '16px', fontWeight: '800', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-main)' }}>
-            <Clock size={18} color="var(--text-muted)" /> 最新 10 筆建檔記錄
-          </h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {recentItems.length === 0 ? (
-              <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '20px', fontSize: '13px' }}>尚無建檔紀錄</div>
-            ) : (
-              recentItems.map(item => (
-                <div key={item.id} style={{ padding: '12px 16px', borderRadius: '12px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)' }}>
-                  <div style={{ fontWeight: '800', fontSize: '13px', marginBottom: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    <span style={{ color: 'var(--primary-color)' }}>{item.brand}</span>
-                    <span style={{ color: 'var(--text-subtle)', margin: '0 4px' }}>/</span>
-                    <span style={{ color: 'var(--text-muted)' }}>{item.type}</span>
-                    <span style={{ color: 'var(--text-subtle)', margin: '0 4px' }}>/</span>
-                    <span style={{ color: 'var(--text-main)' }}>{item.model}</span>
-                  </div>
-                  <div style={{ color: 'var(--text-muted)', fontSize: '12px', fontWeight: '500', marginBottom: '6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {(item.specification || '').replace(`${item.type} ${item.brand}`, '').trim().replace(/^\(|\)$/g, '') || '--'}
-                  </div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>SN: <span style={{ fontFamily: 'monospace', fontWeight: 'bold', color: 'var(--text-main)' }}>{item.sn || '--'}</span></span>
-                    {item.custom_attributes?.server_sn && (
-                      <span style={{ backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.3)', padding: '1px 6px', borderRadius: '4px', fontWeight: '800', fontSize: '10px' }}>
-                        Host: {item.custom_attributes.server_sn}
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-subtle)', marginTop: '8px', borderTop: '1px solid var(--border-color)', paddingTop: '6px' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-main)' }}><User size={12} /> {item.server_client || item.client || '--'}</span>
-                      {(item.partner_contact || item.partner_phone) && (
-                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', paddingLeft: '16px' }}>{item.partner_contact} {item.partner_phone}</span>
-                      )}
-                    </div>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-muted)' }}><MapPin size={12} /> {item.server_location || '--'}</span>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
-
       {/* 硬體清單批次匯入彈窗 */}
       <HwBatchImportModal
         isOpen={showBatchImport}
         onClose={() => setShowBatchImport(false)}
         onSuccess={() => {
-          fetchRecentItems();
           window.dispatchEvent(new CustomEvent('db-update'));
         }}
         existingBrands={brands}

@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback, useContext } from 'react';
 import { RoleContext } from '../context/RoleContext';
 import { hashPassword, validatePassword } from '../utils/auth';
-import { Shield, User, Settings as SettingsIcon, CheckSquare, Square, X, Save, Key, Lock } from 'lucide-react';
+import { Shield, User, Settings as SettingsIcon, CheckSquare, Square, X, Save, Key, Lock, Trash2, Power } from 'lucide-react';
 import { logCreate, logUpdate, logDelete, logStatusChange } from '../utils/auditLogger';
 
 const MENU_OPTIONS = [
+  { id: 'overview', label: '營運總覽 (Overview)' },
   { id: 'inboundList', label: '進貨單列表 (S/I List)' },
   { id: 'dnList', label: '出貨單列表 (D/N List)' },
   { id: 'lentList', label: '借用列表 (Lent List)' },
@@ -58,10 +59,8 @@ const Settings = () => {
   }, []);
 
   useEffect(() => {
-    Promise.resolve().then(() => {
-      fetchSettings();
-      fetchUsers();
-    });
+    fetchUsers();
+    fetchSettings();
   }, [fetchUsers, fetchSettings]);
 
   const handleUserChange = (e) => {
@@ -80,17 +79,17 @@ const Settings = () => {
       const hashedPassword = await hashPassword(newUser.password);
       
       // 根據角色給予預設權限
-      let defaultAccess = {};
+      let defaultAccess = { overview: true };
       if (newUser.role === 'ADMIN') {
         MENU_OPTIONS.forEach(opt => {
           defaultAccess[opt.id] = true;
         });
       } else if (newUser.role === 'IT') {
-        defaultAccess = { dnList: true, lentList: true, assetList: true, 'nic-list': true, 'consumable-list': true, reports: true };
+        defaultAccess = { overview: true, dnList: true, lentList: true, assetList: true, 'nic-list': true, 'consumable-list': true, reports: true };
       } else if (newUser.role === 'WAREHOUSE') {
-        defaultAccess = { inboundList: true, dnList: true, assetList: true, 'nic-list': true, 'consumable-list': true, partners: true, reports: true };
+        defaultAccess = { overview: true, inboundList: true, dnList: true, assetList: true, 'nic-list': true, 'consumable-list': true, partners: true, reports: true };
       } else if (newUser.role === 'PURCHASING') {
-        defaultAccess = { procurementList: true, partners: true, reports: true };
+        defaultAccess = { overview: true, procurementList: true, partners: true, reports: true };
       }
 
       const res = await window.electronAPI.namedQuery(
@@ -141,6 +140,7 @@ const Settings = () => {
     // 相容舊格式 Key 並對齊目前列表模組
     const access = {
       ...rawAccess,
+      overview: rawAccess.overview ?? true,
       inboundList: rawAccess.inboundList ?? rawAccess.inbound ?? false,
       dnList: rawAccess.dnList ?? rawAccess.outbound ?? false,
       assetList: rawAccess.assetList ?? rawAccess.assets ?? false,
@@ -334,16 +334,18 @@ const Settings = () => {
                           {u.role}
                         </span>
                       </td>
-                      <td style={{ padding: '16px 12px', textAlign: 'center' }}>
+                      <td style={{ padding: '16px 12px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                         <button 
                           onClick={() => handleOpenPermissions(u)}
                           style={{ 
-                            display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '6px 12px', fontSize: '0.85rem',
-                            backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--primary-color)', border: '1px solid var(--border-color)',
-                            borderRadius: '8px', cursor: 'pointer', fontWeight: 600
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', padding: 0,
+                            backgroundColor: 'var(--primary-bg)', color: 'var(--primary-color)', border: '1px solid rgba(59, 130, 246, 0.25)',
+                            borderRadius: '6px', cursor: 'pointer', flexShrink: 0
                           }}
+                          title="設定功能權限"
+                          aria-label="設定功能權限"
                         >
-                          <Shield size={14} /> 設定權限
+                          <Shield size={16} />
                         </button>
                       </td>
                       <td style={{ padding: '16px 12px', textAlign: 'center' }}>
@@ -351,16 +353,31 @@ const Settings = () => {
                           {u.is_active ? '啟用' : '停用'}
                         </span>
                       </td>
-                      <td style={{ padding: '16px 12px', textAlign: 'center' }}>
-                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                          <button onClick={() => handleToggleActive(u.id, u.is_active)} className="btn-icon">
-                            {u.is_active ? '停用' : '啟用'}
+                      <td style={{ padding: '16px 12px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', whiteSpace: 'nowrap' }}>
+                          <button 
+                            onClick={() => handleToggleActive(u.id, u.is_active)} 
+                            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', padding: 0, backgroundColor: 'var(--bg-surface-subtle)', color: u.is_active ? '#ef4444' : '#10b981', border: '1px solid var(--border-color)', borderRadius: '6px', cursor: 'pointer', flexShrink: 0 }}
+                            title={u.is_active ? '停用帳號' : '啟用帳號'}
+                            aria-label={u.is_active ? '停用帳號' : '啟用帳號'}
+                          >
+                            <Power size={15} />
                           </button>
-                          <button onClick={() => setResetUser(u)} className="btn-icon">
-                            重設密碼
+                          <button 
+                            onClick={() => setResetUser(u)} 
+                            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', padding: 0, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '6px', cursor: 'pointer', flexShrink: 0 }}
+                            title="重設密碼"
+                            aria-label="重設密碼"
+                          >
+                            <Key size={15} />
                           </button>
-                          <button onClick={() => handleDeleteUser(u.id, u.username)} className="btn-icon-danger">
-                            刪除
+                          <button 
+                            onClick={() => handleDeleteUser(u.id, u.username)} 
+                            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', padding: 0, backgroundColor: 'rgba(239, 68, 68, 0.12)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '6px', cursor: 'pointer', flexShrink: 0 }}
+                            title="刪除人員帳號"
+                            aria-label="刪除人員帳號"
+                          >
+                            <Trash2 size={15} />
                           </button>
                         </div>
                       </td>

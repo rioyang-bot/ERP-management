@@ -3,7 +3,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { RoleContext } from '../../context/RoleContext';
 import { useTheme } from '../../context/ThemeContext';
 import logo from '../../assets/logo.png';
-import { ChevronDown, ChevronRight, Edit3, List, LayoutGrid, Key, X, Sun, Moon, LogOut, Plus } from 'lucide-react';
+import { ChevronRight, Key, X, Sun, Moon, LogOut, Plus } from 'lucide-react';
 import { hashPassword, validatePassword } from '../../utils/auth';
 import LiveEventDrawer from './LiveEventDrawer';
 import './MainLayout.css';
@@ -95,16 +95,6 @@ const MainLayout = () => {
     }
   };
 
-  // --- 全域導航列模式 (Global Sidebar Mode) ---
-  const [sidebarMode, setSidebarMode] = useState(() => {
-    return localStorage.getItem('erp_sidebar_mode') || 'all'; // 'registration', 'list', 'all'
-  });
-
-  useEffect(() => {
-    localStorage.setItem('erp_sidebar_mode', sidebarMode);
-  }, [sidebarMode]);
-
-
   // --- 選單排序邏輯 ---
   const [menuOrder, setMenuOrder] = useState(() => {
     const saved = localStorage.getItem('sidebar_menu_order');
@@ -112,20 +102,19 @@ const MainLayout = () => {
   });
   const [draggingMenuId, setDraggingMenuId] = useState(null);
 
-
-
   const allMenuItems = [
-    { id: 'inboundList', path: '/inbound-list', label: '進貨單列表(S/I List)', category: 'list' },
-    { id: 'dnList', path: '/dn-list', label: '出貨單列表 (D/N List)', category: 'list' },
-    { id: 'lentList', path: '/lent-list', label: '借用列表 (Lent List)', category: 'list' },
-    { id: 'assetList', path: '/device-list', label: '設備列表 (Device List)', hasSub: true, category: 'list' },
-    { id: 'nic-list', path: '/hw-list', label: '硬體列表 (HW List)', hasSub: true, category: 'list' },
-    { id: 'consumable-list', path: '/consumable-list', label: '耗材列表 (CSM List)', hasSub: true, category: 'list' },
-    { id: 'procurementList', path: '/procurement-list', label: '採購單列表 (P/O List)', category: 'list' },
-    { id: 'partners', path: '/partners', label: '客戶/廠商管理 (Partners)', category: 'shared' },
-    { id: 'projects', path: '/projects', label: '專案列表 (Project List)', category: 'shared' },
-    { id: 'reports', path: '/reports', label: '報表中心 (Reports)', hasSub: true, category: 'shared' },
-    { id: 'settings', path: '/settings', label: '系統管理 (Accounts)', category: 'shared' },
+    { id: 'overview', path: '/overview', label: '營運總覽 (Overview)' },
+    { id: 'inboundList', path: '/inbound-list', label: '進貨單列表(S/I List)' },
+    { id: 'dnList', path: '/dn-list', label: '出貨單列表 (D/N List)' },
+    { id: 'lentList', path: '/lent-list', label: '借用列表 (Lent List)' },
+    { id: 'assetList', path: '/device-list', label: '設備列表 (Device List)', hasSub: true },
+    { id: 'nic-list', path: '/hw-list', label: '硬體列表 (HW List)', hasSub: true },
+    { id: 'consumable-list', path: '/consumable-list', label: '耗材列表 (CSM List)', hasSub: true },
+    { id: 'procurementList', path: '/procurement-list', label: '採購單列表 (P/O List)' },
+    { id: 'partners', path: '/partners', label: '客戶/廠商管理 (Partners)' },
+    { id: 'projects', path: '/projects', label: '專案列表 (Project List)' },
+    { id: 'reports', path: '/reports', label: '報表中心 (Reports)', hasSub: true },
+    { id: 'settings', path: '/settings', label: '系統管理 (Accounts)' },
   ];
 
   // 排序並過濾選單
@@ -144,16 +133,14 @@ const MainLayout = () => {
     const accessAllowed = 
       authUser?.role === 'ADMIN' || 
       authUser?.menu_access?.[item.id] ||
+      (item.id === 'overview' && (authUser?.menu_access?.['overview'] !== false)) ||
       (item.id === 'inboundList' && authUser?.menu_access?.['inbound']) ||
       (item.id === 'dnList' && authUser?.menu_access?.['outbound']) ||
       (item.id === 'assetList' && authUser?.menu_access?.['assets']) ||
       (item.id === 'nic-list' && authUser?.menu_access?.['nic-registration']) ||
       (item.id === 'consumable-list' && (authUser?.menu_access?.['consumables'] || authUser?.menu_access?.['consumableList'])) ||
       (item.id === 'procurementList' && authUser?.menu_access?.['purchasing']);
-    if (!accessAllowed) return false;
-    
-    if (sidebarMode === 'all' || item.category === 'shared') return true;
-    return item.category === sidebarMode;
+    return accessAllowed;
   });
 
   // --- 選單拖曳事件 ---
@@ -224,33 +211,6 @@ const MainLayout = () => {
             </li>
           ))}
         </ul>
-        
-        {/* 全域模式切換區塊 */}
-        <div className="sidebar-footer">
-          <div className="mode-toggle-group">
-            <button 
-              className={`mode-toggle-btn ${sidebarMode === 'registration' ? 'active' : ''}`}
-              onClick={() => setSidebarMode('registration')}
-              title="僅顯示建檔功能"
-            >
-              <Edit3 size={14} /> 建檔
-            </button>
-            <button 
-              className={`mode-toggle-btn ${sidebarMode === 'list' ? 'active' : ''}`}
-              onClick={() => setSidebarMode('list')}
-              title="僅顯示清單功能"
-            >
-              <List size={14} /> 清單
-            </button>
-            <button 
-              className={`mode-toggle-btn ${sidebarMode === 'all' ? 'active' : ''}`}
-              onClick={() => setSidebarMode('all')}
-              title="顯示所有功能"
-            >
-              <LayoutGrid size={14} /> 全部
-            </button>
-          </div>
-        </div>
       </aside>
 
       <main className="main-content">

@@ -43,13 +43,13 @@ const ItemLedgerModal = ({ isOpen, onClose, item }) => {
   const getTypeDisplay = (type) => {
     switch (type) {
       case 'INBOUND':
-        return { label: '進貨入庫', icon: <ArrowDownToLine size={14} />, color: '#10b981', bg: '#d1fae5' };
+        return { label: '進貨入庫', icon: <ArrowDownToLine size={14} />, color: '#10b981', bg: 'rgba(16, 185, 129, 0.15)' };
       case 'OUTBOUND_SALE':
-        return { label: '出貨發貨', icon: <ArrowUpFromLine size={14} />, color: '#3b82f6', bg: '#dbeafe' };
+        return { label: '出貨發貨', icon: <ArrowUpFromLine size={14} />, color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.15)' };
       case 'OUTBOUND_LEND':
-        return { label: '設備借出', icon: <ArrowRightLeft size={14} />, color: '#d97706', bg: '#fef3c7' };
+        return { label: '設備借出', icon: <ArrowRightLeft size={14} />, color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.15)' };
       default:
-        return { label: '未知', icon: <History size={14} />, color: '#64748b', bg: '#f1f5f9' };
+        return { label: '未知', icon: <History size={14} />, color: 'var(--text-muted)', bg: 'var(--bg-surface-subtle)' };
     }
   };
 

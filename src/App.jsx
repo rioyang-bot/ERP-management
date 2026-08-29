@@ -32,6 +32,7 @@ import ConsumableSplitView from './pages/ConsumableSplitView';
 import OutboundSplitView from './pages/OutboundSplitView';
 import ProcurementSplitView from './pages/ProcurementSplitView';
 import ProcessFlow from './pages/ProcessFlow';
+import Overview from './pages/Overview';
 import './index.css';
 
 function App() {
@@ -65,7 +66,8 @@ function App() {
           <Routes>
             <Route path="/login" element={<Login setAuthUser={setAuthUser} />} />
             <Route path="/" element={authUser ? <MainLayout /> : <Navigate to="/login" replace />}>
-              <Route index element={<Navigate to="/device-list" replace />} />
+              <Route index element={<Navigate to="/overview" replace />} />
+              <Route path="overview" element={<Overview />} />
               <Route path="inbound" element={<Inbound />} />
               <Route path="inbound-list" element={<InboundList />} />
               <Route path="inbound-split" element={<InboundSplitView />} />

@@ -1,0 +1,271 @@
+.company-preset-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1050;
+  padding: 16px;
+}
+
+.company-preset-container {
+  background-color: var(--bg-surface, #1e293b);
+  border: 1px solid var(--border-color, #334155);
+  border-radius: 12px;
+  width: 100%;
+  max-width: 700px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  color: var(--text-main, #f8fafc);
+}
+
+.company-preset-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-color, #334155);
+  background-color: var(--bg-surface-subtle, #0f172a);
+}
+
+.company-preset-header h2 {
+  font-size: 16px;
+  font-weight: 800;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-main, #f8fafc);
+}
+
+.company-preset-body {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* 範本清單區塊 */
+.preset-list-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.preset-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background-color: var(--bg-surface-subtle, #0f172a);
+  border: 1px solid var(--border-color, #334155);
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.preset-card:hover {
+  border-color: var(--primary, #3b82f6);
+}
+
+.preset-card-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.preset-logo-thumb {
+  width: 48px;
+  height: 32px;
+  object-fit: contain;
+  background-color: #ffffff;
+  border-radius: 4px;
+  padding: 2px;
+}
+
+.preset-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.preset-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-main, #f8fafc);
+}
+
+.preset-sub {
+  font-size: 12px;
+  color: var(--text-muted, #94a3b8);
+  white-space: pre-line;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+}
+
+.preset-badge-builtin {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  background-color: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 4px;
+}
+
+.preset-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 表單區塊 */
+.preset-form-section {
+  background-color: var(--bg-surface-subtle, #0f172a);
+  border: 1px solid var(--border-color, #334155);
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.preset-form-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text-main, #f8fafc);
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.preset-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.preset-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.preset-form-group.full-width {
+  grid-column: span 2;
+}
+
+.preset-form-label {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--text-muted, #94a3b8);
+}
+
+.preset-form-input,
+.preset-form-textarea {
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color, #334155);
+  background-color: var(--bg-surface, #1e293b);
+  color: var(--text-main, #f8fafc);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.preset-form-input:focus,
+.preset-form-textarea:focus {
+  border-color: var(--primary, #3b82f6);
+}
+
+.preset-form-textarea {
+  resize: vertical;
+  min-height: 70px;
+  line-height: 1.4;
+}
+
+.preset-logo-upload-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.preset-logo-preview {
+  height: 42px;
+  max-width: 140px;
+  object-fit: contain;
+  background-color: #ffffff;
+  padding: 4px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color, #334155);
+}
+
+/* 按鈕 */
+.preset-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.2s ease;
+}
+
+.preset-btn-primary {
+  background-color: var(--primary, #2563eb);
+  color: #ffffff;
+}
+.preset-btn-primary:hover {
+  background-color: #1d4ed8;
+}
+
+.preset-btn-secondary {
+  background-color: var(--bg-surface, #1e293b);
+  border-color: var(--border-color, #334155);
+  color: var(--text-main, #e2e8f0);
+}
+.preset-btn-secondary:hover {
+  background-color: var(--bg-surface-hover, #334155);
+}
+
+.preset-btn-danger {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+.preset-btn-danger:hover {
+  background-color: #ef4444;
+  color: #ffffff;
+}
+
+.preset-btn-success {
+  background-color: #059669;
+  color: #ffffff;
+}
+.preset-btn-success:hover {
+  background-color: #047857;
+}
+
+.company-preset-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border-color, #334155);
+  background-color: var(--bg-surface-subtle, #0f172a);
+}
