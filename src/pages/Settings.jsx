@@ -9,6 +9,7 @@ const MENU_OPTIONS = [
   { id: 'inboundList', label: '進貨單列表 (S/I List)' },
   { id: 'dnList', label: '出貨單列表 (D/N List)' },
   { id: 'lentList', label: '借用列表 (Lent List)' },
+  { id: 'repairList', label: '維修單列表 (Repair List)' },
   { id: 'assetList', label: '設備列表 (Device List)' },
   { id: 'nic-list', label: '硬體列表 (HW List)' },
   { id: 'consumable-list', label: '耗材列表 (CSM List)' },
@@ -85,9 +86,9 @@ const Settings = () => {
           defaultAccess[opt.id] = true;
         });
       } else if (newUser.role === 'IT') {
-        defaultAccess = { overview: true, dnList: true, lentList: true, assetList: true, 'nic-list': true, 'consumable-list': true, reports: true };
+        defaultAccess = { overview: true, dnList: true, lentList: true, repairList: true, assetList: true, 'nic-list': true, 'consumable-list': true, reports: true };
       } else if (newUser.role === 'WAREHOUSE') {
-        defaultAccess = { overview: true, inboundList: true, dnList: true, assetList: true, 'nic-list': true, 'consumable-list': true, partners: true, reports: true };
+        defaultAccess = { overview: true, inboundList: true, dnList: true, lentList: true, repairList: true, assetList: true, 'nic-list': true, 'consumable-list': true, partners: true, reports: true };
       } else if (newUser.role === 'PURCHASING') {
         defaultAccess = { overview: true, procurementList: true, partners: true, reports: true };
       }
@@ -143,6 +144,8 @@ const Settings = () => {
       overview: rawAccess.overview ?? true,
       inboundList: rawAccess.inboundList ?? rawAccess.inbound ?? false,
       dnList: rawAccess.dnList ?? rawAccess.outbound ?? false,
+      lentList: rawAccess.lentList ?? rawAccess.outbound ?? false,
+      repairList: rawAccess.repairList ?? (rawAccess.outbound || rawAccess.assets) ?? false,
       assetList: rawAccess.assetList ?? rawAccess.assets ?? false,
       'nic-list': rawAccess['nic-list'] ?? rawAccess['nic-registration'] ?? false,
       'consumable-list': rawAccess['consumable-list'] ?? rawAccess.consumableList ?? rawAccess.consumables ?? false,
