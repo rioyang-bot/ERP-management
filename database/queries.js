@@ -629,7 +629,7 @@ export const queries = {
       (SELECT COUNT(*) FROM outbound_requests WHERE request_type = 'SALE' AND status = 'PENDING') as pending_outbounds_count,
       (SELECT COUNT(*) FROM outbound_requests WHERE request_type = 'LEND' AND status = 'SHIPPED') as active_lents_count,
       (SELECT COUNT(*) FROM outbound_requests WHERE request_type = 'LEND' AND status = 'SHIPPED' AND expected_return_date < CURRENT_DATE) as overdue_lents_count,
-      (SELECT COUNT(*) FROM item_master i JOIN categories c ON i.category_id = c.id WHERE c.name = '耗材' AND (COALESCE(i.stock_qty, 0) + COALESCE(i.lab_qty, 0)) <= COALESCE(i.safety_stock, 0)) as low_stock_consumables_count,
+      (SELECT COUNT(*) FROM item_master i JOIN categories c ON i.category_id = c.id WHERE c.name = '耗材' AND COALESCE(i.safety_stock, 0) > 0 AND (COALESCE(i.stock_qty, 0) + COALESCE(i.lab_qty, 0)) <= i.safety_stock) as low_stock_consumables_count,
       (SELECT COUNT(*) FROM projects WHERE status = 'IN_PROGRESS') as active_projects_count,
       (SELECT COUNT(*) FROM repair_orders WHERE status != 'COMPLETED') as active_repairs_count,
       (SELECT COUNT(*) FROM repair_orders WHERE status = 'SENT_OEM') as sent_oem_repairs_count
@@ -707,7 +707,8 @@ export const queries = {
     FROM item_master i
     JOIN categories c ON i.category_id = c.id
     WHERE c.name = '耗材'
-      AND (COALESCE(i.stock_qty, 0) + COALESCE(i.lab_qty, 0)) <= COALESCE(i.safety_stock, 0)
+      AND COALESCE(i.safety_stock, 0) > 0
+      AND (COALESCE(i.stock_qty, 0) + COALESCE(i.lab_qty, 0)) <= i.safety_stock
     ORDER BY shortage_qty DESC, total_qty ASC, i.id DESC
     LIMIT 200
   `,

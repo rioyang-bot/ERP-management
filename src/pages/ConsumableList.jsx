@@ -329,7 +329,7 @@ const ConsumableList = ({ isSplitMode = false }) => {
       acc[key].stock_qty += stock;
       acc[key].lab_qty += lab;
       acc[key].total_qty += (stock + lab);
-      if ((stock + lab) <= safety) {
+      if (safety > 0 && (stock + lab) <= safety) {
         acc[key].hasLowStock = true;
       }
       return acc;
@@ -591,7 +591,14 @@ const ConsumableList = ({ isSplitMode = false }) => {
                       <td style={{ ...tdStyle, fontSize: '12px', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '150px' }} title={item.specification}>{item.specification || '--'}</td>
                       <td style={{ ...tdStyle, fontWeight: 700, color: 'var(--primary-color)', textAlign: 'center' }}>{item.stock_qty || 0}</td>
                       <td style={{ ...tdStyle, fontWeight: 700, color: '#a855f7', cursor: 'pointer', textDecoration: 'underline', textAlign: 'center' }} onClick={() => viewAssignments(item)}>{item.lab_qty || 0}</td>
-                      <td style={{ ...tdStyle, fontWeight: 800, color: (Number(item.stock_qty)+Number(item.lab_qty)) <= Number(item.safety_stock) ? '#ef4444' : '#10b981', textAlign: 'center' }}>{(Number(item.stock_qty)||0) + (Number(item.lab_qty)||0)}</td>
+                      <td style={{ 
+                        ...tdStyle, 
+                        fontWeight: 800, 
+                        color: (Number(item.safety_stock) > 0 && ((Number(item.stock_qty) || 0) + (Number(item.lab_qty) || 0)) <= Number(item.safety_stock)) ? '#ef4444' : '#10b981', 
+                        textAlign: 'center' 
+                      }}>
+                        {(Number(item.stock_qty) || 0) + (Number(item.lab_qty) || 0)}
+                      </td>
                       <td style={{ ...tdStyle, color: 'var(--text-muted)', textAlign: 'center' }}>{item.safety_stock}</td>
                       <td style={{ ...tdStyle, textAlign: 'center', width: '120px', position: 'relative' }}>
                         <button 
