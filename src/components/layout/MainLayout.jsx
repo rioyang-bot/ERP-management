@@ -95,12 +95,30 @@ const MainLayout = () => {
     }
   };
 
-  // --- 選單排序邏輯 ---
+  // --- 選單排序邏輯 (依使用者帳號各自獨立儲存) ---
   const [menuOrder, setMenuOrder] = useState(() => {
-    const saved = localStorage.getItem('sidebar_menu_order');
+    const userKey = authUser?.username ? `sidebar_menu_order_${authUser.username.toLowerCase()}` : 'sidebar_menu_order';
+    const saved = localStorage.getItem(userKey) || localStorage.getItem('sidebar_menu_order');
     return saved ? JSON.parse(saved) : null;
   });
   const [draggingMenuId, setDraggingMenuId] = useState(null);
+
+  // 當切換登入使用者時，載入該帳號專屬的排序設定
+  useEffect(() => {
+    if (!authUser?.username) return;
+    const userKey = `sidebar_menu_order_${authUser.username.toLowerCase()}`;
+    const saved = localStorage.getItem(userKey);
+    if (saved) {
+      try {
+        setMenuOrder(JSON.parse(saved));
+      } catch (e) {
+        setMenuOrder(null);
+      }
+    } else {
+      // 若該使用者尚未自訂排序，使用預設 null
+      setMenuOrder(null);
+    }
+  }, [authUser?.username]);
 
   const allMenuItems = [
     { id: 'overview', path: '/overview', label: '營運總覽 (Overview)' },
@@ -181,7 +199,10 @@ const MainLayout = () => {
     newOrder.splice(targetIdx, 0, sourceId);
 
     setMenuOrder(newOrder);
-    localStorage.setItem('sidebar_menu_order', JSON.stringify(newOrder));
+    const userKey = authUser?.username 
+      ? `sidebar_menu_order_${authUser.username.toLowerCase()}` 
+      : 'sidebar_menu_order';
+    localStorage.setItem(userKey, JSON.stringify(newOrder));
   };
 
   return (
