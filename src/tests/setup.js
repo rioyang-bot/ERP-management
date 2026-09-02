@@ -7,3 +7,5 @@ global.window.electronAPI = {
   namedQuery: vi.fn(),
   getDashboardStats: vi.fn(),
 };
+
+

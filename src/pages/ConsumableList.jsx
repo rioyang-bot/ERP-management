@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Search, Edit2, Trash2, X, Save, MoreHorizontal, ArrowLeftRight, ClipboardList, ShoppingBag, AlertTriangle, Archive, RotateCcw, Package, History } from 'lucide-react';
 import ItemLedgerModal from '../components/ItemLedgerModal';
 import ConsumableRegistrationModal from '../components/ConsumableRegistrationModal';
+import ConsumableBatchImportModal from '../components/ConsumableBatchImportModal';
 import { logUpdate, logDelete } from '../utils/auditLogger';
 
 const editLabelStyle = { display: 'block', fontWeight: 800, fontSize: '13px', marginBottom: '6px', color: 'var(--text-muted)' };
@@ -16,6 +17,7 @@ const ConsumableList = ({ isSplitMode = false }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showBatchImport, setShowBatchImport] = useState(false);
   const [searchParams] = useSearchParams();
   const typeFilter = searchParams.get('type');
   const [selectedType, setSelectedType] = useState(typeFilter || null);
@@ -497,7 +499,7 @@ const ConsumableList = ({ isSplitMode = false }) => {
               <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>追蹤目前各項批次耗材之庫存數量與領用狀況。</p>
             </div>
             {!isSplitMode && (
-              <div style={{ display: 'flex', backgroundColor: 'var(--bg-surface-subtle)', padding: '4px', borderRadius: '10px' }}>
+              <div style={{ display: 'flex', gap: '8px', backgroundColor: 'var(--bg-surface-subtle)', padding: '4px', borderRadius: '10px' }}>
                 <button
                   onClick={() => setShowAddModal(true)}
                   style={{
@@ -515,6 +517,24 @@ const ConsumableList = ({ isSplitMode = false }) => {
                   }}
                 >
                   ➕ 新增耗材 (Add Consumable)
+                </button>
+                <button
+                  onClick={() => setShowBatchImport(true)}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: 'var(--bg-surface)',
+                    color: 'var(--text-main)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontWeight: 700,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    boxShadow: 'var(--card-shadow)'
+                  }}
+                >
+                  📥 批次匯入 (Batch Import)
                 </button>
               </div>
             )}
@@ -850,6 +870,16 @@ const ConsumableList = ({ isSplitMode = false }) => {
         isOpen={showAddModal}
         onClose={() => setShowAddModal(false)}
         onSuccess={fetchConsumables}
+      />
+
+      {/* 耗材批次匯入 Modal */}
+      <ConsumableBatchImportModal
+        isOpen={showBatchImport}
+        onClose={() => setShowBatchImport(false)}
+        onSuccess={() => {
+          setShowBatchImport(false);
+          fetchConsumables();
+        }}
       />
     </div>
   );

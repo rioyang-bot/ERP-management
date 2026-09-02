@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Save, Settings2, Trash2, X, Package } from 'lucide-react';
+import { Plus, Save, Settings2, Trash2, X, Package, UploadCloud } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { logCreate } from '../utils/auditLogger';
+import ConsumableBatchImportModal from '../components/ConsumableBatchImportModal';
 
 const Consumables = ({ isSplitMode = false }) => {
   const navigate = useNavigate();
@@ -13,6 +14,7 @@ const Consumables = ({ isSplitMode = false }) => {
   const [showManageType, setShowManageType] = useState(false);
   const [showManageBrand, setShowManageBrand] = useState(false);
   const [showManageModel, setShowManageModel] = useState(false);
+  const [showBatchImport, setShowBatchImport] = useState(false);
   const [newTypeName, setNewTypeName] = useState('');
   const [newBrandName, setNewBrandName] = useState('');
   const [newModelName, setNewModelName] = useState('');
@@ -252,16 +254,37 @@ const Consumables = ({ isSplitMode = false }) => {
               <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>用於登錄無獨立序號的批次性耗材，統一管理數量與規格。</p>
             </div>
             {!isSplitMode && (
-              <div style={{ display: 'flex', backgroundColor: 'var(--bg-surface-subtle)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
-                <button style={{ padding: '6px 14px', backgroundColor: 'var(--bg-surface)', color: 'var(--primary-color)', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '800', boxShadow: 'var(--card-shadow)', cursor: 'default' }}>
-                  📝 建檔
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <button
+                  onClick={() => setShowBatchImport(true)}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: 'var(--bg-surface)',
+                    color: 'var(--text-main)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '8px',
+                    fontSize: '13px',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    boxShadow: 'var(--card-shadow)'
+                  }}
+                >
+                  <UploadCloud size={16} color="var(--primary-color)" /> 📥 批次匯入 (Batch Import)
                 </button>
-                <button onClick={() => navigate('/consumable-split')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: 'var(--text-muted)', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
-                  ◫ 雙開
-                </button>
-                <button onClick={() => navigate('/consumable-list')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: 'var(--text-muted)', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
-                  📋 清單
-                </button>
+                <div style={{ display: 'flex', backgroundColor: 'var(--bg-surface-subtle)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+                  <button style={{ padding: '6px 14px', backgroundColor: 'var(--bg-surface)', color: 'var(--primary-color)', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '800', boxShadow: 'var(--card-shadow)', cursor: 'default' }}>
+                    📝 建檔
+                  </button>
+                  <button onClick={() => navigate('/consumable-split')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: 'var(--text-muted)', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
+                    ◫ 雙開
+                  </button>
+                  <button onClick={() => navigate('/consumable-list')} style={{ padding: '6px 14px', backgroundColor: 'transparent', color: 'var(--text-muted)', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
+                    📋 清單
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -324,6 +347,16 @@ const Consumables = ({ isSplitMode = false }) => {
           </div>
         </div>
       </div>
+
+      {/* 耗材批次匯入 Modal */}
+      <ConsumableBatchImportModal
+        isOpen={showBatchImport}
+        onClose={() => setShowBatchImport(false)}
+        onSuccess={() => {
+          setShowBatchImport(false);
+          fetchBrands();
+        }}
+      />
     </div>
   );
 };

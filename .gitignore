@@ -24,3 +24,12 @@ dist-ssr
 *.sw?
 *.backup
 uploads/
+
+# 環境變數與 SSL 憑證（不可提交）
+.env
+.env.*
+ssl/ca.key
+ssl/server.key
+ssl/*.srl
+ssl/*.csr
+

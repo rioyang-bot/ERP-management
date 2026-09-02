@@ -99,9 +99,7 @@ const Login = ({ setAuthUser }) => {
           </button>
         </form>
 
-        <div className="login-footer">
-          &copy; 2026 AI Management Solutions. All rights reserved.
-        </div>
+
       </div>
     </div>
   );

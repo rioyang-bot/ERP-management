@@ -82,7 +82,7 @@ export async function parseSpreadsheetFile(selectedFile) {
     const decodedText = decodeTextBuffer(arrayBuffer);
     workbook = XLSX.read(decodedText, { type: 'string', raw: true });
   } else {
-    workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: false, codepage: 65001 });
+    workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array', cellDates: false, codepage: 65001 });
   }
 
   const firstSheetName = workbook.SheetNames[0];
@@ -101,8 +101,37 @@ export async function parseSpreadsheetFile(selectedFile) {
   });
 }
 
+/**
+ * 讀取 Excel / CSV 檔案並回傳 2D 陣列 (用於處理階層標題等複雜結構)
+ */
+export async function parseSpreadsheet2D(selectedFile) {
+  if (!selectedFile) return [];
+  const fileName = (selectedFile.name || '').toLowerCase();
+  const isCsv = fileName.endsWith('.csv') || fileName.endsWith('.txt');
+
+  const arrayBuffer = await selectedFile.arrayBuffer();
+  let workbook;
+
+  if (isCsv) {
+    const decodedText = decodeTextBuffer(arrayBuffer);
+    workbook = XLSX.read(decodedText, { type: 'string', raw: true });
+  } else {
+    workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array', cellDates: false, codepage: 65001 });
+  }
+
+  const firstSheetName = workbook.SheetNames[0];
+  const worksheet = workbook.Sheets[firstSheetName];
+  const raw2D = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '', raw: true });
+
+  return raw2D.map(row => {
+    if (!Array.isArray(row)) return [];
+    return row.map(cell => typeof cell === 'string' ? fixMojibake(cell.trim()) : cell);
+  });
+}
+
 export default {
   fixMojibake,
   decodeTextBuffer,
-  parseSpreadsheetFile
+  parseSpreadsheetFile,
+  parseSpreadsheet2D
 };

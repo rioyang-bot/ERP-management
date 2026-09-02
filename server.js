@@ -1,3 +1,5 @@
+import 'dotenv/config';
+import https from 'https';
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
@@ -13,18 +15,25 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.HTTPS_PORT || 5566;
+
+// SSL 憑證設定（Private CA 簽發）
+const sslOptions = {
+  key: fs.readFileSync(process.env.SSL_KEY_PATH || path.join(__dirname, 'ssl', 'server.key')),
+  cert: fs.readFileSync(process.env.SSL_CERT_PATH || path.join(__dirname, 'ssl', 'server.crt')),
+  ca: fs.readFileSync(process.env.SSL_CA_PATH || path.join(__dirname, 'ssl', 'ca.crt')),
+};
 
 // 優化後的安全性處理：針對 Named Query 不再暴力濾除
 // 因為 Named Query 使用參數化查詢 ($1, $2)，本身即具備防禦 SQL Injection 能力
 // 依照 SECURITY_GUIDELINES.md 實作的安全性過濾函式
 
 const pool = new Pool({
-  user: 'postgres',
-  host: 'localhost',
-  database: 'ERP_db', 
-  password: 'admin123',
-  port: 5432,
+  user: process.env.DB_USER || 'postgres',
+  host: process.env.DB_HOST || 'localhost',
+  database: process.env.DB_NAME || 'ERP_db',
+  password: process.env.DB_PASSWORD,
+  port: parseInt(process.env.DB_PORT || '5432'),
 });
 
 const uploadsDir = path.join(__dirname, 'uploads');
@@ -88,7 +97,7 @@ app.post('/api/auth/login', async (req, res) => {
   const { username } = req.body;
   try {
     const result = await pool.query(
-      'SELECT id, username, role, full_name, password_hash, menu_access FROM users WHERE username = $1 AND is_active = TRUE',
+      'SELECT id, username, role, full_name, password_hash, menu_access FROM users WHERE LOWER(username) = LOWER($1) AND is_active = TRUE',
       [username]
     );
     res.json({ success: true, rows: result.rows });
@@ -109,6 +118,21 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
   res.json({ success: true, fileName: req.file.filename, url: fileUrl });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server is running on http://0.0.0.0:${PORT}`);
+// 正式環境：服務前端 React 打包檔（dist/）
+// 開發環境由 Vite dev server 處理，此段不影響開發
+const distPath = path.join(__dirname, 'dist');
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  // SPA fallback — React Router 需要（Express 5 語法）
+  app.get('/{*splat}', (req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+  console.log(`📁 Serving frontend from: ${distPath}`);
+}
+
+// 建立 HTTPS 伺服器（Port 5566，Private CA 憑證）
+https.createServer(sslOptions, app).listen(PORT, '0.0.0.0', () => {
+  console.log(`✅ HTTPS Server running on https://0.0.0.0:${PORT}`);
+  console.log(`   Local:   https://localhost:${PORT}`);
+  console.log(`   Network: https://<your-server-ip>:${PORT}`);
 });

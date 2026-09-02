@@ -139,10 +139,12 @@ export const queries = {
   fetchLabAssignments: `SELECT la.*, a.sn, a.hostname FROM item_lab_assignments la LEFT JOIN assets a ON la.asset_id = a.id WHERE la.item_master_id = $1 ORDER BY la.created_at DESC`,
   fetchAllAssetsForSelect: `SELECT a.id, a.sn, a.hostname, i.brand, i.model FROM assets a JOIN item_master i ON a.item_master_id = i.id ORDER BY a.hostname ASC, a.sn ASC`,
 
-  // Consumables.jsx
+  // Consumables.jsx & ConsumableBatchImportModal.jsx
   checkDuplicateConsumable: `SELECT id, specification, stock_qty, lab_qty FROM item_master WHERE brand = $1 AND type = $2 AND model = $3 AND specification = $4 AND category_id = (SELECT id FROM categories WHERE name = '耗材')`,
+  findConsumableMaster: `SELECT id, stock_qty, lab_qty, safety_stock FROM item_master WHERE LOWER(brand) = LOWER($1) AND LOWER(type) = LOWER($2) AND LOWER(model) = LOWER($3) AND LOWER(specification) = LOWER($4) AND category_id = (SELECT id FROM categories WHERE name = '耗材')`,
+  updateConsumableStockQtyOnImport: `UPDATE item_master SET stock_qty = $1 WHERE id = $2`,
   fetchRecentConsumables: `SELECT i.* FROM item_master i LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '耗材' ORDER BY i.id DESC LIMIT 10`,
-  insertConsumableMaster: `INSERT INTO item_master (specification, type, brand, model, unit, safety_stock, stock_qty, category_id, purchase_price) VALUES ($1, $2, $3, $4, $5, $6, $7, (SELECT id FROM categories WHERE name = $8), 0)`,
+  insertConsumableMaster: `INSERT INTO item_master (specification, type, brand, model, unit, safety_stock, stock_qty, category_id, purchase_price) VALUES ($1, $2, $3, $4, $5, $6, $7, (SELECT id FROM categories WHERE name = $8), 0) RETURNING id`,
   fetchConsumableModelsByBrandType: `
       SELECT m.name FROM item_models m JOIN item_types t ON m.type_id = t.id JOIN item_brands b ON t.brand_id = b.id
       WHERE b.name = $1 AND t.name = $2 AND b.category_id = (SELECT id FROM categories WHERE name = '耗材') AND t.category_id = (SELECT id FROM categories WHERE name = '耗材') ORDER BY m.name ASC`,
