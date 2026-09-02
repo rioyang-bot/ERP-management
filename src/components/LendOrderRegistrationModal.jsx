@@ -48,6 +48,30 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   const [csmFilterBrand, setCsmFilterBrand] = useState('');
   const [csmFilterType, setCsmFilterType] = useState('');
   const [csmFilterModel, setCsmFilterModel] = useState('');
+  const [lendNo, setLendNo] = useState('');
+
+  // 取得下一個借用單號 (比照出貨單 DN-YYYYMMDD-01 規則)
+  const fetchNextLendNo = async (targetDate) => {
+    try {
+      const dStr = (targetDate || new Date().toISOString().split('T')[0]).replace(/-/g, '');
+      const prefix = `DN-${dStr}-`;
+      const countRes = await window.electronAPI.namedQuery('countOutboundRequests', [prefix]);
+      if (countRes.success && countRes.rows.length > 0) {
+        const nextNum = (parseInt(countRes.rows[0].count) || 1).toString().padStart(2, '0');
+        return `DN-${dStr}-${nextNum}`;
+      }
+    } catch (e) {
+      console.error('Failed to fetch next lend no:', e);
+    }
+    const dStr = (targetDate || new Date().toISOString().split('T')[0]).replace(/-/g, '');
+    return `DN-${dStr}-01`;
+  };
+
+  const handleDateChange = async (newDate) => {
+    setHeader(prev => ({ ...prev, date: newDate }));
+    const nextNo = await fetchNextLendNo(newDate);
+    if (nextNo) setLendNo(nextNo);
+  };
 
   // --- 持久化同步 ---
   useEffect(() => {
@@ -70,6 +94,11 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
       if (window.electronAPI && window.electronAPI.namedQuery) {
         window.electronAPI.namedQuery('migrateOutboundItemPurpose').catch(() => {});
       }
+
+      const initialDate = header.date || new Date().toISOString().split('T')[0];
+      fetchNextLendNo(initialDate).then(no => {
+        if (no) setLendNo(no);
+      });
 
       const custRes = await window.electronAPI.namedQuery('fetchCustomers');
       if (custRes.success) setCustomers(custRes.rows || []);
@@ -406,9 +435,24 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
         {/* 標題欄 */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)' }}>
           <div>
-            <h2 style={{ fontSize: '20px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
-              <FileText size={24} color="#f59e0b" /> 借用單建檔 (Lend Note Registration)
-            </h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <h2 style={{ fontSize: '20px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
+                <FileText size={24} color="#f59e0b" /> 借用單建檔 (Lend Note Registration)
+              </h2>
+              {lendNo && (
+                <span style={{
+                  padding: '4px 10px',
+                  borderRadius: '6px',
+                  backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                  color: '#f59e0b',
+                  fontWeight: 800,
+                  fontSize: '13px',
+                  border: '1px solid rgba(245, 158, 11, 0.3)'
+                }}>
+                  單號: {lendNo}
+                </span>
+              )}
+            </div>
             <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>
               建立借用申請單，支援設備序號自動導出與耗材選取，建立後可直接產生並列印借貨申請單。
             </p>
@@ -432,6 +476,25 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                   <User size={18} /> <span>借用單基本資訊</span>
                 </div>
                 <div className="dn-form-grid">
+                  {/* 借用單號 (鎖定唯讀) */}
+                  <div className="dn-field">
+                    <label>
+                      借用單號 (Lend No.) <span style={{ fontSize: '11px', color: '#f59e0b', fontWeight: 600 }}>[系統自動編號 · 鎖定]</span>
+                    </label>
+                    <input 
+                      type="text" 
+                      readOnly 
+                      value={lendNo || '計算中...'} 
+                      style={{
+                        backgroundColor: 'var(--bg-surface-subtle)',
+                        color: 'var(--text-muted)',
+                        fontWeight: 700,
+                        cursor: 'not-allowed'
+                      }}
+                      title="借用單號依日期由系統自動編排產生，無法手動修改"
+                    />
+                  </div>
+
                   <div className="dn-field">
                     <label>借貸對象 (客戶) *</label>
                     <div className="select-wrapper">
@@ -477,7 +540,7 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                       <input 
                         type="date" 
                         value={header.date} 
-                        onChange={e => setHeader(prev => ({ ...prev, date: e.target.value }))}
+                        onChange={e => handleDateChange(e.target.value)}
                       />
                     </div>
                   </div>
