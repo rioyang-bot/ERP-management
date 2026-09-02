@@ -6,6 +6,7 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
   const [availableItems, setAvailableItems] = useState([]);
   const [pendingPurchases, setPendingPurchases] = useState([]);
   const [orderNo, setOrderNo] = useState('');
+  const [inboundDate, setInboundDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [items, setItems] = useState([{ id: 1, selectedOrderNo: '', itemId: '', purchaseRecordId: '', cat_name: '', unit: '', sn: '', qty: 1 }]);
   const [invoiceNo, setInvoiceNo] = useState('');
   const [attachments, setAttachments] = useState([]);
@@ -18,6 +19,26 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
     custodian: '', spec: '', unit: '個' 
   });
   const [activeRowId, setActiveRowId] = useState(null);
+
+  const fetchNextOrderNo = useCallback(async (targetDate) => {
+    try {
+      const today = (targetDate || new Date().toISOString().slice(0, 10)).replace(/-/g, '');
+      const countRes = await window.electronAPI.namedQuery('countInboundOrders', [`IN-${today}-`]);
+      const nextNum = countRes.success ? Number(countRes.rows[0].count) : 1;
+      const paddedNum = nextNum.toString().padStart(2, '0');
+      return `IN-${today}-${paddedNum}`;
+    } catch (e) {
+      console.error("Fetch next Inbound orderNo error:", e);
+      const today = (targetDate || new Date().toISOString().slice(0, 10)).replace(/-/g, '');
+      return `IN-${today}-01`;
+    }
+  }, []);
+
+  const handleDateChange = async (newDate) => {
+    setInboundDate(newDate);
+    const nextNo = await fetchNextOrderNo(newDate);
+    if (nextNo) setOrderNo(nextNo);
+  };
 
   const fetchData = useCallback(async () => {
     try {
@@ -36,15 +57,12 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
       if (partnersRes.success) setPartners(partnersRes.rows);
       if (purchasesRes.success) setPendingPurchases(purchasesRes.rows);
 
-      const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-      const countRes = await window.electronAPI.namedQuery('countInboundOrders', [`IN-${today}-`]);
-      const nextNum = countRes.success ? Number(countRes.rows[0].count) : 1;
-      const paddedNum = nextNum.toString().padStart(2, '0');
-      setOrderNo(prev => prev || `IN-${today}-${paddedNum}`);
+      const nextNo = await fetchNextOrderNo(inboundDate);
+      if (nextNo) setOrderNo(nextNo);
     } catch (err) {
       console.error("Inbound Fetch Error:", err);
     }
-  }, []);
+  }, [fetchNextOrderNo, inboundDate]);
 
   useEffect(() => {
     Promise.resolve().then(() => fetchData());
@@ -298,9 +316,24 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
     <div className="card-surface" style={isSplitMode ? { marginBottom: 0 } : {}}>
       {!isModalMode && (
         <div style={{ marginBottom: '24px' }}>
-          <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
-            <ArrowDownToLine size={26} color="var(--primary-color)" /> 進貨入庫(Stock in Registration)
-          </h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
+              <ArrowDownToLine size={26} color="var(--primary-color)" /> 進貨入庫 (Stock In Registration)
+            </h1>
+            {orderNo && (
+              <span style={{
+                padding: '4px 12px',
+                borderRadius: '6px',
+                backgroundColor: 'rgba(37, 99, 235, 0.12)',
+                color: 'var(--primary-color)',
+                fontWeight: 800,
+                fontSize: '14px',
+                border: '1px solid rgba(37, 99, 235, 0.3)'
+              }}>
+                單號: {orderNo}
+              </span>
+            )}
+          </div>
           <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px' }}>管理並登記從供應商收到的實體物品與物料，入庫並增加庫存量。</p>
         </div>
       )}
@@ -317,7 +350,23 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
         </div>
       )}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '32px', paddingBottom: '32px', borderBottom: '1px solid var(--border-color)' }}>
-        <div><label style={labelStyle}>進貨單號 (系統生成)</label><input disabled value={orderNo} style={{ ...inputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)' }} /></div>
+        <div>
+          <label style={labelStyle}>
+            進貨單號 (Stock In No.) <span style={{ fontSize: '11px', color: 'var(--primary-color)', fontWeight: 600 }}>[系統自動編號 · 鎖定]</span>
+          </label>
+          <input
+            disabled
+            value={orderNo || '計算中...'}
+            style={{
+              ...inputStyle,
+              backgroundColor: 'var(--bg-surface-subtle)',
+              color: 'var(--text-muted)',
+              fontWeight: 700,
+              cursor: 'not-allowed'
+            }}
+            title="進貨單號依日期由系統自動編排產生，無法手動修改"
+          />
+        </div>
         <div>
           <label style={labelStyle}>供應商名稱 {hasPOSelected ? '(自動帶入)' : '(必填)'}</label>
           {hasPOSelected ? (
@@ -333,7 +382,15 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
         </div>
 
         <div><label style={labelStyle}>發票號碼 (Invoice No.)</label><input type="text" value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} style={inputStyle} placeholder="請輸入紙本發票號碼" /></div>
-        <div><label style={labelStyle}>進貨/到貨日期</label><input type="date" defaultValue={new Date().toISOString().slice(0,10)} style={inputStyle} /></div>
+        <div>
+          <label style={labelStyle}>進貨/到貨日期</label>
+          <input
+            type="date"
+            value={inboundDate}
+            onChange={(e) => handleDateChange(e.target.value)}
+            style={inputStyle}
+          />
+        </div>
       </div>
       
       <div style={{ marginBottom: '32px' }}>
