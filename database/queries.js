@@ -731,6 +731,7 @@ export const queries = {
       sn VARCHAR(100)
     );
   `,
+  countRepairOrders: `WITH seqs AS (SELECT CAST(SUBSTRING(repair_no FROM '-([0-9]+)$') AS INTEGER) as sq FROM repair_orders WHERE repair_no LIKE $1 || '%') SELECT s.val as count FROM generate_series(1, 1000) as s(val) WHERE NOT EXISTS (SELECT 1 FROM seqs WHERE seqs.sq = s.val) ORDER BY s.val ASC LIMIT 1`,
   fetchRepairOrders: `
     SELECT ro.*, u.full_name as creator_name,
            (SELECT COUNT(*) FROM repair_items WHERE repair_id = ro.id) as item_count,

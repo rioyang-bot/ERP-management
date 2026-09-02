@@ -108,6 +108,9 @@ describe('維修單管理系統 (Repair Orders / RMA List) 四階段流程與設
         if (query === 'fetchCustomers') {
           return { success: true, rows: [{ name: 'Yuanta Ryan' }] };
         }
+        if (query === 'countRepairOrders') {
+          return { success: true, rows: [{ count: 1 }] };
+        }
         if (query === 'createRepairOrder') {
           return {
             success: true,

@@ -33,11 +33,18 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
 
-  // 產生預設單號
-  const generateRepairNo = () => {
-    const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const rand = Math.floor(100 + Math.random() * 900);
-    return `RMA-${today}-${rand}`;
+  // 產生依日期從 01 開始編碼之單號 (比照出貨單 DN-YYYYMMDD-01 規則)
+  const fetchNextRepairNo = async (targetDate) => {
+    try {
+      const dateStr = (targetDate || new Date().toISOString().split('T')[0]).replace(/-/g, '');
+      const prefix = `RMA-${dateStr}-`;
+      const countRes = await window.electronAPI.namedQuery('countRepairOrders', [prefix]);
+      const nextNum = (parseInt(countRes?.rows?.[0]?.count) || 1).toString().padStart(2, '0');
+      return `RMA-${dateStr}-${nextNum}`;
+    } catch (e) {
+      const dateStr = (targetDate || new Date().toISOString().split('T')[0]).replace(/-/g, '');
+      return `RMA-${dateStr}-01`;
+    }
   };
 
   // 載入系統資產與客戶
@@ -50,9 +57,11 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
         console.warn('initRepairTables notice:', e);
       }
 
-      const [assetsRes, custRes] = await Promise.all([
+      const today = new Date().toISOString().split('T')[0];
+      const [assetsRes, custRes, nextNo] = await Promise.all([
         window.electronAPI.namedQuery('fetchAssetsForRepairSelection'),
-        window.electronAPI.namedQuery('fetchCustomers')
+        window.electronAPI.namedQuery('fetchCustomers'),
+        fetchNextRepairNo(today)
       ]);
 
       if (assetsRes.success) {
@@ -60,6 +69,9 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
       }
       if (custRes.success) {
         setCustomerList(custRes.rows || []);
+      }
+      if (nextNo) {
+        setRepairNo(nextNo);
       }
     } catch (err) {
       console.error('Failed to load assets for repair modal:', err);
@@ -70,9 +82,9 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
 
   useEffect(() => {
     if (isOpen) {
-      setRepairNo(generateRepairNo());
+      const today = new Date().toISOString().split('T')[0];
       setCustomerName('');
-      setOnSiteDate(new Date().toISOString().split('T')[0]);
+      setOnSiteDate(today);
       setOnSiteStatus('');
       setRemarks('');
       setSelectedItems([]);
@@ -81,6 +93,13 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
       loadInitialData();
     }
   }, [isOpen, loadInitialData]);
+
+  // 當選擇的日期變更時，自動重新計算該日期的下一個序號
+  const handleDateChange = async (newDate) => {
+    setOnSiteDate(newDate);
+    const nextNo = await fetchNextRepairNo(newDate);
+    setRepairNo(nextNo);
+  };
 
   // 過濾搜尋設備/硬體清冊
   const filteredAssets = availableAssets.filter(a => {
@@ -365,7 +384,7 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                   required
                   value={repairNo}
                   onChange={(e) => setRepairNo(e.target.value)}
-                  placeholder="RMA-YYYYMMDD-XXX"
+                  placeholder="RMA-YYYYMMDD-01"
                   style={{
                     width: '100%',
                     padding: '10px 14px',
@@ -415,7 +434,7 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                   type="date"
                   required
                   value={onSiteDate}
-                  onChange={(e) => setOnSiteDate(e.target.value)}
+                  onChange={(e) => handleDateChange(e.target.value)}
                   style={{
                     width: '100%',
                     padding: '10px 14px',
