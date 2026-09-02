@@ -19,7 +19,8 @@ import {
   AlertCircle,
   TrendingDown,
   Layers,
-  FileText
+  FileText,
+  Wrench
 } from 'lucide-react';
 import './Overview.css';
 
@@ -39,37 +40,46 @@ const Overview = () => {
     active_lents_count: 0,
     overdue_lents_count: 0,
     low_stock_consumables_count: 0,
-    active_projects_count: 0
+    active_projects_count: 0,
+    active_repairs_count: 0,
+    sent_oem_repairs_count: 0
   });
 
   const [pendingPurchases, setPendingPurchases] = useState([]);
   const [draftInbounds, setDraftInbounds] = useState([]);
   const [pendingOutbounds, setPendingOutbounds] = useState([]);
   const [activeLents, setActiveLents] = useState([]);
+  const [activeRepairs, setActiveRepairs] = useState([]);
   const [lowStockConsumables, setLowStockConsumables] = useState([]);
 
   // 篩選與搜尋
-  const [docTab, setDocTab] = useState('ALL'); // 'ALL' | 'PO' | 'INBOUND' | 'OUTBOUND' | 'LENT'
+  const [docTab, setDocTab] = useState('ALL'); // 'ALL' | 'PO' | 'INBOUND' | 'OUTBOUND' | 'LENT' | 'REPAIR'
   const [docSearch, setDocSearch] = useState('');
   const [stockSearch, setStockSearch] = useState('');
 
   // 載入資料
   const fetchOverviewData = useCallback(async () => {
     try {
+      try {
+        await window.electronAPI.namedQuery('initRepairTables');
+      } catch (e) {}
+
       const [
         statsRes,
         purchasesRes,
         inboundsRes,
         outboundsRes,
         lentsRes,
-        consumablesRes
+        consumablesRes,
+        repairsRes
       ] = await Promise.all([
         window.electronAPI.namedQuery('fetchOverviewStats'),
         window.electronAPI.namedQuery('fetchOverviewPendingPurchases'),
         window.electronAPI.namedQuery('fetchOverviewDraftInbounds'),
         window.electronAPI.namedQuery('fetchOverviewPendingOutbounds'),
         window.electronAPI.namedQuery('fetchOverviewActiveLents'),
-        window.electronAPI.namedQuery('fetchOverviewLowStockConsumables')
+        window.electronAPI.namedQuery('fetchOverviewLowStockConsumables'),
+        window.electronAPI.namedQuery('fetchOverviewActiveRepairs')
       ]);
 
       if (statsRes.success && statsRes.rows.length > 0) {
@@ -80,6 +90,7 @@ const Overview = () => {
       if (outboundsRes.success) setPendingOutbounds(outboundsRes.rows || []);
       if (lentsRes.success) setActiveLents(lentsRes.rows || []);
       if (consumablesRes.success) setLowStockConsumables(consumablesRes.rows || []);
+      if (repairsRes?.success) setActiveRepairs(repairsRes.rows || []);
 
       setLastUpdated(new Date());
     } catch (err) {
@@ -179,9 +190,30 @@ const Overview = () => {
       });
     });
 
+    // 維修單 (Repair / RMA)
+    activeRepairs.forEach(r => {
+      const isSentOEM = r.status === 'SENT_OEM';
+      const isReturned = r.status === 'OEM_RETURNED';
+      list.push({
+        id: `REPAIR-${r.id}`,
+        docType: 'REPAIR',
+        typeLabel: '維修單 (RMA)',
+        orderNo: r.repair_no,
+        partner: r.customer_name || '未指定客戶',
+        date: r.on_site_date ? r.on_site_date.slice(0, 10) : '--',
+        badge: isSentOEM ? '送修原廠中' : (isReturned ? '原廠返還待出' : '現場取回在庫'),
+        badgeColor: isSentOEM ? '#d97706' : (isReturned ? '#8b5cf6' : '#ef4444'),
+        badgeBg: isSentOEM ? 'rgba(217, 119, 6, 0.15)' : (isReturned ? 'rgba(139, 92, 246, 0.15)' : 'rgba(239, 68, 68, 0.15)'),
+        summary: r.item_summary || (r.on_site_status ? `狀況: ${r.on_site_status}` : '維修處理中'),
+        itemCount: r.item_count || 1,
+        targetPath: '/repair-list',
+        raw: r
+      });
+    });
+
     // 依單號或日期排序 (最新的在最前)
     return list.sort((a, b) => (b.date > a.date ? 1 : -1));
-  }, [pendingPurchases, draftInbounds, pendingOutbounds, activeLents]);
+  }, [pendingPurchases, draftInbounds, pendingOutbounds, activeLents, activeRepairs]);
 
   // 篩選後之待辦單據
   const filteredDocs = React.useMemo(() => {
@@ -406,7 +438,41 @@ const Overview = () => {
           </div>
         </div>
 
-        {/* 6. 進行中專案 (Projects) */}
+        {/* 6. 維修單 (Repair / RMA) */}
+        <div 
+          className="overview-kpi-card" 
+          style={{ '--kpi-accent': '#ef4444', '--kpi-bg': 'rgba(239, 68, 68, 0.12)', '--kpi-border': 'rgba(239, 68, 68, 0.25)' }}
+          onClick={() => { setDocTab('REPAIR'); }}
+          title="點選切換檢視進行中維修單"
+        >
+          <div className="overview-kpi-card-header">
+            <div className="overview-kpi-icon-wrap">
+              <Wrench size={20} />
+            </div>
+            {Number(stats.sent_oem_repairs_count || 0) > 0 ? (
+              <span className="overview-kpi-badge" style={{ backgroundColor: 'rgba(217, 119, 6, 0.18)', color: '#d97706' }}>
+                {stats.sent_oem_repairs_count} 筆送修原廠
+              </span>
+            ) : (
+              <span className="overview-kpi-badge" style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', color: '#ef4444' }}>
+                維修中
+              </span>
+            )}
+          </div>
+          <div>
+            <div className="overview-kpi-title">進行中維修單</div>
+            <div className="overview-kpi-number" style={{ color: Number(stats.active_repairs_count || 0) > 0 ? '#ef4444' : 'var(--text-main)' }}>
+              {Number(stats.active_repairs_count || 0)}
+              <span className="overview-kpi-unit">筆</span>
+            </div>
+          </div>
+          <div className="overview-kpi-footer">
+            <span>前往維修列表</span>
+            <ArrowRight size={14} onClick={(e) => { e.stopPropagation(); navigate('/repair-list'); }} />
+          </div>
+        </div>
+
+        {/* 7. 進行中專案 (Projects) */}
         <div 
           className="overview-kpi-card" 
           style={{ '--kpi-accent': '#06b6d4', '--kpi-bg': 'rgba(6, 182, 212, 0.12)', '--kpi-border': 'rgba(6, 182, 212, 0.25)' }}
@@ -500,6 +566,12 @@ const Overview = () => {
               onClick={() => setDocTab('LENT')}
             >
               <Clock size={13} /> 借用單 ({activeLents.length})
+            </button>
+            <button 
+              className={`overview-tab-btn ${docTab === 'REPAIR' ? 'active' : ''}`}
+              onClick={() => setDocTab('REPAIR')}
+            >
+              <Wrench size={13} /> 維修單 ({activeRepairs.length})
             </button>
           </div>
 

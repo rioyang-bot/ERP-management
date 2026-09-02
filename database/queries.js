@@ -630,7 +630,21 @@ export const queries = {
       (SELECT COUNT(*) FROM outbound_requests WHERE request_type = 'LEND' AND status = 'SHIPPED') as active_lents_count,
       (SELECT COUNT(*) FROM outbound_requests WHERE request_type = 'LEND' AND status = 'SHIPPED' AND expected_return_date < CURRENT_DATE) as overdue_lents_count,
       (SELECT COUNT(*) FROM item_master i JOIN categories c ON i.category_id = c.id WHERE c.name = '耗材' AND (COALESCE(i.stock_qty, 0) + COALESCE(i.lab_qty, 0)) <= COALESCE(i.safety_stock, 0)) as low_stock_consumables_count,
-      (SELECT COUNT(*) FROM projects WHERE status = 'IN_PROGRESS') as active_projects_count
+      (SELECT COUNT(*) FROM projects WHERE status = 'IN_PROGRESS') as active_projects_count,
+      (SELECT COUNT(*) FROM repair_orders WHERE status != 'COMPLETED') as active_repairs_count,
+      (SELECT COUNT(*) FROM repair_orders WHERE status = 'SENT_OEM') as sent_oem_repairs_count
+  `,
+  fetchOverviewActiveRepairs: `
+    SELECT ro.*, u.full_name as creator_name,
+      (SELECT COUNT(*) FROM repair_items WHERE repair_id = ro.id) as item_count,
+      (SELECT string_agg(COALESCE(ri.brand, '') || ' ' || COALESCE(ri.model, '') || ' (' || COALESCE(ri.sn, '') || ')', ', ') 
+       FROM repair_items ri 
+       WHERE ri.repair_id = ro.id) as item_summary
+    FROM repair_orders ro
+    LEFT JOIN users u ON ro.creator_id = u.id
+    WHERE ro.status != 'COMPLETED'
+    ORDER BY ro.created_at DESC
+    LIMIT 100
   `,
   fetchOverviewPendingPurchases: `
     SELECT pr.*, p.name as partner_name, c.name as category_name, u.full_name as purchaser_name

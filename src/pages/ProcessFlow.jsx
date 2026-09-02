@@ -27,6 +27,7 @@ import {
   ChevronRight,
   Zap,
   HelpCircle,
+  Wrench,
   X
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -156,8 +157,30 @@ const ProcessFlow = () => {
       ]
     },
     {
-      id: 'reports-analytics',
+      id: 'repair-management',
       blockIndex: '06',
+      title: '維修單與售後管理 (Repair / RMA)',
+      category: 'FLOW',
+      color: '#ef4444',
+      badge: '售後品質',
+      icon: <Wrench size={24} />,
+      desc: '管理客戶設備報修、現場取件、送修原廠、原廠修復返還與完工交付出庫，全自動同步設備庫存狀態。',
+      subModules: [
+        { name: '維修單列表 (Repair List)', path: '/repair-list', desc: '追蹤 RMA 案件進度、四階段狀態推進、套印 RMA 單據' }
+      ],
+      inputs: ['客戶報修申請', '現場取回設備序號 (SN)', '原廠維修結果與檢測報告'],
+      outputs: ['維修單號 (RMA-YYYYMMDD-01)', '設備狀態連動 (ACTIVE / REPAIRING / SHIPPED)', '完工交件證明'],
+      businessRules: [
+        '維修單號比照出貨單規則，依現場處理日期從 01 開始依序編號 (RMA-YYYYMMDD-01)。',
+        '階段 1 建立維修單：寫入現場處理日與狀況，自動將設備狀態設為「在庫 (ACTIVE)」。',
+        '階段 2 送修原廠：點選送修寫入送修日，自動將設備狀態設為「維修 (REPAIRING)」。',
+        '階段 3 原廠返還：點選返還寫入原廠寄回日與結果 (Results)，自動將設備狀態設為「在庫 (ACTIVE)」。',
+        '階段 4 客戶出貨：點選出貨寫入完工出貨日，自動將設備狀態設為「出庫 (SHIPPED)」。'
+      ]
+    },
+    {
+      id: 'reports-analytics',
+      blockIndex: '07',
       title: '專案進銷存與營運報表 (Reports & Analytics)',
       category: 'ANALYTICS',
       color: '#db2777',
@@ -582,16 +605,57 @@ const ProcessFlow = () => {
 
             <div className="flow-connector"><ArrowRight size={24} /></div>
 
-            {/* 步驟 5 */}
+            {/* 步驟 5：售後維修流轉 */}
             <div className="flow-step-node">
-              <div className="step-badge">階段 5</div>
+              <div className="step-badge" style={{ background: '#ef4444' }}>階段 5</div>
+              <div className="step-card">
+                <div className="step-card-header">
+                  <div className="step-icon-box" style={{ background: '#ef4444' }}>
+                    <Wrench size={20} color="#fff" />
+                  </div>
+                  <div>
+                    <h3 className="step-name">5. 售後維修流轉 (RMA)</h3>
+                    <span className="step-tag">維修與原廠</span>
+                  </div>
+                </div>
+                <div className="step-body">
+                  <p>設備故障現場取回入庫檢測，可推進送修原廠、原廠返還復庫與完工出貨交件。</p>
+                  {(flowStreamType === 'ALL' || flowStreamType === 'DOC') && (
+                    <div className="stream-item doc">
+                      <strong>📄 單據流：</strong> 產出維修單 <code>RMA-YYYYMMDD-01</code>（支援 RMA 列印/PDF）
+                    </div>
+                  )}
+                  {(flowStreamType === 'ALL' || flowStreamType === 'ASSET') && (
+                    <div className="stream-item asset">
+                      <strong>📦 物料流：</strong> 建立維修單 (ACTIVE 在庫) ➔ 送修原廠 (REPAIRING 維修) ➔ 原廠返還 (ACTIVE 在庫) ➔ 客戶出貨 (SHIPPED 出庫)
+                    </div>
+                  )}
+                  {(flowStreamType === 'ALL' || flowStreamType === 'REPORT') && (
+                    <div className="stream-item report">
+                      <strong>📊 營運流：</strong> 集中顯示於營運總覽 RMA 看板，全自動連動設備生命週期狀態
+                    </div>
+                  )}
+                </div>
+                <div className="step-action-row">
+                  <button className="step-nav-btn" onClick={() => navigate('/repair-list')}>
+                    進入維修單列表 (RMA) <ArrowRight size={14} />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="flow-connector"><ArrowRight size={24} /></div>
+
+            {/* 步驟 6 */}
+            <div className="flow-step-node">
+              <div className="step-badge">階段 6</div>
               <div className="step-card">
                 <div className="step-card-header">
                   <div className="step-icon-box" style={{ background: '#db2777' }}>
                     <BarChart2 size={20} color="#fff" />
                   </div>
                   <div>
-                    <h3 className="step-name">5. 專案進銷存分析 (PJ Report)</h3>
+                    <h3 className="step-name">6. 專案進銷存分析 (PJ Report)</h3>
                     <span className="step-tag">進銷存統計</span>
                   </div>
                 </div>
@@ -633,7 +697,7 @@ const ProcessFlow = () => {
             <Info size={20} color="#2563eb" />
             <div>
               <strong>METECH ERP 資產狀態轉移與連動準則：</strong>
-              全系統單機設備 (Devices) 與硬體零組件 (HW) 均嚴格遵循以下狀態機生命週期，並支援「搭載硬體自動連動 (Mounted HW Sync)」與「資產歸屬切換 (COMPANY ➔ FOR_SALE)」，確保帳實相符與流向透明。
+              全系統單機設備 (Devices) 與硬體零組件 (HW) 均嚴格遵循以下狀態機生命週期，並支援「維修流轉四階段自動切換」、「搭載硬體自動連動 (Mounted HW Sync)」與「資產歸屬切換 (COMPANY ➔ FOR_SALE)」，確保帳實相符與流向透明。
             </div>
           </div>
 
@@ -647,9 +711,9 @@ const ProcessFlow = () => {
               <div className="state-transitions">
                 <div className="trans-title">可轉入狀態：</div>
                 <ul>
-                  <li>➔ <strong>SHIPPED (已出貨)</strong>：開立銷貨出貨單 (SALE)，連動更新搭載硬體</li>
+                  <li>➔ <strong>SHIPPED (已出貨)</strong>：開立銷貨出貨單 (SALE) 或維修單完工出貨，連動更新搭載硬體</li>
                   <li>➔ <strong>LENT (借出中)</strong>：開立借用調撥單 (LENT)</li>
-                  <li>➔ <strong>REPAIRING (維修中)</strong>：設備故障送修檢測</li>
+                  <li>➔ <strong>REPAIRING (維修中)</strong>：點選維修單「送修原廠」寫入 Send OEM Date，自動轉維修中</li>
                   <li>➔ <strong>SCRAPPED (報廢)</strong>：損壞無法修復或過期汰除</li>
                 </ul>
               </div>
@@ -679,9 +743,9 @@ const ProcessFlow = () => {
               <div className="state-transitions">
                 <div className="trans-title">可轉入狀態：</div>
                 <ul>
+                  <li>➔ <strong>ACTIVE (在庫)</strong>：客戶報修並建立維修單 (On-site handling) 時自動轉入在庫</li>
                   <li>➔ <strong>結案存檔</strong>：納入 PJ 專案報表進銷存統計</li>
                   <li>➔ <strong>台帳追溯</strong>：可永久由 Item Ledger 查詢去向與出貨單號</li>
-                  <li>➔ <strong>ACTIVE (在庫)</strong>：若出貨單撤銷或變更為在庫，連動復庫搭載硬體</li>
                 </ul>
               </div>
             </div>
@@ -691,11 +755,12 @@ const ProcessFlow = () => {
                 <span className="state-dot" style={{ backgroundColor: '#ef4444' }} />
                 <h3>REPAIRING (維修檢測中)</h3>
               </div>
-              <p className="state-desc">設備或硬體發生故障，暫時脫離可用庫存池，進行原廠送修或內部除錯檢測。</p>
+              <p className="state-desc">設備或硬體發生故障，暫時脫離可用庫存池，由維修單推進至原廠送修 (Send OEM) 檢測中。</p>
               <div className="state-transitions">
                 <div className="trans-title">可轉入狀態：</div>
                 <ul>
-                  <li>➔ <strong>ACTIVE (在庫)</strong>：維修完成驗收合格回庫</li>
+                  <li>➔ <strong>ACTIVE (在庫)</strong>：原廠返還 (OEM Return) 填寫 Results 後自動復庫</li>
+                  <li>➔ <strong>SHIPPED (出庫)</strong>：完工確認出貨 (Completion Date) 交件給客戶</li>
                   <li>➔ <strong>SCRAPPED (報廢)</strong>：判定無法修復轉報廢</li>
                 </ul>
               </div>
