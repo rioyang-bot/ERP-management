@@ -36,6 +36,47 @@ const pool = new Pool({
   port: parseInt(process.env.DB_PORT || '5432'),
 });
 
+// 自動初始化維修單資料表
+(async () => {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS repair_orders (
+        id SERIAL PRIMARY KEY,
+        repair_no VARCHAR(50) UNIQUE NOT NULL,
+        customer_name VARCHAR(100) NOT NULL,
+        status VARCHAR(30) NOT NULL DEFAULT 'ON_SITE_HANDLING',
+        on_site_date DATE,
+        on_site_status TEXT,
+        send_oem_date DATE,
+        oem_return_date DATE,
+        results TEXT,
+        completion_date DATE,
+        creator_id INTEGER,
+        remarks TEXT,
+        signed_doc_url TEXT,
+        signed_doc_name TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS repair_items (
+        id SERIAL PRIMARY KEY,
+        repair_id INTEGER REFERENCES repair_orders(id) ON DELETE CASCADE,
+        asset_id INTEGER,
+        item_master_id INTEGER,
+        brand VARCHAR(100),
+        type VARCHAR(100),
+        model VARCHAR(100),
+        specification TEXT,
+        sn VARCHAR(100)
+      );
+    `);
+    console.log('✅ Repair Order Tables (RMA) checked & ready');
+  } catch (e) {
+    console.error('⚠️ Notice on auto-initializing repair tables:', e.message);
+  }
+})();
+
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 

@@ -363,3 +363,42 @@ CREATE TABLE IF NOT EXISTS projects (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 維修單主檔 (Repair Orders / RMA)
+CREATE TABLE IF NOT EXISTS repair_orders (
+    id SERIAL PRIMARY KEY,
+    repair_no VARCHAR(50) UNIQUE NOT NULL,
+    customer_name VARCHAR(100) NOT NULL,
+    status VARCHAR(30) NOT NULL DEFAULT 'ON_SITE_HANDLING',
+    on_site_date DATE,
+    on_site_status TEXT,
+    send_oem_date DATE,
+    oem_return_date DATE,
+    results TEXT,
+    completion_date DATE,
+    creator_id INTEGER,
+    remarks TEXT,
+    signed_doc_url TEXT,
+    signed_doc_name TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 維修單明細 (Repair Items)
+CREATE TABLE IF NOT EXISTS repair_items (
+    id SERIAL PRIMARY KEY,
+    repair_id INTEGER REFERENCES repair_orders(id) ON DELETE CASCADE,
+    asset_id INTEGER,
+    item_master_id INTEGER,
+    brand VARCHAR(100),
+    type VARCHAR(100),
+    model VARCHAR(100),
+    specification TEXT,
+    sn VARCHAR(100)
+);
+
+CREATE INDEX IF NOT EXISTS idx_repair_orders_no ON repair_orders(repair_no);
+CREATE INDEX IF NOT EXISTS idx_repair_orders_status ON repair_orders(status);
+CREATE INDEX IF NOT EXISTS idx_repair_items_repair_id ON repair_items(repair_id);
+CREATE INDEX IF NOT EXISTS idx_repair_items_sn ON repair_items(sn);
+
+
