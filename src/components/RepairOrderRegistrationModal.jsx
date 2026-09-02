@@ -377,24 +377,25 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
             }}>
               <div>
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '6px' }}>
-                  維修單號 (Repair No.) *
+                  維修單號 (Repair No.) <span style={{ fontSize: '11px', color: 'var(--primary-color)', fontWeight: 600 }}>[系統自動編號 · 鎖定]</span>
                 </label>
                 <input
                   type="text"
-                  required
+                  readOnly
                   value={repairNo}
-                  onChange={(e) => setRepairNo(e.target.value)}
                   placeholder="RMA-YYYYMMDD-01"
                   style={{
                     width: '100%',
                     padding: '10px 14px',
                     borderRadius: '8px',
                     border: '1px solid var(--border-color)',
-                    backgroundColor: 'var(--bg-surface)',
-                    color: 'var(--text-main)',
+                    backgroundColor: 'var(--bg-surface-subtle)',
+                    color: 'var(--text-muted)',
                     fontWeight: 700,
-                    fontSize: '14px'
+                    fontSize: '14px',
+                    cursor: 'not-allowed'
                   }}
+                  title="維修單號依日期由系統自動編排產生，無法手動修改"
                 />
               </div>
 
