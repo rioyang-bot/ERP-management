@@ -4,6 +4,8 @@ import { Search, Edit2, X, Server, User, MapPin, MoreHorizontal, Trash2, Shoppin
 import ItemLedgerModal from '../components/ItemLedgerModal';
 import HwRegistrationModal from '../components/HwRegistrationModal';
 import { logUpdate, logDelete, logStatusChange } from '../utils/auditLogger';
+import { usePageSize } from '../utils/usePageSize';
+import PageSizeSelector from '../components/common/PageSizeSelector';
 
 const HwList = ({ isSplitMode = false }) => {
   const location = useLocation();
@@ -207,7 +209,7 @@ const HwList = ({ isSplitMode = false }) => {
   const editInputStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', outline: 'none', fontSize: '13px' };
 
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
+  const [itemsPerPage, setItemsPerPage] = usePageSize('hw_list', 10);
 
   const statusPriority = { 'REPAIR': 1, 'LENT': 2, 'ACTIVE': 3, 'SHIPPED': 4, 'SCRAPPED': 5 };
 
@@ -761,13 +763,16 @@ const HwList = ({ isSplitMode = false }) => {
           })}
         </tbody>
       </table>
-      {totalPages > 1 && (
-        <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginTop: '20px' }}>
-          <button disabled={currentPage === 1} onClick={() => { setCurrentPage(prev => prev - 1); window.scrollTo(0, 0); }} style={{ ...navBtnStyle, opacity: currentPage === 1 ? 0.5 : 1 }}>上一頁</button>
-          <span style={{ display: 'flex', alignItems: 'center', fontWeight: '800', color: 'var(--text-muted)' }}>第 {currentPage} 頁 / 共 {totalPages} 頁</span>
-          <button disabled={currentPage === totalPages} onClick={() => { setCurrentPage(prev => prev + 1); window.scrollTo(0, 0); }} style={{ ...navBtnStyle, opacity: currentPage === totalPages ? 0.5 : 1 }}>下一頁</button>
-        </div>
-      )}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginTop: '20px' }}>
+        <PageSizeSelector pageSize={itemsPerPage} onChange={(newSize) => { setItemsPerPage(newSize); setCurrentPage(1); }} />
+        {totalPages > 1 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button disabled={currentPage === 1} onClick={() => { setCurrentPage(prev => prev - 1); window.scrollTo(0, 0); }} style={{ ...navBtnStyle, opacity: currentPage === 1 ? 0.5 : 1 }}>上一頁</button>
+            <span style={{ display: 'flex', alignItems: 'center', fontWeight: '800', color: 'var(--text-muted)' }}>第 {currentPage} 頁 / 共 {totalPages} 頁</span>
+            <button disabled={currentPage === totalPages} onClick={() => { setCurrentPage(prev => prev + 1); window.scrollTo(0, 0); }} style={{ ...navBtnStyle, opacity: currentPage === totalPages ? 0.5 : 1 }}>下一頁</button>
+          </div>
+        )}
+      </div>
     </div>
   );
 

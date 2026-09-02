@@ -9,6 +9,8 @@ import RepairActionModal from '../components/RepairActionModal';
 import RepairOrderPrintModal from '../components/RepairOrderPrintModal';
 import RepairOrderDetailModal from '../components/RepairOrderDetailModal';
 import { logDelete } from '../utils/auditLogger';
+import { usePageSize } from '../utils/usePageSize';
+import PageSizeSelector from '../components/common/PageSizeSelector';
 
 const STATUS_CONFIG = {
   ALL: { label: '全部維修單', color: 'var(--text-main)', bg: 'transparent' },
@@ -30,6 +32,12 @@ const RepairList = () => {
   const [detailModal, setDetailModal] = useState({ isOpen: false, order: null });
   const [actionModal, setActionModal] = useState({ isOpen: false, order: null, type: 'SEND_OEM' });
   const [printModal, setPrintModal] = useState({ isOpen: false, order: null });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = usePageSize('repair_list', 10);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, activeTab]);
 
   // 載入資料
   const fetchRecords = useCallback(async () => {
@@ -101,6 +109,9 @@ const RepairList = () => {
 
     return true;
   });
+
+  const totalPages = Math.ceil(filteredOrders.length / itemsPerPage) || 1;
+  const currentRecords = filteredOrders.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   // 統計數據
   const stats = {
@@ -386,7 +397,7 @@ const RepairList = () => {
                   </td>
                 </tr>
               ) : (
-                filteredOrders.map(order => {
+                currentRecords.map(order => {
                   const items = order.items || [];
                   const statusInfo = STATUS_CONFIG[order.status] || { label: order.status, color: 'var(--text-main)', bg: 'transparent' };
 
@@ -715,6 +726,32 @@ const RepairList = () => {
               )}
             </tbody>
           </table>
+        </div>
+        
+        {/* Pagination Controls */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', gap: '12px', borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)', flexWrap: 'wrap' }}>
+          <PageSizeSelector pageSize={itemsPerPage} onChange={(newSize) => { setItemsPerPage(newSize); setCurrentPage(1); }} />
+          {totalPages > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button 
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                style={{ padding: '6px 14px', border: '1px solid var(--border-color)', borderRadius: '6px', backgroundColor: currentPage === 1 ? 'var(--bg-surface-subtle)' : 'var(--bg-surface)', color: currentPage === 1 ? 'var(--text-subtle)' : 'var(--text-main)', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
+              >
+                上一頁
+              </button>
+              <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                {currentPage} <span style={{ color: 'var(--text-subtle)', margin: '0 4px' }}>/</span> {totalPages}
+              </span>
+              <button 
+                disabled={currentPage === totalPages}
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                style={{ padding: '6px 14px', border: '1px solid var(--border-color)', borderRadius: '6px', backgroundColor: currentPage === totalPages ? 'var(--bg-surface-subtle)' : 'var(--bg-surface)', color: currentPage === totalPages ? 'var(--text-subtle)' : 'var(--text-main)', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
+              >
+                下一頁
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

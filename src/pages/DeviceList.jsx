@@ -4,6 +4,8 @@ import { Search, Edit2, X, Save, MoreHorizontal, MoreVertical, MapPin, User, Tra
 import ItemLedgerModal from '../components/ItemLedgerModal';
 import DeviceRegistrationModal from '../components/DeviceRegistrationModal';
 import { logUpdate, logDelete, logStatusChange } from '../utils/auditLogger';
+import { usePageSize } from '../utils/usePageSize';
+import PageSizeSelector from '../components/common/PageSizeSelector';
 
 const DeviceList = ({ isSplitMode = false }) => {
   const navigate = useNavigate();
@@ -48,7 +50,7 @@ const DeviceList = ({ isSplitMode = false }) => {
   }, [activeMenuId]);
   
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
+  const [itemsPerPage, setItemsPerPage] = usePageSize('device_list', 10);
 
   const [editItem, setEditItem] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -797,13 +799,16 @@ const DeviceList = ({ isSplitMode = false }) => {
                       </tbody>
                     </table>
                   </div>
-                  {totalPages > 1 && (
-                    <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginTop: '20px' }}>
-                      <button disabled={currentPage === 1} onClick={() => setCurrentPage(prev => prev - 1)} style={{ ...navBtnStyle, opacity: currentPage === 1 ? 0.5 : 1 }}>上一頁</button>
-                      <span style={{ display: 'flex', alignItems: 'center', fontWeight: '800', color: 'var(--text-muted)' }}>第 {currentPage} 頁 / 共 {totalPages} 頁</span>
-                      <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(prev => prev + 1)} style={{ ...navBtnStyle, opacity: currentPage === totalPages ? 0.5 : 1 }}>下一頁</button>
-                    </div>
-                  )}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginTop: '20px' }}>
+                    <PageSizeSelector pageSize={itemsPerPage} onChange={(newSize) => { setItemsPerPage(newSize); setCurrentPage(1); }} />
+                    {totalPages > 1 && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <button disabled={currentPage === 1} onClick={() => setCurrentPage(prev => prev - 1)} style={{ ...navBtnStyle, opacity: currentPage === 1 ? 0.5 : 1 }}>上一頁</button>
+                        <span style={{ display: 'flex', alignItems: 'center', fontWeight: '800', color: 'var(--text-muted)' }}>第 {currentPage} 頁 / 共 {totalPages} 頁</span>
+                        <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(prev => prev + 1)} style={{ ...navBtnStyle, opacity: currentPage === totalPages ? 0.5 : 1 }}>下一頁</button>
+                      </div>
+                    )}
+                  </div>
                 </>
               ) : (
                 <div style={{ textAlign: 'center', padding: '100px', color: 'var(--text-muted)', fontSize: '14px' }}>未找到符合條件的設備</div>

@@ -8,6 +8,8 @@ import { logStatusChange, logDelete, logUpdate } from '../utils/auditLogger';
 import LentOrderPrintModal from '../components/LentOrderPrintModal';
 import DeliveryReceiptPrintModal from '../components/DeliveryReceiptPrintModal';
 import OutboundRegistrationModal from '../components/OutboundRegistrationModal';
+import { usePageSize } from '../utils/usePageSize';
+import PageSizeSelector from '../components/common/PageSizeSelector';
 
 const DNList = ({ isSplitMode = false }) => {
   const navigate = useNavigate();
@@ -307,9 +309,9 @@ const DNList = ({ isSplitMode = false }) => {
     return new Date(b.shipping_date) - new Date(a.shipping_date);
   });
 
-  const ITEMS_PER_PAGE = 10;
-  const totalPages = Math.ceil(sortedAndFiltered.length / ITEMS_PER_PAGE) || 1;
-  const currentRecords = sortedAndFiltered.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+  const [itemsPerPage, setItemsPerPage] = usePageSize('dn_list', 10);
+  const totalPages = Math.ceil(sortedAndFiltered.length / itemsPerPage) || 1;
+  const currentRecords = sortedAndFiltered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   const pendingCount = dnRecords.filter(dn => dn.status !== 'SHIPPED').length;
 
@@ -545,27 +547,30 @@ const DNList = ({ isSplitMode = false }) => {
           </table>
           
           {/* Pagination Controls */}
-          {totalPages > 1 && (
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '16px', gap: '12px', borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)' }}>
-              <button 
-                disabled={currentPage === 1}
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                style={{ padding: '6px 14px', border: '1px solid var(--border-color)', borderRadius: '6px', backgroundColor: currentPage === 1 ? 'var(--bg-surface-subtle)' : 'var(--bg-surface)', color: currentPage === 1 ? 'var(--text-subtle)' : 'var(--text-main)', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
-              >
-                上一頁
-              </button>
-              <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                {currentPage} <span style={{ color: 'var(--text-subtle)', margin: '0 4px' }}>/</span> {totalPages}
-              </span>
-              <button 
-                disabled={currentPage === totalPages}
-                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                style={{ padding: '6px 14px', border: '1px solid var(--border-color)', borderRadius: '6px', backgroundColor: currentPage === totalPages ? 'var(--bg-surface-subtle)' : 'var(--bg-surface)', color: currentPage === totalPages ? 'var(--text-subtle)' : 'var(--text-main)', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
-              >
-                下一頁
-              </button>
-            </div>
-          )}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', gap: '12px', borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)', flexWrap: 'wrap' }}>
+            <PageSizeSelector pageSize={itemsPerPage} onChange={(newSize) => { setItemsPerPage(newSize); setCurrentPage(1); }} />
+            {totalPages > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button 
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  style={{ padding: '6px 14px', border: '1px solid var(--border-color)', borderRadius: '6px', backgroundColor: currentPage === 1 ? 'var(--bg-surface-subtle)' : 'var(--bg-surface)', color: currentPage === 1 ? 'var(--text-subtle)' : 'var(--text-main)', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
+                >
+                  上一頁
+                </button>
+                <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                  {currentPage} <span style={{ color: 'var(--text-subtle)', margin: '0 4px' }}>/</span> {totalPages}
+                </span>
+                <button 
+                  disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  style={{ padding: '6px 14px', border: '1px solid var(--border-color)', borderRadius: '6px', backgroundColor: currentPage === totalPages ? 'var(--bg-surface-subtle)' : 'var(--bg-surface)', color: currentPage === totalPages ? 'var(--text-subtle)' : 'var(--text-main)', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
+                >
+                  下一頁
+                </button>
+              </div>
+            )}
+          </div>
         </div>
         </div>
       </div>

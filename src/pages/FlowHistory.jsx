@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { History, Search, RefreshCw, Filter, ArrowDownToLine, ArrowUpFromLine, ArrowRightLeft, FileSpreadsheet } from 'lucide-react';
+import { usePageSize } from '../utils/usePageSize';
+import PageSizeSelector from '../components/common/PageSizeSelector';
 
 const FlowHistory = () => {
   const [records, setRecords] = useState([]);
@@ -7,7 +9,7 @@ const FlowHistory = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState('ALL'); // ALL, INBOUND, OUTBOUND_SALE, OUTBOUND_LEND
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [itemsPerPage, setItemsPerPage] = usePageSize('flow_history', 10);
   
   const [dateRange, setDateRange] = useState({
     start: '',
@@ -235,22 +237,8 @@ const FlowHistory = () => {
             />
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--text-muted)', marginLeft: 'auto' }}>
-            顯示
-            <select
-              value={itemsPerPage}
-              onChange={(e) => {
-                setItemsPerPage(Number(e.target.value));
-                setCurrentPage(1);
-              }}
-              style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--input-border)', outline: 'none', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', cursor: 'pointer' }}
-            >
-              <option value={10}>10</option>
-              <option value={20}>20</option>
-              <option value={50}>50</option>
-              <option value={100}>100</option>
-            </select>
-            筆/頁
+          <div style={{ marginLeft: 'auto' }}>
+            <PageSizeSelector pageSize={itemsPerPage} onChange={(newSize) => { setItemsPerPage(newSize); setCurrentPage(1); }} />
           </div>
         </div>
 

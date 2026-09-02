@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Plus, Edit2, Trash2, X, Upload, Download, FolderGit2 } from 'lucide-react';
 import { logCreate, logUpdate, logDelete } from '../utils/auditLogger';
+import { usePageSize } from '../utils/usePageSize';
+import PageSizeSelector from '../components/common/PageSizeSelector';
 import './ProjectList.css'; // Basic CSS for specific elements if needed
 
 const ProjectList = () => {
@@ -8,7 +10,7 @@ const ProjectList = () => {
   const [customers, setCustomers] = useState([]);
   const [search, setSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [itemsPerPage, setItemsPerPage] = usePageSize('project_list', 10);
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState(null);
   
@@ -307,23 +309,7 @@ const ProjectList = () => {
               onChange={e => setSearch(e.target.value)} 
             />
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--text-muted)' }}>
-            顯示
-            <select
-              value={itemsPerPage}
-              onChange={(e) => {
-                setItemsPerPage(Number(e.target.value));
-                setCurrentPage(1);
-              }}
-              style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--input-border)', outline: 'none', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', cursor: 'pointer' }}
-            >
-              <option value={10}>10</option>
-              <option value={20}>20</option>
-              <option value={50}>50</option>
-              <option value={100}>100</option>
-            </select>
-            筆/頁
-          </div>
+          <PageSizeSelector pageSize={itemsPerPage} onChange={(newSize) => { setItemsPerPage(newSize); setCurrentPage(1); }} />
         </div>
       </div>
 

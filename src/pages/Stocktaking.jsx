@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Download, ClipboardList, RotateCw, Server, Package, Cpu } from 'lucide-react';
+import { usePageSize } from '../utils/usePageSize';
+import PageSizeSelector from '../components/common/PageSizeSelector';
 import './Stocktaking.css';
 
 const Stocktaking = () => {
@@ -14,7 +16,7 @@ const Stocktaking = () => {
   const [searchTerm, setSearchTerm] = useState('');
 
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [itemsPerPage, setItemsPerPage] = usePageSize('stocktaking', 10);
 
   // 取得資料
   const fetchData = async () => {
@@ -256,23 +258,7 @@ const Stocktaking = () => {
               共 {filteredData.length} 筆
             </span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#64748b' }}>
-            顯示
-            <select
-              value={itemsPerPage}
-              onChange={(e) => {
-                setItemsPerPage(Number(e.target.value));
-                setCurrentPage(1);
-              }}
-              style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none', backgroundColor: '#fff', cursor: 'pointer' }}
-            >
-              <option value={10}>10</option>
-              <option value={20}>20</option>
-              <option value={50}>50</option>
-              <option value={100}>100</option>
-            </select>
-            筆/頁
-          </div>
+          <PageSizeSelector pageSize={itemsPerPage} onChange={(newSize) => { setItemsPerPage(newSize); setCurrentPage(1); }} />
         </div>
 
         <div className="st-table-wrapper">

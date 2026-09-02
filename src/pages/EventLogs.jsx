@@ -23,6 +23,8 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { MODULE_MAP, ACTION_TYPES } from '../utils/auditLogger';
+import { usePageSize } from '../utils/usePageSize';
+import PageSizeSelector from '../components/common/PageSizeSelector';
 
 const EventLogs = () => {
   const [logs, setLogs] = useState([]);
@@ -40,7 +42,7 @@ const EventLogs = () => {
   
   // 分頁
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(15);
+  const [itemsPerPage, setItemsPerPage] = usePageSize('event_logs', 10);
   
   // 明細彈窗
   const [selectedLog, setSelectedLog] = useState(null);
@@ -716,12 +718,15 @@ const EventLogs = () => {
         </div>
 
         {/* 分頁列 */}
-        {totalPages > 1 && (
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)', flexWrap: 'wrap', gap: '12px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)', flexWrap: 'wrap', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+            <PageSizeSelector pageSize={itemsPerPage} onChange={(newSize) => { setItemsPerPage(newSize); setCurrentPage(1); }} />
             <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              顯示第 <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>{(currentPage - 1) * itemsPerPage + 1}</span> 至 <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>{Math.min(currentPage * itemsPerPage, filteredLogs.length)}</span> 筆 (共 {filteredLogs.length} 筆)
+              顯示第 <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>{filteredLogs.length === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1}</span> 至 <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>{Math.min(currentPage * itemsPerPage, filteredLogs.length)}</span> 筆 (共 {filteredLogs.length} 筆)
             </div>
+          </div>
 
+          {totalPages > 1 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <button
                 disabled={currentPage === 1}
@@ -761,8 +766,8 @@ const EventLogs = () => {
                 下一頁
               </button>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* 異動明細彈窗 */}

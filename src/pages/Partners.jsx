@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { UserPlus, Trash2, Edit2, Search, X, Save, UserCheck, Truck, Users, MapPin } from 'lucide-react';
 import { logCreate, logUpdate, logDelete, logStatusChange } from '../utils/auditLogger';
+import { usePageSize } from '../utils/usePageSize';
+import PageSizeSelector from '../components/common/PageSizeSelector';
 
 const Partners = () => {
   const [partners, setPartners] = useState([]);
@@ -10,7 +12,7 @@ const Partners = () => {
   
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
+  const [itemsPerPage, setItemsPerPage] = usePageSize('partners_list', 10);
 
   // Edit State
   const [editingItem, setEditingItem] = useState(null);
@@ -351,13 +353,16 @@ const Partners = () => {
                     ))}
                   </tbody>
                 </table>
-                {totalPages > 1 && (
-                  <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginTop: '24px' }}>
-                    <button disabled={currentPage === 1} onClick={() => setCurrentPage(prev => prev - 1)} style={pageButtonStyle}>上一頁</button>
-                    <span style={{ display: 'flex', alignItems: 'center', fontWeight: '800', color: 'var(--text-muted)', fontSize: '13px' }}>{currentPage} / {totalPages}</span>
-                    <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(prev => prev + 1)} style={pageButtonStyle}>下一頁</button>
-                  </div>
-                )}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginTop: '24px' }}>
+                  <PageSizeSelector pageSize={itemsPerPage} onChange={(newSize) => { setItemsPerPage(newSize); setCurrentPage(1); }} />
+                  {totalPages > 1 && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <button disabled={currentPage === 1} onClick={() => setCurrentPage(prev => prev - 1)} style={pageButtonStyle}>上一頁</button>
+                      <span style={{ display: 'flex', alignItems: 'center', fontWeight: '800', color: 'var(--text-muted)', fontSize: '13px' }}>{currentPage} / {totalPages}</span>
+                      <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(prev => prev + 1)} style={pageButtonStyle}>下一頁</button>
+                    </div>
+                  )}
+                </div>
                 {paginatedPartners.length === 0 && <div style={{ textAlign: 'center', padding: '60px', color: 'var(--text-muted)' }}>尚無符合條件的夥伴</div>}
               </>
             )}
