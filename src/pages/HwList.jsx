@@ -362,12 +362,13 @@ const HwList = ({ isSplitMode = false }) => {
       const modelStr = curr.model || '未設定型號';
       const specStr = (curr.specification || '').trim();
       const key = `${brandStr} - ${typeStr} - ${modelStr} - ${specStr}`;
-      if (!acc[key]) acc[key] = { key, brand: brandStr, type: typeStr, model: modelStr, specification: specStr, active: 0, shipped: 0, repair: 0, scrapped: 0 };
+      if (!acc[key]) acc[key] = { key, brand: brandStr, type: typeStr, model: modelStr, specification: specStr, active: 0, shipped: 0, lent: 0, repair: 0, scrapped: 0 };
       const status = curr.status || 'ACTIVE';
       if (status === 'ACTIVE') acc[key].active++;
       else if (status === 'SHIPPED') acc[key].shipped++;
-      else if (status === 'REPAIR') acc[key].repair++;
-      else if (status === 'SCRAPPED') acc[key].scrapped++;
+      else if (status === 'LENT') acc[key].lent++;
+      else if (status === 'REPAIR' || status === 'REPAIRING') acc[key].repair++;
+      else if (status === 'SCRAPPED' || status === 'PENDING_SCRAP') acc[key].scrapped++;
       return acc;
     }, {});
 
@@ -407,9 +408,10 @@ const HwList = ({ isSplitMode = false }) => {
                   </div>
                 )}
               </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 6px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>在庫</span><span style={{ color: '#16a34a', fontWeight: '800' }}>{st.active}</span></div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>出貨</span><span style={{ color: '#3b82f6', fontWeight: '800' }}>{st.shipped}</span></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>借出</span><span style={{ color: '#d97706', fontWeight: '800' }}>{st.lent || 0}</span></div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>故障</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>報廢</span><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
                 </div>
@@ -466,9 +468,10 @@ const HwList = ({ isSplitMode = false }) => {
                       </div>
                     )}
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 6px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span style={{ color: 'var(--text-muted)' }}>在庫</span><span style={{ color: '#16a34a', fontWeight: '800' }}>{st.active}</span></div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span style={{ color: 'var(--text-muted)' }}>出貨</span><span style={{ color: '#3b82f6', fontWeight: '800' }}>{st.shipped}</span></div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span style={{ color: 'var(--text-muted)' }}>借出</span><span style={{ color: '#d97706', fontWeight: '800' }}>{st.lent || 0}</span></div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span style={{ color: 'var(--text-muted)' }}>故障</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span style={{ color: 'var(--text-muted)' }}>報廢</span><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
                   </div>
@@ -533,9 +536,10 @@ const HwList = ({ isSplitMode = false }) => {
                       </div>
                     )}
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px 4px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>在庫</span><span style={{ color: '#16a34a', fontWeight: '800' }}>{st.active}</span></div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>出貨</span><span style={{ color: '#3b82f6', fontWeight: '800' }}>{st.shipped}</span></div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>借出</span><span style={{ color: '#d97706', fontWeight: '800' }}>{st.lent || 0}</span></div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>故障</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>報廢</span><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
                   </div>

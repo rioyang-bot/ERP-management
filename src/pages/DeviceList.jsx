@@ -290,11 +290,12 @@ const DeviceList = ({ isSplitMode = false }) => {
       const modelStr = curr.model || '未設定型號';
       const specStr = (curr.specification || '').trim();
       const key = `${brandStr} - ${typeStr} - ${modelStr} - ${specStr}`;
-      if (!acc[key]) acc[key] = { key, brand: brandStr, type: typeStr, model: modelStr, specification: specStr, active: 0, shipped: 0, repair: 0, scrapped: 0 };
+      if (!acc[key]) acc[key] = { key, brand: brandStr, type: typeStr, model: modelStr, specification: specStr, active: 0, shipped: 0, lent: 0, repair: 0, scrapped: 0 };
       const s = curr.status;
       if (s === 'ACTIVE') acc[key].active++;
       else if (s === 'SHIPPED') acc[key].shipped++;
-      else if (s === 'REPAIRING') acc[key].repair++;
+      else if (s === 'LENT') acc[key].lent++;
+      else if (s === 'REPAIRING' || s === 'REPAIR') acc[key].repair++;
       else if (s === 'PENDING_SCRAP' || s === 'SCRAPPED') acc[key].scrapped++;
       return acc;
     }, {});
@@ -326,7 +327,7 @@ const DeviceList = ({ isSplitMode = false }) => {
                   onClick={() => handleCardClick(st)}
                   style={{ 
                     backgroundColor: isSelected ? 'var(--primary-bg)' : 'var(--bg-surface)', 
-                    padding: '10px', 
+                    padding: '12px', 
                     borderRadius: '12px', 
                     border: isSelected ? '2px solid var(--primary-color)' : '1px solid var(--border-color)', 
                     boxShadow: isSelected ? '0 4px 12px rgba(37, 99, 235, 0.2)' : 'var(--card-shadow)',
@@ -355,9 +356,10 @@ const DeviceList = ({ isSplitMode = false }) => {
                       </div>
                     )}
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 6px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span style={{ color: 'var(--text-muted)' }}>在庫</span><span style={{ color: '#16a34a', fontWeight: '800' }}>{st.active}</span></div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span style={{ color: 'var(--text-muted)' }}>出貨</span><span style={{ color: '#3b82f6', fontWeight: '800' }}>{st.shipped}</span></div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span style={{ color: 'var(--text-muted)' }}>借出</span><span style={{ color: '#d97706', fontWeight: '800' }}>{st.lent || 0}</span></div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span style={{ color: 'var(--text-muted)' }}>故障</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}><span style={{ color: 'var(--text-muted)' }}>報廢</span><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
                   </div>
@@ -422,9 +424,10 @@ const DeviceList = ({ isSplitMode = false }) => {
                       </div>
                     )}
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px 4px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>在庫</span><span style={{ color: '#16a34a', fontWeight: '800' }}>{st.active}</span></div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>出貨</span><span style={{ color: '#3b82f6', fontWeight: '800' }}>{st.shipped}</span></div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>借出</span><span style={{ color: '#d97706', fontWeight: '800' }}>{st.lent || 0}</span></div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>故障</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>報廢</span><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
                   </div>
@@ -464,9 +467,10 @@ const DeviceList = ({ isSplitMode = false }) => {
                   </div>
                 )}
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 6px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>在庫</span><span style={{ color: '#16a34a', fontWeight: '800' }}>{st.active}</span></div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>出貨</span><span style={{ color: '#3b82f6', fontWeight: '800' }}>{st.shipped}</span></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>借出</span><span style={{ color: '#d97706', fontWeight: '800' }}>{st.lent || 0}</span></div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>故障</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>報廢</span><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
               </div>
