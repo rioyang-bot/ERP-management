@@ -107,6 +107,7 @@ const MainLayout = () => {
     { id: 'inboundList', path: '/inbound-list', label: '進貨單列表(S/I List)' },
     { id: 'dnList', path: '/dn-list', label: '出貨單列表 (D/N List)' },
     { id: 'lentList', path: '/lent-list', label: '借用列表 (Lent List)' },
+    { id: 'repairList', path: '/repair-list', label: '維修單列表 (Repair List)' },
     { id: 'assetList', path: '/device-list', label: '設備列表 (Device List)', hasSub: true },
     { id: 'nic-list', path: '/hw-list', label: '硬體列表 (HW List)', hasSub: true },
     { id: 'consumable-list', path: '/consumable-list', label: '耗材列表 (CSM List)', hasSub: true },
@@ -136,6 +137,8 @@ const MainLayout = () => {
       (item.id === 'overview' && (authUser?.menu_access?.['overview'] !== false)) ||
       (item.id === 'inboundList' && authUser?.menu_access?.['inbound']) ||
       (item.id === 'dnList' && authUser?.menu_access?.['outbound']) ||
+      (item.id === 'lentList' && (authUser?.menu_access?.['outbound'] || authUser?.menu_access?.['lentList'])) ||
+      (item.id === 'repairList' && (authUser?.menu_access?.['outbound'] || authUser?.menu_access?.['assets'] || authUser?.menu_access?.['repairList'] !== false)) ||
       (item.id === 'assetList' && authUser?.menu_access?.['assets']) ||
       (item.id === 'nic-list' && authUser?.menu_access?.['nic-registration']) ||
       (item.id === 'consumable-list' && (authUser?.menu_access?.['consumables'] || authUser?.menu_access?.['consumableList'])) ||

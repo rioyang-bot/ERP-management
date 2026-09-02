@@ -696,5 +696,150 @@ export const queries = {
       AND (COALESCE(i.stock_qty, 0) + COALESCE(i.lab_qty, 0)) <= COALESCE(i.safety_stock, 0)
     ORDER BY shortage_qty DESC, total_qty ASC, i.id DESC
     LIMIT 200
+  `,
+
+  // --- 維修單 (Repair Orders / RMA List) ---
+  initRepairTables: `
+    CREATE TABLE IF NOT EXISTS repair_orders (
+      id SERIAL PRIMARY KEY,
+      repair_no VARCHAR(50) UNIQUE NOT NULL,
+      customer_name VARCHAR(100) NOT NULL,
+      status VARCHAR(30) NOT NULL DEFAULT 'ON_SITE_HANDLING',
+      on_site_date DATE,
+      on_site_status TEXT,
+      send_oem_date DATE,
+      oem_return_date DATE,
+      results TEXT,
+      completion_date DATE,
+      creator_id INTEGER,
+      remarks TEXT,
+      signed_doc_url TEXT,
+      signed_doc_name TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS repair_items (
+      id SERIAL PRIMARY KEY,
+      repair_id INTEGER REFERENCES repair_orders(id) ON DELETE CASCADE,
+      asset_id INTEGER,
+      item_master_id INTEGER,
+      brand VARCHAR(100),
+      type VARCHAR(100),
+      model VARCHAR(100),
+      specification TEXT,
+      sn VARCHAR(100)
+    );
+  `,
+  fetchRepairOrders: `
+    SELECT ro.*, u.full_name as creator_name,
+           (SELECT COUNT(*) FROM repair_items WHERE repair_id = ro.id) as item_count,
+           (SELECT string_agg(COALESCE(ri.brand, '') || ' ' || COALESCE(ri.type, '') || ' ' || COALESCE(ri.model, '') || ' (' || COALESCE(ri.sn, '') || ')', ', ') 
+            FROM repair_items ri 
+            WHERE ri.repair_id = ro.id) as item_summary,
+           (SELECT json_agg(json_build_object(
+              'id', ri.id,
+              'brand', ri.brand,
+              'type', ri.type,
+              'model', ri.model,
+              'specification', ri.specification,
+              'sn', ri.sn,
+              'asset_id', ri.asset_id,
+              'item_master_id', ri.item_master_id
+           )) FROM repair_items ri WHERE ri.repair_id = ro.id) as items
+    FROM repair_orders ro
+    LEFT JOIN users u ON ro.creator_id = u.id
+    ORDER BY ro.created_at DESC, ro.id DESC
+  `,
+  fetchRepairOrderItems: `
+    SELECT ri.*, a.status as asset_status, a.client, a.hostname, a.location
+    FROM repair_items ri
+    LEFT JOIN assets a ON ri.sn = a.sn
+    WHERE ri.repair_id = $1
+    ORDER BY ri.id ASC
+  `,
+  createRepairOrder: `
+    INSERT INTO repair_orders (
+      repair_no, customer_name, status, on_site_date, on_site_status,
+      creator_id, remarks
+    ) VALUES ($1, $2, 'ON_SITE_HANDLING', $3, $4, $5, $6)
+    RETURNING *
+  `,
+  createRepairOrderItem: `
+    INSERT INTO repair_items (
+      repair_id, asset_id, item_master_id, brand, type, model, specification, sn
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    RETURNING *
+  `,
+  updateRepairSendOEM: `
+    UPDATE repair_orders 
+    SET status = 'SENT_OEM', 
+        send_oem_date = $1, 
+        remarks = COALESCE($2, remarks), 
+        updated_at = CURRENT_TIMESTAMP 
+    WHERE id = $3 
+    RETURNING *
+  `,
+  updateRepairOEMReturn: `
+    UPDATE repair_orders 
+    SET status = 'OEM_RETURNED', 
+        oem_return_date = $1, 
+        results = $2, 
+        remarks = COALESCE($3, remarks), 
+        updated_at = CURRENT_TIMESTAMP 
+    WHERE id = $4 
+    RETURNING *
+  `,
+  updateRepairCompleted: `
+    UPDATE repair_orders 
+    SET status = 'COMPLETED', 
+        completion_date = $1, 
+        remarks = COALESCE($2, remarks), 
+        updated_at = CURRENT_TIMESTAMP 
+    WHERE id = $3 
+    RETURNING *
+  `,
+  updateRepairOrderDetails: `
+    UPDATE repair_orders 
+    SET customer_name = $1, 
+        on_site_date = $2, 
+        on_site_status = $3, 
+        send_oem_date = $4, 
+        oem_return_date = $5, 
+        results = $6, 
+        completion_date = $7, 
+        remarks = $8, 
+        updated_at = CURRENT_TIMESTAMP 
+    WHERE id = $9 
+    RETURNING *
+  `,
+  deleteRepairOrder: `DELETE FROM repair_orders WHERE id = $1`,
+  fetchAssetsForRepairSelection: `
+    SELECT 
+      a.id as asset_id,
+      a.sn,
+      a.status,
+      a.client,
+      a.hostname,
+      a.location,
+      i.id as item_master_id,
+      i.brand,
+      i.type,
+      i.model,
+      i.specification,
+      c.name as category_name
+    FROM assets a
+    JOIN item_master i ON a.item_master_id = i.id
+    JOIN categories c ON i.category_id = c.id
+    WHERE a.sn IS NOT NULL AND a.sn != ''
+    ORDER BY a.client ASC, i.brand ASC, a.sn ASC
+    LIMIT 2000
+  `,
+  updateAssetStatusBySn: `
+    UPDATE assets 
+    SET status = $1, 
+        updated_at = CURRENT_TIMESTAMP 
+    WHERE TRIM(UPPER(sn)) = TRIM(UPPER($2))
   `
 };
+

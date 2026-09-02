@@ -33,6 +33,7 @@ import OutboundSplitView from './pages/OutboundSplitView';
 import ProcurementSplitView from './pages/ProcurementSplitView';
 import ProcessFlow from './pages/ProcessFlow';
 import Overview from './pages/Overview';
+import RepairList from './pages/RepairList';
 import './index.css';
 
 function App() {
@@ -75,6 +76,7 @@ function App() {
               <Route path="outbound-split" element={<OutboundSplitView />} />
               <Route path="dn-list" element={<DNList />} />
               <Route path="lent-list" element={<LentList />} />
+              <Route path="repair-list" element={<RepairList />} />
               <Route path="devices" element={<Devices />} />
               <Route path="device-list" element={<DeviceList />} />
               <Route path="device-split" element={<DeviceSplitView />} />
