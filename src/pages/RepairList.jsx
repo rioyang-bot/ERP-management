@@ -2,11 +2,12 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Wrench, Search, Plus, Printer, Trash2, CheckCircle, AlertCircle, 
   Truck, PackageCheck, RotateCcw, ExternalLink, RefreshCw, FileText,
-  Calendar, Building2, Cpu, Server, ChevronRight
+  Calendar, Building2, Cpu, Server, ChevronRight, Eye
 } from 'lucide-react';
 import RepairOrderRegistrationModal from '../components/RepairOrderRegistrationModal';
 import RepairActionModal from '../components/RepairActionModal';
 import RepairOrderPrintModal from '../components/RepairOrderPrintModal';
+import RepairOrderDetailModal from '../components/RepairOrderDetailModal';
 import { logDelete } from '../utils/auditLogger';
 
 const STATUS_CONFIG = {
@@ -26,6 +27,7 @@ const RepairList = () => {
 
   // Modal 狀態
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [detailModal, setDetailModal] = useState({ isOpen: false, order: null });
   const [actionModal, setActionModal] = useState({ isOpen: false, order: null, type: 'SEND_OEM' });
   const [printModal, setPrintModal] = useState({ isOpen: false, order: null });
 
@@ -362,26 +364,23 @@ const RepairList = () => {
                 <th style={{ padding: '14px 16px', fontWeight: 800, whiteSpace: 'nowrap' }}>客戶 (Customer)</th>
                 <th style={{ padding: '14px 16px', fontWeight: 800, minWidth: '220px' }}>設備明細 (Device / SN)</th>
                 <th style={{ padding: '14px 16px', fontWeight: 800, whiteSpace: 'nowrap' }}>現場處理日 (On-site)</th>
-                <th style={{ padding: '14px 16px', fontWeight: 800, minWidth: '180px' }}>現場狀況 / 故障描述</th>
-                <th style={{ padding: '14px 16px', fontWeight: 800, whiteSpace: 'nowrap' }}>送修原廠日 (Send OEM)</th>
-                <th style={{ padding: '14px 16px', fontWeight: 800, whiteSpace: 'nowrap' }}>原廠返還日 (OEM Return)</th>
-                <th style={{ padding: '14px 16px', fontWeight: 800, minWidth: '180px' }}>維修結果 (Results)</th>
-                <th style={{ padding: '14px 16px', fontWeight: 800, whiteSpace: 'nowrap' }}>完工出貨日 (Completion)</th>
+                <th style={{ padding: '14px 16px', fontWeight: 800, minWidth: '150px' }}>現場狀況 / 故障描述</th>
+                <th style={{ padding: '14px 16px', fontWeight: 800, minWidth: '220px' }}>送修與完工資訊 (OEM & Shipping)</th>
                 <th style={{ padding: '14px 16px', fontWeight: 800, textAlign: 'center', whiteSpace: 'nowrap' }}>當前狀態</th>
-                <th style={{ padding: '14px 16px', fontWeight: 800, textAlign: 'right', minWidth: '200px' }}>操作流程</th>
+                <th style={{ padding: '14px 16px', fontWeight: 800, textAlign: 'right', minWidth: '220px' }}>操作流程</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={11} style={{ textAlign: 'center', padding: '48px', color: 'var(--text-muted)' }}>
+                  <td colSpan={8} style={{ textAlign: 'center', padding: '48px', color: 'var(--text-muted)' }}>
                     <RefreshCw size={24} className="spin" style={{ margin: '0 auto 10px' }} />
                     資料載入中...
                   </td>
                 </tr>
               ) : filteredOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={11} style={{ textAlign: 'center', padding: '56px 20px', color: 'var(--text-muted)' }}>
+                  <td colSpan={8} style={{ textAlign: 'center', padding: '56px 20px', color: 'var(--text-muted)' }}>
                     <Wrench size={32} style={{ margin: '0 auto 12px', opacity: 0.3 }} />
                     尚未有符合條件的維修單據
                   </td>
@@ -403,9 +402,13 @@ const RepairList = () => {
                     >
                       {/* 維修單號 */}
                       <td style={{ padding: '14px 16px', fontWeight: 800, color: 'var(--text-main)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <div 
+                          style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}
+                          onClick={() => setDetailModal({ isOpen: true, order })}
+                          title="點選檢視維修單詳細資訊"
+                        >
                           <FileText size={15} color="var(--primary-color)" />
-                          {order.repair_no}
+                          <span style={{ borderBottom: '1px dashed var(--primary-color)' }}>{order.repair_no}</span>
                         </div>
                       </td>
 
@@ -461,49 +464,87 @@ const RepairList = () => {
                         </span>
                       </td>
 
-                      {/* 送原廠日 */}
-                      <td style={{ padding: '14px 16px', whiteSpace: 'nowrap', fontWeight: 700 }}>
-                        {order.send_oem_date ? (
-                          <span style={{ color: '#d97706' }}>{order.send_oem_date}</span>
-                        ) : (
-                          <span style={{ color: 'var(--text-subtle)' }}>--</span>
-                        )}
-                      </td>
+                      {/* 送修與完工資訊 (整合送修、返還、結果、出貨) */}
+                      <td 
+                        style={{ padding: '14px 16px', cursor: 'pointer' }}
+                        onClick={() => setDetailModal({ isOpen: true, order })}
+                        title="點選檢視完整維修送修詳細資訊"
+                      >
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          {order.send_oem_date && (
+                            <div style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{
+                                padding: '1px 6px',
+                                borderRadius: '4px',
+                                backgroundColor: 'rgba(217, 119, 6, 0.12)',
+                                color: '#d97706',
+                                fontWeight: 800,
+                                fontSize: '11px',
+                                whiteSpace: 'nowrap'
+                              }}>
+                                送修
+                              </span>
+                              <span style={{ color: '#d97706', fontWeight: 700 }}>{order.send_oem_date}</span>
+                            </div>
+                          )}
 
-                      {/* 原廠返還日 */}
-                      <td style={{ padding: '14px 16px', whiteSpace: 'nowrap', fontWeight: 700 }}>
-                        {order.oem_return_date ? (
-                          <span style={{ color: '#8b5cf6' }}>{order.oem_return_date}</span>
-                        ) : (
-                          <span style={{ color: 'var(--text-subtle)' }}>--</span>
-                        )}
-                      </td>
+                          {order.oem_return_date && (
+                            <div style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{
+                                padding: '1px 6px',
+                                borderRadius: '4px',
+                                backgroundColor: 'rgba(139, 92, 246, 0.12)',
+                                color: '#8b5cf6',
+                                fontWeight: 800,
+                                fontSize: '11px',
+                                whiteSpace: 'nowrap'
+                              }}>
+                                返還
+                              </span>
+                              <span style={{ color: '#8b5cf6', fontWeight: 700 }}>{order.oem_return_date}</span>
+                            </div>
+                          )}
 
-                      {/* 維修結果 */}
-                      <td style={{ padding: '14px 16px', color: 'var(--text-main)', fontSize: '12px' }}>
-                        {order.results ? (
-                          <span style={{
-                            padding: '3px 8px',
-                            borderRadius: '6px',
-                            backgroundColor: 'rgba(16, 185, 129, 0.08)',
-                            color: '#10b981',
-                            fontWeight: 600,
-                            display: 'inline-block'
-                          }}>
-                            {order.results}
-                          </span>
-                        ) : (
-                          <span style={{ color: 'var(--text-subtle)' }}>--</span>
-                        )}
-                      </td>
+                          {order.results && (
+                            <div style={{
+                              fontSize: '11px',
+                              color: '#10b981',
+                              fontWeight: 600,
+                              backgroundColor: 'rgba(16, 185, 129, 0.08)',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              maxWidth: '220px',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap'
+                            }}>
+                              💡 {order.results}
+                            </div>
+                          )}
 
-                      {/* 完工出貨日 */}
-                      <td style={{ padding: '14px 16px', whiteSpace: 'nowrap', fontWeight: 700 }}>
-                        {order.completion_date ? (
-                          <span style={{ color: '#3b82f6' }}>{order.completion_date}</span>
-                        ) : (
-                          <span style={{ color: 'var(--text-subtle)' }}>--</span>
-                        )}
+                          {order.completion_date && (
+                            <div style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{
+                                padding: '1px 6px',
+                                borderRadius: '4px',
+                                backgroundColor: 'rgba(59, 130, 246, 0.12)',
+                                color: '#3b82f6',
+                                fontWeight: 800,
+                                fontSize: '11px',
+                                whiteSpace: 'nowrap'
+                              }}>
+                                完工
+                              </span>
+                              <span style={{ color: '#3b82f6', fontWeight: 700 }}>{order.completion_date}</span>
+                            </div>
+                          )}
+
+                          {!order.send_oem_date && !order.oem_return_date && !order.completion_date && !order.results && (
+                            <span style={{ color: 'var(--text-subtle)', fontSize: '12px' }}>
+                              現場在庫 (尚未送修)
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* 當前狀態 */}
@@ -523,13 +564,34 @@ const RepairList = () => {
 
                       {/* 操作流程按鈕 */}
                       <td style={{ padding: '14px 16px', textAlign: 'right' }}>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px', alignItems: 'center' }}>
+                          {/* 檢視詳細資料 */}
+                          <button
+                            onClick={() => setDetailModal({ isOpen: true, order })}
+                            style={{
+                              padding: '6px 10px',
+                              borderRadius: '8px',
+                              border: '1px solid var(--border-color)',
+                              backgroundColor: 'var(--bg-surface)',
+                              color: 'var(--text-main)',
+                              fontWeight: 700,
+                              fontSize: '12px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
+                            title="檢視維修單完整詳細資料與歷程"
+                          >
+                            <Eye size={13} color="var(--primary-color)" /> 檢視
+                          </button>
+
                           {/* 階段 1 ➔ 階段 2：送修原廠 */}
                           {order.status === 'ON_SITE_HANDLING' && (
                             <button
                               onClick={() => setActionModal({ isOpen: true, order, type: 'SEND_OEM' })}
                               style={{
-                                padding: '6px 12px',
+                                padding: '6px 10px',
                                 borderRadius: '8px',
                                 border: 'none',
                                 backgroundColor: '#d97706',
@@ -552,7 +614,7 @@ const RepairList = () => {
                             <button
                               onClick={() => setActionModal({ isOpen: true, order, type: 'OEM_RETURN' })}
                               style={{
-                                padding: '6px 12px',
+                                padding: '6px 10px',
                                 borderRadius: '8px',
                                 border: 'none',
                                 backgroundColor: '#8b5cf6',
@@ -575,7 +637,7 @@ const RepairList = () => {
                             <button
                               onClick={() => setActionModal({ isOpen: true, order, type: 'COMPLETE' })}
                               style={{
-                                padding: '6px 12px',
+                                padding: '6px 10px',
                                 borderRadius: '8px',
                                 border: 'none',
                                 backgroundColor: '#3b82f6',
@@ -614,7 +676,7 @@ const RepairList = () => {
                           <button
                             onClick={() => setPrintModal({ isOpen: true, order })}
                             style={{
-                              padding: '6px 10px',
+                              padding: '6px 8px',
                               borderRadius: '8px',
                               border: '1px solid var(--border-color)',
                               backgroundColor: 'var(--bg-surface)',
@@ -625,7 +687,7 @@ const RepairList = () => {
                             }}
                             title="列印 / 預覽維修單據"
                           >
-                            <Printer size={14} />
+                            <Printer size={13} />
                           </button>
 
                           {/* 刪除按鈕 */}
@@ -643,7 +705,7 @@ const RepairList = () => {
                             }}
                             title="刪除維修單"
                           >
-                            <Trash2 size={14} />
+                            <Trash2 size={13} />
                           </button>
                         </div>
                       </td>
@@ -661,6 +723,14 @@ const RepairList = () => {
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
         onSuccess={fetchRecords}
+      />
+
+      <RepairOrderDetailModal
+        isOpen={detailModal.isOpen}
+        onClose={() => setDetailModal({ isOpen: false, order: null })}
+        repairOrder={detailModal.order}
+        onOpenAction={(order, type) => setActionModal({ isOpen: true, order, type })}
+        onOpenPrint={(order) => setPrintModal({ isOpen: true, order })}
       />
 
       <RepairActionModal
