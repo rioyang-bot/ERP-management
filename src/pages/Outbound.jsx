@@ -45,6 +45,30 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) 
   const [csmFilterBrand, setCsmFilterBrand] = useState('');
   const [csmFilterType, setCsmFilterType] = useState('');
   const [csmFilterModel, setCsmFilterModel] = useState('');
+  const [dnNo, setDnNo] = useState('');
+
+  // 取得下一個出貨單號 (DN-YYYYMMDD-01)
+  const fetchNextDnNo = async (targetDate) => {
+    try {
+      const dStr = (targetDate || new Date().toISOString().split('T')[0]).replace(/-/g, '');
+      const prefix = `DN-${dStr}-`;
+      const countRes = await window.electronAPI.namedQuery('countOutboundRequests', [prefix]);
+      if (countRes.success && countRes.rows.length > 0) {
+        const nextNum = (parseInt(countRes.rows[0].count) || 1).toString().padStart(2, '0');
+        return `DN-${dStr}-${nextNum}`;
+      }
+    } catch (e) {
+      console.error('Failed to fetch next dn no:', e);
+    }
+    const dStr = (targetDate || new Date().toISOString().split('T')[0]).replace(/-/g, '');
+    return `DN-${dStr}-01`;
+  };
+
+  const handleDateChange = async (newDate) => {
+    setHeader(prev => ({ ...prev, date: newDate }));
+    const nextNo = await fetchNextDnNo(newDate);
+    if (nextNo) setDnNo(nextNo);
+  };
 
   // --- 持久化同步 ---
   useEffect(() => {
@@ -58,6 +82,11 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) 
   // --- 初始化資料 ---
   useEffect(() => {
     const initData = async () => {
+      const initialDate = header.date || new Date().toISOString().split('T')[0];
+      fetchNextDnNo(initialDate).then(no => {
+        if (no) setDnNo(no);
+      });
+
       // 獲取客戶清單
       const custRes = await window.electronAPI.namedQuery('fetchCustomers');
       if (custRes.success) setCustomers(custRes.rows || []);
@@ -347,9 +376,24 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) 
       {!isModalMode && (
         <div className="outbound-page-header">
           <div>
-            <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
-              <Truck size={26} color="var(--primary-color)" /> 出貨單建檔 (Delivery Note Registration)
-            </h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
+                <Truck size={26} color="var(--primary-color)" /> 出貨單建檔 (Delivery Note Registration)
+              </h1>
+              {dnNo && (
+                <span style={{
+                  padding: '4px 12px',
+                  borderRadius: '6px',
+                  backgroundColor: 'rgba(37, 99, 235, 0.12)',
+                  color: 'var(--primary-color)',
+                  fontWeight: 800,
+                  fontSize: '14px',
+                  border: '1px solid rgba(37, 99, 235, 0.3)'
+                }}>
+                  單號: {dnNo}
+                </span>
+              )}
+            </div>
             <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>建立新的出貨申請單（一般銷貨），支援設備序號自動導出與耗材選取。</p>
           </div>
           {!isSplitMode && (
@@ -377,6 +421,28 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) 
               <User size={18} /> <span>單據基本資訊</span>
             </div>
             <div className="dn-form-grid">
+              {/* 出貨單號 (鎖定唯讀) */}
+              <div className="dn-field">
+                <label>
+                  出貨單號 (D/N No.) <span style={{ fontSize: '11px', color: 'var(--primary-color)', fontWeight: 600 }}>[系統自動編號 · 鎖定]</span>
+                </label>
+                <div className="input-with-icon">
+                  <ClipboardList size={16} />
+                  <input 
+                    type="text" 
+                    readOnly 
+                    value={dnNo || '計算中...'} 
+                    style={{
+                      backgroundColor: 'var(--bg-surface-subtle)',
+                      color: 'var(--text-muted)',
+                      fontWeight: 700,
+                      cursor: 'not-allowed'
+                    }}
+                    title="出貨單號依日期由系統自動編排產生，無法手動修改"
+                  />
+                </div>
+              </div>
+
               <div className="dn-field">
                 <label>出貨對象 (客戶) *</label>
                 <div className="select-wrapper">
@@ -421,7 +487,7 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) 
                   <input 
                     type="date" 
                     value={header.date} 
-                    onChange={e => setHeader({...header, date: e.target.value})}
+                    onChange={e => handleDateChange(e.target.value)}
                   />
                 </div>
               </div>

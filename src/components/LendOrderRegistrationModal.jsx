@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { 
   FileText, Search, Plus, Trash2, Send, Calendar, MapPin, User, 
-  Package, Cpu, ChevronRight, AlertCircle, Loader2, X, Tag 
+  Package, Cpu, ChevronRight, AlertCircle, Loader2, X, Tag, ClipboardList
 } from 'lucide-react';
 import { RoleContext } from '../context/RoleContext';
 import { logCreate } from '../utils/auditLogger';
@@ -481,18 +481,21 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                     <label>
                       借用單號 (Lend No.) <span style={{ fontSize: '11px', color: '#f59e0b', fontWeight: 600 }}>[系統自動編號 · 鎖定]</span>
                     </label>
-                    <input 
-                      type="text" 
-                      readOnly 
-                      value={lendNo || '計算中...'} 
-                      style={{
-                        backgroundColor: 'var(--bg-surface-subtle)',
-                        color: 'var(--text-muted)',
-                        fontWeight: 700,
-                        cursor: 'not-allowed'
-                      }}
-                      title="借用單號依日期由系統自動編排產生，無法手動修改"
-                    />
+                    <div className="input-with-icon">
+                      <ClipboardList size={16} />
+                      <input 
+                        type="text" 
+                        readOnly 
+                        value={lendNo || '計算中...'} 
+                        style={{
+                          backgroundColor: 'var(--bg-surface-subtle)',
+                          color: 'var(--text-muted)',
+                          fontWeight: 700,
+                          cursor: 'not-allowed'
+                        }}
+                        title="借用單號依日期由系統自動編排產生，無法手動修改"
+                      />
+                    </div>
                   </div>
 
                   <div className="dn-field">

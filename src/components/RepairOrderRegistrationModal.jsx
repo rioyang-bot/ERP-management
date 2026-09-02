@@ -322,9 +322,24 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
               <Wrench size={24} />
             </div>
             <div>
-              <h2 style={{ fontSize: '20px', fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                新增維修單 (Create Repair Order / RMA)
-              </h2>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <h2 style={{ fontSize: '20px', fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  新增維修單 (Create Repair Order / RMA)
+                </h2>
+                {repairNo && (
+                  <span style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                    color: '#ef4444',
+                    fontWeight: 800,
+                    fontSize: '13px',
+                    border: '1px solid rgba(239, 68, 68, 0.3)'
+                  }}>
+                    單號: {repairNo}
+                  </span>
+                )}
+              </div>
               <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
                 自客戶端取回故障設備，建立維修單並自動將設備序號狀態變更為「在庫 (ACTIVE)」。
               </p>
