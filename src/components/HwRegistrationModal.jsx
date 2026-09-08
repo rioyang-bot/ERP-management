@@ -38,20 +38,34 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   };
 
   const fetchBrands = useCallback(async () => {
-    const res = await window.electronAPI.namedQuery('fetchNicBrands');
+    const res = await window.electronAPI.namedQuery('fetchHwBrands');
     if (res.success) setBrands(res.rows);
   }, []);
 
-  const fetchTypes = useCallback(async (brandName) => {
-    if (!brandName) return;
-    const res = await window.electronAPI.namedQuery('fetchNicTypesByBrand', [brandName]);
-    if (res.success) setTypes(res.rows.map(r => r.name));
+  const fetchTypes = useCallback(async (currentType = '') => {
+    const res = await window.electronAPI.namedQuery('fetchHwTypes');
+    if (res.success) {
+      const typeNames = res.rows.map(r => r.name);
+      setTypes(typeNames);
+      setFormData(prev => ({
+        ...prev,
+        type: typeNames.includes(prev.type) ? prev.type : (typeNames.includes(currentType) ? currentType : '')
+      }));
+      return { typeNames };
+    }
+    return { typeNames: [] };
   }, []);
 
-  const fetchModels = useCallback(async (brandName, typeName) => {
-    if (!brandName || !typeName) return;
-    const res = await window.electronAPI.namedQuery('fetchNicModelsByBrandType', [brandName, typeName]);
-    if (res.success) setModels(res.rows.map(r => r.name));
+  const fetchModels = useCallback(async (brandName) => {
+    if (!brandName) { setModels([]); return { modelNames: [] }; }
+    const res = await window.electronAPI.namedQuery('fetchHwModelsByBrand', [brandName]);
+    if (res.success) {
+      const modelNames = res.rows.map(r => r.name);
+      setModels(modelNames);
+      setFormData(prev => ({ ...prev, model: modelNames.includes(prev.model) ? prev.model : '' }));
+      return { modelNames };
+    }
+    return { modelNames: [] };
   }, []);
 
   const fetchProjects = useCallback(async () => {
@@ -65,10 +79,11 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
 
   useEffect(() => {
     if (isOpen) {
+      fetchTypes();
       fetchBrands();
       fetchProjects();
     }
-  }, [isOpen, fetchBrands, fetchProjects]);
+  }, [isOpen, fetchTypes, fetchBrands, fetchProjects]);
 
   if (!isOpen) return null;
 
@@ -76,14 +91,9 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
     if (name === 'brand') {
-      setTypes([]); setModels([]);
-      setFormData(prev => ({ ...prev, type: '', model: '' }));
-      fetchTypes(value);
-    }
-    if (name === 'type') {
       setModels([]);
       setFormData(prev => ({ ...prev, model: '' }));
-      fetchModels(formData.brand, value);
+      fetchModels(value);
     }
   };
 
@@ -91,56 +101,87 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
     const name = validateAndSanitize(newBrandName, '廠牌名稱');
     if (!name) return;
     const res = await window.electronAPI.namedQuery('insertDeviceBrand', ['硬體', name]);
-    if (res.success) { await fetchBrands(); setNewBrandName(''); setActiveAdd(null); }
+    if (res.success) { 
+      setFormData(prev => ({ ...prev, brand: name, model: '' }));
+      await fetchBrands(); 
+      await fetchModels(name);
+      setNewBrandName(''); 
+      setActiveAdd(null); 
+    }
     else alert('新增失敗：' + res.error);
   };
 
   const handleAddType = async () => {
     const name = validateAndSanitize(newTypeName, '類型名稱');
-    if (!name || !formData.brand) return;
-    const res = await window.electronAPI.namedQuery('insertDeviceType', ['硬體', formData.brand, name]);
-    if (res.success) { await fetchTypes(formData.brand); setNewTypeName(''); setActiveAdd(null); }
+    if (!name) return;
+    const res = await window.electronAPI.namedQuery('insertDeviceType', ['硬體', name]);
+    if (res.success) { 
+      setFormData(prev => ({ ...prev, type: name }));
+      await fetchTypes(name); 
+      setNewTypeName(''); 
+      setActiveAdd(null); 
+    }
     else alert('新增失敗：' + res.error);
   };
 
   const handleAddModel = async () => {
     const name = validateAndSanitize(newModelName, '型號名稱');
-    if (!name || !formData.brand || !formData.type) return;
-    const res = await window.electronAPI.namedQuery('insertDeviceModel', [formData.brand, formData.type, '硬體', name]);
-    if (res.success) { await fetchModels(formData.brand, formData.type); setNewModelName(''); setActiveAdd(null); }
+    if (!name || !formData.brand) return alert('請先選擇廠牌後再新增型號');
+    const res = await window.electronAPI.namedQuery('insertDeviceModel', [formData.brand, name, '硬體']);
+    if (res.success) { 
+      setFormData(prev => ({ ...prev, model: name }));
+      await fetchModels(formData.brand); 
+      setNewModelName(''); 
+      setActiveAdd(null); 
+    }
     else alert('新增失敗：' + res.error);
   };
 
   const handleDeleteBrand = async (brandName) => {
     if (!confirm(`確定要刪除廠牌「${brandName}」嗎？`)) return;
     const res = await window.electronAPI.namedQuery('deleteDeviceBrand', [brandName, '硬體']);
-    if (res.success) await fetchBrands();
+    if (res.success) {
+      await fetchBrands();
+      if (formData.brand === brandName) {
+        setFormData(prev => ({ ...prev, brand: '', model: '' }));
+        setModels([]);
+      }
+    }
     else alert('刪除失敗：' + res.error);
   };
 
   const handleDeleteType = async (typeName) => {
     if (!confirm(`確定要刪除類型「${typeName}」嗎？`)) return;
-    const res = await window.electronAPI.namedQuery('deleteDeviceType', [typeName, '硬體', formData.brand]);
-    if (res.success) await fetchTypes(formData.brand);
+    const res = await window.electronAPI.namedQuery('deleteDeviceType', [typeName, '硬體']);
+    if (res.success) {
+      await fetchTypes();
+      if (formData.type === typeName) {
+        setFormData(prev => ({ ...prev, type: '' }));
+      }
+    }
     else alert('刪除失敗：' + res.error);
   };
 
   const handleDeleteModel = async (modelName) => {
     if (!confirm(`確定要刪除型號「${modelName}」嗎？`)) return;
-    const res = await window.electronAPI.namedQuery('deleteDeviceModel', [modelName, formData.brand, formData.type, '硬體']);
-    if (res.success) await fetchModels(formData.brand, formData.type);
+    const res = await window.electronAPI.namedQuery('deleteDeviceModel', [modelName, formData.brand, '硬體']);
+    if (res.success) {
+      await fetchModels(formData.brand);
+      if (formData.model === modelName) {
+        setFormData(prev => ({ ...prev, model: '' }));
+      }
+    }
     else alert('刪除失敗：' + res.error);
   };
 
   const handleSave = async (continueAdd = false) => {
-    const safeBrand = validateAndSanitize(formData.brand, '廠牌');
     const safeType = validateAndSanitize(formData.type, '類型');
-    const safeModel = validateAndSanitize(formData.model, '型號');
-    const safeSpec = validateAndSanitize(formData.specification, '規格');
+    const safeBrand = validateAndSanitize(formData.brand, '廠牌');
+    const safeSpec = formData.specification ? (validateAndSanitize(formData.specification, '規格') || '') : '';
     const safeServerSn = validateAndSanitize(formData.server_sn, 'Server SN');
 
-    if (!safeBrand || !safeType || !safeModel || !safeSpec?.trim()) {
-      return alert('請填寫必填欄位 (廠牌、類型、型號、規格為必填) 並確保符合安全規範');
+    if (!safeType || !safeBrand || !safeModel) {
+      return alert('請填寫必填欄位 (類型、廠牌、型號為必填) 並確保符合安全規範');
     }
 
     let snList = [];
@@ -158,7 +199,7 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
     setIsSubmitting(true);
     try {
       let itemMasterId;
-      const findRes = await window.electronAPI.namedQuery('findItemMaster', [safeSpec, safeType, safeBrand, safeModel]);
+      const findRes = await window.electronAPI.namedQuery('findItemMaster', [safeSpec || '', safeType, safeBrand, safeModel]);
 
       if (findRes.success && findRes.rows.length > 0) {
         itemMasterId = findRes.rows[0].id;
@@ -167,7 +208,7 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
         if (insMaster.success && insMaster.rows?.length > 0) {
           itemMasterId = insMaster.rows[0].id;
         } else {
-          throw new Error('建立物料主檔失敗');
+          throw new Error('建立硬體物料主檔失敗');
         }
       }
 
@@ -193,59 +234,125 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
 
       if (successCount > 0) {
         logCreate(
-          'HARDWARE',
-          isBulkMode ? `批次 ${snList.length} 件` : (formData.sn || '無序號'),
-          `${safeBrand} ${safeModel}`,
-          `登錄硬體零組件 [${safeBrand} ${safeModel}] ${isBulkMode ? `批次建立 ${successCount} 筆` : `序號: ${formData.sn || '未指定'}`}`,
-          { isBulkMode, count: successCount, brand: safeBrand, type: safeType, model: safeModel, snList: isBulkMode ? snList : [formData.sn], server_sn: safeServerSn, project_name: formData.project_name }
+          'ASSET',
+          `新增硬體 (${safeBrand} ${safeModel} x${successCount})`,
+          { brand: safeBrand, type: safeType, model: safeModel, count: successCount, sns: snList }
         );
 
+        alert(`成功建檔 ${successCount} 筆硬體資料！${failCount > 0 ? ` (失敗 ${failCount} 筆)` : ''}`);
         if (onSuccess) onSuccess();
 
         if (continueAdd) {
-          alert(`成功建檔 ${successCount} 筆資料${failCount > 0 ? `，失敗 ${failCount} 筆` : ''}。請繼續輸入下一筆。`);
-          setFormData(prev => ({ ...prev, sn: '', server_sn: '', project_name: '' }));
+          setFormData(prev => ({
+            ...prev,
+            sn: '',
+            specification: '',
+            server_sn: ''
+          }));
           setBulkSns('');
         } else {
-          alert(`成功建檔 ${successCount} 筆資料${failCount > 0 ? `，失敗 ${failCount} 筆` : ''}。`);
           onClose();
         }
       } else {
-        alert('建檔失敗。');
+        alert('建檔失敗，請確認序號是否重複或連線異常。');
       }
     } catch (err) {
-      alert('作業錯誤：' + err.message);
+      console.error(err);
+      alert('建檔過程發生錯誤：' + err.message);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const labelStyle = { display: 'block', fontSize: '14px', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '6px' };
-  const inputStyle = { width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', fontSize: '14px', outline: 'none', boxSizing: 'border-box' };
-  const iconBtnStyle = { padding: '8px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-main)', cursor: 'pointer', display: 'flex', alignItems: 'center' };
+  const inputStyle = {
+    width: '100%',
+    padding: '8px 12px',
+    borderRadius: '8px',
+    border: '1px solid var(--border-color)',
+    backgroundColor: 'var(--bg-surface)',
+    color: 'var(--text-main)',
+    fontSize: '13px',
+    outline: 'none',
+    boxSizing: 'border-box'
+  };
+
+  const labelStyle = {
+    display: 'block',
+    fontSize: '12px',
+    fontWeight: '700',
+    color: 'var(--text-muted)',
+    marginBottom: '6px'
+  };
+
+  const iconBtnStyle = {
+    padding: '8px',
+    borderRadius: '8px',
+    border: '1px solid var(--border-color)',
+    backgroundColor: 'var(--bg-surface)',
+    color: 'var(--text-main)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer'
+  };
 
   const modeBtnStyle = (active) => ({
-    flex: 1, padding: '10px', borderRadius: '8px', border: 'none',
-    backgroundColor: active ? 'var(--primary-color)' : 'var(--bg-surface-subtle)',
+    flex: 1,
+    padding: '8px',
+    borderRadius: '8px',
+    border: 'none',
+    backgroundColor: active ? 'var(--primary-color)' : 'transparent',
     color: active ? '#fff' : 'var(--text-muted)',
-    fontWeight: '700', fontSize: '13px', cursor: 'pointer', transition: 'all 0.2s',
-    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
+    fontSize: '13px',
+    fontWeight: '700',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease'
   });
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0, 0, 0, 0.65)', backdropFilter: 'blur(5px)', padding: '20px' }}>
-      <div style={{ backgroundColor: 'var(--bg-surface)', width: '100%', maxWidth: '900px', maxHeight: '92vh', borderRadius: '16px', border: '1px solid var(--border-color)', boxShadow: '0 20px 40px rgba(0,0,0,0.3)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        
+    <div style={{
+      position: 'fixed',
+      top: 0, left: 0, right: 0, bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      backdropFilter: 'blur(4px)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1000,
+      padding: '20px'
+    }}>
+      <div style={{
+        backgroundColor: 'var(--bg-surface)',
+        borderRadius: '16px',
+        border: '1px solid var(--border-color)',
+        boxShadow: 'var(--card-shadow)',
+        width: '100%',
+        maxWidth: '850px',
+        maxHeight: '90vh',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden'
+      }}>
         {/* Modal Header */}
-        <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-surface-subtle)' }}>
+        <div style={{
+          padding: '20px 24px',
+          borderBottom: '1px solid var(--border-color)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          backgroundColor: 'var(--bg-surface-subtle)'
+        }}>
           <div>
-            <h2 style={{ fontSize: '20px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
+            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Cpu size={22} color="var(--primary-color)" /> 新增硬體建檔 (Hardware Registration)
-            </h2>
-            <p style={{ color: 'var(--text-muted)', fontSize: '13px', margin: '4px 0 0 0' }}>管理並登錄伺服器零件、網卡與相關擴充硬體。</p>
+            </h3>
+            <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
+              建立伺服器硬體零組件（網卡、CPU、記憶體等）之主檔與序號資產。
+            </p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <button
+              type="button"
               onClick={() => setShowBatchImport(true)}
               style={{ padding: '8px 14px', borderRadius: '8px', border: '1px solid #10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#10b981', fontSize: '13px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}
             >
@@ -274,7 +381,36 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
 
           <form onSubmit={(e) => { e.preventDefault(); handleSave(false); }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '16px' }}>
-              {/* 廠牌 */}
+              {/* 1. 類型 (Type) */}
+              <div>
+                <label style={labelStyle}>類型 (Type) *</label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <select name="type" value={formData.type} onChange={handleChange} style={inputStyle} required>
+                    <option value="">請選擇類型</option>
+                    {types.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  <button type="button" onClick={() => setActiveAdd(activeAdd === 'type' ? null : 'type')} style={iconBtnStyle} title="新增類型"><Plus size={16} /></button>
+                  <button type="button" onClick={() => setActiveMgmt(activeMgmt === 'type' ? null : 'type')} style={iconBtnStyle} title="管理類型"><Settings2 size={16} /></button>
+                </div>
+                {activeAdd === 'type' && (
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                    <input value={newTypeName} onChange={e => setNewTypeName(e.target.value)} placeholder="類型名稱 (例: NIC)" style={inputStyle} />
+                    <button type="button" onClick={handleAddType} style={{ ...iconBtnStyle, backgroundColor: 'var(--primary-color)', color: '#fff' }}>儲存</button>
+                  </div>
+                )}
+                {activeMgmt === 'type' && (
+                  <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', marginTop: '8px', padding: '8px', maxHeight: '120px', overflowY: 'auto' }}>
+                    {types.map(t => (
+                      <div key={t} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '13px' }}>
+                        <span>{t}</span>
+                        <Trash2 size={14} color="#ef4444" cursor="pointer" onClick={() => handleDeleteType(t)} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* 2. 廠牌 (Brand) */}
               <div>
                 <label style={labelStyle}>廠牌 (Brand) *</label>
                 <div style={{ display: 'flex', gap: '8px' }}>
@@ -303,45 +439,16 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                 )}
               </div>
 
-              {/* 類型 */}
-              <div>
-                <label style={labelStyle}>類型 (Type) *</label>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <select name="type" value={formData.type} onChange={handleChange} style={inputStyle} disabled={!formData.brand} required>
-                    <option value="">請選擇類型</option>
-                    {types.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                  <button type="button" onClick={() => setActiveAdd(activeAdd === 'type' ? null : 'type')} disabled={!formData.brand} style={iconBtnStyle} title="新增類型"><Plus size={16} /></button>
-                  <button type="button" onClick={() => setActiveMgmt(activeMgmt === 'type' ? null : 'type')} disabled={!formData.brand} style={iconBtnStyle} title="管理類型"><Settings2 size={16} /></button>
-                </div>
-                {activeAdd === 'type' && (
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                    <input value={newTypeName} onChange={e => setNewTypeName(e.target.value)} placeholder="類型名稱" style={inputStyle} />
-                    <button type="button" onClick={handleAddType} style={{ ...iconBtnStyle, backgroundColor: 'var(--primary-color)', color: '#fff' }}>儲存</button>
-                  </div>
-                )}
-                {activeMgmt === 'type' && (
-                  <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', marginTop: '8px', padding: '8px', maxHeight: '120px', overflowY: 'auto' }}>
-                    {types.map(t => (
-                      <div key={t} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '13px' }}>
-                        <span>{t}</span>
-                        <Trash2 size={14} color="#ef4444" cursor="pointer" onClick={() => handleDeleteType(t)} />
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* 型號 */}
+              {/* 3. 型號 (Model) */}
               <div>
                 <label style={labelStyle}>型號 (Model) *</label>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <select name="model" value={formData.model} onChange={handleChange} style={inputStyle} disabled={!formData.type} required>
+                  <select name="model" value={formData.model} onChange={handleChange} style={inputStyle} disabled={!formData.brand} required>
                     <option value="">請選擇型號</option>
                     {models.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
-                  <button type="button" onClick={() => setActiveAdd(activeAdd === 'model' ? null : 'model')} disabled={!formData.type} style={iconBtnStyle} title="新增型號"><Plus size={16} /></button>
-                  <button type="button" onClick={() => setActiveMgmt(activeMgmt === 'model' ? null : 'model')} disabled={!formData.type} style={iconBtnStyle} title="管理型號"><Settings2 size={16} /></button>
+                  <button type="button" onClick={() => setActiveAdd(activeAdd === 'model' ? null : 'model')} disabled={!formData.brand} style={iconBtnStyle} title="新增型號"><Plus size={16} /></button>
+                  <button type="button" onClick={() => setActiveMgmt(activeMgmt === 'model' ? null : 'model')} disabled={!formData.brand} style={iconBtnStyle} title="管理型號"><Settings2 size={16} /></button>
                 </div>
                 {activeAdd === 'model' && (
                   <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
@@ -364,8 +471,8 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
 
             {/* 規格 */}
             <div style={{ marginBottom: '16px' }}>
-              <label style={labelStyle}>規格 (Specification) * <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>(必填)</span></label>
-              <textarea name="specification" value={formData.specification} onChange={handleChange} style={{ ...inputStyle, minHeight: '60px', resize: 'vertical' }} placeholder="請輸入硬體核心規格與配置..." required />
+              <label style={labelStyle}>規格 (Specification) <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>(選填)</span></label>
+              <textarea name="specification" value={formData.specification} onChange={handleChange} style={{ ...inputStyle, minHeight: '60px', resize: 'vertical' }} placeholder="選填，可輸入硬體核心規格與配置..." />
             </div>
 
             {/* 序號輸入區 */}

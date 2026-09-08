@@ -53,13 +53,14 @@ const ProcessFlow = () => {
       icon: <Database size={24} />,
       desc: '維護客戶廠商資料與系統帳號權限，為全系統單據與安全提供標準化主體資料來源。',
       subModules: [
-        { name: '客戶 / 廠商管理 (Partners)', path: '/partners', desc: '維護供應商與客戶聯絡資訊、地址與統編' },
+        { name: '客戶 / 廠商管理 (Partners)', path: '/partners', desc: '維護供應商與客戶聯絡資訊、頂部「全部/客戶/供應商」分類切換，以及整合出貨專案與進出履歷之「關聯資訊」' },
         { name: '權限管理 (User Access Control)', path: '/settings', desc: '維護系統帳號、使用者模組存取權限與密碼安全原則' }
       ],
       inputs: ['外部廠商資訊', '客戶聯絡名冊', '系統操作人員名冊'],
       outputs: ['合作夥伴主檔 (Partners)', '系統使用者與權限原則 (RBAC)'],
       businessRules: [
         '所有單據（採購、進貨、出貨）皆需指定有效之合作夥伴（客戶或廠商）。',
+        '客戶/廠商管理支援頂部「全部 / 客戶 / 供應商」即時篩選與筆數統計；「關聯資訊」彙整關聯之出貨專案與歷史往來料件。',
         '系統依據使用者角色與權限設定，嚴格控管各功能模組之讀取與異動權限。'
       ]
     },
@@ -96,7 +97,7 @@ const ProcessFlow = () => {
         { name: '進貨單建立 (Inbound)', path: '/inbound', desc: '核對送貨單據，一鍵展開每台設備之專屬 SN 序號' },
         { name: '進貨單列表 (S/I List)', path: '/inbound-list', desc: '查詢歷史進貨單據、供應商與進貨批號' },
         { name: '設備建檔 (Device Reg)', path: '/devices', desc: '伺服器、主機、交換器等單機設備建檔（規格必填，右上角支援 Excel/CSV 批次匯入）' },
-        { name: '硬體建檔 (HW Reg)', path: '/hw-registration', desc: '網卡、加速卡等模組規格登記（規格必填，右上角支援 Excel/CSV 批次匯入）' },
+        { name: '硬體建檔 (HW Reg)', path: '/hw-registration', desc: '網卡、加速卡等模組規格登記（規格選填，右上角支援 Excel/CSV 批次匯入）' },
         { name: '耗材建檔 (Consumables)', path: '/consumables', desc: '耗材與配件建檔（規格必填、無單位設定、依廠牌+類型+型號+規格四欄唯一識別）' }
       ],
       inputs: ['實體到貨料件', '原廠外箱序號 (SN)', '供應商送貨/進貨單', '關聯 P/O 採購單', '外部 Excel / CSV 設備與硬體資產清冊'],
@@ -141,15 +142,17 @@ const ProcessFlow = () => {
       color: '#ea580c',
       badge: '物料交付',
       icon: <Truck size={24} />,
-      desc: '處理專案銷貨出庫（扣庫結案）或設備借出調撥（追蹤歸還期與驗收復庫），出貨單列表支援狀態即時查詢。',
+      desc: '處理專案銷貨出庫（扣庫結案）或設備借出調撥（追蹤歸還期與驗收復庫），支援序號掃描即時防重複檢核與出貨專案自動立案回寫。',
       subModules: [
-        { name: '出貨單建立 (Outbound)', path: '/outbound', desc: '建立 D/N 單，掃描/選擇在庫 SN，指派客戶與專案' },
+        { name: '出貨單建立 (Outbound)', path: '/outbound', desc: '建立 D/N 單，掃描/選擇在庫 SN（嚴格防重複出貨攔截），出貨專案支援雙模式立案並自動回寫綁定' },
         { name: '出貨單列表 (D/N List)', path: '/dn-list', desc: '搜尋列新增狀態查詢欄位 (全部 / 待出貨 / 已出貨 / 已歸還)，支援銷貨單總覽與列印/PDF' },
         { name: '設備/硬體借用列表 (Device/HW Lent List)', path: '/lent-list', desc: '追蹤借出設備與硬體、預計歸還日、逾期警示與一鍵歸還驗收' }
       ],
-      inputs: ['客戶/專案出貨需求', '內部/外部借用申請', '在庫狀態設備/硬體/耗材'],
-      outputs: ['出貨單 (DN-YYYYMMDD-XX)', '資產狀態轉移 (SHIPPED/LENT)', '專案庫存扣減'],
+      inputs: ['客戶/專案出貨需求', '內部/外部借用申請', '在庫狀態 (ACTIVE) 設備/硬體/耗材'],
+      outputs: ['出貨單 (DN-YYYYMMDD-XX)', '資產狀態轉移 (SHIPPED/LENT)', '自動回寫設備專案/客戶屬性', '專案庫存扣減'],
       businessRules: [
+        '出貨防呆與序號防重複：序號輸入即時回顯比對，嚴格限制僅「在庫 (ACTIVE)」狀態之資產可排定出貨；若資產為已出貨 (SHIPPED)、借出 (LENT)、維修 (REPAIRING) 或報廢，立即彈窗阻擋以防重複出貨。',
+        '出貨專案自動立案與回寫：出貨專案支援選取或直接輸入新專案名稱；建立出貨單時若為新專案將自動立案，並全自動將該專案名稱與客戶回寫綁定至所有出貨設備及其掛載硬體元件之自訂屬性。',
         '單據類型為 SALE (銷貨) 時：庫存狀態變更為 SHIPPED (已出貨)，數據自動送至專案進銷存報表。',
         '單據類型為 LENT (借用) 時：庫存狀態變更為 LENT (借出中)，歸還時進行驗收並自動恢復 ACTIVE。',
         '當設備狀態變更為出貨 (SHIPPED) 或在庫 (ACTIVE) 時，系統自動連動更新其搭載硬體 (Mounted HW) 為同步狀態。',
@@ -578,20 +581,20 @@ const ProcessFlow = () => {
                   </div>
                 </div>
                 <div className="step-body">
-                  <p>依據客戶需求開立出貨單，選擇「專案銷貨」扣庫或「設備借用」調撥。</p>
+                  <p>依據客戶需求開立出貨單，具備序號掃描即時檢驗與嚴格防重複出貨攔截；出貨專案支援選取或直接輸入新專案名稱（自動立案），並全自動回寫專案名稱與客戶綁定至設備及搭載硬體。</p>
                   {(flowStreamType === 'ALL' || flowStreamType === 'DOC') && (
                     <div className="stream-item doc">
-                      <strong>📄 單據流：</strong> 產出出貨單 <code>DN-YYYYMMDD-XX</code>
+                      <strong>📄 單據流：</strong> 產出出貨單 <code>DN-YYYYMMDD-XX</code>，若為新專案同步於 <code>projects</code> 自動立案
                     </div>
                   )}
                   {(flowStreamType === 'ALL' || flowStreamType === 'ASSET') && (
                     <div className="stream-item asset">
-                      <strong>📦 物料流：</strong> 銷貨轉 <code>SHIPPED</code>；借出轉 <code>LENT</code>
+                      <strong>📦 物料流：</strong> 銷貨轉 <code>SHIPPED</code>（連動搭載硬體）；設備自訂屬性自動回寫 <code>project_name</code> 與 <code>client</code>；借出轉 <code>LENT</code>
                     </div>
                   )}
                   {(flowStreamType === 'ALL' || flowStreamType === 'REPORT') && (
                     <div className="stream-item report">
-                      <strong>📊 進銷存流：</strong> 記錄出貨交付時間，扣減專案在庫數量
+                      <strong>📊 進銷存流：</strong> 記錄出貨交付時間，即時扣減專案在庫數量，自動匯流至專案進銷存統計
                     </div>
                   )}
                 </div>
@@ -711,7 +714,7 @@ const ProcessFlow = () => {
               <div className="state-transitions">
                 <div className="trans-title">可轉入狀態：</div>
                 <ul>
-                  <li>➔ <strong>SHIPPED (已出貨)</strong>：開立銷貨出貨單 (SALE) 或維修單完工出貨，連動更新搭載硬體</li>
+                  <li>➔ <strong>SHIPPED (已出貨)</strong>：開立銷貨出貨單 (SALE) 或維修單完工出貨，嚴格防重複驗證僅在庫品項可加入，連動更新搭載硬體並自動回寫專案/客戶綁定</li>
                   <li>➔ <strong>LENT (借出中)</strong>：開立借用調撥單 (LENT)</li>
                   <li>➔ <strong>REPAIRING (維修中)</strong>：點選維修單「送修原廠」寫入 Send OEM Date，自動轉維修中</li>
                   <li>➔ <strong>SCRAPPED (報廢)</strong>：損壞無法修復或過期汰除</li>
@@ -739,7 +742,7 @@ const ProcessFlow = () => {
                 <span className="state-dot shipped" />
                 <h3>SHIPPED (已出貨銷貨)</h3>
               </div>
-              <p className="state-desc">設備已交付客戶並完成專案扣庫，正式離開庫存池，其出貨紀錄納入專案統計，其搭載硬體同步標記為已出貨。</p>
+              <p className="state-desc">設備已交付客戶並完成專案扣庫，正式離開庫存池，其出貨紀錄納入專案統計，其搭載硬體同步標記為已出貨，並自動回寫設備與硬體之專案名稱與客戶（系統防呆限制已出貨品項不可重複出貨）。</p>
               <div className="state-transitions">
                 <div className="trans-title">可轉入狀態：</div>
                 <ul>
@@ -849,14 +852,14 @@ const ProcessFlow = () => {
                     <CheckCircle2 size={18} color="#059669" />
                     <div>
                       <strong>貨到驗收、序號建檔與批次匯入：</strong>
-                      進入 <button className="inline-link" onClick={() => navigate('/inbound')}>進貨登記</button> 點選「展開明細」，或透過 <button className="inline-link" onClick={() => navigate('/devices')}>設備建檔</button>、<button className="inline-link" onClick={() => navigate('/hw-registration')}>硬體建檔</button> 右上角之「📊 批次匯入 (Excel/CSV)」功能快速導入資產（規格為必填欄位，匯入一律預設為一般銷售並自動依檔案判斷出貨/在庫狀態）。
+                      進入 <button className="inline-link" onClick={() => navigate('/inbound')}>進貨登記</button> 點選「展開明細」，或透過 <button className="inline-link" onClick={() => navigate('/devices')}>設備建檔</button>、<button className="inline-link" onClick={() => navigate('/hw-registration')}>硬體建檔</button> 右上角之「📊 批次匯入 (Excel/CSV)」功能快速導入資產（硬體規格為選填欄位，匯入一律預設為一般銷售並自動依檔案判斷出貨/在庫狀態）。
                     </div>
                   </div>
                   <div className="checklist-item">
                     <CheckCircle2 size={18} color="#059669" />
                     <div>
                       <strong>出貨單與借用追蹤：</strong>
-                      建立 <button className="inline-link" onClick={() => navigate('/outbound')}>出貨單 (D/N)</button>，並在 <button className="inline-link" onClick={() => navigate('/dn-list')}>出貨單列表</button> 透過新增之狀態欄位 (全部/待出貨/已出貨/已歸還) 快速查詢，於 <button className="inline-link" onClick={() => navigate('/lent-list')}>設備/硬體借用列表</button> 掌握逾期與驗收歸還。
+                      建立 <button className="inline-link" onClick={() => navigate('/outbound')}>出貨單 (D/N)</button>（具備掃描序號防重複出貨檢驗，並支援出貨時直接鍵入新專案自動立案與回寫綁定），在 <button className="inline-link" onClick={() => navigate('/dn-list')}>出貨單列表</button> 透過狀態欄位 (全部/待出貨/已出貨/已歸還) 快速查詢，於 <button className="inline-link" onClick={() => navigate('/lent-list')}>設備/硬體借用列表</button> 掌握逾期與驗收歸還。
                     </div>
                   </div>
                   <div className="checklist-item">

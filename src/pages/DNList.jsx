@@ -59,8 +59,9 @@ const DNList = ({ isSplitMode = false }) => {
     setLoading(true);
     setError(null);
     try {
-      // 確保 signed_doc 欄位存在
+      // 確保 signed_doc 與 project_name 欄位存在
       try { await window.electronAPI.namedQuery('migrateOutboundSignedDoc'); } catch(e) {}
+      try { await window.electronAPI.namedQuery('migrateOutboundProjectName'); } catch(e) {}
       const res = await window.electronAPI.namedQuery('fetchDNList');
       if (res.success) {
         setDnRecords(res.rows || []);
@@ -230,6 +231,16 @@ const DNList = ({ isSplitMode = false }) => {
            const assetStatus = selectedDN.request_type === 'LEND' ? 'LENT' : 'SHIPPED';
            const res = await window.electronAPI.namedQuery('updateAssetStatusAndLocationBySn', [assetStatus, destLocation, item.sn]);
            if (!res.success) throw new Error(`變更序號 [${item.sn}] 狀態時發生錯誤。`);
+
+           // 若出貨單有專案，確保資產與搭載零組件之專案屬性完整寫入
+           if (selectedDN.project_name && item.sn) {
+             try {
+               await window.electronAPI.namedQuery('updateAssetProjectAndClientBySn', [selectedDN.project_name, selectedDN.customer, item.sn]);
+               await window.electronAPI.namedQuery('updateMountedHardwareProjectAndClient', [selectedDN.project_name, selectedDN.customer, item.sn]);
+             } catch (err) {
+               console.error('Ensure project on delivery error:', err);
+             }
+           }
         }
       }
 
@@ -317,13 +328,13 @@ const DNList = ({ isSplitMode = false }) => {
 
   return (
     <div className="page-container" style={isSplitMode ? { padding: 0, minHeight: 'auto', backgroundColor: 'transparent' } : {}}>
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--page-title-margin, 14px)', flexWrap: 'wrap', gap: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <div>
-            <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
-              <FileText size={26} color="var(--primary-color)" /> 出貨單列表 (Delivery Note List)
+            <h1 style={{ fontSize: 'var(--page-title-size, 1.35rem)', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
+              <FileText size={24} color="var(--primary-color)" /> 出貨單列表 (Delivery Note List)
             </h1>
-            <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>檢視所有出貨紀錄、追蹤出單進度並執行扣庫存作業。</p>
+            <p style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '2px', marginBottom: 0 }}>檢視所有出貨紀錄、追蹤出單進度並執行扣庫存作業。</p>
           </div>
           {!isSplitMode && (
             <div style={{ display: 'flex', backgroundColor: 'var(--bg-surface-subtle)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
@@ -343,40 +354,39 @@ const DNList = ({ isSplitMode = false }) => {
                   boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)'
                 }}
               >
-                <FileText size={18} /> ➕ 新增出貨單 (New Delivery Note)
+                <FileText size={16} /> ➕ 新增出貨單 (New Delivery Note)
               </button>
             </div>
           )}
         </div>
-        <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-           <div style={{ backgroundColor: 'var(--bg-surface)', padding: '12px 24px', borderRadius: '12px', border: '1px solid var(--border-color)', display: 'flex', gap: '24px', boxShadow: 'var(--card-shadow)' }}>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+           <div style={{ backgroundColor: 'var(--bg-surface)', padding: '8px 16px', borderRadius: '12px', border: '1px solid var(--border-color)', display: 'flex', gap: '16px', boxShadow: 'var(--card-shadow)' }}>
               <div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>待處理出貨單</div>
-                <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#f97316' }}>
+                <div style={{ fontSize: '1.15rem', fontWeight: 700, color: '#f97316' }}>
                   {pendingCount} <span style={{ fontSize: '0.8rem', fontWeight: 400, opacity: 0.8 }}>單</span>
                 </div>
               </div>
-
            </div>
         </div>
       </div>
 
-      <div className="card-surface" style={{ padding: '0', overflow: 'hidden' }}>
-        <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '16px', alignItems: 'center', backgroundColor: 'var(--bg-surface-subtle)' }}>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flex: 1 }}>
+      <div className="card-surface" style={{ padding: '0', overflow: 'hidden', borderRadius: 'var(--card-radius, 14px)' }}>
+        <div style={{ padding: '12px 18px', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '12px', alignItems: 'center', backgroundColor: 'var(--bg-surface-subtle)', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flex: 1, flexWrap: 'wrap' }}>
             <select 
               value={searchField} 
               onChange={e => setSearchField(e.target.value)}
-              style={{ padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--input-border)', outline: 'none', fontSize: '0.9rem', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', cursor: 'pointer', minWidth: '130px' }}
+              style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--input-border)', outline: 'none', fontSize: '0.88rem', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', cursor: 'pointer', minWidth: '120px' }}
             >
               {searchOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
             </select>
-            <div style={{ position: 'relative', width: '320px' }}>
-              <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-subtle)' }} />
+            <div style={{ position: 'relative', width: '280px' }}>
+              <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-subtle)' }} />
               <input 
                 type="text" 
                 placeholder={`搜尋${searchOptions.find(o => o.value === searchField)?.label}...`} 
-                style={{ width: '100%', padding: '10px 10px 10px 40px', borderRadius: '10px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', outline: 'none', fontSize: '0.9rem', boxSizing: 'border-box' }}
+                style={{ width: '100%', padding: '8px 10px 8px 36px', borderRadius: '8px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', outline: 'none', fontSize: '0.88rem', boxSizing: 'border-box' }}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
@@ -385,7 +395,7 @@ const DNList = ({ isSplitMode = false }) => {
             <select
               value={statusFilter}
               onChange={e => setStatusFilter(e.target.value)}
-              style={{ padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--input-border)', outline: 'none', fontSize: '0.9rem', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', cursor: 'pointer', minWidth: '130px' }}
+              style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--input-border)', outline: 'none', fontSize: '0.88rem', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', cursor: 'pointer', minWidth: '120px' }}
             >
               <option value="ALL">全部狀態</option>
               <option value="PENDING">已建立 (待出貨)</option>
@@ -393,45 +403,45 @@ const DNList = ({ isSplitMode = false }) => {
               <option value="RETURNED">已歸還</option>
             </select>
             
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '10px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)' }}>
-              <Calendar size={18} color="var(--text-subtle)" />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '8px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)' }}>
+              <Calendar size={16} color="var(--text-subtle)" />
               <input 
                 type="date" 
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                style={{ border: 'none', outline: 'none', fontSize: '0.9rem', color: 'var(--text-main)', background: 'transparent' }} 
+                style={{ border: 'none', outline: 'none', fontSize: '0.85rem', color: 'var(--text-main)', background: 'transparent' }} 
               />
               <span style={{ color: 'var(--text-subtle)' }}>-</span>
               <input 
                 type="date" 
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                style={{ border: 'none', outline: 'none', fontSize: '0.9rem', color: 'var(--text-main)', background: 'transparent' }} 
+                style={{ border: 'none', outline: 'none', fontSize: '0.85rem', color: 'var(--text-main)', background: 'transparent' }} 
               />
             </div>
           </div>
         </div>
 
-        <div style={{ padding: '24px' }}>
+        <div style={{ padding: '16px' }}>
           {error && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '16px', backgroundColor: 'rgba(239, 68, 68, 0.12)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '8px', marginBottom: '20px' }}>
-              <AlertCircle size={20} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 16px', backgroundColor: 'rgba(239, 68, 68, 0.12)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '8px', marginBottom: '14px' }}>
+              <AlertCircle size={18} />
               <span>{error}</span>
             </div>
           )}
 
-          <div style={{ overflowX: 'auto' }}>
+          <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', minHeight: '300px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
+            <thead style={{ position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)' }}>
               <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--border-color)', backgroundColor: 'var(--table-header-bg)' }}>
-                <th style={{ padding: '14px 12px', fontSize: '0.95rem', color: 'var(--table-header-text)', fontWeight: 800 }}>D/N 單號</th>
-                <th style={{ padding: '14px 12px', fontSize: '0.95rem', color: 'var(--table-header-text)', fontWeight: 800 }}>出貨日期</th>
-                <th style={{ padding: '14px 12px', fontSize: '0.95rem', color: 'var(--table-header-text)', fontWeight: 800 }}>客戶/對象</th>
-                <th style={{ padding: '14px 12px', fontSize: '0.95rem', color: 'var(--table-header-text)', fontWeight: 800 }}>項目數</th>
-                <th style={{ padding: '14px 12px', fontSize: '0.95rem', color: 'var(--table-header-text)', fontWeight: 800 }}>建立者</th>
-                <th style={{ padding: '14px 12px', fontSize: '0.95rem', color: 'var(--table-header-text)', fontWeight: 800 }}>狀態</th>
-                <th style={{ padding: '14px 12px', fontSize: '0.95rem', color: 'var(--table-header-text)', fontWeight: 800 }}>簽收單據</th>
-                <th style={{ padding: '14px 12px', fontSize: '0.95rem', color: 'var(--table-header-text)', fontWeight: 800 }}>操作</th>
+                <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>D/N 單號</th>
+                <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>出貨日期</th>
+                <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>客戶/對象</th>
+                <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>項目數</th>
+                <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>建立者</th>
+                <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>狀態</th>
+                <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>簽收單據</th>
+                <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>操作</th>
               </tr>
             </thead>
             <tbody>

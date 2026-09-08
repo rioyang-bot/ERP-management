@@ -46,9 +46,9 @@ const Devices = ({ isSplitMode = false }) => {
     return val.trim();
   };
 
-  const fetchModels = useCallback(async (brandName, typeName) => {
-    if (!brandName || !typeName) { setModels([]); return { modelNames: [] }; }
-    const res = await window.electronAPI.namedQuery('fetchModelsByBrandType', [brandName, typeName]);
+  const fetchModels = useCallback(async (brandName) => {
+    if (!brandName) { setModels([]); return { modelNames: [] }; }
+    const res = await window.electronAPI.namedQuery('fetchModelsByBrand', [brandName]);
     if (res.success) {
       const modelNames = res.rows.map(r => r.name);
       setModels(modelNames);
@@ -58,17 +58,18 @@ const Devices = ({ isSplitMode = false }) => {
     return { modelNames: [] };
   }, []);
 
-  const fetchTypes = useCallback(async (brandName, currentType = '') => {
-    if (!brandName) { setTypes([]); return { typeNames: [], nextType: '' }; }
-    const res = await window.electronAPI.namedQuery('fetchTypesByBrand', [brandName]);
+  const fetchTypes = useCallback(async (currentType = '') => {
+    const res = await window.electronAPI.namedQuery('fetchDeviceTypes');
     if (res.success) {
       const typeNames = res.rows.map(r => r.name);
       setTypes(typeNames);
-      const nextType = typeNames.includes(currentType) ? currentType : (typeNames[0] || '');
-      setFormData(prev => ({ ...prev, type: nextType }));
-      return { typeNames, nextType };
+      setFormData(prev => ({
+        ...prev,
+        type: typeNames.includes(prev.type) ? prev.type : (typeNames.includes(currentType) ? currentType : '')
+      }));
+      return { typeNames };
     }
-    return { typeNames: [], nextType: '' };
+    return { typeNames: [] };
   }, []);
 
   const fetchBrands = useCallback(async () => {
@@ -78,11 +79,10 @@ const Devices = ({ isSplitMode = false }) => {
       if (!formData.brand && res.rows.length > 0) {
         const initialBrand = res.rows[0].name;
         setFormData(prev => ({ ...prev, brand: initialBrand }));
-        const { nextType } = await fetchTypes(initialBrand);
-        if (nextType) await fetchModels(initialBrand, nextType);
+        await fetchModels(initialBrand);
       }
     }
-  }, [formData.brand, fetchTypes, fetchModels]);
+  }, [formData.brand, fetchModels]);
 
   const fetchCustomers = useCallback(async () => {
     const res = await window.electronAPI.namedQuery('fetchCustomers');
@@ -112,50 +112,50 @@ const Devices = ({ isSplitMode = false }) => {
       await Promise.all([
         fetchCustomers(),
         fetchSettings(),
+        fetchTypes(),
         fetchBrands(),
         fetchProjects()
       ]);
     };
     initData();
-  }, [fetchCustomers, fetchSettings, fetchBrands, fetchProjects]);
+  }, [fetchCustomers, fetchSettings, fetchTypes, fetchBrands, fetchProjects]);
 
   const handleAddType = async () => {
     const name = validateAndSanitize(newTypeName, '類型名稱');
-    if (!name || !formData.brand) return;
-    const res = await window.electronAPI.namedQuery('insertDeviceType', ['設備', formData.brand, name]);
+    if (!name) return;
+    const res = await window.electronAPI.namedQuery('insertDeviceType', ['設備', name]);
     if (res.success) {
       setFormData(prev => ({ ...prev, type: name }));
-      await fetchTypes(formData.brand, name);
+      await fetchTypes(name);
       setNewTypeName(''); setShowAddType(false);
     }
   };
 
   const handleDeleteType = async (typeName) => {
     if (!confirm(`確定要刪除「${typeName}」嗎？`)) return;
-    const res = await window.electronAPI.namedQuery('deleteDeviceType', [typeName, '設備', formData.brand]);
+    const res = await window.electronAPI.namedQuery('deleteDeviceType', [typeName, '設備']);
     if (res.success) {
-      await fetchTypes(formData.brand, formData.type);
+      await fetchTypes();
       if (formData.type === typeName) setFormData(prev => ({ ...prev, type: '' }));
     }
   };
 
   const handleAddModel = async () => {
     const name = validateAndSanitize(newModelName, '型號名稱');
-    if (!name || !formData.brand || !formData.type) return;
-    const res = await window.electronAPI.namedQuery('insertDeviceModel', [formData.brand, formData.type, '設備', name]);
+    if (!name || !formData.brand) return alert('請先選擇或輸入廠牌');
+    const res = await window.electronAPI.namedQuery('insertDeviceModel', [formData.brand, name, '設備']);
     if (res.success) {
-      if (res.rowCount === 0) return alert('失敗：關聯錯誤');
       setFormData(prev => ({ ...prev, model: name }));
-      await fetchModels(formData.brand, formData.type);
+      await fetchModels(formData.brand);
       setNewModelName(''); setShowAddModel(false);
     }
   };
 
   const handleDeleteModel = async (modelName) => {
     if (!confirm(`確定要刪除「${modelName}」嗎？`)) return;
-    const res = await window.electronAPI.namedQuery('deleteDeviceModel', [modelName, formData.brand, formData.type, '設備']);
+    const res = await window.electronAPI.namedQuery('deleteDeviceModel', [modelName, formData.brand, '設備']);
     if (res.success) {
-      await fetchModels(formData.brand, formData.type);
+      await fetchModels(formData.brand);
       if (formData.model === modelName) setFormData(prev => ({ ...prev, model: '' }));
     }
   };
@@ -166,7 +166,8 @@ const Devices = ({ isSplitMode = false }) => {
     const res = await window.electronAPI.namedQuery('insertDeviceBrand', ['設備', name]);
     if (res.success) {
       setFormData(prev => ({ ...prev, brand: name }));
-      await fetchBrands(); await fetchTypes(name);
+      await fetchBrands();
+      await fetchModels(name);
       setNewBrandName(''); setShowAddBrand(false);
     }
   };
@@ -176,7 +177,10 @@ const Devices = ({ isSplitMode = false }) => {
     const res = await window.electronAPI.namedQuery('deleteDeviceBrand', [brandName, '設備']);
     if (res.success) {
       await fetchBrands();
-      if (formData.brand === brandName) setFormData(prev => ({ ...prev, brand: '' }));
+      if (formData.brand === brandName) {
+        setFormData(prev => ({ ...prev, brand: '', model: '' }));
+        setModels([]);
+      }
     }
   };
 
@@ -184,11 +188,7 @@ const Devices = ({ isSplitMode = false }) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
     if (name === 'brand') {
-      const { nextType } = await fetchTypes(value);
-      if (nextType) await fetchModels(value, nextType);
-      else setModels([]);
-    } else if (name === 'type') {
-      await fetchModels(formData.brand, value);
+      await fetchModels(value);
     } else if (name === 'client') {
       const matches = customers.filter(c => c.name === value);
       if (matches.length === 1) {
@@ -279,19 +279,19 @@ const Devices = ({ isSplitMode = false }) => {
   };
 
   const containerStyle = {
-    padding: isSplitMode ? '0' : '24px',
+    padding: isSplitMode ? '0' : 'var(--content-padding, 16px)',
     backgroundColor: isSplitMode ? 'transparent' : 'var(--bg-app)',
-    minHeight: isSplitMode ? 'auto' : '100vh',
+    minHeight: isSplitMode ? 'auto' : 'calc(100vh - var(--topbar-height, 56px) - 40px)',
     width: '100%',
     boxSizing: 'border-box'
   };
   const cardStyle = {
     backgroundColor: 'var(--bg-surface)',
-    borderRadius: '16px',
-    padding: '24px',
+    borderRadius: '12px',
+    padding: 'var(--card-padding, 16px)',
     boxShadow: 'var(--card-shadow)',
     border: '1px solid var(--border-color)',
-    marginBottom: isSplitMode ? '0' : '24px',
+    marginBottom: isSplitMode ? '0' : 'var(--spacing-md, 16px)',
     color: 'var(--text-main)',
     width: '100%',
     boxSizing: 'border-box'
@@ -365,6 +365,20 @@ const Devices = ({ isSplitMode = false }) => {
           <div key={formKey} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
               <div>
+                <label style={labelStyle}>類型 (Type) <span style={{ color: '#ef4444' }}>*</span></label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <select name="type" value={formData.type} onChange={handleChange} style={inputStyle}>
+                    <option value="">請選擇類型</option>
+                    {types.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  <button onClick={() => setShowAddType(!showAddType)} style={iconButtonStyle}><Plus size={18} /></button>
+                  <button onClick={() => setShowManageType(!showManageType)} style={iconButtonStyle}><Settings2 size={18} /></button>
+                </div>
+                {showAddType && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newTypeName} onChange={e => setNewTypeName(e.target.value)} style={inputStyle} /><button onClick={handleAddType} style={{ ...iconButtonStyle, background: 'var(--primary-color)', color: '#fff' }}><Plus size={18} /></button></div>}
+                {showManageType && <div style={{ marginTop: '8px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-surface-subtle)' }}>{types.map(t => (<div key={t} style={manageItemStyle}><span>{t}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteType(t)} /></div>))}</div>}
+              </div>
+
+              <div>
                 <label style={labelStyle}>廠牌 (Brand) <span style={{ color: '#ef4444' }}>*</span></label>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <select name="brand" value={formData.brand} onChange={handleChange} style={inputStyle}>
@@ -375,19 +389,6 @@ const Devices = ({ isSplitMode = false }) => {
                 </div>
                 {showAddBrand && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newBrandName} onChange={e => setNewBrandName(e.target.value)} style={inputStyle} /><button onClick={handleAddBrand} style={{ ...iconButtonStyle, background: 'var(--primary-color)', color: '#fff' }}><Plus size={18} /></button></div>}
                 {showManageBrand && <div style={{ marginTop: '8px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-surface-subtle)' }}>{brands.map(b => (<div key={b.id} style={manageItemStyle}><span>{b.name}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteBrand(b.name)} /></div>))}</div>}
-              </div>
-
-              <div>
-                <label style={labelStyle}>類型 (Type) <span style={{ color: '#ef4444' }}>*</span></label>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <select name="type" value={formData.type} onChange={handleChange} style={inputStyle}>
-                    {types.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                  <button onClick={() => setShowAddType(!showAddType)} style={iconButtonStyle}><Plus size={18} /></button>
-                  <button onClick={() => setShowManageType(!showManageType)} style={iconButtonStyle}><Settings2 size={18} /></button>
-                </div>
-                {showAddType && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newTypeName} onChange={e => setNewTypeName(e.target.value)} style={inputStyle} /><button onClick={handleAddType} style={{ ...iconButtonStyle, background: 'var(--primary-color)', color: '#fff' }}><Plus size={18} /></button></div>}
-                {showManageType && <div style={{ marginTop: '8px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-surface-subtle)' }}>{types.map(t => (<div key={t} style={manageItemStyle}><span>{t}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteType(t)} /></div>))}</div>}
               </div>
 
               <div>

@@ -6,52 +6,109 @@ import {
 } from 'lucide-react';
 import { logEvent, ACTION_TYPES, MODULE_MAP } from '../utils/auditLogger';
 import { parseSpreadsheetFile, fixMojibake } from '../utils/encoding';
+import { matchPartnerContact } from '../utils/partnerMatcher';
 
 const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] }) => {
   const [file, setFile] = useState(null);
   const [fileName, setFileName] = useState('');
+  const [typeInput, setTypeInput] = useState(''); // 類型 (Type) - 匯入參數設定 (無預設值)
   const [brandInput, setBrandInput] = useState(''); // 廠牌 (Brand) - 無預設值
+  const [existingTypes, setExistingTypes] = useState([]);
   const [rawJsonData, setRawJsonData] = useState([]);
   const [isProcessingFile, setIsProcessingFile] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
   const [activeTab, setActiveTab] = useState('all'); // 'all', 'valid', 'skipped', 'duplicate'
   const [existingSns, setExistingSns] = useState(new Set());
+  const [partners, setPartners] = useState([]);
   const [importResult, setImportResult] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
 
+  // 自訂欄位與對應狀態
+  const [customFieldDefs, setCustomFieldDefs] = useState([]);
+  const [fileHeaders, setFileHeaders] = useState([]);
+  const [customFieldMapping, setCustomFieldMapping] = useState({});
+
   const fileInputRef = useRef(null);
 
-  // 取得資料庫中現有的所有序號 (用於防重複檢核)
+  // 取得資料庫中現有的所有序號、設備類型與自訂欄位定義 (用於防重複檢核與欄位對應)
   useEffect(() => {
     if (!isOpen) {
       resetState();
       return;
     }
-    const loadExistingSns = async () => {
+    const loadInitialData = async () => {
       try {
-        const res = await window.electronAPI.namedQuery('fetchAssetSns');
-        if (res.success && res.rows) {
-          const snSet = new Set(res.rows.map(r => (r.sn || '').trim().toUpperCase()).filter(Boolean));
+        const [snsRes, typesRes, defsRes, partnersRes] = await Promise.all([
+          window.electronAPI.namedQuery('fetchAssetSns'),
+          window.electronAPI.namedQuery('fetchDeviceTypes'),
+          window.electronAPI.namedQuery('getSystemSetting', ['customFieldDefinitions']),
+          window.electronAPI.namedQuery('fetchPartners')
+        ]);
+        if (snsRes.success && snsRes.rows) {
+          const snSet = new Set(snsRes.rows.map(r => (r.sn || '').trim().toUpperCase()).filter(Boolean));
           setExistingSns(snSet);
         }
+        if (typesRes && typesRes.success && typesRes.rows) {
+          setExistingTypes(typesRes.rows);
+        }
+        if (partnersRes && partnersRes.success && partnersRes.rows) {
+          setPartners(partnersRes.rows);
+        }
+        if (defsRes && defsRes.success && defsRes.rows.length > 0) {
+          const allDefs = defsRes.rows[0].value || [];
+          const nativeIds = ['hostname', 'sn', 'specification', 'client', 'location', 'installed_date', 'system_date', 'warranty_expire', 'customer_warranty_expire'];
+          const customOnly = allDefs.filter(d => d && d.id && !nativeIds.includes(d.id));
+          setCustomFieldDefs(customOnly);
+        }
       } catch (err) {
-        console.error('Failed to load existing SNs:', err);
+        console.error('Failed to load initial data for batch import:', err);
       }
     };
-    loadExistingSns();
+    loadInitialData();
   }, [isOpen]);
 
   const resetState = () => {
     setFile(null);
     setFileName('');
+    setTypeInput('');
     setBrandInput('');
     setRawJsonData([]);
+    setFileHeaders([]);
+    setCustomFieldMapping({});
     setIsProcessingFile(false);
     setIsImporting(false);
     setImportProgress(0);
     setActiveTab('all');
     setImportResult(null);
+  };
+
+  // 智慧比對自訂欄位與檔案表頭
+  const findMatchingHeader = (headers, field) => {
+    if (!headers || headers.length === 0 || !field) return '';
+    const normalize = (str) => String(str || '').trim().toLowerCase().replace(/[\s_\(\)\-\[\]\/\\:]/g, '');
+    const normLabel = normalize(field.label);
+    const normId = normalize(field.id);
+
+    // 1. 精準比對 (對應 label 或 id)
+    for (const h of headers) {
+      const nh = normalize(h);
+      if (nh && (nh === normLabel || nh === normId)) {
+        return h;
+      }
+    }
+
+    // 2. 寬鬆比對 (包含關係，字元數大於等於 2)
+    if (normLabel.length >= 2) {
+      for (const h of headers) {
+        const nh = normalize(h);
+        if (nh && (nh.includes(normLabel) || normLabel.includes(nh))) {
+          return h;
+        }
+      }
+    }
+
+    return '';
   };
 
   // 標準化日期解析函式 (支援 DD/MM/YYYY, YYYY-MM-DD, YYYY/MM/DD, Excel 序列數字)
@@ -109,13 +166,27 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
 
   // 智慧匹配欄位名稱
   const findColumnValue = (rowObj, possibleKeys) => {
+    // 1. 精準比對 (忽略空格、大小寫、符號等)
     for (const key of Object.keys(rowObj)) {
-      const normalizedKey = key.trim().toLowerCase().replace(/[\s_\(\)\-]/g, '');
+      const normalizedKey = key.trim().toLowerCase().replace(/[\s_\(\)\-\[\]\/\\:]/g, '');
       for (const pk of possibleKeys) {
-        const normalizedPk = pk.trim().toLowerCase().replace(/[\s_\(\)\-]/g, '');
+        const normalizedPk = pk.trim().toLowerCase().replace(/[\s_\(\)\-\[\]\/\\:]/g, '');
         if (normalizedKey === normalizedPk) {
           const val = rowObj[key];
           return val !== undefined && val !== null ? fixMojibake(String(val).trim()) : '';
+        }
+      }
+    }
+    // 2. 寬鬆包含比對 (例如標題包含 "spec" 或 "規格")
+    for (const key of Object.keys(rowObj)) {
+      const normalizedKey = key.trim().toLowerCase().replace(/[\s_\(\)\-\[\]\/\\:]/g, '');
+      for (const pk of possibleKeys) {
+        const normalizedPk = pk.trim().toLowerCase().replace(/[\s_\(\)\-\[\]\/\\:]/g, '');
+        if (normalizedPk.length >= 2 && normalizedKey.includes(normalizedPk)) {
+          const val = rowObj[key];
+          if (val !== undefined && val !== null && String(val).trim() !== '') {
+            return fixMojibake(String(val).trim());
+          }
         }
       }
     }
@@ -139,6 +210,17 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
         return;
       }
 
+      const headers = Object.keys(rawJson[0] || {});
+      setFileHeaders(headers);
+
+      // 自動匹配自訂欄位
+      const initialMapping = {};
+      customFieldDefs.forEach(field => {
+        const matched = findMatchingHeader(headers, field);
+        if (matched) initialMapping[field.id] = matched;
+      });
+      setCustomFieldMapping(initialMapping);
+
       setRawJsonData(rawJson);
     } catch (err) {
       console.error('File parsing error:', err);
@@ -146,6 +228,76 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
     } finally {
       setIsProcessingFile(false);
     }
+  };
+
+  // 當表頭或自訂欄位載入後，補充尚未配對的欄位
+  useEffect(() => {
+    if (fileHeaders.length === 0 || customFieldDefs.length === 0) return;
+    setCustomFieldMapping(prev => {
+      let changed = false;
+      const updated = { ...prev };
+      customFieldDefs.forEach(field => {
+        if (updated[field.id] === undefined) {
+          const matched = findMatchingHeader(fileHeaders, field);
+          if (matched) {
+            updated[field.id] = matched;
+            changed = true;
+          } else {
+            updated[field.id] = '';
+          }
+        }
+      });
+      return changed ? updated : prev;
+    });
+  }, [fileHeaders, customFieldDefs]);
+
+  // 重新自動對應
+  const handleAutoDetectMapping = () => {
+    if (!fileHeaders || fileHeaders.length === 0) return;
+    const newMapping = {};
+    customFieldDefs.forEach(field => {
+      const matched = findMatchingHeader(fileHeaders, field);
+      newMapping[field.id] = matched || '';
+    });
+    setCustomFieldMapping(newMapping);
+  };
+
+  // 下載設備匯入範本 (動態包含自訂欄位)
+  const handleDownloadTemplate = () => {
+    const sampleRow = {
+      'Customer': '元大Yuanta',
+      'Contact': 'Niky',
+      'HostName': 'HFT24C-16',
+      'System Type': 'Server',
+      'Brand': 'BlackCore',
+      'Model': 'BCHFT-1PC',
+      'Specification': 'Intel Xeon 24C / 128G RAM',
+      'Location': 'BQDC-Rack01',
+      'Serial Number ( Current )': 'SN-SAMPLE-001',
+      'Project Date ( Installed )': '2024-07-11',
+      'Customer Warranty Expire': '2027-06-20',
+      'Status': 'ACTIVE'
+    };
+
+    // 動態附加上自訂欄位
+    customFieldDefs.forEach(f => {
+      sampleRow[f.label] = `範例${f.label}`;
+    });
+
+    const sampleData = [
+      sampleRow,
+      {
+        ...sampleRow,
+        'HostName': 'HFT24C-17',
+        'Serial Number ( Current )': 'SN-SAMPLE-002',
+        'Status': 'SHIPPED'
+      }
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(sampleData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Devices_Import_Template');
+    XLSX.writeFile(wb, '設備清單批次匯入範本.xlsx');
   };
 
   // 動態即時解析並檢核每一筆資料 (依據 rawJsonData 與 brandInput)
@@ -161,15 +313,20 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
       if (values.length === 0) return; // 略過全空行
 
       const customer = findColumnValue(row, ['Customer', '客戶', 'Client', '客戶名稱']);
+      const rawContact = findColumnValue(row, [
+        'Contact', 'Contact Person', 'ContactPerson', '聯絡人', '窗口',
+        '客戶聯絡人', '廠商聯絡人', '聯絡窗口', '窗口人員', '負責人', 'Contact Name'
+      ]);
       const hostname = findColumnValue(row, ['HostName', '主機名稱', 'Hostname', 'Host Name']);
-      const systemType = findColumnValue(row, ['System Type', 'Type', '類型', '系統類型', 'SystemType']);
+      const rawSystemType = findColumnValue(row, ['System Type', 'Type', '類型', '系統類型', 'SystemType']);
+      const systemType = (rawSystemType || typeInput || '').trim();
       const model = findColumnValue(row, ['Model', '型號', '設備型號']);
       const location = findColumnValue(row, ['Location', '地點', '位置', '機房']);
       const sn = findColumnValue(row, ['Serial Number ( Current )', 'Serial Number (Current)', 'Serial Number', 'SerialNumber', '序號', 'SN', 'S/N']);
       const rawBrand = findColumnValue(row, ['Brand', '廠牌', '品牌']);
       const brand = (rawBrand || brandInput || '').trim();
 
-      const rawSpec = findColumnValue(row, ['Specification', 'Spec', '規格', '設備規格', '規格內容']);
+      const rawSpec = findColumnValue(row, ['Specification', 'Spec', '規格', '設備規格', '規格內容', '產品規格', '硬體規格', '規格描述', '詳細規格', '規格說明']);
       const spec = (rawSpec || '').trim();
 
       const installedDateRaw = row['Project Date ( Installed )'] || row['Project Date( Installed )'] || row['Project Date (Installed)'] || findColumnValue(row, ['Project Date ( Installed )', 'Installed Date', '安裝日期', 'Project Date']);
@@ -200,13 +357,13 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
       let status = 'VALID';
       let skipReason = '';
 
-      // 規則 1：廠牌 / 型號 / 類型 缺一不建立
-      if (!brand) {
+      // 規則 1：類型 / 廠牌 / 型號 缺一不建立
+      if (!systemType) {
+        status = 'SKIPPED';
+        skipReason = '缺少類型 (Type)';
+      } else if (!brand) {
         status = 'SKIPPED';
         skipReason = '缺少廠牌 (Brand)';
-      } else if (!systemType || !systemType.trim()) {
-        status = 'SKIPPED';
-        skipReason = '缺少類型 (System Type)';
       } else if (!model || !model.trim()) {
         status = 'SKIPPED';
         skipReason = '缺少型號 (Model)';
@@ -225,6 +382,42 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
         }
       }
 
+      // 提取自訂欄位數值
+      const rowCustomAttrs = {};
+      let customContactVal = '';
+      customFieldDefs.forEach(f => {
+        const mappedCol = customFieldMapping[f.id];
+        if (mappedCol && row[mappedCol] !== undefined && row[mappedCol] !== null) {
+          const v = String(row[mappedCol]).trim();
+          if (v !== '') {
+            rowCustomAttrs[f.id] = fixMojibake(v);
+            if (f.id === 'contact_person' || (f.label && f.label.includes('聯絡人'))) {
+              customContactVal = v;
+            }
+          }
+        }
+      });
+
+      // 智慧客戶與聯絡人比對 (支援模糊比對，如 Niky imc -> Niky)
+      const inputContact = (rawContact || customContactVal || '').trim();
+      const contactMatch = matchPartnerContact(inputContact, customer, partners);
+      const finalContact = contactMatch.contact_person;
+      const finalPhone = contactMatch.contact_phone;
+      const finalClient = (customer || '').trim() || contactMatch.client;
+
+      if (finalContact) {
+        rowCustomAttrs.contact_person = finalContact;
+      }
+      if (finalPhone) {
+        rowCustomAttrs.contact_phone = finalPhone;
+      }
+      if (contactMatch.isFuzzy && inputContact) {
+        rowCustomAttrs.raw_contact_person = inputContact;
+      }
+      if (contactMatch.matched_project && !rowCustomAttrs.project_name) {
+        rowCustomAttrs.project_name = contactMatch.matched_project;
+      }
+
       processed.push({
         rowIndex: index + 2, // 包含標題列的行號 (Excel 1-based)
         brand,
@@ -232,7 +425,10 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
         model: (model || '').trim(),
         specification: spec,
         sn: (sn || '').trim(),
-        client: (customer || '').trim(),
+        client: finalClient,
+        contact_person: finalContact,
+        contact_phone: finalPhone,
+        contactMatch,
         hostname: (hostname || '').trim(),
         location: (location || '').trim(),
         installed_date: installedDate,
@@ -243,12 +439,13 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
         status,
         skipReason,
         rawInstalledDate: installedDateRaw,
-        rawWarrantyExpire: warrantyExpireRaw
+        rawWarrantyExpire: warrantyExpireRaw,
+        custom_attributes: rowCustomAttrs
       });
     });
 
     return processed;
-  }, [rawJsonData, brandInput, existingSns]);
+  }, [rawJsonData, typeInput, brandInput, existingSns, customFieldMapping, customFieldDefs, partners]);
 
   const handleDragOver = (e) => {
     e.preventDefault();
@@ -306,20 +503,14 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
     try {
       // 1. 預先收集所有 distinct (brand, type, model) 與客戶，確保主檔存在
       const brandSet = new Set();
-      const typeMap = new Map(); // brand -> Set of types
-      const modelMap = new Map(); // `${brand}___${type}` -> Set of models
+      const typeSet = new Set();
+      const modelSet = new Set(); // `${brand}___${model}`
       const clientSet = new Set();
 
       validItems.forEach(item => {
-        brandSet.add(item.brand);
-        
-        if (!typeMap.has(item.brand)) typeMap.set(item.brand, new Set());
-        typeMap.get(item.brand).add(item.type);
-
-        const key = `${item.brand}___${item.type}`;
-        if (!modelMap.has(key)) modelMap.set(key, new Set());
-        modelMap.get(key).add(item.model);
-
+        if (item.brand) brandSet.add(item.brand);
+        if (item.type) typeSet.add(item.type);
+        if (item.brand && item.model) modelSet.add(`${item.brand}___${item.model}`);
         if (item.client) clientSet.add(item.client);
       });
 
@@ -328,19 +519,15 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
         await window.electronAPI.namedQuery('insertDeviceBrand', ['設備', brand]);
       }
 
-      // 自動補齊 類型 (Type)
-      for (const [brand, types] of typeMap.entries()) {
-        for (const type of types) {
-          await window.electronAPI.namedQuery('insertDeviceType', ['設備', brand, type]);
-        }
+      // 自動補齊 類型 (Type) - 通用庫
+      for (const type of typeSet) {
+        await window.electronAPI.namedQuery('insertDeviceType', ['設備', type]);
       }
 
-      // 自動補齊 型號 (Model)
-      for (const [key, models] of modelMap.entries()) {
-        const [brand, type] = key.split('___');
-        for (const model of models) {
-          await window.electronAPI.namedQuery('insertDeviceModel', [brand, type, '設備', model]);
-        }
+      // 自動補齊 型號 (Model) - 隸屬於廠牌
+      for (const bm of modelSet) {
+        const [brand, model] = bm.split('___');
+        await window.electronAPI.namedQuery('insertDeviceModel', [brand, model, '設備']);
       }
 
       // 自動補齊 客戶 (Partner)
@@ -382,7 +569,10 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
           const customAttributes = {
             batch_imported: true,
             import_file: fileName,
-            import_date: new Date().toISOString()
+            import_date: new Date().toISOString(),
+            ...(item.contact_person ? { contact_person: item.contact_person } : {}),
+            ...(item.contact_phone ? { contact_phone: item.contact_phone } : {}),
+            ...(item.custom_attributes || {})
           };
 
           const insertAssetRes = await window.electronAPI.namedQuery('insertAssetRecord', [
@@ -470,14 +660,15 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
       alignItems: 'center',
       justifyContent: 'center',
       zIndex: 1000,
-      padding: '20px'
+      padding: '10px'
     }}>
       <div style={{
         backgroundColor: 'var(--bg-surface)',
         borderRadius: '16px',
-        width: '95%',
-        maxWidth: '1200px',
-        maxHeight: '90vh',
+        width: '96%',
+        maxWidth: '1360px',
+        height: parsedRows.length > 0 ? '96vh' : 'auto',
+        maxHeight: 'calc(100vh - 16px)',
         display: 'flex',
         flexDirection: 'column',
         boxShadow: 'var(--modal-shadow)',
@@ -487,32 +678,32 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
       }}>
         {/* Header */}
         <div style={{
-          padding: '20px 24px',
+          padding: '10px 18px',
           borderBottom: '1px solid var(--border-color)',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
           backgroundColor: 'var(--bg-surface-subtle)'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div style={{
-              width: '40px',
-              height: '40px',
-              borderRadius: '10px',
+              width: '34px',
+              height: '34px',
+              borderRadius: '8px',
               backgroundColor: 'rgba(16, 185, 129, 0.15)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               color: '#10b981'
             }}>
-              <FileSpreadsheet size={22} />
+              <FileSpreadsheet size={18} />
             </div>
             <div>
-              <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: 'var(--text-main)' }}>
+              <h2 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: 'var(--text-main)' }}>
                 設備清單批次匯入 (Excel / CSV Batch Import)
               </h2>
-              <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
-                支援設備清單自動解析、主檔層級建立（廠牌/類型/型號）與序號防重複檢核
+              <p style={{ margin: '1px 0 0 0', fontSize: '11px', color: 'var(--text-muted)' }}>
+                支援設備清單自動解析、主檔層級建立（類型/廠牌/型號）與序號防重複檢核
               </p>
             </div>
           </div>
@@ -527,16 +718,17 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
               borderRadius: '8px'
             }}
           >
-            <X size={20} />
+            <X size={18} />
           </button>
         </div>
 
         {/* Modal Body */}
-        <div style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div style={{ padding: '8px 16px', overflowY: parsedRows.length > 0 ? 'hidden' : 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
           
           {/* 上傳與設定區域 */}
           {!importResult && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 2fr', gap: '20px' }}>
+            parsedRows.length === 0 ? (
+            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 2fr', gap: '16px' }}>
               {/* 參數設定卡片 */}
               <div style={{
                 backgroundColor: 'var(--bg-surface-subtle)',
@@ -551,15 +743,48 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
                   <Layers size={16} color="var(--primary-color)" /> 匯入參數設定
                 </h4>
 
+                {/* 類型 (Type) * */}
                 <div>
                   <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '6px' }}>
-                    廠牌 (Brand)
+                    類型 (Type) *
+                  </label>
+                  <input
+                    type="text"
+                    value={typeInput}
+                    onChange={(e) => setTypeInput(e.target.value)}
+                    placeholder="請輸入或選擇類型 (例: Server, Switch)"
+                    list="batch-import-types-list"
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--input-border)',
+                      backgroundColor: 'var(--input-bg)',
+                      color: 'var(--input-text)',
+                      fontSize: '13px',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                  <datalist id="batch-import-types-list">
+                    {existingTypes.map(t => (
+                      <option key={t.id || t.name} value={t.name} />
+                    ))}
+                  </datalist>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                    若檔案中無「類型」欄位，將以此處填寫之類型建檔；若檔案與此處皆未填寫，將判定為缺少類型並略過。
+                  </span>
+                </div>
+
+                {/* 廠牌 (Brand) * */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                    廠牌 (Brand) *
                   </label>
                   <input
                     type="text"
                     value={brandInput}
                     onChange={(e) => setBrandInput(e.target.value)}
-                    placeholder="請輸入或選擇廠牌 (例: BlackCore)"
+                    placeholder="請輸入或選擇廠牌 (例: Dell, Supermicro)"
                     list="batch-import-brands-list"
                     style={{
                       width: '100%',
@@ -584,18 +809,28 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
 
                 {/* 規則說明小提示 */}
                 <div style={{
-                  padding: '10px 12px',
+                  padding: '12px 14px',
                   backgroundColor: 'rgba(234, 88, 12, 0.08)',
                   borderRadius: '8px',
                   border: '1px solid rgba(234, 88, 12, 0.2)',
                   fontSize: '12px',
                   color: '#ea580c',
-                  lineHeight: '1.4'
+                  lineHeight: '1.5'
                 }}>
-                  <div style={{ fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
+                  <div style={{ fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '6px' }}>
                     <Info size={14} /> 內控規則檢核提醒：
                   </div>
-                  <b>廠牌／型號／類型 缺一不建立</b>。若清單中該行未填寫 Model（如 Model 欄為空白），系統將自動判定為略過且不建立。
+                  <ul style={{ margin: 0, paddingLeft: '16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <li>
+                      <b>類型／廠牌／型號 缺一不建立</b>：清單或左側參數設定需完整指定「類型」與「廠牌」，且清單中「型號」不得空白，任一缺少系統將自動略過。
+                    </li>
+                    <li>
+                      <b>階層架構對應</b>：類型為通用分類池，型號則直接歸屬至指定廠牌旗下建立主檔。
+                    </li>
+                    <li>
+                      <b>序號防重複檢核</b>：檔案內重複出現或已存在於系統設備清冊之序號，將自動標記為重複並阻擋重複建檔。
+                    </li>
+                  </ul>
                 </div>
               </div>
 
@@ -648,27 +883,301 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
                   支援 .xlsx, .xls, .csv 格式 (自動比對 Customer, HostName, System Type, Model, SN 等欄位)
                 </div>
 
-                {fileName && (
+                <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap', justifyContent: 'center' }}>
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      resetState();
+                      handleDownloadTemplate();
                     }}
                     style={{
-                      marginTop: '12px',
-                      padding: '4px 12px',
+                      padding: '6px 14px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: 'var(--bg-surface)',
+                      color: 'var(--primary-color)',
+                      fontSize: '12px',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <Download size={14} /> 下載匯入範本 (含自訂欄位)
+                  </button>
+
+                  {fileName && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        resetState();
+                      }}
+                      style={{
+                        padding: '6px 14px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: 'var(--bg-surface)',
+                        color: 'var(--text-muted)',
+                        fontSize: '12px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      重新選擇檔案
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+            ) : (
+            /* 解析完成後的精簡資訊列 (Compact Bar) - 專為 1080P 筆電最佳化 */
+            <div style={{
+              backgroundColor: 'var(--bg-surface-subtle)',
+              padding: '6px 14px',
+              borderRadius: '8px',
+              border: '1px solid var(--border-color)',
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '10px'
+            }}>
+              {/* 檔案資訊與按鈕 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: '700', color: 'var(--text-main)' }}>
+                  <FileSpreadsheet size={16} color="#10b981" />
+                  <span>{fileName || '已載入檔案'}</span>
+                </div>
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={(e) => e.target.files && handleFileProcess(e.target.files[0])}
+                  accept=".xlsx, .xls, .csv"
+                  style={{ display: 'none' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: 'var(--bg-surface)',
+                    color: 'var(--text-main)',
+                    fontSize: '11px',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  重新選檔
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadTemplate}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: 'var(--bg-surface)',
+                    color: 'var(--primary-color)',
+                    fontSize: '11px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <Download size={12} /> 範本
+                </button>
+              </div>
+
+              {/* 橫向並排之 類型 (Type) 與 廠牌 (Brand) 輸入框 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-main)', whiteSpace: 'nowrap' }}>
+                    類型 (Type) *
+                  </label>
+                  <input
+                    type="text"
+                    value={typeInput}
+                    onChange={(e) => setTypeInput(e.target.value)}
+                    placeholder="請輸入或選擇類型 (例: Server, Switch)"
+                    list="batch-import-types-list-compact"
+                    style={{
+                      width: '180px',
+                      padding: '5px 10px',
+                      borderRadius: '6px',
+                      border: '1px solid var(--input-border)',
+                      backgroundColor: 'var(--input-bg)',
+                      color: 'var(--input-text)',
+                      fontSize: '12px'
+                    }}
+                  />
+                  <datalist id="batch-import-types-list-compact">
+                    {existingTypes.map(t => (
+                      <option key={t.id || t.name} value={t.name} />
+                    ))}
+                  </datalist>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-main)', whiteSpace: 'nowrap' }}>
+                    廠牌 (Brand) *
+                  </label>
+                  <input
+                    type="text"
+                    value={brandInput}
+                    onChange={(e) => setBrandInput(e.target.value)}
+                    placeholder="請輸入或選擇廠牌 (例: Dell, Supermicro)"
+                    list="batch-import-brands-list-compact"
+                    style={{
+                      width: '180px',
+                      padding: '5px 10px',
+                      borderRadius: '6px',
+                      border: '1px solid var(--input-border)',
+                      backgroundColor: 'var(--input-bg)',
+                      color: 'var(--input-text)',
+                      fontSize: '12px'
+                    }}
+                  />
+                  <datalist id="batch-import-brands-list-compact">
+                    {existingBrands.map(b => (
+                      <option key={b.id || b.name} value={b.name} />
+                    ))}
+                  </datalist>
+                </div>
+
+                <div style={{
+                  fontSize: '11px',
+                  color: '#ea580c',
+                  backgroundColor: 'rgba(234, 88, 12, 0.08)',
+                  padding: '4px 8px',
+                  borderRadius: '6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  whiteSpace: 'nowrap'
+                }}>
+                  <Info size={12} />
+                  <span>缺一不建立 (Model 為空將自動略過)</span>
+                </div>
+              </div>
+            </div>
+            )
+          )}
+
+          {/* 自訂欄位對應面板 - 專為 1080P 筆電最佳化緊湊高度 */}
+          {!importResult && customFieldDefs.length > 0 && (
+            <div style={{
+              backgroundColor: 'var(--bg-surface-subtle)',
+              padding: '8px 14px',
+              borderRadius: '10px',
+              border: '1px solid var(--border-color)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                <h4 style={{ margin: 0, fontSize: '13px', fontWeight: '700', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Layers size={15} color="var(--primary-color)" />
+                  自訂欄位對應 (Custom Fields Mapping)
+                  <span style={{ fontSize: '11px', fontWeight: 'normal', color: 'var(--text-muted)' }}>
+                    （系統已載入 {customFieldDefs.length} 個自訂欄位，可指定與 Excel 檔案表頭之對應）
+                  </span>
+                </h4>
+                {fileHeaders.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleAutoDetectMapping}
+                    style={{
+                      padding: '3px 8px',
+                      fontSize: '11px',
+                      fontWeight: '600',
                       borderRadius: '6px',
                       border: '1px solid var(--border-color)',
                       backgroundColor: 'var(--bg-surface)',
-                      color: 'var(--text-muted)',
-                      fontSize: '12px',
-                      cursor: 'pointer'
+                      color: 'var(--primary-color)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
                     }}
                   >
-                    重新選擇檔案
+                    <RefreshCw size={11} /> 重新自動匹配
                   </button>
                 )}
+              </div>
+
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+                gap: '8px',
+                maxHeight: '115px',
+                overflowY: 'auto'
+              }}>
+                {customFieldDefs.map(field => {
+                  const mappedCol = customFieldMapping[field.id] || '';
+                  const isMatched = Boolean(mappedCol);
+                  return (
+                    <div key={field.id} style={{
+                      padding: '6px 10px',
+                      backgroundColor: 'var(--bg-surface)',
+                      border: isMatched ? '1px solid #10b981' : '1px solid var(--border-color)',
+                      borderRadius: '6px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{
+                          fontSize: '11px',
+                          fontWeight: '700',
+                          color: field.color || 'var(--text-main)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '5px'
+                        }}>
+                          <span style={{
+                            width: '7px',
+                            height: '7px',
+                            borderRadius: '50%',
+                            backgroundColor: field.color || '#3b82f6',
+                            display: 'inline-block'
+                          }} />
+                          {field.label}
+                        </span>
+                        {isMatched ? (
+                          <span style={{ fontSize: '10px', color: '#10b981', fontWeight: '700' }}>✓ 已對應: {mappedCol}</span>
+                        ) : (
+                          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>未對應</span>
+                        )}
+                      </div>
+
+                      <select
+                        aria-label={`自訂欄位對應: ${field.label}`}
+                        value={mappedCol}
+                        onChange={(e) => setCustomFieldMapping(prev => ({ ...prev, [field.id]: e.target.value }))}
+                        style={{
+                          width: '100%',
+                          padding: '4px 6px',
+                          borderRadius: '5px',
+                          border: '1px solid var(--input-border)',
+                          backgroundColor: 'var(--input-bg)',
+                          color: 'var(--input-text)',
+                          fontSize: '11px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <option value="">-- 未對應 (不匯入) --</option>
+                        {fileHeaders.map(h => (
+                          <option key={h} value={h}>{h}</option>
+                        ))}
+                      </select>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -737,30 +1246,30 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
 
           {/* 解析後的即時預覽與檢核區域 */}
           {parsedRows.length > 0 && !importResult && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', flex: 1 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, minHeight: 0 }}>
               {/* 統計與頁籤切換列 */}
               <div style={{
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 flexWrap: 'wrap',
-                gap: '12px',
+                gap: '8px',
                 borderBottom: '1px solid var(--border-color)',
-                paddingBottom: '12px'
+                paddingBottom: '8px'
               }}>
                 {/* 頁籤 */}
-                <div style={{ display: 'flex', gap: '8px' }}>
+                <div style={{ display: 'flex', gap: '6px' }}>
                   <button
                     type="button"
                     onClick={() => setActiveTab('all')}
                     style={{
-                      padding: '6px 14px',
-                      borderRadius: '8px',
+                      padding: '5px 12px',
+                      borderRadius: '6px',
                       border: 'none',
                       backgroundColor: activeTab === 'all' ? 'var(--primary-color)' : 'var(--bg-surface-subtle)',
                       color: activeTab === 'all' ? '#fff' : 'var(--text-main)',
                       fontWeight: '700',
-                      fontSize: '13px',
+                      fontSize: '12px',
                       cursor: 'pointer'
                     }}
                   >
@@ -770,13 +1279,13 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
                     type="button"
                     onClick={() => setActiveTab('valid')}
                     style={{
-                      padding: '6px 14px',
-                      borderRadius: '8px',
+                      padding: '5px 12px',
+                      borderRadius: '6px',
                       border: 'none',
                       backgroundColor: activeTab === 'valid' ? '#10b981' : 'var(--bg-surface-subtle)',
                       color: activeTab === 'valid' ? '#fff' : 'var(--text-main)',
                       fontWeight: '700',
-                      fontSize: '13px',
+                      fontSize: '12px',
                       cursor: 'pointer'
                     }}
                   >
@@ -786,13 +1295,13 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
                     type="button"
                     onClick={() => setActiveTab('skipped')}
                     style={{
-                      padding: '6px 14px',
-                      borderRadius: '8px',
+                      padding: '5px 12px',
+                      borderRadius: '6px',
                       border: 'none',
                       backgroundColor: activeTab === 'skipped' ? '#f59e0b' : 'var(--bg-surface-subtle)',
                       color: activeTab === 'skipped' ? '#fff' : 'var(--text-main)',
                       fontWeight: '700',
-                      fontSize: '13px',
+                      fontSize: '12px',
                       cursor: 'pointer'
                     }}
                   >
@@ -802,13 +1311,13 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
                     type="button"
                     onClick={() => setActiveTab('duplicate')}
                     style={{
-                      padding: '6px 14px',
-                      borderRadius: '8px',
+                      padding: '5px 12px',
+                      borderRadius: '6px',
                       border: 'none',
                       backgroundColor: activeTab === 'duplicate' ? '#ef4444' : 'var(--bg-surface-subtle)',
                       color: activeTab === 'duplicate' ? '#fff' : 'var(--text-main)',
                       fontWeight: '700',
-                      fontSize: '13px',
+                      fontSize: '12px',
                       cursor: 'pointer'
                     }}
                   >
@@ -816,142 +1325,210 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
                   </button>
                 </div>
 
-                <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-                  預計將寫入 <b style={{ color: '#10b981', fontSize: '15px' }}>{stats.valid}</b> 台設備
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                  預計將寫入 <b style={{ color: '#10b981', fontSize: '14px' }}>{stats.valid}</b> 台設備
                 </div>
               </div>
 
-              {/* 預覽表格 */}
+              {/* 預覽表格容器 - 1080P 自適應彈性填滿 */}
               <div style={{
                 border: '1px solid var(--border-color)',
-                borderRadius: '10px',
-                overflow: 'auto',
-                maxHeight: '380px',
-                backgroundColor: 'var(--bg-surface)'
+                borderRadius: '8px',
+                backgroundColor: 'var(--bg-surface)',
+                flex: 1,
+                minHeight: '260px',
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden'
               }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' }}>
-                  <thead style={{
-                    position: 'sticky',
-                    top: 0,
-                    backgroundColor: 'var(--bg-surface-subtle)',
-                    borderBottom: '2px solid var(--border-color)',
-                    zIndex: 10
-                  }}>
-                    <tr>
-                      <th style={{ padding: '10px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>行號</th>
-                      <th style={{ padding: '10px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>檢核狀態</th>
-                      <th style={{ padding: '10px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>初始狀態</th>
-                      <th style={{ padding: '10px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>設備序號 (SN)</th>
-                      <th style={{ padding: '10px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>客戶 (Customer)</th>
-                      <th style={{ padding: '10px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>主機名稱 (HostName)</th>
-                      <th style={{ padding: '10px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>廠牌 (Brand)</th>
-                      <th style={{ padding: '10px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>類型 (Type)</th>
-                      <th style={{ padding: '10px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>型號 (Model)</th>
-                      <th style={{ padding: '10px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>地點 (Location)</th>
-                      <th style={{ padding: '10px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>安裝日期</th>
-                      <th style={{ padding: '10px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>保固到期</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {displayedRows.length === 0 ? (
+                <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' }}>
+                    <thead style={{
+                      position: 'sticky',
+                      top: 0,
+                      backgroundColor: 'var(--bg-surface-subtle)',
+                      borderBottom: '2px solid var(--border-color)',
+                      zIndex: 10
+                    }}>
                       <tr>
-                        <td colSpan={12} style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                          此分類目前無資料
-                        </td>
+                        <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>行號</th>
+                        <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>檢核狀態</th>
+                        <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>初始狀態</th>
+                        <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>設備序號 (SN)</th>
+                        <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>客戶 (Customer)</th>
+                        <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>聯絡人 (Contact)</th>
+                        <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>主機名稱 (HostName)</th>
+                        <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>廠牌 (Brand)</th>
+                        <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>類型 (Type)</th>
+                        <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>型號 (Model)</th>
+                        <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>規格 (Spec)</th>
+                        <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>地點 (Location)</th>
+                        <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>安裝日期</th>
+                        <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>保固到期</th>
+                        {customFieldDefs.filter(f => customFieldMapping[f.id]).map(f => (
+                          <th key={f.id} style={{ padding: '8px 12px', fontWeight: '700', color: f.color || 'var(--primary-color)', whiteSpace: 'nowrap' }}>
+                            {f.label} <span style={{ fontSize: '10px', opacity: 0.8 }}>(自訂)</span>
+                          </th>
+                        ))}
                       </tr>
-                    ) : (
-                      displayedRows.map((row, idx) => {
-                        let badgeBg = 'rgba(16, 185, 129, 0.1)';
-                        let badgeColor = '#10b981';
-                        let badgeText = '可建立';
+                    </thead>
+                    <tbody>
+                      {displayedRows.length === 0 ? (
+                        <tr>
+                          <td colSpan={14 + customFieldDefs.filter(f => customFieldMapping[f.id]).length} style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                            此分類目前無資料
+                          </td>
+                        </tr>
+                      ) : (
+                        displayedRows.map((row, idx) => {
+                          let badgeBg = 'rgba(16, 185, 129, 0.1)';
+                          let badgeColor = '#10b981';
+                          let badgeText = '可建立';
 
-                        if (row.status === 'SKIPPED') {
-                          badgeBg = 'rgba(245, 158, 11, 0.15)';
-                          badgeColor = '#f59e0b';
-                          badgeText = row.skipReason || '略過';
-                        } else if (row.status === 'DUPLICATE') {
-                          badgeBg = 'rgba(239, 68, 68, 0.15)';
-                          badgeColor = '#ef4444';
-                          badgeText = row.skipReason || '重複序號';
-                        }
+                          if (row.status === 'SKIPPED') {
+                            badgeBg = 'rgba(245, 158, 11, 0.15)';
+                            badgeColor = '#f59e0b';
+                            badgeText = row.skipReason || '略過';
+                          } else if (row.status === 'DUPLICATE') {
+                            badgeBg = 'rgba(239, 68, 68, 0.15)';
+                            badgeColor = '#ef4444';
+                            badgeText = row.skipReason || '重複序號';
+                          }
 
-                        return (
-                          <tr key={idx} style={{
-                            borderBottom: '1px solid var(--border-color)',
-                            backgroundColor: row.status === 'SKIPPED' ? 'rgba(245, 158, 11, 0.02)' : (row.status === 'DUPLICATE' ? 'rgba(239, 68, 68, 0.02)' : 'transparent'),
-                            opacity: row.status !== 'VALID' ? 0.75 : 1
-                          }}>
-                            <td style={{ padding: '8px 12px', color: 'var(--text-muted)' }}>#{row.rowIndex}</td>
-                            <td style={{ padding: '8px 12px' }}>
-                              <span style={{
-                                padding: '3px 8px',
-                                borderRadius: '12px',
-                                fontSize: '11px',
-                                fontWeight: '700',
-                                backgroundColor: badgeBg,
-                                color: badgeColor,
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '4px'
-                              }}>
-                                {row.status === 'VALID' && <CheckCircle2 size={12} />}
-                                {row.status === 'SKIPPED' && <AlertTriangle size={12} />}
-                                {row.status === 'DUPLICATE' && <XCircle size={12} />}
-                                {badgeText}
-                              </span>
-                            </td>
-                            <td style={{ padding: '8px 12px' }}>
-                              <span style={{
-                                padding: '2px 8px',
-                                borderRadius: '12px',
-                                fontSize: '11px',
-                                fontWeight: '700',
-                                backgroundColor: row.itemStatus === 'SHIPPED' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(16, 185, 129, 0.15)',
-                                color: row.itemStatus === 'SHIPPED' ? '#3b82f6' : '#10b981',
-                                whiteSpace: 'nowrap'
-                              }}>
-                                {row.itemStatus === 'SHIPPED' ? '📦 已出貨' : '🟢 在庫'}
-                              </span>
-                            </td>
-                            <td style={{ padding: '8px 12px', fontWeight: '700', fontFamily: 'monospace', color: 'var(--text-main)' }}>
-                              {row.sn || '<無序號>'}
-                            </td>
-                            <td style={{ padding: '8px 12px', color: 'var(--text-main)' }}>{row.client || '-'}</td>
-                            <td style={{ padding: '8px 12px', color: 'var(--text-main)' }}>{row.hostname || '-'}</td>
-                            <td style={{ padding: '8px 12px', color: 'var(--text-main)' }}>
-                              {row.brand ? (
-                                row.brand
-                              ) : (
-                                <span style={{ color: '#ef4444', fontWeight: '700' }}>[未填廠牌]</span>
-                              )}
-                            </td>
-                            <td style={{ padding: '8px 12px', color: 'var(--text-main)' }}>
-                              {row.type ? (
-                                <span style={{ padding: '2px 6px', borderRadius: '4px', backgroundColor: 'var(--bg-surface-subtle)', fontWeight: '600' }}>
-                                  {row.type}
+                          return (
+                            <tr key={idx} style={{
+                              borderBottom: '1px solid var(--border-color)',
+                              backgroundColor: row.status === 'SKIPPED' ? 'rgba(245, 158, 11, 0.02)' : (row.status === 'DUPLICATE' ? 'rgba(239, 68, 68, 0.02)' : 'transparent'),
+                              opacity: row.status !== 'VALID' ? 0.75 : 1
+                            }}>
+                              <td style={{ padding: '8px 12px', color: 'var(--text-muted)' }}>#{row.rowIndex}</td>
+                              <td style={{ padding: '8px 12px' }}>
+                                <span style={{
+                                  padding: '3px 8px',
+                                  borderRadius: '12px',
+                                  fontSize: '11px',
+                                  fontWeight: '700',
+                                  backgroundColor: badgeBg,
+                                  color: badgeColor,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}>
+                                  {row.status === 'VALID' && <CheckCircle2 size={12} />}
+                                  {row.status === 'SKIPPED' && <AlertTriangle size={12} />}
+                                  {row.status === 'DUPLICATE' && <XCircle size={12} />}
+                                  {badgeText}
                                 </span>
-                              ) : (
-                                <span style={{ color: '#ef4444', fontWeight: '700' }}>[空白]</span>
-                              )}
-                            </td>
-                            <td style={{ padding: '8px 12px', color: 'var(--text-main)' }}>
-                              {row.model ? (
-                                <span style={{ padding: '2px 6px', borderRadius: '4px', backgroundColor: 'var(--bg-surface-subtle)', fontWeight: '600' }}>
-                                  {row.model}
+                              </td>
+                              <td style={{ padding: '8px 12px' }}>
+                                <span style={{
+                                  padding: '2px 8px',
+                                  borderRadius: '12px',
+                                  fontSize: '11px',
+                                  fontWeight: '700',
+                                  backgroundColor: row.itemStatus === 'SHIPPED' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                                  color: row.itemStatus === 'SHIPPED' ? '#3b82f6' : '#10b981',
+                                  whiteSpace: 'nowrap'
+                                }}>
+                                  {row.itemStatus === 'SHIPPED' ? '📦 已出貨' : '🟢 在庫' }
                                 </span>
-                              ) : (
-                                <span style={{ color: '#ef4444', fontWeight: '700' }}>[空白]</span>
-                              )}
-                            </td>
-                            <td style={{ padding: '8px 12px', color: 'var(--text-muted)' }}>{row.location || '-'}</td>
-                            <td style={{ padding: '8px 12px', color: 'var(--text-muted)' }}>{row.installed_date || '-'}</td>
-                            <td style={{ padding: '8px 12px', color: 'var(--text-muted)' }}>{row.warranty_expire || '-'}</td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
+                              </td>
+                              <td style={{ padding: '8px 12px', fontWeight: '700', fontFamily: 'monospace', color: 'var(--text-main)' }}>
+                                {row.sn || '<無序號>'}
+                              </td>
+                              <td style={{ padding: '8px 12px', color: 'var(--text-main)' }}>{row.client || '-'}</td>
+                              <td style={{ padding: '8px 12px' }}>
+                                {row.contact_person ? (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                    <span style={{ fontWeight: '600', color: 'var(--text-main)' }}>
+                                      {row.contact_person}
+                                    </span>
+                                    {row.contactMatch?.isFuzzy && (
+                                      <span style={{
+                                        fontSize: '10px',
+                                        color: '#10b981',
+                                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                                        padding: '1px 5px',
+                                        borderRadius: '4px',
+                                        display: 'inline-block',
+                                        width: 'fit-content'
+                                      }} title={`原文字串: ${row.contactMatch?.raw_contact || row.contactMatch?.raw_client || ''}`}>
+                                        🔗 已帶入: {row.contact_person}
+                                      </span>
+                                    )}
+                                    {row.contactMatch?.matched_project && (
+                                      <span style={{
+                                        fontSize: '10px',
+                                        color: '#3b82f6',
+                                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                        padding: '1px 5px',
+                                        borderRadius: '4px',
+                                        display: 'inline-block',
+                                        width: 'fit-content'
+                                      }}>
+                                        🏷️ 專案: {row.contactMatch.matched_project}
+                                      </span>
+                                    )}
+                                    {row.contact_phone && (
+                                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                        📞 {row.contact_phone}
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span style={{ color: 'var(--text-muted)' }}>-</span>
+                                )}
+                              </td>
+                              <td style={{ padding: '8px 12px', color: 'var(--text-main)' }}>{row.hostname || '-'}</td>
+                              <td style={{ padding: '8px 12px', color: 'var(--text-main)' }}>
+                                {row.brand ? (
+                                  row.brand
+                                ) : (
+                                  <span style={{ color: '#ef4444', fontWeight: '700' }}>[未填廠牌]</span>
+                                )}
+                              </td>
+                              <td style={{ padding: '8px 12px', color: 'var(--text-main)' }}>
+                                {row.type ? (
+                                  <span style={{ padding: '2px 6px', borderRadius: '4px', backgroundColor: 'var(--bg-surface-subtle)', fontWeight: '600' }}>
+                                    {row.type}
+                                  </span>
+                                ) : (
+                                  <span style={{ color: '#ef4444', fontWeight: '700' }}>[空白]</span>
+                                )}
+                              </td>
+                              <td style={{ padding: '8px 12px', color: 'var(--text-main)' }}>
+                                {row.model ? (
+                                  <span style={{ padding: '2px 6px', borderRadius: '4px', backgroundColor: 'var(--bg-surface-subtle)', fontWeight: '600' }}>
+                                    {row.model}
+                                  </span>
+                                ) : (
+                                  <span style={{ color: '#ef4444', fontWeight: '700' }}>[空白]</span>
+                                )}
+                              </td>
+                              <td style={{ padding: '8px 12px', color: 'var(--text-main)', maxWidth: '220px' }}>
+                                {row.specification ? (
+                                  <span style={{ fontSize: '11px', color: 'var(--text-main)', fontWeight: '600', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', display: 'block' }} title={row.specification}>
+                                    {row.specification}
+                                  </span>
+                                ) : (
+                                  <span style={{ color: 'var(--text-subtle)', fontSize: '11px' }}>-</span>
+                                )}
+                              </td>
+                              <td style={{ padding: '8px 12px', color: 'var(--text-muted)' }}>{row.location || '-'}</td>
+                              <td style={{ padding: '8px 12px', color: 'var(--text-muted)' }}>{row.installed_date || '-'}</td>
+                              <td style={{ padding: '8px 12px', color: 'var(--text-muted)' }}>{row.warranty_expire || '-'}</td>
+                              {customFieldDefs.filter(f => customFieldMapping[f.id]).map(f => (
+                                <td key={f.id} style={{ padding: '8px 12px', color: 'var(--text-main)', whiteSpace: 'nowrap' }}>
+                                  {row.custom_attributes?.[f.id] || <span style={{ color: 'var(--text-muted)' }}>--</span>}
+                                </td>
+                              ))}
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
@@ -972,7 +1549,7 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
 
         {/* Modal Footer */}
         <div style={{
-          padding: '16px 24px',
+          padding: '8px 16px',
           borderTop: '1px solid var(--border-color)',
           display: 'flex',
           justifyContent: 'space-between',
@@ -984,18 +1561,18 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
               <span>已載入 <b>{parsedRows.length}</b> 筆設備紀錄</span>
             )}
           </div>
-          <div style={{ display: 'flex', gap: '12px' }}>
+          <div style={{ display: 'flex', gap: '10px' }}>
             <button
               onClick={onClose}
               disabled={isImporting}
               style={{
-                padding: '8px 18px',
+                padding: '7px 16px',
                 borderRadius: '8px',
                 border: '1px solid var(--border-color)',
                 backgroundColor: 'var(--bg-surface)',
                 color: 'var(--text-main)',
                 fontWeight: '600',
-                fontSize: '13px',
+                fontSize: '12px',
                 cursor: isImporting ? 'not-allowed' : 'pointer'
               }}
             >
@@ -1006,13 +1583,13 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
                 onClick={handleExecuteImport}
                 disabled={isImporting || stats.valid === 0}
                 style={{
-                  padding: '8px 22px',
+                  padding: '7px 20px',
                   borderRadius: '8px',
                   border: 'none',
                   backgroundColor: stats.valid > 0 ? '#10b981' : '#9ca3af',
                   color: '#fff',
                   fontWeight: '700',
-                  fontSize: '13px',
+                  fontSize: '12px',
                   cursor: (isImporting || stats.valid === 0) ? 'not-allowed' : 'pointer',
                   display: 'flex',
                   alignItems: 'center',
@@ -1022,11 +1599,11 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
               >
                 {isImporting ? (
                   <>
-                    <RefreshCw size={15} style={{ animation: 'spin 1s linear infinite' }} /> 匯入建檔中...
+                    <RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> 匯入建檔中...
                   </>
                 ) : (
                   <>
-                    <CheckCircle2 size={16} /> 確認匯入 ({stats.valid} 筆可建立)
+                    <CheckCircle2 size={15} /> 確認匯入 ({stats.valid} 筆可建立)
                   </>
                 )}
               </button>

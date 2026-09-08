@@ -1,11 +1,11 @@
 /* Stocktaking.css */
 
 .st-container {
-  padding: 24px;
+  padding: var(--content-padding, 16px 20px);
   max-width: 100%;
   box-sizing: border-box;
   background-color: var(--bg-app);
-  min-height: 100vh;
+  min-height: 100%;
   animation: fadeIn 0.3s ease-in-out;
 }
 
@@ -19,41 +19,41 @@
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 24px;
+  margin-bottom: var(--page-title-margin, 14px);
   flex-wrap: wrap;
-  gap: 16px;
+  gap: 10px;
 }
 
 .st-title {
-  font-size: 26px;
+  font-size: var(--page-title-size, 1.35rem);
   font-weight: 800;
   color: var(--text-main);
   margin: 0;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   letter-spacing: -0.5px;
 }
 
 .st-subtitle {
   color: var(--text-muted);
-  font-size: 14px;
-  margin: 6px 0 0 0;
+  font-size: 12px;
+  margin: 2px 0 0 0;
 }
 
 .st-header-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .st-btn {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 18px;
+  gap: 6px;
+  padding: 8px 14px;
   border-radius: 8px;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
@@ -86,13 +86,13 @@
 .st-tabs {
   display: flex;
   border-bottom: 2px solid var(--border-color);
-  margin-bottom: 20px;
-  gap: 32px;
+  margin-bottom: 12px;
+  gap: 20px;
 }
 
 .st-tab {
-  padding: 12px 4px;
-  font-size: 16px;
+  padding: 8px 4px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-muted);
   cursor: pointer;
@@ -114,40 +114,37 @@
 /* Filters */
 .st-filter-card {
   background: var(--bg-surface);
-  border-radius: 12px;
-  padding: 20px;
+  border-radius: var(--card-radius, 12px);
+  padding: 12px 16px;
   box-shadow: var(--card-shadow);
   border: 1px solid var(--border-color);
-  margin-bottom: 24px;
+  margin-bottom: 12px;
 }
 
 .st-filter-grid {
   display: flex;
   gap: 16px;
-  align-items: flex-end;
 }
 
 .st-filter-item {
-  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .st-filter-label {
   font-size: 12px;
   font-weight: 700;
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.3px;
 }
 
 .st-input, .st-select {
   width: 100%;
-  padding: 10px 14px;
+  padding: 8px 12px;
   border-radius: 8px;
   border: 1px solid var(--input-border);
-  font-size: 14px;
+  font-size: 13px;
   color: var(--input-text);
   background-color: var(--input-bg);
   transition: all 0.2s;
@@ -162,7 +159,7 @@
 /* Table Card */
 .st-table-card {
   background: var(--bg-surface);
-  border-radius: 12px;
+  border-radius: var(--card-radius, 12px);
   box-shadow: var(--card-shadow);
   border: 1px solid var(--border-color);
   overflow: hidden;
@@ -171,7 +168,7 @@
 }
 
 .st-table-header {
-  padding: 16px 24px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--border-color);
   display: flex;
   justify-content: space-between;
@@ -180,7 +177,7 @@
 }
 
 .st-table-title {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--text-main);
   display: flex;
@@ -193,14 +190,16 @@
   color: var(--primary-color);
   padding: 2px 8px;
   border-radius: 12px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
 }
 
 /* Table container */
 .st-table-wrapper {
   overflow-x: auto;
-  max-height: 60vh;
+  overflow-y: auto;
+  max-height: calc(100vh - 280px);
+  min-height: 300px;
 }
 
 .st-table {
@@ -213,21 +212,21 @@
   position: sticky;
   top: 0;
   background: var(--table-header-bg);
-  padding: 14px 16px;
+  padding: var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px);
   font-size: 12px;
   font-weight: 700;
   color: var(--table-header-text);
-  text-transform: uppercase;
   border-bottom: 2px solid var(--border-color);
-  z-index: 10;
+  box-shadow: 0 1px 0 var(--border-color);
+  z-index: 4;
   white-space: nowrap;
 }
 
 .st-table td {
-  padding: 16px;
+  padding: var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px);
   border-bottom: 1px solid var(--table-border);
   color: var(--text-main);
-  font-size: 14px;
+  font-size: 13px;
   vertical-align: middle;
 }
 

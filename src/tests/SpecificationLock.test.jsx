@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import DeviceList from '../pages/DeviceList';
 import HwList from '../pages/HwList';
 
-describe('設備與硬體列表編輯詳細資訊中規格欄位不可變動 (Specification Locked) 測試', () => {
+describe('設備與硬體列表編輯詳細資訊中型號與規格欄位可自由修改測試', () => {
   const namedQueryMock = vi.fn();
 
   beforeEach(() => {
@@ -21,7 +21,7 @@ describe('設備與硬體列表編輯詳細資訊中規格欄位不可變動 (Sp
     };
   });
 
-  it('DeviceList 編輯詳細資訊時，規格欄位應呈現鎖定/唯讀狀態，且儲存時不覆寫主檔規格', async () => {
+  it('DeviceList 編輯詳細資訊時，型號與規格欄位可編輯，儲存時能同步更新品項主檔', async () => {
     const mockDevice = {
       id: 101,
       item_master_id: 55,
@@ -54,6 +54,18 @@ describe('設備與硬體列表編輯詳細資訊中規格欄位不可變動 (Sp
       if (query === 'fetchSystemSetting' || query === 'getSystemSetting') {
         return Promise.resolve({ success: true, rows: [] });
       }
+      if (query === 'findItemMaster') {
+        return Promise.resolve({ success: true, rows: [] });
+      }
+      if (query === 'countAssetsByMasterId') {
+        return Promise.resolve({ success: true, rows: [{ count: 1 }] });
+      }
+      if (query === 'updateItemMasterSpecs') {
+        return Promise.resolve({ success: true });
+      }
+      if (query === 'insertDeviceModel') {
+        return Promise.resolve({ success: true });
+      }
       if (query === 'updateAssetDetails') {
         return Promise.resolve({ success: true });
       }
@@ -81,29 +93,34 @@ describe('設備與硬體列表編輯詳細資訊中規格欄位不可變動 (Sp
     const editBtn = await screen.findByText(/編輯詳細資訊/i);
     fireEvent.click(editBtn);
 
-    // 驗證彈窗中標題與規格鎖定狀態
+    // 驗證彈窗中標題與型號/規格可編輯
     expect(screen.getByText('修改詳細設備資訊')).toBeInTheDocument();
-    expect(screen.getByText(/規格 \(Specification\) \(鎖定\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/^型號 \(Model\) \*/i)).toBeInTheDocument();
+    expect(screen.getByText(/規格 \(Specification\)/i)).toBeInTheDocument();
 
     const specInput = screen.getByDisplayValue('Fixed Device Specification 64G');
     expect(specInput).toBeInTheDocument();
-    expect(specInput).toBeDisabled();
-    expect(specInput).toHaveAttribute('readonly');
+    expect(specInput).not.toBeDisabled();
+
+    const modelInput = screen.getByDisplayValue('BCHFT-1PC');
+    expect(modelInput).toBeInTheDocument();
+    expect(modelInput).not.toBeDisabled();
+
+    // 變更規格與型號
+    fireEvent.change(specInput, { target: { value: 'Updated Spec 128G' } });
+    fireEvent.change(modelInput, { target: { value: 'BCHFT-2PC' } });
 
     // 點擊儲存變更
     const saveBtn = screen.getByText(/儲存變更/i);
     fireEvent.click(saveBtn);
 
     await waitFor(() => {
+      expect(namedQueryMock).toHaveBeenCalledWith('updateItemMasterSpecs', ['Updated Spec 128G', 'BCHFT-2PC', 55]);
       expect(namedQueryMock).toHaveBeenCalledWith('updateAssetDetails', expect.any(Array));
     });
-
-    // 驗證並未呼叫 updateItemMasterSpecs
-    const calls = namedQueryMock.mock.calls.map(c => c[0]);
-    expect(calls).not.toContain('updateItemMasterSpecs');
   });
 
-  it('HwList 編輯詳細資訊時，硬體規格欄位應呈現鎖定/唯讀狀態，且儲存時不覆寫主檔規格', async () => {
+  it('HwList 編輯詳細資訊時，型號與規格欄位可編輯，儲存時能同步更新品項主檔', async () => {
     const mockHw = {
       id: 202,
       item_master_id: 88,
@@ -133,6 +150,18 @@ describe('設備與硬體列表編輯詳細資訊中規格欄位不可變動 (Sp
       if (query === 'getSystemSetting') {
         return Promise.resolve({ success: true, rows: [] });
       }
+      if (query === 'findItemMaster') {
+        return Promise.resolve({ success: true, rows: [] });
+      }
+      if (query === 'countAssetsByMasterId') {
+        return Promise.resolve({ success: true, rows: [{ count: 1 }] });
+      }
+      if (query === 'updateItemMasterSpecs') {
+        return Promise.resolve({ success: true });
+      }
+      if (query === 'insertDeviceModel') {
+        return Promise.resolve({ success: true });
+      }
       if (query === 'updateNicDetails') {
         return Promise.resolve({ success: true });
       }
@@ -160,25 +189,30 @@ describe('設備與硬體列表編輯詳細資訊中規格欄位不可變動 (Sp
     const editBtn = await screen.findByText(/編輯詳細資訊/i);
     fireEvent.click(editBtn);
 
-    // 驗證彈窗與硬體規格鎖定狀態
+    // 驗證彈窗與型號/規格欄位可編輯
     expect(screen.getByText('修改硬體資訊')).toBeInTheDocument();
-    expect(screen.getByText(/規格 \(Specification\) \(鎖定\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/^型號 \(Model\) \*/i)).toBeInTheDocument();
+    expect(screen.getByText(/規格 \(Specification\)/i)).toBeInTheDocument();
 
     const specInput = screen.getByDisplayValue('Dual Port 25GbE PCIe 4.0');
     expect(specInput).toBeInTheDocument();
-    expect(specInput).toBeDisabled();
-    expect(specInput).toHaveAttribute('readonly');
+    expect(specInput).not.toBeDisabled();
+
+    const modelInput = screen.getByDisplayValue('E810-XXVDA2');
+    expect(modelInput).toBeInTheDocument();
+    expect(modelInput).not.toBeDisabled();
+
+    // 變更規格與型號
+    fireEvent.change(specInput, { target: { value: 'Quad Port 25GbE PCIe 4.0' } });
+    fireEvent.change(modelInput, { target: { value: 'E810-CQDA2' } });
 
     // 點擊儲存變更
     const saveBtn = screen.getByText(/儲存變更/i);
     fireEvent.click(saveBtn);
 
     await waitFor(() => {
+      expect(namedQueryMock).toHaveBeenCalledWith('updateItemMasterSpecs', ['Quad Port 25GbE PCIe 4.0', 'E810-CQDA2', 88]);
       expect(namedQueryMock).toHaveBeenCalledWith('updateNicDetails', expect.any(Array));
     });
-
-    // 驗證並未呼叫 updateItemMasterSpecs
-    const calls = namedQueryMock.mock.calls.map(c => c[0]);
-    expect(calls).not.toContain('updateItemMasterSpecs');
   });
 });

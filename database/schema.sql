@@ -29,23 +29,24 @@ CREATE TABLE IF NOT EXISTS item_brands (
     UNIQUE(category_id, name)
 );
 
--- 品項類型 (Item Types - 例如：筆電, 伺服器, 文具)
+-- 品項類型 (Item Types - 例如：筆電, 伺服器, 文具，屬於通用類型庫，不綁定特定廠牌)
 CREATE TABLE IF NOT EXISTS item_types (
     id SERIAL PRIMARY KEY,
     category_id INTEGER REFERENCES categories(id) ON DELETE CASCADE,
+    brand_id INTEGER REFERENCES item_brands(id) ON DELETE CASCADE, -- 相容舊欄位
+    name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(category_id, name)
+);
+
+-- 品項型號 (Item Models - 直接隸屬於廠牌底下)
+CREATE TABLE IF NOT EXISTS item_models (
+    id SERIAL PRIMARY KEY,
+    type_id INTEGER REFERENCES item_types(id) ON DELETE CASCADE, -- 相容舊欄位
     brand_id INTEGER REFERENCES item_brands(id) ON DELETE CASCADE,
     name VARCHAR(100) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(category_id, brand_id, name)
-);
-
--- 品項型號 (Item Models)
-CREATE TABLE IF NOT EXISTS item_models (
-    id SERIAL PRIMARY KEY,
-    type_id INTEGER REFERENCES item_types(id) ON DELETE CASCADE,
-    name VARCHAR(100) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(type_id, name)
+    UNIQUE(brand_id, name)
 ); 
 
 -- 客戶與供應商主檔
@@ -57,6 +58,8 @@ CREATE TABLE IF NOT EXISTS partners (
     phone VARCHAR(50),
     email VARCHAR(100),
     address TEXT,
+    project_info TEXT, -- 專案資訊/別名關鍵字 (例如: 國法、IMC)
+    is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -94,7 +97,7 @@ ON CONFLICT (username) DO NOTHING;
 CREATE TABLE IF NOT EXISTS item_master (
     id SERIAL PRIMARY KEY,
     category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
-    specification TEXT NOT NULL,     -- 規格 
+    specification TEXT DEFAULT '',     -- 規格 (選填)
     type VARCHAR(100),               -- 類型
     brand VARCHAR(100),              -- 廠牌
     model VARCHAR(100),              -- 型號
@@ -179,6 +182,7 @@ CREATE TABLE IF NOT EXISTS outbound_requests (
     status VARCHAR(20) DEFAULT 'PENDING', -- PENDING (鎖定中), SHIPPED (已出貨)
     creator_id INTEGER REFERENCES users(id),
     contact_info VARCHAR(255),            -- 聯絡人資訊
+    project_name VARCHAR(100),            -- 出貨所屬專案名稱
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

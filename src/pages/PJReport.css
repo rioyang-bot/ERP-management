@@ -1,11 +1,11 @@
 /* PJReport.css - Modern Enterprise Report Styling */
 
 .pj-report-container {
-  padding: 24px;
+  padding: var(--content-padding, 16px);
   max-width: 100%;
   box-sizing: border-box;
   background-color: var(--bg-app);
-  min-height: 100vh;
+  min-height: calc(100vh - var(--topbar-height, 56px) - 40px);
   animation: fadeIn 0.3s ease-in-out;
 }
 
@@ -245,7 +245,10 @@
 
 .pj-table-wrapper {
   overflow-x: auto;
+  overflow-y: auto;
   max-width: 100%;
+  max-height: calc(100vh - 280px);
+  min-height: 300px;
 }
 
 .pj-table {
@@ -259,14 +262,17 @@
   background: var(--table-header-bg);
   color: var(--table-header-text);
   font-weight: 700;
-  padding: 14px 16px;
+  padding: var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 12px);
   border-bottom: 2px solid var(--border-color);
   white-space: nowrap;
   letter-spacing: 0.2px;
+  position: sticky;
+  top: 0;
+  z-index: 4;
 }
 
 .pj-table td {
-  padding: 14px 16px;
+  padding: var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 12px);
   border-bottom: 1px solid var(--table-border);
   color: var(--text-main);
   vertical-align: middle;

@@ -147,26 +147,26 @@ const RepairList = () => {
             <Wrench size={24} />
           </div>
           <div>
-            <h1 style={{ fontSize: '24px', fontWeight: 900, margin: 0, letterSpacing: '-0.5px' }}>
+            <h1 style={{ fontSize: 'var(--page-title-size, 1.35rem)', fontWeight: 900, margin: 0, letterSpacing: '-0.5px' }}>
               維修單列表 (Repair Orders / RMA List)
             </h1>
-            <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
               維修流程全週期管理：現場取件 ➔ 送修原廠 ➔ 原廠修復返還 ➔ 客戶完工出貨，自動同步設備在庫與維修狀態。
             </p>
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
           <button
             onClick={fetchRecords}
             disabled={loading}
             style={{
-              padding: '10px 16px',
-              borderRadius: '10px',
+              padding: '8px 14px',
+              borderRadius: '8px',
               border: '1px solid var(--border-color)',
               backgroundColor: 'var(--bg-surface)',
               color: 'var(--text-main)',
-              fontSize: '13px',
+              fontSize: '12px',
               fontWeight: 700,
               cursor: 'pointer',
               display: 'flex',
@@ -174,26 +174,26 @@ const RepairList = () => {
               gap: '6px'
             }}
           >
-            <RefreshCw size={15} className={loading ? 'spin' : ''} /> 重新整理
+            <RefreshCw size={14} className={loading ? 'spin' : ''} /> 重新整理
           </button>
           <button
             onClick={() => setIsCreateModalOpen(true)}
             style={{
-              padding: '10px 20px',
-              borderRadius: '10px',
+              padding: '8px 16px',
+              borderRadius: '8px',
               border: 'none',
               backgroundColor: '#ef4444',
               color: '#ffffff',
-              fontSize: '14px',
+              fontSize: '13px',
               fontWeight: 800,
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: '8px',
+              gap: '6px',
               boxShadow: '0 4px 14px rgba(239, 68, 68, 0.35)'
             }}
           >
-            <Plus size={18} /> 新增維修單 (New RMA)
+            <Plus size={16} /> 新增維修單 (New RMA)
           </button>
         </div>
       </div>
@@ -201,83 +201,83 @@ const RepairList = () => {
       {/* 統計指標卡片 */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-        gap: '16px',
-        marginBottom: '24px'
+        gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+        gap: '10px',
+        marginBottom: '12px'
       }}>
         <div
           onClick={() => setActiveTab('ALL')}
           style={{
             backgroundColor: 'var(--bg-surface)',
-            padding: '16px',
-            borderRadius: '14px',
+            padding: '10px 14px',
+            borderRadius: '10px',
             border: activeTab === 'ALL' ? '2px solid var(--primary-color)' : '1px solid var(--border-color)',
             cursor: 'pointer',
             boxShadow: 'var(--card-shadow)'
           }}
         >
-          <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)' }}>總維修單數</div>
-          <div style={{ fontSize: '26px', fontWeight: 900, marginTop: '4px', color: 'var(--text-main)' }}>{stats.total}</div>
+          <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)' }}>總維修單數</div>
+          <div style={{ fontSize: '20px', fontWeight: 900, marginTop: '2px', color: 'var(--text-main)' }}>{stats.total}</div>
         </div>
 
         <div
           onClick={() => setActiveTab('ON_SITE_HANDLING')}
           style={{
             backgroundColor: 'var(--bg-surface)',
-            padding: '16px',
-            borderRadius: '14px',
+            padding: '10px 14px',
+            borderRadius: '10px',
             border: activeTab === 'ON_SITE_HANDLING' ? '2px solid #10b981' : '1px solid var(--border-color)',
             cursor: 'pointer',
             boxShadow: 'var(--card-shadow)'
           }}
         >
-          <div style={{ fontSize: '12px', fontWeight: 700, color: '#10b981' }}>🟢 現場處理 (在庫)</div>
-          <div style={{ fontSize: '26px', fontWeight: 900, marginTop: '4px', color: '#10b981' }}>{stats.on_site}</div>
+          <div style={{ fontSize: '11px', fontWeight: 700, color: '#10b981' }}>🟢 現場處理 (在庫)</div>
+          <div style={{ fontSize: '20px', fontWeight: 900, marginTop: '2px', color: '#10b981' }}>{stats.on_site}</div>
         </div>
 
         <div
           onClick={() => setActiveTab('SENT_OEM')}
           style={{
             backgroundColor: 'var(--bg-surface)',
-            padding: '16px',
-            borderRadius: '14px',
+            padding: '10px 14px',
+            borderRadius: '10px',
             border: activeTab === 'SENT_OEM' ? '2px solid #d97706' : '1px solid var(--border-color)',
             cursor: 'pointer',
             boxShadow: 'var(--card-shadow)'
           }}
         >
-          <div style={{ fontSize: '12px', fontWeight: 700, color: '#d97706' }}>🟠 送修原廠 (維修中)</div>
-          <div style={{ fontSize: '26px', fontWeight: 900, marginTop: '4px', color: '#d97706' }}>{stats.sent_oem}</div>
+          <div style={{ fontSize: '11px', fontWeight: 700, color: '#d97706' }}>🟠 送修原廠 (維修中)</div>
+          <div style={{ fontSize: '20px', fontWeight: 900, marginTop: '2px', color: '#d97706' }}>{stats.sent_oem}</div>
         </div>
 
         <div
           onClick={() => setActiveTab('OEM_RETURNED')}
           style={{
             backgroundColor: 'var(--bg-surface)',
-            padding: '16px',
-            borderRadius: '14px',
+            padding: '10px 14px',
+            borderRadius: '10px',
             border: activeTab === 'OEM_RETURNED' ? '2px solid #8b5cf6' : '1px solid var(--border-color)',
             cursor: 'pointer',
             boxShadow: 'var(--card-shadow)'
           }}
         >
-          <div style={{ fontSize: '12px', fontWeight: 700, color: '#8b5cf6' }}>🟣 原廠返還 (在庫待出)</div>
-          <div style={{ fontSize: '26px', fontWeight: 900, marginTop: '4px', color: '#8b5cf6' }}>{stats.oem_returned}</div>
+          <div style={{ fontSize: '11px', fontWeight: 700, color: '#8b5cf6' }}>🟣 原廠返還 (在庫)</div>
+          <div style={{ fontSize: '20px', fontWeight: 900, marginTop: '2px', color: '#8b5cf6' }}>{stats.oem_returned}</div>
         </div>
 
         <div
           onClick={() => setActiveTab('COMPLETED')}
           style={{
             backgroundColor: 'var(--bg-surface)',
-            padding: '16px',
-            borderRadius: '14px',
+            padding: '10px 14px',
+            borderRadius: '10px',
             border: activeTab === 'COMPLETED' ? '2px solid #3b82f6' : '1px solid var(--border-color)',
             cursor: 'pointer',
             boxShadow: 'var(--card-shadow)'
           }}
         >
-          <div style={{ fontSize: '12px', fontWeight: 700, color: '#3b82f6' }}>🔵 完工出貨 (已結案)</div>
-          <div style={{ fontSize: '26px', fontWeight: 900, marginTop: '4px', color: '#3b82f6' }}>{stats.completed}</div>
+          <div style={{ fontSize: '11px', fontWeight: 700, color: '#3b82f6' }}>🔵 完工出貨 (已結案)</div>
+          <div style={{ fontSize: '20px', fontWeight: 900, marginTop: '2px', color: '#3b82f6' }}>{stats.completed}</div>
         </div>
       </div>
 
@@ -287,15 +287,15 @@ const RepairList = () => {
         justifyContent: 'space-between',
         alignItems: 'center',
         backgroundColor: 'var(--bg-surface)',
-        padding: '14px 18px',
-        borderRadius: '14px',
+        padding: '8px 14px',
+        borderRadius: '10px',
         border: '1px solid var(--border-color)',
-        marginBottom: '20px',
+        marginBottom: '12px',
         flexWrap: 'wrap',
-        gap: '14px'
+        gap: '10px'
       }}>
         {/* 頁籤切換 */}
-        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
           {Object.entries(STATUS_CONFIG).map(([key, cfg]) => {
             const isSelected = activeTab === key;
             return (
@@ -303,12 +303,12 @@ const RepairList = () => {
                 key={key}
                 onClick={() => setActiveTab(key)}
                 style={{
-                  padding: '7px 14px',
-                  borderRadius: '8px',
+                  padding: '5px 12px',
+                  borderRadius: '6px',
                   border: isSelected ? '1px solid var(--primary-color)' : '1px solid transparent',
                   backgroundColor: isSelected ? 'var(--primary-bg)' : 'transparent',
                   color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)',
-                  fontSize: '13px',
+                  fontSize: '12px',
                   fontWeight: 700,
                   cursor: 'pointer',
                   transition: 'all 0.15s'
@@ -321,7 +321,7 @@ const RepairList = () => {
         </div>
 
         {/* 搜尋輸入框 */}
-        <div style={{ position: 'relative', width: '320px', maxWidth: '100%' }}>
+        <div style={{ position: 'relative', width: '280px', maxWidth: '100%' }}>
           <input
             type="text"
             value={searchTerm}
@@ -329,32 +329,33 @@ const RepairList = () => {
             placeholder="搜尋單號、客戶、設備、序號或狀況..."
             style={{
               width: '100%',
-              padding: '9px 12px 9px 34px',
+              padding: '7px 10px 7px 32px',
               borderRadius: '8px',
-              border: '1px solid var(--border-color)',
-              backgroundColor: 'var(--bg-surface-subtle)',
-              color: 'var(--text-main)',
-              fontSize: '13px'
+              border: '1px solid var(--input-border)',
+              backgroundColor: 'var(--input-bg)',
+              color: 'var(--input-text)',
+              fontSize: '12px',
+              outline: 'none'
             }}
           />
-          <Search size={16} style={{ position: 'absolute', left: '10px', top: '11px', color: 'var(--text-muted)' }} />
+          <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
         </div>
       </div>
 
       {/* 錯誤提示 */}
       {error && (
         <div style={{
-          padding: '14px 18px',
-          borderRadius: '12px',
+          padding: '10px 14px',
+          borderRadius: '10px',
           backgroundColor: 'rgba(239, 68, 68, 0.1)',
           border: '1px solid rgba(239, 68, 68, 0.3)',
           color: '#ef4444',
-          marginBottom: '20px',
+          marginBottom: '12px',
           display: 'flex',
           alignItems: 'center',
-          gap: '10px'
+          gap: '8px'
         }}>
-          <AlertCircle size={18} />
+          <AlertCircle size={16} />
           {error}
         </div>
       )}
@@ -362,23 +363,23 @@ const RepairList = () => {
       {/* 維修單據主列表表格 */}
       <div style={{
         backgroundColor: 'var(--bg-surface)',
-        borderRadius: '16px',
+        borderRadius: 'var(--card-radius, 14px)',
         border: '1px solid var(--border-color)',
         boxShadow: 'var(--card-shadow)',
         overflow: 'hidden'
       }}>
-        <div style={{ overflowX: 'auto' }}>
+        <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 290px)', minHeight: '300px' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
-            <thead>
-              <tr style={{ backgroundColor: 'var(--bg-surface-subtle)', borderBottom: '1px solid var(--border-color)' }}>
-                <th style={{ padding: '14px 16px', fontWeight: 800, whiteSpace: 'nowrap' }}>維修單號 (Repair No.)</th>
-                <th style={{ padding: '14px 16px', fontWeight: 800, whiteSpace: 'nowrap' }}>客戶 (Customer)</th>
-                <th style={{ padding: '14px 16px', fontWeight: 800, minWidth: '220px' }}>設備明細 (Device / SN)</th>
-                <th style={{ padding: '14px 16px', fontWeight: 800, whiteSpace: 'nowrap' }}>現場處理日 (On-site)</th>
-                <th style={{ padding: '14px 16px', fontWeight: 800, minWidth: '150px' }}>現場狀況 / 故障描述</th>
-                <th style={{ padding: '14px 16px', fontWeight: 800, minWidth: '220px' }}>送修與完工資訊 (OEM & Shipping)</th>
-                <th style={{ padding: '14px 16px', fontWeight: 800, textAlign: 'center', whiteSpace: 'nowrap' }}>當前狀態</th>
-                <th style={{ padding: '14px 16px', fontWeight: 800, textAlign: 'right', minWidth: '220px' }}>操作流程</th>
+            <thead style={{ position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)' }}>
+              <tr style={{ backgroundColor: 'var(--table-header-bg)', borderBottom: '2px solid var(--border-color)' }}>
+                <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontWeight: 800, whiteSpace: 'nowrap', position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>維修單號 (Repair No.)</th>
+                <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontWeight: 800, whiteSpace: 'nowrap', position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>客戶 (Customer)</th>
+                <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontWeight: 800, minWidth: '200px', position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>設備明細 (Device / SN)</th>
+                <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontWeight: 800, whiteSpace: 'nowrap', position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>現場處理日 (On-site)</th>
+                <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontWeight: 800, minWidth: '140px', position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>現場狀況 / 故障描述</th>
+                <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontWeight: 800, minWidth: '200px', position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>送修與完工資訊 (OEM & Shipping)</th>
+                <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontWeight: 800, textAlign: 'center', whiteSpace: 'nowrap', position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>當前狀態</th>
+                <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontWeight: 800, textAlign: 'right', minWidth: '200px', position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>操作流程</th>
               </tr>
             </thead>
             <tbody>

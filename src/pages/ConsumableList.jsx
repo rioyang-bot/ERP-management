@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Search, Edit2, Trash2, X, Save, MoreHorizontal, ArrowLeftRight, ClipboardList, ShoppingBag, AlertTriangle, Archive, RotateCcw, Package, History } from 'lucide-react';
+import { Search, Edit2, Trash2, X, Save, MoreHorizontal, ArrowLeftRight, ClipboardList, ShoppingBag, AlertTriangle, Archive, RotateCcw, Package, History, Layers } from 'lucide-react';
 import ItemLedgerModal from '../components/ItemLedgerModal';
 import ConsumableRegistrationModal from '../components/ConsumableRegistrationModal';
 import ConsumableBatchImportModal from '../components/ConsumableBatchImportModal';
@@ -107,10 +107,10 @@ const ConsumableList = ({ isSplitMode = false }) => {
   };
 
   const handleUpdate = async () => {
-    if (!editItem.model || !editItem.specification?.trim()) return alert('請填寫型號與規格 (必填)');
+    if (!editItem.model?.trim()) return alert('請填寫型號/規格 (必填)');
     const res = await window.electronAPI.namedQuery('updateConsumableMaster', [
         editItem.brand, editItem.type, editItem.model, 
-        editItem.specification.trim(), editItem.unit || '個', editItem.safety_stock,
+        (editItem.specification || '').trim(), editItem.unit || '個', editItem.safety_stock,
         editItem.id
     ]);
     if (res.success) {
@@ -189,7 +189,7 @@ const ConsumableList = ({ isSplitMode = false }) => {
   };
 
   const viewAssignments = async (item) => {
-    setActiveItemName(`${item.brand} ${item.type} - ${item.model}`);
+    setActiveItemName(`${item.brand || ''} · [${item.type || '未分類'}] ${item.model || ''}`.trim());
     const res = await window.electronAPI.namedQuery('fetchLabAssignments', [item.id]);
     if (res.success) {
       setLabAssignments(res.rows);
@@ -215,9 +215,9 @@ const ConsumableList = ({ isSplitMode = false }) => {
   }, [showTransferModal, transferData.itemId, fetchAssets, fetchItemLabUsage]);
 
   const filteredItems = items.filter(item => {
-    // 1. 依選取之「類型卡片」或「側邊欄類型」進行篩選
+    // 1. 依選定之「類型卡片」或側邊欄類型進行篩選
     const effectiveType = selectedType || typeFilter;
-    if (effectiveType && item.type !== effectiveType) {
+    if (effectiveType && (item.type || '').trim() !== effectiveType.trim()) {
       return false;
     }
 
@@ -309,14 +309,18 @@ const ConsumableList = ({ isSplitMode = false }) => {
   const renderStats = () => {
     // 依「類型 (Type)」分組匯總
     const statsMap = items.reduce((acc, curr) => {
-      const typeStr = (curr.type || '未分類').trim();
-      const key = typeStr;
+      if (typeFilter && (curr.type || '').trim() !== typeFilter.trim()) {
+        return acc;
+      }
+      const key = (curr.type || '未分類').trim();
+
       if (!acc[key]) {
         acc[key] = {
           key,
-          type: typeStr,
+          type: key,
           models: new Set(),
           brands: new Set(),
+          specs: new Set(),
           stock_qty: 0,
           lab_qty: 0,
           total_qty: 0,
@@ -325,6 +329,8 @@ const ConsumableList = ({ isSplitMode = false }) => {
       }
       if (curr.model) acc[key].models.add(curr.model);
       if (curr.brand) acc[key].brands.add(curr.brand);
+      if (curr.specification) acc[key].specs.add(curr.specification);
+
       const stock = Number(curr.stock_qty || 0);
       const lab = Number(curr.lab_qty || 0);
       const safety = Number(curr.safety_stock || 0);
@@ -340,6 +346,7 @@ const ConsumableList = ({ isSplitMode = false }) => {
     Object.values(statsMap).forEach(st => {
       st.modelsCount = st.models.size;
       st.brandsCount = st.brands.size;
+      st.specsCount = st.specs.size;
     });
 
     const allKeys = Object.keys(statsMap);
@@ -370,16 +377,16 @@ const ConsumableList = ({ isSplitMode = false }) => {
           onDragStart={isDraggable ? (e) => handleTypeDragStart(e, st.key) : undefined}
           onClick={() => handleCardClick(st.type)}
           style={{
-            backgroundColor: isSelected ? 'var(--primary-bg)' : 'var(--bg-surface)',
-            padding: '14px 16px',
+            backgroundColor: isSelected ? 'var(--primary-bg, rgba(37, 99, 235, 0.08))' : 'var(--bg-surface)',
+            padding: '12px 16px',
             borderRadius: '14px',
             border: isSelected ? '2px solid var(--primary-color)' : '1px solid var(--border-color)',
-            boxShadow: isSelected ? '0 4px 12px rgba(37, 99, 235, 0.18)' : 'var(--card-shadow)',
+            boxShadow: isSelected ? '0 4px 12px rgba(37, 99, 235, 0.2)' : 'var(--card-shadow)',
             cursor: 'pointer',
-            minHeight: '72px',
+            minHeight: '80px',
             display: 'flex',
             flexDirection: 'column',
-            justifyContent: 'center',
+            justifyContent: 'space-between',
             transition: 'all 0.15s ease',
             position: 'relative',
             opacity: isRetired ? 0.6 : (draggingCardKey === st.key ? 0.3 : 1),
@@ -391,7 +398,7 @@ const ConsumableList = ({ isSplitMode = false }) => {
           {/* 右上角警示與操作 */}
           <div style={{ position: 'absolute', top: '10px', right: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
             {st.hasLowStock && (
-              <span title="此類型中有品項低於安全庫存">
+              <span title="此分類中有品項低於安全庫存">
                 <AlertTriangle size={15} color="#ef4444" fill="#fee2e2" />
               </span>
             )}
@@ -413,14 +420,36 @@ const ConsumableList = ({ isSplitMode = false }) => {
             </button>
           </div>
 
-          {/* 類型標題與型號統計 */}
+          {/* 卡片頂部標題與總計 */}
           <div>
-            <div style={{ fontSize: '15px', fontWeight: '900', color: isSelected ? 'var(--primary-color)' : 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px', paddingRight: '42px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              <Package size={18} color={isSelected ? 'var(--primary-color)' : 'var(--text-muted)'} />
-              <span>{st.type}</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingRight: '48px' }}>
+              <div style={{ fontSize: '15px', fontWeight: '900', color: isSelected ? 'var(--primary-color)' : 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <Package size={17} color={isSelected ? 'var(--primary-color)' : 'var(--text-muted)'} />
+                <span>{st.type}</span>
+              </div>
+              <span style={{ fontSize: '11px', fontWeight: '800', color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', backgroundColor: 'var(--bg-surface-subtle)', padding: '2px 6px', borderRadius: '6px' }}>
+                共 {st.total_qty} 個
+              </span>
             </div>
-            <div style={{ color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', fontSize: '13px', fontWeight: '600', marginTop: '6px', paddingLeft: '24px' }}>
+
+            <div style={{ color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', fontSize: '12px', fontWeight: '600', marginTop: '4px', paddingLeft: '23px' }}>
               {st.brandsCount} 個廠牌 · {st.modelsCount} 款型號
+            </div>
+          </div>
+
+          {/* 底部數據指標格 (在席 / 借測 / 總計) */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px', marginTop: '8px', paddingTop: '6px', borderTop: '1px solid var(--border-color)', fontSize: '11px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+              <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>在席</span>
+              <span style={{ color: 'var(--primary-color)', fontWeight: 800 }}>{st.stock_qty}</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+              <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>借測</span>
+              <span style={{ color: '#a855f7', fontWeight: 800 }}>{st.lab_qty}</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+              <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>總計</span>
+              <span style={{ color: st.hasLowStock ? '#ef4444' : '#10b981', fontWeight: 800 }}>{st.total_qty}</span>
             </div>
           </div>
         </div>
@@ -464,24 +493,49 @@ const ConsumableList = ({ isSplitMode = false }) => {
   };
 
   const containerStyle = {
-    padding: isSplitMode ? '0' : '24px',
+    padding: isSplitMode ? '0' : 'var(--content-padding, 16px 20px)',
     backgroundColor: isSplitMode ? 'transparent' : 'var(--bg-app)',
-    minHeight: isSplitMode ? 'auto' : '100vh'
+    minHeight: isSplitMode ? 'auto' : '100%'
   };
-  const cardStyle = { backgroundColor: 'var(--bg-surface)', borderRadius: '16px', padding: '24px', boxShadow: 'var(--card-shadow)', border: '1px solid var(--border-color)' };
-  const thStyle = { textAlign: 'left', padding: '14px', borderBottom: '2px solid var(--border-color)', color: 'var(--text-main)', fontSize: '12px', fontWeight: '900' };
-  const tdStyle = { padding: '14px', fontSize: '13px' };
-  const navBtnStyle = { padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-main)', cursor: 'pointer', fontWeight: '700' };
+  const cardStyle = { 
+    backgroundColor: 'var(--bg-surface)', 
+    borderRadius: 'var(--card-radius, 14px)', 
+    padding: 'var(--card-padding, 16px 20px)', 
+    boxShadow: 'var(--card-shadow)', 
+    border: '1px solid var(--border-color)',
+    display: 'flex',
+    flexDirection: 'column',
+    minHeight: isSplitMode ? 'auto' : 'calc(100vh - var(--topbar-height, 56px) - 40px)'
+  };
+  const thStyle = { 
+    textAlign: 'left', 
+    padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', 
+    borderBottom: '2px solid var(--border-color)', 
+    color: 'var(--table-header-text)', 
+    fontSize: '12px', 
+    fontWeight: '900',
+    position: 'sticky',
+    top: 0,
+    zIndex: 4,
+    backgroundColor: 'var(--table-header-bg)',
+    boxShadow: '0 1px 0 var(--border-color)',
+    whiteSpace: 'nowrap'
+  };
+  const tdStyle = { 
+    padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', 
+    fontSize: '12px' 
+  };
+  const navBtnStyle = { padding: '6px 14px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-main)', cursor: 'pointer', fontWeight: '700', fontSize: '12px' };
   const menuButtonStyle = {
     display: 'flex',
     alignItems: 'center',
     gap: '8px',
     width: '100%',
-    padding: '10px 12px',
+    padding: '8px 10px',
     border: 'none',
     background: 'none',
     borderRadius: '8px',
-    fontSize: '13px',
+    fontSize: '12px',
     fontWeight: '600',
     color: 'var(--text-muted)',
     cursor: 'pointer',
@@ -492,8 +546,8 @@ const ConsumableList = ({ isSplitMode = false }) => {
   return (
     <div style={containerStyle}>
       <div style={cardStyle}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
             <div>
               <h1 style={{ fontSize: '24px', fontWeight: '900', color: 'var(--text-main)', margin: 0 }}>
                 {typeFilter ? `${typeFilter} - 耗材清單` : '耗材列表 (Consumable List)'}
@@ -541,21 +595,33 @@ const ConsumableList = ({ isSplitMode = false }) => {
               </div>
             )}
           </div>
-          <div style={{ position: 'relative' }}>
-            <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-subtle)' }} />
-            <input type="text" placeholder="快速搜尋廠牌、型號、規格..." value={searchTerm} onChange={(e) => {setSearchTerm(e.target.value); setCurrentPage(1);}} style={{ padding: '10px 12px 10px 42px', borderRadius: '30px', border: '1.5px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', width: '300px' }} />
+
+          <div style={{ display: 'flex', gap: '14px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ position: 'relative' }}>
+              <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-subtle)' }} />
+              <input type="text" placeholder="快速搜尋廠牌、型號/規格、備註..." value={searchTerm} onChange={(e) => {setSearchTerm(e.target.value); setCurrentPage(1);}} style={{ padding: '10px 12px 10px 42px', borderRadius: '30px', border: '1.5px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', width: '280px' }} />
+            </div>
+
+            {(searchTerm || selectedType || typeFilter) && (
+              <button 
+                onClick={() => { setSearchTerm(''); setSelectedType(null); navigate('?'); }}
+                style={{ padding: '6px 14px', borderRadius: '20px', backgroundColor: 'var(--bg-surface-subtle)', border: '1px solid var(--border-color)', color: 'var(--text-muted)', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}
+              >
+                清除所有篩選 ×
+              </button>
+            )}
           </div>
         </div>
 
         {renderStats()}
 
-        {/* 類型篩選提示列 */}
+        {/* 類型選取篩選提示列 */}
         {selectedType && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'var(--primary-bg)', border: '1px solid var(--primary-border)', padding: '10px 18px', borderRadius: '12px', marginBottom: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--primary-color)', fontWeight: 800, fontSize: '14px' }}>
-              <Package size={18} color="var(--primary-color)" />
-              目前檢視類型：<span style={{ color: 'var(--primary-color)', fontSize: '15px' }}>{selectedType}</span>
-              <span style={{ color: 'var(--text-muted)', fontSize: '12px', fontWeight: 500, marginLeft: '6px' }}>（共 {filteredItems.length} 種品項 / 型號）</span>
+              <Layers size={18} color="var(--primary-color)" />
+              目前鎖定類型：<span style={{ color: 'var(--primary-color)', fontSize: '14px' }}>{selectedType}</span>
+              <span style={{ color: 'var(--text-muted)', fontSize: '12px', fontWeight: 500, marginLeft: '6px' }}>（共 {filteredItems.length} 項品項）</span>
             </div>
             <button 
               onClick={() => setSelectedType(null)} 
@@ -570,27 +636,56 @@ const ConsumableList = ({ isSplitMode = false }) => {
           <div style={{ textAlign: 'center', padding: '100px', color: 'var(--text-muted)' }}>載入中...</div>
         ) : (typeFilter || searchTerm || selectedType || showAll) ? (
           <>
-            <div style={{ marginBottom: '20px' }}>
+            <div style={{ marginBottom: '16px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', minHeight: '300px', borderRadius: '10px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
-                <thead>
+                <thead style={{ position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)' }}>
                   <tr style={{ borderBottom: '2px solid var(--border-color)', backgroundColor: 'var(--table-header-bg)' }}>
-                    <th style={{ ...thStyle, width: '220px' }}>廠牌 / 型號 / 類型</th>
-                    <th style={{ ...thStyle, width: '150px' }}>規格</th>
-                    <th style={{ ...thStyle, width: '80px', textAlign: 'center', color: 'var(--primary-color)' }}>Stock</th>
-                    <th style={{ ...thStyle, width: '80px', textAlign: 'center', color: '#a855f7' }}>LAB</th>
-                    <th style={{ ...thStyle, width: '80px', textAlign: 'center' }}>Total</th>
-                    <th style={{ ...thStyle, width: '100px', textAlign: 'center' }}>安全庫存</th>
-                    <th style={{ ...thStyle, textAlign: 'center', width: '120px' }}>操作</th>
+                    <th style={{ ...thStyle, width: '140px', whiteSpace: 'nowrap' }}>廠牌</th>
+                    <th style={{ ...thStyle, width: '150px', whiteSpace: 'nowrap' }}>類型</th>
+                    <th style={{ ...thStyle, width: '180px', whiteSpace: 'nowrap' }}>型號/規格</th>
+                    <th style={{ ...thStyle, minWidth: '160px' }}>備註</th>
+                    <th style={{ ...thStyle, width: '80px', textAlign: 'center', color: 'var(--primary-color)', whiteSpace: 'nowrap' }}>Stock</th>
+                    <th style={{ ...thStyle, width: '80px', textAlign: 'center', color: '#a855f7', whiteSpace: 'nowrap' }}>LAB</th>
+                    <th style={{ ...thStyle, width: '80px', textAlign: 'center', whiteSpace: 'nowrap' }}>Total</th>
+                    <th style={{ ...thStyle, width: '100px', textAlign: 'center', whiteSpace: 'nowrap' }}>安全庫存</th>
+                    <th style={{ ...thStyle, textAlign: 'center', width: '100px', whiteSpace: 'nowrap' }}>操作</th>
                   </tr>
                 </thead>
                 <tbody>
                   {paginatedItems.map(item => (
                     <tr key={item.id} style={{ borderBottom: '1px solid var(--table-border)' }}>
                       <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                        <div style={{ fontWeight: 800, color: 'var(--text-main)' }}>{item.brand}</div>
-                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{item.type} - {item.model}</div>
+                        <div style={{ fontWeight: 800, color: 'var(--text-main)', fontSize: '13px' }}>{item.brand || '--'}</div>
                       </td>
-                      <td style={{ ...tdStyle, fontSize: '12px', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '150px' }} title={item.specification}>{item.specification || '--'}</td>
+                      <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                        <span style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          padding: '3px 9px',
+                          borderRadius: '6px',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                          color: 'var(--primary-color)',
+                          border: '1px solid rgba(99, 102, 241, 0.22)'
+                        }}>
+                          <Package size={12} style={{ opacity: 0.8 }} />
+                          {item.type || '未分類'}
+                        </span>
+                      </td>
+                      <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                        <span style={{
+                          fontWeight: 700,
+                          fontSize: '13px',
+                          color: 'var(--text-main)',
+                          fontFamily: 'monospace',
+                          letterSpacing: '0.2px'
+                        }}>
+                          {item.model || '--'}
+                        </span>
+                      </td>
+                      <td style={{ ...tdStyle, fontSize: '12px', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '200px' }} title={item.specification}>{item.specification || '--'}</td>
                       <td style={{ ...tdStyle, fontWeight: 700, color: 'var(--primary-color)', textAlign: 'center' }}>{item.stock_qty || 0}</td>
                       <td style={{ ...tdStyle, fontWeight: 700, color: '#a855f7', cursor: 'pointer', textDecoration: 'underline', textAlign: 'center' }} onClick={() => viewAssignments(item)}>{item.lab_qty || 0}</td>
                       <td style={{ 
@@ -703,7 +798,7 @@ const ConsumableList = ({ isSplitMode = false }) => {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}><h2 style={{ fontSize: '20px', fontWeight: '900' }}>修改耗材資訊</h2><X size={24} style={{ cursor: 'pointer' }} onClick={() => setShowEditModal(false)} /></div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div>
-                <label style={editLabelStyle}>廠牌 / 類型 / 型號 (鎖定)</label>
+                <label style={editLabelStyle}>廠牌 / 類型 / 型號/規格 (鎖定)</label>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <input type="text" value={editItem.brand || ''} disabled style={{ ...editInputStyle, backgroundColor: '#f1f5f9', width: '30%', cursor: 'not-allowed' }} />
                   <input type="text" value={editItem.type || ''} disabled style={{ ...editInputStyle, backgroundColor: '#f1f5f9', width: '30%', cursor: 'not-allowed' }} />
@@ -712,8 +807,8 @@ const ConsumableList = ({ isSplitMode = false }) => {
               </div>
               
               <div>
-                <label style={editLabelStyle}>規格 <span style={{ color: '#ef4444' }}>*</span></label>
-                <textarea value={editItem.specification} onChange={(e) => setEditItem({...editItem, specification: e.target.value})} style={{ ...editInputStyle, minHeight: '80px', lineHeight: '1.5' }} />
+                <label style={editLabelStyle}>備註 (選填)</label>
+                <textarea value={editItem.specification || ''} onChange={(e) => setEditItem({...editItem, specification: e.target.value})} style={{ ...editInputStyle, minHeight: '80px', lineHeight: '1.5' }} placeholder="請輸入備註說明 (選填)..." />
               </div>
 
               <div>

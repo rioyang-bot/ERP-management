@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { ClipboardList, Search, Plus, Trash2, Send, Calendar, MapPin, User, Package, Cpu, ChevronRight, AlertCircle, Loader2, Truck } from 'lucide-react';
+import { ClipboardList, Search, Plus, Trash2, Send, Calendar, MapPin, User, Package, Cpu, ChevronRight, AlertCircle, Loader2, Truck, FolderGit2, Sparkles } from 'lucide-react';
 import { RoleContext } from '../context/RoleContext';
 import { useNavigate } from 'react-router-dom';
 import { logCreate } from '../utils/auditLogger';
@@ -23,54 +23,56 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) 
   });
 
   // --- 搜尋與列表狀態 (從 localStorage 初始化) ---
-  const [deviceSnInput, setDeviceSnInput] = useState('');
-  const [hwSnInput, setHwSnInput] = useState('');
-  const [isSearching, setIsSearching] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  
-  // 自動補全相關狀態
-  const [activeAssets, setActiveAssets] = useState([]);
-  const [showDeviceDropdown, setShowDeviceDropdown] = useState(false);
-  const [showHwDropdown, setShowHwDropdown] = useState(false);
   const [outboundItems, setOutboundItems] = useState(() => {
     const saved = localStorage.getItem('dn_draft_items');
     return saved ? JSON.parse(saved) : [];
   });
+
+  const [deviceSnInput, setDeviceSnInput] = useState('');
+  const [hwSnInput, setHwSnInput] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [dnNo, setDnNo] = useState('');
+
+  // 下拉選單資料
   const [customers, setCustomers] = useState([]);
-  const [projects, setProjects] = useState([]);
   const [consumables, setConsumables] = useState([]);
+  const [projects, setProjects] = useState([]);
+  const [activeAssets, setActiveAssets] = useState([]);
+
+  // 快顯與列印
+  const [showDeviceDropdown, setShowDeviceDropdown] = useState(false);
+  const [showHwDropdown, setShowHwDropdown] = useState(false);
   const [deliveryReceiptModal, setDeliveryReceiptModal] = useState({ show: false, dn: null, items: [] });
   
   const [csmSearchTerm, setCsmSearchTerm] = useState('');
   const [csmFilterBrand, setCsmFilterBrand] = useState('');
   const [csmFilterType, setCsmFilterType] = useState('');
   const [csmFilterModel, setCsmFilterModel] = useState('');
-  const [dnNo, setDnNo] = useState('');
 
-  // 取得下一個出貨單號 (DN-YYYYMMDD-01)
+  // 取得下一個 D/N 單號預覽
   const fetchNextDnNo = async (targetDate) => {
     try {
-      const dStr = (targetDate || new Date().toISOString().split('T')[0]).replace(/-/g, '');
-      const prefix = `DN-${dStr}-`;
+      const dateStr = (targetDate || new Date().toISOString().split('T')[0]).replace(/-/g, '');
+      const prefix = `DN-${dateStr}-`;
       const countRes = await window.electronAPI.namedQuery('countOutboundRequests', [prefix]);
-      if (countRes.success && countRes.rows.length > 0) {
-        const nextNum = (parseInt(countRes.rows[0].count) || 1).toString().padStart(2, '0');
-        return `DN-${dStr}-${nextNum}`;
-      }
+      const nextNum = (parseInt(countRes?.rows?.[0]?.count, 10) || 1).toString().padStart(2, '0');
+      return `DN-${dateStr}-${nextNum}`;
     } catch (e) {
-      console.error('Failed to fetch next dn no:', e);
+      console.error('Fetch next DN no error:', e);
+      return '';
     }
-    const dStr = (targetDate || new Date().toISOString().split('T')[0]).replace(/-/g, '');
-    return `DN-${dStr}-01`;
   };
 
-  const handleDateChange = async (newDate) => {
+  // 當日期變更時重新預覽單號
+  const handleDateChange = (newDate) => {
     setHeader(prev => ({ ...prev, date: newDate }));
-    const nextNo = await fetchNextDnNo(newDate);
-    if (nextNo) setDnNo(nextNo);
+    fetchNextDnNo(newDate).then(no => {
+      if (no) setDnNo(no);
+    });
   };
 
-  // --- 持久化同步 ---
+  // 儲存草稿
   useEffect(() => {
     localStorage.setItem('dn_draft_header', JSON.stringify(header));
   }, [header]);
@@ -82,6 +84,9 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) 
   // --- 初始化資料 ---
   useEffect(() => {
     const initData = async () => {
+      // 確保出貨單 project_name 欄位遷移存在
+      try { await window.electronAPI.namedQuery('migrateOutboundProjectName'); } catch(e) {}
+
       const initialDate = header.date || new Date().toISOString().split('T')[0];
       fetchNextDnNo(initialDate).then(no => {
         if (no) setDnNo(no);
@@ -106,14 +111,18 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) 
     initData();
   }, []);
 
-  // --- 專案選擇邏輯 ---
-  const handleProjectSelect = async (e) => {
-    const selectedProject = e.target.value;
-    setHeader({ ...header, project_name: selectedProject });
+  // --- 專案變更邏輯（支援下拉現有專案或直接鍵入新專案） ---
+  const handleProjectChange = async (val) => {
+    setHeader(prev => ({ ...prev, project_name: val }));
     
-    if (selectedProject) {
+    const trimmed = (val || '').trim();
+    if (!trimmed) return;
+
+    // 若完全符合既有專案，嘗試自動帶入已配置之在庫設備
+    const matchedProject = projects.find(p => p.project_name.trim().toLowerCase() === trimmed.toLowerCase());
+    if (matchedProject) {
       try {
-        const res = await window.electronAPI.namedQuery('fetchAssetsByProject', [selectedProject]);
+        const res = await window.electronAPI.namedQuery('fetchAssetsByProject', [matchedProject.project_name]);
         if (res.success && res.rows.length > 0) {
           const newItems = res.rows.map(item => ({
             ...item,
@@ -129,15 +138,11 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) 
             const filteredNewItems = newItems.filter(i => !existingSns.has(i.sn));
             
             if (filteredNewItems.length > 0) {
-              alert(`已從專案 [${selectedProject}] 自動帶入 ${filteredNewItems.length} 項資產。`);
+              alert(`已從專案 [${matchedProject.project_name}] 自動帶入 ${filteredNewItems.length} 項預先配置資產。`);
               return [...prev, ...filteredNewItems];
-            } else if (res.rows.length > 0) {
-              alert(`專案 [${selectedProject}] 的所有在庫資產已在出貨清單中。`);
             }
             return prev;
           });
-        } else if (res.success && res.rows.length === 0) {
-          alert(`專案 [${selectedProject}] 目前沒有任何在庫 (ACTIVE) 的資產。`);
         }
       } catch (err) {
         console.error('Fetch project assets error:', err);
@@ -163,6 +168,21 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) 
         if (!categoryMatch) {
             alert(type === 'device' ? '此序號屬於「硬體」，請改用下方的硬體搜尋列！' : '此序號屬於「設備」，請改用上方的設備搜尋列！');
             return;
+        }
+
+        // 狀態驗證：嚴格禁止非 ACTIVE 狀態資產（例如已出貨 SHIPPED、借出中 LENT 等）加入出貨單，避免重複出貨
+        if (item.status !== 'ACTIVE') {
+          const statusMap = {
+            'SHIPPED': '已出貨 (SHIPPED)',
+            'LENT': '借出中 (LENT)',
+            'REPAIRING': '維修中 (REPAIRING)',
+            'SCRAPPED': '已報廢 (SCRAPPED)',
+            'PENDING': '出庫鎖定中 (PENDING)'
+          };
+          const statusDesc = statusMap[item.status] || item.status;
+          alert(`⚠️ 無法加入出貨清單！\n\n【${item.brand} ${item.model}】序號 [${item.sn}] 目前狀態為「${statusDesc}」，非在庫可用狀態。\n系統已嚴格限制加入，以避免重複出貨！`);
+          if (type === 'device') setDeviceSnInput(''); else setHwSnInput('');
+          return;
         }
 
         // 檢查是否已在清單中
@@ -246,11 +266,50 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) 
       const dateStr = header.date.replace(/-/g, '');
       const prefix = `DN-${dateStr}-`;
       const countRes = await window.electronAPI.namedQuery('countOutboundRequests', [prefix]);
-      const nextNum = (parseInt(countRes.rows[0].count) || 1).toString().padStart(2, '0');
+      const nextNum = (parseInt(countRes?.rows?.[0]?.count, 10) || 1).toString().padStart(2, '0');
       const dnNumber = `DN-${dateStr}-${nextNum}`;
 
-      // 2. 建立出貨單標頭 (Outbound Request) - 一律為一般出貨 'SALE'
-      const reqRes = await window.electronAPI.namedQuery('insertOutboundRequest', [
+      // 2. 專案自動立案處理 (若有填寫專案且不存在於專案表中)
+      const cleanProject = (header.project_name || '').trim();
+      if (cleanProject) {
+        try {
+          const checkProjRes = await window.electronAPI.namedQuery('checkProjectExistsByName', [cleanProject]);
+          if (checkProjRes.success && checkProjRes.rows.length === 0) {
+            const prjPrefix = `PRJ-${dateStr}-`;
+            const countPrjRes = await window.electronAPI.namedQuery('countProjectsByPrefix', [prjPrefix]);
+            const nextPrjNum = ((parseInt(countPrjRes?.rows?.[0]?.count, 10) || 0) + 1).toString().padStart(2, '0');
+            const projectNo = `${prjPrefix}${nextPrjNum}`;
+            
+            await window.electronAPI.namedQuery('createProject', [
+              projectNo,
+              header.customer,
+              header.contact_info || '',
+              cleanProject,
+              header.date,
+              null,
+              '出貨時自動建立專案',
+              'IN_PROGRESS'
+            ]);
+
+            logCreate(
+              'PROJECT',
+              projectNo,
+              cleanProject,
+              `出貨時自動建立專案 [${projectNo}] ${cleanProject} (客戶: ${header.customer})`,
+              { projectNo, name: cleanProject, customer: header.customer }
+            );
+
+            // 刷新本地進行中專案清單
+            const updatedProjs = await window.electronAPI.namedQuery('fetchActiveProjects');
+            if (updatedProjs.success) setProjects(updatedProjs.rows || []);
+          }
+        } catch (projErr) {
+          console.error('Auto-create project error:', projErr);
+        }
+      }
+
+      // 3. 建立出貨單標頭 (Outbound Request) - 寫入 project_name 欄位
+      const reqRes = await window.electronAPI.namedQuery('insertOutboundRequestWithProject', [
         dnNumber,
         header.customer,
         header.location,
@@ -258,14 +317,14 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) 
         authUser?.id || null,
         header.contact_info,
         'SALE',
-        null
+        null,
+        cleanProject || null
       ]);
 
       if (reqRes.success) {
         const requestId = reqRes.rows[0].id;
 
-        // 3. 建立出貨明細 (Outbound Items)
-        // 注意：這裡需要處理主設備及其搭載硬體
+        // 4. 建立出貨明細 (Outbound Items) 並自動回寫設備/硬體專案與客戶屬性
         for (const item of outboundItems) {
           // 加入主項
           await window.electronAPI.namedQuery('insertOutboundItem', [
@@ -276,7 +335,25 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) 
             item.location || header.location
           ]);
 
-          // 如果有搭載硬體，也要一併加入明細
+          // 自動回寫主資產之專案屬性與客戶
+          if (cleanProject && item.sn) {
+            try {
+              await window.electronAPI.namedQuery('updateAssetProjectAndClientBySn', [
+                cleanProject,
+                header.customer,
+                item.sn
+              ]);
+              await window.electronAPI.namedQuery('updateMountedHardwareProjectAndClient', [
+                cleanProject,
+                header.customer,
+                item.sn
+              ]);
+            } catch (err) {
+              console.error(`Failed to auto-bind project to asset ${item.sn}:`, err);
+            }
+          }
+
+          // 如果有搭載硬體，也要一併加入明細並回寫專案屬性
           if (item.components && item.components.length > 0) {
             for (const comp of item.components) {
               await window.electronAPI.namedQuery('insertOutboundItem', [
@@ -286,6 +363,18 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) 
                 1,
                 item.location || header.location
               ]);
+
+              if (cleanProject && comp.sn) {
+                try {
+                  await window.electronAPI.namedQuery('updateAssetProjectAndClientBySn', [
+                    cleanProject,
+                    header.customer,
+                    comp.sn
+                  ]);
+                } catch (err) {
+                  console.error(`Failed to auto-bind project to component ${comp.sn}:`, err);
+                }
+              }
             }
           }
         }
@@ -294,8 +383,8 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) 
           'OUTBOUND',
           dnNumber,
           header.customer || '出貨單',
-          `建立出貨申請單 [${dnNumber}] 對象: ${header.customer} 共 ${outboundItems.length} 個品項 (一般銷貨)`,
-          { dnNumber, customer: header.customer, location: header.location, request_type: 'SALE', itemsCount: outboundItems.length, items: outboundItems.map(i => ({ model: i.model, brand: i.brand, sn: i.sn, qty: i.qty })) }
+          `建立出貨申請單 [${dnNumber}] 對象: ${header.customer}${cleanProject ? ` (專案: ${cleanProject})` : ''} 共 ${outboundItems.length} 個品項 (一般銷貨)`,
+          { dnNumber, customer: header.customer, project_name: cleanProject, location: header.location, request_type: 'SALE', itemsCount: outboundItems.length, items: outboundItems.map(i => ({ model: i.model, brand: i.brand, sn: i.sn, qty: i.qty })) }
         );
 
         const dnData = {
@@ -305,7 +394,7 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) 
           contact_info: header.contact_info,
           location: header.location,
           shipping_date: header.date,
-          project_name: header.project_name,
+          project_name: cleanProject,
           creator_name: authUser?.full_name
         };
         const currentItems = [...outboundItems];
@@ -506,19 +595,30 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) 
               </div>
 
               <div className="dn-field">
-                <label>出貨專案 (自動帶入資產)</label>
-                <div className="select-wrapper">
-                  <select 
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <label style={{ margin: 0 }}>出貨專案</label>
+                  {header.project_name && header.project_name.trim() && !projects.some(p => p.project_name.trim().toLowerCase() === header.project_name.trim().toLowerCase()) && (
+                    <span style={{ fontSize: '11px', color: '#10b981', fontWeight: '800', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                      <Sparkles size={12} /> 新專案 (出貨自動立案與綁定)
+                    </span>
+                  )}
+                </div>
+                <div className="input-with-icon">
+                  <FolderGit2 size={16} />
+                  <input 
+                    type="text" 
+                    list="outbound-project-list"
+                    placeholder="選擇既有專案或直接輸入新專案名稱..."
                     value={header.project_name || ''} 
-                    onChange={handleProjectSelect}
-                  >
-                    <option value="">無 (不指定)</option>
+                    onChange={e => handleProjectChange(e.target.value)}
+                  />
+                  <datalist id="outbound-project-list">
                     {projects.map(p => (
                       <option key={p.project_no} value={p.project_name}>
-                        {p.project_name}
+                        {p.project_name} ({p.project_no})
                       </option>
                     ))}
-                  </select>
+                  </datalist>
                 </div>
               </div>
 

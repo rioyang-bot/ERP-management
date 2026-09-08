@@ -316,19 +316,19 @@ const EventLogs = () => {
   };
 
   return (
-    <div className="page-container" style={{ padding: '24px', maxWidth: '1600px', margin: '0 auto' }}>
+    <div className="page-container" style={{ padding: 'var(--content-padding, 16px)', maxWidth: '1600px', margin: '0 auto' }}>
       {/* 頂部 Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--spacing-md, 14px)', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <h1 style={{ fontSize: '26px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--text-main)' }}>
-            <ShieldCheck size={30} color="#f59e0b" /> 事件紀錄查詢 (Event Log Query)
+          <h1 style={{ fontSize: 'var(--page-title-size, 1.4rem)', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
+            <ShieldCheck size={26} color="#f59e0b" /> 事件紀錄查詢 (Event Log Query)
           </h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '6px', marginBottom: 0 }}>
+          <p style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '4px', marginBottom: 0 }}>
             全系統資料異動與稽核軌跡日誌，完整記錄設備、硬體、耗材、採購、進出貨與系統設定之新增、變更與刪除事件。
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
           <button
             onClick={() => fetchLogs(true)}
             disabled={refreshing}
@@ -336,7 +336,7 @@ const EventLogs = () => {
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              padding: '8px 16px',
+              padding: '6px 14px',
               backgroundColor: 'var(--bg-surface)',
               border: '1px solid var(--border-color)',
               borderRadius: '8px',
@@ -347,7 +347,7 @@ const EventLogs = () => {
               boxShadow: 'var(--card-shadow)'
             }}
           >
-            <RefreshCw size={15} className={refreshing ? 'spin' : ''} />
+            <RefreshCw size={14} className={refreshing ? 'spin' : ''} />
             {refreshing ? '重新整理中...' : '重新整理'}
           </button>
 
@@ -357,7 +357,7 @@ const EventLogs = () => {
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              padding: '8px 18px',
+              padding: '6px 16px',
               backgroundColor: 'var(--primary-color)',
               border: 'none',
               borderRadius: '8px',
@@ -368,51 +368,51 @@ const EventLogs = () => {
               boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)'
             }}
           >
-            <Download size={15} /> 匯出 CSV 報表
+            <Download size={14} /> 匯出 CSV 報表
           </button>
         </div>
       </div>
 
       {/* 24 小時內 KPI 統計卡片 */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-        <div style={{ backgroundColor: 'var(--bg-surface)', padding: '16px 20px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: 'var(--card-shadow)' }}>
-          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '6px' }}>24小時內異動總數</div>
-          <div style={{ fontSize: '1.75rem', fontWeight: 900, color: '#f59e0b' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', marginBottom: 'var(--spacing-md, 14px)' }}>
+        <div style={{ backgroundColor: 'var(--bg-surface)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--border-color)', boxShadow: 'var(--card-shadow)' }}>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '2px' }}>24小時內異動總數</div>
+          <div style={{ fontSize: '1.4rem', fontWeight: 900, color: '#f59e0b' }}>
             {stats24h.today_count}
-            <span style={{ fontSize: '0.8rem', fontWeight: 400, color: 'var(--text-muted)', marginLeft: '6px' }}>筆</span>
+            <span style={{ fontSize: '0.75rem', fontWeight: 400, color: 'var(--text-muted)', marginLeft: '4px' }}>筆</span>
           </div>
         </div>
 
-        <div style={{ backgroundColor: 'var(--bg-surface)', padding: '16px 20px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: 'var(--card-shadow)' }}>
-          <div style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: 700, marginBottom: '6px' }}>新增建立 (CREATE)</div>
-          <div style={{ fontSize: '1.75rem', fontWeight: 900, color: '#10b981' }}>
+        <div style={{ backgroundColor: 'var(--bg-surface)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--border-color)', boxShadow: 'var(--card-shadow)' }}>
+          <div style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 700, marginBottom: '2px' }}>新增建立 (CREATE)</div>
+          <div style={{ fontSize: '1.4rem', fontWeight: 900, color: '#10b981' }}>
             {stats24h.create_count}
-            <span style={{ fontSize: '0.8rem', fontWeight: 400, color: 'var(--text-muted)', marginLeft: '6px' }}>筆</span>
+            <span style={{ fontSize: '0.75rem', fontWeight: 400, color: 'var(--text-muted)', marginLeft: '4px' }}>筆</span>
           </div>
         </div>
 
-        <div style={{ backgroundColor: 'var(--bg-surface)', padding: '16px 20px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: 'var(--card-shadow)' }}>
-          <div style={{ fontSize: '0.8rem', color: '#3b82f6', fontWeight: 700, marginBottom: '6px' }}>資料變更 (UPDATE)</div>
-          <div style={{ fontSize: '1.75rem', fontWeight: 900, color: '#3b82f6' }}>
+        <div style={{ backgroundColor: 'var(--bg-surface)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--border-color)', boxShadow: 'var(--card-shadow)' }}>
+          <div style={{ fontSize: '0.75rem', color: '#3b82f6', fontWeight: 700, marginBottom: '2px' }}>資料變更 (UPDATE)</div>
+          <div style={{ fontSize: '1.4rem', fontWeight: 900, color: '#3b82f6' }}>
             {stats24h.update_count}
-            <span style={{ fontSize: '0.8rem', fontWeight: 400, color: 'var(--text-muted)', marginLeft: '6px' }}>筆</span>
+            <span style={{ fontSize: '0.75rem', fontWeight: 400, color: 'var(--text-muted)', marginLeft: '4px' }}>筆</span>
           </div>
         </div>
 
-        <div style={{ backgroundColor: 'var(--bg-surface)', padding: '16px 20px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: 'var(--card-shadow)' }}>
-          <div style={{ fontSize: '0.8rem', color: '#ef4444', fontWeight: 700, marginBottom: '6px' }}>刪除移除 (DELETE)</div>
-          <div style={{ fontSize: '1.75rem', fontWeight: 900, color: '#ef4444' }}>
+        <div style={{ backgroundColor: 'var(--bg-surface)', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--border-color)', boxShadow: 'var(--card-shadow)' }}>
+          <div style={{ fontSize: '0.75rem', color: '#ef4444', fontWeight: 700, marginBottom: '2px' }}>刪除移除 (DELETE)</div>
+          <div style={{ fontSize: '1.4rem', fontWeight: 900, color: '#ef4444' }}>
             {stats24h.delete_count}
-            <span style={{ fontSize: '0.8rem', fontWeight: 400, color: 'var(--text-muted)', marginLeft: '6px' }}>筆</span>
+            <span style={{ fontSize: '0.75rem', fontWeight: 400, color: 'var(--text-muted)', marginLeft: '4px' }}>筆</span>
           </div>
         </div>
       </div>
 
       {/* 篩選與過濾工具列 */}
-      <div style={{ backgroundColor: 'var(--bg-surface)', borderRadius: '14px', border: '1px solid var(--border-color)', padding: '20px', marginBottom: '24px', boxShadow: 'var(--card-shadow)' }}>
+      <div style={{ backgroundColor: 'var(--bg-surface)', borderRadius: '12px', border: '1px solid var(--border-color)', padding: '12px 16px', marginBottom: 'var(--spacing-md, 14px)', boxShadow: 'var(--card-shadow)' }}>
         {/* 動作類型藥丸標籤列 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-muted)', marginRight: '4px' }}>動作篩選:</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-muted)', marginRight: '4px' }}>動作篩選:</span>
           {[
             { key: 'ALL', label: '全部動作' },
             { key: 'CREATE', label: '新增 (Create)', color: '#10b981' },
@@ -424,9 +424,9 @@ const EventLogs = () => {
               key={action.key}
               onClick={() => setSelectedAction(action.key)}
               style={{
-                padding: '6px 14px',
+                padding: '4px 12px',
                 borderRadius: '20px',
-                fontSize: '0.8rem',
+                fontSize: '0.78rem',
                 fontWeight: 700,
                 cursor: 'pointer',
                 border: selectedAction === action.key ? '1px solid var(--primary-color)' : '1px solid var(--border-color)',
@@ -557,18 +557,18 @@ const EventLogs = () => {
       </div>
 
       {/* 資料列表 */}
-      <div style={{ backgroundColor: 'var(--bg-surface)', borderRadius: '14px', border: '1px solid var(--border-color)', overflow: 'hidden', boxShadow: 'var(--card-shadow)' }}>
-        <div style={{ overflowX: 'auto' }}>
+      <div style={{ backgroundColor: 'var(--bg-surface)', borderRadius: '12px', border: '1px solid var(--border-color)', overflow: 'hidden', boxShadow: 'var(--card-shadow)' }}>
+        <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 360px)', minHeight: '300px' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
+            <thead style={{ position: 'sticky', top: 0, zIndex: 4 }}>
               <tr style={{ backgroundColor: 'var(--table-header-bg)', borderBottom: '2px solid var(--border-color)', textAlign: 'left' }}>
-                <th style={{ padding: '14px 16px', fontSize: '0.85rem', color: 'var(--table-header-text)', fontWeight: 800, width: '160px', whiteSpace: 'nowrap' }}>時間戳記</th>
-                <th style={{ padding: '14px 16px', fontSize: '0.85rem', color: 'var(--table-header-text)', fontWeight: 800, width: '100px', minWidth: '95px', whiteSpace: 'nowrap' }}>動作</th>
-                <th style={{ padding: '14px 16px', fontSize: '0.85rem', color: 'var(--table-header-text)', fontWeight: 800, width: '120px', whiteSpace: 'nowrap' }}>功能模組</th>
-                <th style={{ padding: '14px 16px', fontSize: '0.85rem', color: 'var(--table-header-text)', fontWeight: 800, width: '180px', whiteSpace: 'nowrap' }}>標的識別 (SN/單號)</th>
-                <th style={{ padding: '14px 16px', fontSize: '0.85rem', color: 'var(--table-header-text)', fontWeight: 800 }}>操作摘要與異動內容</th>
-                <th style={{ padding: '14px 16px', fontSize: '0.85rem', color: 'var(--table-header-text)', fontWeight: 800, width: '140px', whiteSpace: 'nowrap' }}>操作人員</th>
-                <th style={{ padding: '14px 16px', fontSize: '0.85rem', color: 'var(--table-header-text)', fontWeight: 800, textAlign: 'center', width: '90px', whiteSpace: 'nowrap' }}>操作</th>
+                <th style={{ position: 'sticky', top: 0, backgroundColor: 'var(--table-header-bg)', zIndex: 4, padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 12px)', fontSize: '0.82rem', color: 'var(--table-header-text)', fontWeight: 800, width: '160px', whiteSpace: 'nowrap' }}>時間戳記</th>
+                <th style={{ position: 'sticky', top: 0, backgroundColor: 'var(--table-header-bg)', zIndex: 4, padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 12px)', fontSize: '0.82rem', color: 'var(--table-header-text)', fontWeight: 800, width: '100px', minWidth: '95px', whiteSpace: 'nowrap' }}>動作</th>
+                <th style={{ position: 'sticky', top: 0, backgroundColor: 'var(--table-header-bg)', zIndex: 4, padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 12px)', fontSize: '0.82rem', color: 'var(--table-header-text)', fontWeight: 800, width: '120px', whiteSpace: 'nowrap' }}>功能模組</th>
+                <th style={{ position: 'sticky', top: 0, backgroundColor: 'var(--table-header-bg)', zIndex: 4, padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 12px)', fontSize: '0.82rem', color: 'var(--table-header-text)', fontWeight: 800, width: '180px', whiteSpace: 'nowrap' }}>標的識別 (SN/單號)</th>
+                <th style={{ position: 'sticky', top: 0, backgroundColor: 'var(--table-header-bg)', zIndex: 4, padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 12px)', fontSize: '0.82rem', color: 'var(--table-header-text)', fontWeight: 800 }}>操作摘要與異動內容</th>
+                <th style={{ position: 'sticky', top: 0, backgroundColor: 'var(--table-header-bg)', zIndex: 4, padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 12px)', fontSize: '0.82rem', color: 'var(--table-header-text)', fontWeight: 800, width: '140px', whiteSpace: 'nowrap' }}>操作人員</th>
+                <th style={{ position: 'sticky', top: 0, backgroundColor: 'var(--table-header-bg)', zIndex: 4, padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 12px)', fontSize: '0.82rem', color: 'var(--table-header-text)', fontWeight: 800, textAlign: 'center', width: '90px', whiteSpace: 'nowrap' }}>操作</th>
               </tr>
             </thead>
             <tbody>
@@ -718,7 +718,7 @@ const EventLogs = () => {
         </div>
 
         {/* 分頁列 */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)', flexWrap: 'wrap', gap: '12px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 16px', borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)', flexWrap: 'wrap', gap: '10px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
             <PageSizeSelector pageSize={itemsPerPage} onChange={(newSize) => { setItemsPerPage(newSize); setCurrentPage(1); }} />
             <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>

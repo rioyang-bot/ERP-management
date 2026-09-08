@@ -342,22 +342,22 @@ const ProcurementRegistration = ({ editMode = false, isModalMode = false, initOr
   };
 
   const containerStyle = editMode ? { padding: 0 } : {
-    padding: isSplitMode ? '0' : '24px',
+    padding: isSplitMode ? '0' : 'var(--content-padding, 16px)',
     backgroundColor: isSplitMode ? 'transparent' : 'var(--bg-app)',
-    minHeight: isSplitMode ? 'auto' : '100vh',
+    minHeight: isSplitMode ? 'auto' : 'calc(100vh - var(--topbar-height, 56px) - 40px)',
     display: 'flex',
     flexDirection: isSplitMode ? 'column' : 'row',
-    gap: '24px'
+    gap: 'var(--spacing-md, 16px)'
   };
   const leftSectionStyle = editMode ? { width: '100%' } : (isSplitMode ? { width: '100%' } : { flex: '0 0 60%' });
   const rightSectionStyle = isSplitMode ? { width: '100%' } : { flex: '1' };
   const cardStyle = editMode ? {} : {
     backgroundColor: 'var(--bg-surface)',
-    borderRadius: '16px',
-    padding: '24px',
+    borderRadius: '12px',
+    padding: 'var(--card-padding, 16px)',
     boxShadow: 'var(--card-shadow)',
     border: '1px solid var(--border-color)',
-    marginBottom: isSplitMode ? '0' : '24px',
+    marginBottom: isSplitMode ? '0' : 'var(--spacing-md, 16px)',
     color: 'var(--text-main)'
   };
 

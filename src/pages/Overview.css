@@ -1,9 +1,9 @@
 /* Overview.css - 營運總覽專用樣式表 */
 
 .overview-container {
-  padding: 24px;
+  padding: var(--content-padding, 16px);
   background-color: var(--bg-app);
-  min-height: 100vh;
+  min-height: calc(100vh - var(--topbar-height, 56px) - 40px);
   box-sizing: border-box;
   color: var(--text-main);
 }
@@ -12,9 +12,9 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
+  margin-bottom: var(--spacing-md, 14px);
   flex-wrap: wrap;
-  gap: 16px;
+  gap: 12px;
 }
 
 .overview-title-group {

@@ -48,6 +48,17 @@
   --scrollbar-thumb: #cbd5e1;
   --scrollbar-thumb-hover: #94a3b8;
   --scrollbar-track: transparent;
+
+  /* 尺寸與垂直空間利用率系統 (預設: 大螢幕 / 標準) */
+  --topbar-height: 56px;
+  --content-padding: 20px 24px;
+  --card-padding: 20px;
+  --card-margin-bottom: 20px;
+  --card-radius: 14px;
+  --page-title-size: 1.5rem;
+  --page-title-margin: 16px;
+  --table-cell-padding-y: 11px;
+  --table-cell-padding-x: 12px;
 }
 
 [data-theme='dark'] {
@@ -176,3 +187,56 @@ tbody tr {
 tbody tr:hover {
   background-color: var(--table-row-hover);
 }
+
+/* =========================================================
+   垂直空間率與螢幕自適應斷點 (1080P筆電 vs 外接高解析螢幕)
+   ========================================================= */
+
+/* 1080P 筆電或常見 125%/150% 縮放環境 (高度 <= 900px 或寬度 <= 1536px) */
+@media (max-height: 900px), (max-width: 1536px) {
+  :root, [data-theme='light'], [data-theme='dark'] {
+    --topbar-height: 48px;
+    --content-padding: 12px 16px;
+    --card-padding: 14px 16px;
+    --card-margin-bottom: 12px;
+    --card-radius: 10px;
+    --page-title-size: 1.25rem;
+    --page-title-margin: 10px;
+    --table-cell-padding-y: 8px;
+    --table-cell-padding-x: 10px;
+  }
+}
+
+/* 外接高解析度螢幕 (2K/4K/超寬螢幕) 自適應擴展 */
+@media (min-height: 1081px) and (min-width: 1800px) {
+  :root, [data-theme='light'], [data-theme='dark'] {
+    --topbar-height: 64px;
+    --content-padding: 24px 32px;
+    --card-padding: 24px 28px;
+    --card-margin-bottom: 24px;
+    --card-radius: 16px;
+    --page-title-size: 1.75rem;
+    --page-title-margin: 20px;
+    --table-cell-padding-y: 13px;
+    --table-cell-padding-x: 14px;
+  }
+}
+
+/* 通用置頂表頭 (Sticky Header) 與緊湊表格工具類 */
+.sticky-table-header thead th,
+thead.sticky-table-header th,
+th.sticky-th {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  background-color: var(--table-header-bg) !important;
+  box-shadow: 0 1px 0 var(--border-color);
+}
+
+/* 表格單元格緊湊化與自適應間距 */
+.compact-table th,
+.compact-table td {
+  padding: var(--table-cell-padding-y) var(--table-cell-padding-x) !important;
+  font-size: 0.88rem;
+}
+

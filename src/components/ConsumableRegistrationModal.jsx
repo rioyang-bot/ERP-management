@@ -152,15 +152,17 @@ const ConsumableRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   };
 
   const handleSave = async (continueAdd = false) => {
-    if (!formData.type || !formData.brand || !formData.model || !formData.spec?.trim()) {
-      return alert('請填寫必填欄位 (廠牌、類型、型號、規格為必填)');
+    if (!formData.type || !formData.brand || !formData.model) {
+      return alert('請填寫必填欄位 (廠牌、類型、型號/規格為必填)');
     }
+
+    const trimmedSpec = (formData.spec || '').trim();
 
     const checkRes = await window.electronAPI.namedQuery('checkDuplicateConsumable', [
       formData.brand.trim(),
       formData.type.trim(),
       formData.model.trim(),
-      formData.spec.trim()
+      trimmedSpec
     ]);
 
     if (checkRes.success && checkRes.rows && checkRes.rows.length > 0) {
@@ -170,17 +172,17 @@ const ConsumableRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
         `【已存在項目】\n` +
         `• 廠牌：${formData.brand}\n` +
         `• 類型：${formData.type}\n` +
-        `• 型號：${formData.model}\n` +
-        `• 規格：${existing.specification || '(無)'}\n` +
+        `• 型號/規格：${formData.model}\n` +
+        `• 備註：${existing.specification || '(無)'}\n` +
         `• 目前 Stock 庫存：${existing.stock_qty || 0} / LAB：${existing.lab_qty || 0}\n\n` +
-        `系統不允許建立重複的「廠牌 + 類型 + 型號 + 規格」，如需補充庫存請至「進貨入庫」作業。`
+        `系統不允許建立重複的「廠牌 + 類型 + 型號/規格 + 備註」，如需補充庫存請至「進貨入庫」作業。`
       );
     }
 
     setIsSubmitting(true);
     try {
       const res = await window.electronAPI.namedQuery('insertConsumableMaster', [
-        formData.spec.trim(),
+        trimmedSpec,
         formData.type,
         formData.brand,
         formData.model,
@@ -311,20 +313,20 @@ const ConsumableRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                 )}
               </div>
 
-              {/* 型號 */}
+              {/* 型號/規格 */}
               <div>
-                <label style={labelStyle}>型號 (Model) *</label>
+                <label style={labelStyle}>型號/規格 (Model / Spec) *</label>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <select name="model" value={formData.model} onChange={handleChange} style={inputStyle} required>
-                    <option value="">選擇型號</option>
+                    <option value="">選擇型號/規格</option>
                     {models.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
-                  <button type="button" onClick={() => setShowAddModel(!showAddModel)} style={iconButtonStyle} title="新增型號"><Plus size={16} /></button>
-                  <button type="button" onClick={() => setShowManageModel(!showManageModel)} style={iconButtonStyle} title="管理型號"><Settings2 size={16} /></button>
+                  <button type="button" onClick={() => setShowAddModel(!showAddModel)} style={iconButtonStyle} title="新增型號/規格"><Plus size={16} /></button>
+                  <button type="button" onClick={() => setShowManageModel(!showManageModel)} style={iconButtonStyle} title="管理型號/規格"><Settings2 size={16} /></button>
                 </div>
                 {showAddModel && (
                   <div style={{ marginTop: '8px', display: 'flex', gap: '8px' }}>
-                    <input placeholder="新型號名稱" value={newModelName} onChange={e => setNewModelName(e.target.value)} style={inputStyle} />
+                    <input placeholder="新型號/規格名稱" value={newModelName} onChange={e => setNewModelName(e.target.value)} style={inputStyle} />
                     <button type="button" onClick={handleAddModel} style={{ ...iconButtonStyle, backgroundColor: 'var(--primary-color)', color: '#fff' }}>儲存</button>
                   </div>
                 )}
@@ -341,10 +343,10 @@ const ConsumableRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
               </div>
             </div>
 
-            {/* 規格 */}
+            {/* 備註 */}
             <div style={{ marginBottom: '16px' }}>
-              <label style={labelStyle}>規格 (Specification) * <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>(必填)</span></label>
-              <textarea name="spec" value={formData.spec} onChange={handleChange} style={{ ...inputStyle, minHeight: '70px', resize: 'vertical' }} placeholder="請輸入耗材核心規格與配置..." required />
+              <label style={labelStyle}>備註 (Remarks) <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>(選填)</span></label>
+              <textarea name="spec" value={formData.spec} onChange={handleChange} style={{ ...inputStyle, minHeight: '70px', resize: 'vertical' }} placeholder="請輸入耗材備註說明 (選填)..." />
             </div>
 
             {/* 初始庫存與安全庫存 */}

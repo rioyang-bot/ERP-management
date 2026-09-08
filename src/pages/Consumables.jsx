@@ -157,16 +157,18 @@ const Consumables = ({ isSplitMode = false }) => {
   };
 
   const handleAddConsumable = async () => {
-    if (!formData.type || !formData.brand || !formData.model || !formData.spec?.trim()) {
-      return alert('請填寫必填欄位 (廠牌、類型、型號、規格為必填)');
+    if (!formData.type || !formData.brand || !formData.model) {
+      return alert('請填寫必填欄位 (廠牌、類型、型號/規格為必填)');
     }
 
-    // 檢查現有系統中是否已有相同的「廠牌 + 類型 + 型號 + 規格」
+    const trimmedSpec = (formData.spec || '').trim();
+
+    // 檢查現有系統中是否已有相同的「廠牌 + 類型 + 型號/規格 + 備註」
     const checkRes = await window.electronAPI.namedQuery('checkDuplicateConsumable', [
       formData.brand.trim(),
       formData.type.trim(),
       formData.model.trim(),
-      formData.spec.trim()
+      trimmedSpec
     ]);
 
     if (checkRes.success && checkRes.rows && checkRes.rows.length > 0) {
@@ -176,15 +178,15 @@ const Consumables = ({ isSplitMode = false }) => {
         `【已存在項目】\n` +
         `• 廠牌：${formData.brand}\n` +
         `• 類型：${formData.type}\n` +
-        `• 型號：${formData.model}\n` +
-        `• 規格：${existing.specification || '(無)'}\n` +
+        `• 型號/規格：${formData.model}\n` +
+        `• 備註：${existing.specification || '(無)'}\n` +
         `• 目前 Stock 庫存：${existing.stock_qty || 0} / LAB：${existing.lab_qty || 0}\n\n` +
-        `系統不允許建立重複的「廠牌 + 類型 + 型號 + 規格」，如需補充庫存請至「進貨入庫」作業。`
+        `系統不允許建立重複的「廠牌 + 類型 + 型號/規格 + 備註」，如需補充庫存請至「進貨入庫」作業。`
       );
     }
 
     const res = await window.electronAPI.namedQuery('insertConsumableMaster', [
-      formData.spec.trim(),
+      trimmedSpec,
       formData.type,
       formData.brand,
       formData.model,
@@ -220,19 +222,19 @@ const Consumables = ({ isSplitMode = false }) => {
 
   // Styles
   const containerStyle = {
-    padding: isSplitMode ? '0' : '24px',
+    padding: isSplitMode ? '0' : 'var(--content-padding, 16px)',
     backgroundColor: isSplitMode ? 'transparent' : 'var(--bg-app)',
-    minHeight: isSplitMode ? 'auto' : '100vh',
+    minHeight: isSplitMode ? 'auto' : 'calc(100vh - var(--topbar-height, 56px) - 40px)',
     width: '100%',
     boxSizing: 'border-box'
   };
   const cardStyle = {
     backgroundColor: 'var(--bg-surface)',
-    borderRadius: '16px',
-    padding: '24px',
+    borderRadius: '12px',
+    padding: 'var(--card-padding, 16px)',
     boxShadow: 'var(--card-shadow)',
     border: '1px solid var(--border-color)',
-    marginBottom: isSplitMode ? '0' : '24px',
+    marginBottom: isSplitMode ? '0' : 'var(--spacing-md, 16px)',
     color: 'var(--text-main)',
     width: '100%',
     boxSizing: 'border-box'
@@ -319,22 +321,22 @@ const Consumables = ({ isSplitMode = false }) => {
               </div>
 
               <div>
-                <label style={labelStyle}>型號 (Model) <span style={{ color: '#ef4444' }}>*</span></label>
+                <label style={labelStyle}>型號/規格 (Model / Spec) <span style={{ color: '#ef4444' }}>*</span></label>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <select name="model" value={formData.model} onChange={handleChange} style={inputStyle}>
-                    <option value="">請選擇型號</option>
+                    <option value="">請選擇型號/規格</option>
                     {models.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                   <button onClick={() => setShowAddModel(!showAddModel)} style={iconButtonStyle}><Plus size={18} /></button>
                   <button onClick={() => setShowManageModel(!showManageModel)} style={iconButtonStyle}><Settings2 size={18} /></button>
                 </div>
-                {showAddModel && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newModelName} onChange={e => setNewModelName(e.target.value)} style={inputStyle} /><button onClick={handleAddModel} style={{ ...iconButtonStyle, background: 'var(--primary-color)', color: '#fff' }}><Plus size={18} /></button></div>}
+                {showAddModel && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newModelName} onChange={e => setNewModelName(e.target.value)} style={inputStyle} placeholder="新型號/規格名稱" /><button onClick={handleAddModel} style={{ ...iconButtonStyle, background: 'var(--primary-color)', color: '#fff' }}><Plus size={18} /></button></div>}
                 {showManageModel && <div style={{ marginTop: '8px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-surface-subtle)' }}>{models.map(m => (<div key={m} style={manageItemStyle}><span>{m}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteModel(m)} /></div>))}</div>}
               </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
-              <div><label style={labelStyle}>規格 (Specification) <span style={{ color: '#ef4444' }}>*</span></label><input type="text" name="spec" value={formData.spec} onChange={handleChange} style={inputStyle} placeholder="請輸入詳細規格..." /></div>
+              <div><label style={labelStyle}>備註 (Remarks)</label><input type="text" name="spec" value={formData.spec} onChange={handleChange} style={inputStyle} placeholder="請輸入備註說明 (選填)..." /></div>
               <div><label style={labelStyle}>初始庫存數量 (Initial Stock)</label><input type="number" name="stock_qty" value={formData.stock_qty} onChange={handleChange} style={inputStyle} placeholder="0" /></div>
               <div><label style={labelStyle}>安全庫存 (Safety Stock)</label><input type="number" name="safety_stock" value={formData.safety_stock} onChange={handleChange} style={inputStyle} placeholder="0" /></div>
             </div>

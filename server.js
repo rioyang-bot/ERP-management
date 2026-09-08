@@ -71,9 +71,13 @@ const pool = new Pool({
         sn VARCHAR(100)
       );
     `);
-    console.log('✅ Repair Order Tables (RMA) checked & ready');
+    await pool.query(`
+      ALTER TABLE item_master ALTER COLUMN specification DROP NOT NULL;
+      ALTER TABLE item_master ALTER COLUMN specification SET DEFAULT '';
+    `);
+    console.log('✅ Repair Order Tables (RMA) & item_master schema checked & ready');
   } catch (e) {
-    console.error('⚠️ Notice on auto-initializing repair tables:', e.message);
+    console.error('⚠️ Notice on auto-initializing repair tables / schema migration:', e.message);
   }
 })();
 

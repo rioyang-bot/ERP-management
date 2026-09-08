@@ -42,20 +42,34 @@ const HwRegistration = ({ isSplitMode = false }) => {
   };
 
   const fetchBrands = useCallback(async () => {
-    const res = await window.electronAPI.namedQuery('fetchNicBrands');
+    const res = await window.electronAPI.namedQuery('fetchHwBrands');
     if (res.success) setBrands(res.rows);
   }, []);
 
-  const fetchTypes = useCallback(async (brandName) => {
-    if (!brandName) return;
-    const res = await window.electronAPI.namedQuery('fetchNicTypesByBrand', [brandName]);
-    if (res.success) setTypes(res.rows.map(r => r.name));
+  const fetchTypes = useCallback(async (currentType = '') => {
+    const res = await window.electronAPI.namedQuery('fetchHwTypes');
+    if (res.success) {
+      const typeNames = res.rows.map(r => r.name);
+      setTypes(typeNames);
+      setFormData(prev => ({
+        ...prev,
+        type: typeNames.includes(prev.type) ? prev.type : (typeNames.includes(currentType) ? currentType : '')
+      }));
+      return { typeNames };
+    }
+    return { typeNames: [] };
   }, []);
 
-  const fetchModels = useCallback(async (brandName, typeName) => {
-    if (!brandName || !typeName) return;
-    const res = await window.electronAPI.namedQuery('fetchNicModelsByBrandType', [brandName, typeName]);
-    if (res.success) setModels(res.rows.map(r => r.name));
+  const fetchModels = useCallback(async (brandName) => {
+    if (!brandName) { setModels([]); return { modelNames: [] }; }
+    const res = await window.electronAPI.namedQuery('fetchHwModelsByBrand', [brandName]);
+    if (res.success) {
+      const modelNames = res.rows.map(r => r.name);
+      setModels(modelNames);
+      setFormData(prev => ({ ...prev, model: modelNames.includes(prev.model) ? prev.model : '' }));
+      return { modelNames };
+    }
+    return { modelNames: [] };
   }, []);
 
   const fetchProjects = useCallback(async () => {
@@ -68,22 +82,18 @@ const HwRegistration = ({ isSplitMode = false }) => {
   }, []);
 
   useEffect(() => {
+    fetchTypes();
     fetchBrands();
     fetchProjects();
-  }, [fetchBrands, fetchProjects]);
+  }, [fetchTypes, fetchBrands, fetchProjects]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
     if (name === 'brand') {
-      setTypes([]); setModels([]);
-      setFormData(prev => ({ ...prev, type: '', model: '' }));
-      fetchTypes(value);
-    }
-    if (name === 'type') {
       setModels([]);
       setFormData(prev => ({ ...prev, model: '' }));
-      fetchModels(formData.brand, value);
+      fetchModels(value);
     }
   };
 
@@ -91,59 +101,90 @@ const HwRegistration = ({ isSplitMode = false }) => {
     const name = validateAndSanitize(newBrandName, '廠牌名稱');
     if (!name) return;
     const res = await window.electronAPI.namedQuery('insertDeviceBrand', ['硬體', name]);
-    if (res.success) { await fetchBrands(); setNewBrandName(''); setActiveAdd(null); }
+    if (res.success) { 
+      setFormData(prev => ({ ...prev, brand: name, model: '' }));
+      await fetchBrands(); 
+      await fetchModels(name);
+      setNewBrandName(''); 
+      setActiveAdd(null); 
+    }
     else alert('新增失敗：' + res.error);
   };
 
   const handleAddType = async () => {
     const name = validateAndSanitize(newTypeName, '類型名稱');
-    if (!name || !formData.brand) return;
-    const res = await window.electronAPI.namedQuery('insertDeviceType', ['硬體', formData.brand, name]);
-    if (res.success) { await fetchTypes(formData.brand); setNewTypeName(''); setActiveAdd(null); }
+    if (!name) return;
+    const res = await window.electronAPI.namedQuery('insertDeviceType', ['硬體', name]);
+    if (res.success) { 
+      setFormData(prev => ({ ...prev, type: name }));
+      await fetchTypes(name); 
+      setNewTypeName(''); 
+      setActiveAdd(null); 
+    }
     else alert('新增失敗：' + res.error);
   };
 
   const handleAddModel = async () => {
     const name = validateAndSanitize(newModelName, '型號名稱');
-    if (!name || !formData.brand || !formData.type) return;
-    const res = await window.electronAPI.namedQuery('insertDeviceModel', [formData.brand, formData.type, '硬體', name]);
-    if (res.success) { await fetchModels(formData.brand, formData.type); setNewModelName(''); setActiveAdd(null); }
+    if (!name || !formData.brand) return alert('請先選擇廠牌後再新增型號');
+    const res = await window.electronAPI.namedQuery('insertDeviceModel', [formData.brand, name, '硬體']);
+    if (res.success) { 
+      setFormData(prev => ({ ...prev, model: name }));
+      await fetchModels(formData.brand); 
+      setNewModelName(''); 
+      setActiveAdd(null); 
+    }
     else alert('新增失敗：' + res.error);
   };
 
   const handleDeleteBrand = async (brandName) => {
     if (!confirm(`確定要刪除廠牌「${brandName}」嗎？`)) return;
     const res = await window.electronAPI.namedQuery('deleteDeviceBrand', [brandName, '硬體']);
-    if (res.success) await fetchBrands();
+    if (res.success) {
+      await fetchBrands();
+      if (formData.brand === brandName) {
+        setFormData(prev => ({ ...prev, brand: '', model: '' }));
+        setModels([]);
+      }
+    }
     else alert('刪除失敗：' + res.error);
   };
 
   const handleDeleteType = async (typeName) => {
     if (!confirm(`確定要刪除類型「${typeName}」嗎？`)) return;
-    const res = await window.electronAPI.namedQuery('deleteDeviceType', [typeName, '硬體', formData.brand]);
-    if (res.success) await fetchTypes(formData.brand);
+    const res = await window.electronAPI.namedQuery('deleteDeviceType', [typeName, '硬體']);
+    if (res.success) {
+      await fetchTypes();
+      if (formData.type === typeName) {
+        setFormData(prev => ({ ...prev, type: '' }));
+      }
+    }
     else alert('刪除失敗：' + res.error);
   };
 
   const handleDeleteModel = async (modelName) => {
     if (!confirm(`確定要刪除型號「${modelName}」嗎？`)) return;
-    const res = await window.electronAPI.namedQuery('deleteDeviceModel', [modelName, formData.brand, formData.type, '硬體']);
-    if (res.success) await fetchModels(formData.brand, formData.type);
+    const res = await window.electronAPI.namedQuery('deleteDeviceModel', [modelName, formData.brand, '硬體']);
+    if (res.success) {
+      await fetchModels(formData.brand);
+      if (formData.model === modelName) {
+        setFormData(prev => ({ ...prev, model: '' }));
+      }
+    }
     else alert('刪除失敗：' + res.error);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // 取得基本資訊
-    const safeBrand = validateAndSanitize(formData.brand, '廠牌');
     const safeType = validateAndSanitize(formData.type, '類型');
+    const safeBrand = validateAndSanitize(formData.brand, '廠牌');
     const safeModel = validateAndSanitize(formData.model, '型號');
-    const safeSpec = validateAndSanitize(formData.specification, '規格');
+    const safeSpec = formData.specification ? (validateAndSanitize(formData.specification, '規格') || '') : '';
     const safeServerSn = validateAndSanitize(formData.server_sn, 'Server SN');
 
-    if (!safeBrand || !safeType || !safeModel || !safeSpec?.trim()) {
-      return alert('請填寫必填欄位 (廠牌、類型、型號、規格為必填) 並確保符合安全規範');
+    if (!safeType || !safeBrand || !safeModel) {
+      return alert('請填寫必填欄位 (類型、廠牌、型號為必填) 並確保符合安全規範');
     }
 
     // 解析序號清單
@@ -162,7 +203,7 @@ const HwRegistration = ({ isSplitMode = false }) => {
     try {
       // 1. 處理 Item Master
       let itemMasterId;
-      const findRes = await window.electronAPI.namedQuery('findItemMaster', [safeSpec, safeType, safeBrand, safeModel]);
+      const findRes = await window.electronAPI.namedQuery('findItemMaster', [safeSpec || '', safeType, safeBrand, safeModel]);
 
       if (findRes.success && findRes.rows.length > 0) {
         itemMasterId = findRes.rows[0].id;
@@ -217,19 +258,19 @@ const HwRegistration = ({ isSplitMode = false }) => {
   };
 
   const containerStyle = {
-    padding: isSplitMode ? '0' : '24px',
+    padding: isSplitMode ? '0' : 'var(--content-padding, 16px)',
     backgroundColor: isSplitMode ? 'transparent' : 'var(--bg-app)',
-    minHeight: isSplitMode ? 'auto' : '100vh',
+    minHeight: isSplitMode ? 'auto' : 'calc(100vh - var(--topbar-height, 56px) - 40px)',
     width: '100%',
     boxSizing: 'border-box'
   };
   const cardStyle = {
     backgroundColor: 'var(--bg-surface)',
-    borderRadius: '16px',
-    padding: '24px',
+    borderRadius: '12px',
+    padding: 'var(--card-padding, 16px)',
     boxShadow: 'var(--card-shadow)',
     border: '1px solid var(--border-color)',
-    marginBottom: isSplitMode ? '0' : '24px',
+    marginBottom: isSplitMode ? '0' : 'var(--spacing-md, 16px)',
     color: 'var(--text-main)',
     width: '100%',
     boxSizing: 'border-box'
@@ -314,43 +355,46 @@ const HwRegistration = ({ isSplitMode = false }) => {
           </div>
           <form onSubmit={handleSubmit}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' }}>
+              {/* 1. 類型 (Type) */}
+              <div>
+                <label style={labelStyle}>類型 (Type) <span style={{ color: '#ef4444' }}>*</span></label>
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  <select name="type" value={formData.type} onChange={handleChange} style={inputStyle} required>
+                    <option value="">選擇類型</option>
+                    {types.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  <button type="button" onClick={() => setActiveAdd(activeAdd === 'type' ? null : 'type')} style={iconBtnStyle} title="新增類型"><Plus size={18} /></button>
+                  <button type="button" onClick={() => setActiveMgmt(activeMgmt === 'type' ? null : 'type')} style={iconBtnStyle} title="管理類型"><Settings2 size={18} /></button>
+                </div>
+                {activeAdd === 'type' && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newTypeName} onChange={e => setNewTypeName(e.target.value)} placeholder="新類型 (例: NIC)" style={inputStyle} /><button type="button" onClick={handleAddType} style={{ ...iconBtnStyle, background: '#2563eb', color: '#fff' }}><Plus size={18} /></button></div>}
+                {activeMgmt === 'type' && <RenderInlineMgmt title="類型" items={types.map(t => ({ name: t }))} onDelete={handleDeleteType} />}
+              </div>
+
+              {/* 2. 廠牌 (Brand) */}
               <div>
                 <label style={labelStyle}>廠牌 (Brand) <span style={{ color: '#ef4444' }}>*</span></label>
                 <div style={{ display: 'flex', gap: '4px' }}>
                   <select name="brand" value={formData.brand} onChange={handleChange} style={inputStyle} required>
                     <option value="">選擇廠牌</option>
-                    {brands.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}
+                    {brands.map(b => <option key={b.id || b.name} value={b.name}>{b.name}</option>)}
                   </select>
-                  <button type="button" onClick={() => setActiveAdd(activeAdd === 'brand' ? null : 'brand')} style={iconBtnStyle}><Plus size={18} /></button>
-                  <button type="button" onClick={() => setActiveMgmt(activeMgmt === 'brand' ? null : 'brand')} style={iconBtnStyle}><Settings2 size={18} /></button>
+                  <button type="button" onClick={() => setActiveAdd(activeAdd === 'brand' ? null : 'brand')} style={iconBtnStyle} title="新增廠牌"><Plus size={18} /></button>
+                  <button type="button" onClick={() => setActiveMgmt(activeMgmt === 'brand' ? null : 'brand')} style={iconBtnStyle} title="管理廠牌"><Settings2 size={18} /></button>
                 </div>
                 {activeAdd === 'brand' && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newBrandName} onChange={e => setNewBrandName(e.target.value)} placeholder="新廠牌" style={inputStyle} /><button type="button" onClick={handleAddBrand} style={{ ...iconBtnStyle, background: '#2563eb', color: '#fff' }}><Plus size={18} /></button></div>}
                 {activeMgmt === 'brand' && <RenderInlineMgmt title="廠牌" items={brands} onDelete={handleDeleteBrand} />}
               </div>
 
-              <div>
-                <label style={labelStyle}>類型 (Type) <span style={{ color: '#ef4444' }}>*</span></label>
-                <div style={{ display: 'flex', gap: '4px' }}>
-                  <select name="type" value={formData.type} onChange={handleChange} style={inputStyle} required disabled={!formData.brand}>
-                    <option value="">選擇類型</option>
-                    {types.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                  <button type="button" onClick={() => setActiveAdd(activeAdd === 'type' ? null : 'type')} style={iconBtnStyle} disabled={!formData.brand}><Plus size={18} /></button>
-                  <button type="button" onClick={() => setActiveMgmt(activeMgmt === 'type' ? null : 'type')} style={iconBtnStyle} disabled={!formData.brand}><Settings2 size={18} /></button>
-                </div>
-                {activeAdd === 'type' && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newTypeName} onChange={e => setNewTypeName(e.target.value)} placeholder="新類型" style={inputStyle} /><button type="button" onClick={handleAddType} style={{ ...iconBtnStyle, background: '#2563eb', color: '#fff' }}><Plus size={18} /></button></div>}
-                {activeMgmt === 'type' && <RenderInlineMgmt title="類型" items={types.map(t => ({ name: t }))} onDelete={handleDeleteType} />}
-              </div>
-
+              {/* 3. 型號 (Model) */}
               <div>
                 <label style={labelStyle}>型號 (Model) <span style={{ color: '#ef4444' }}>*</span></label>
                 <div style={{ display: 'flex', gap: '4px' }}>
-                  <select name="model" value={formData.model} onChange={handleChange} style={inputStyle} required disabled={!formData.type}>
+                  <select name="model" value={formData.model} onChange={handleChange} style={inputStyle} required disabled={!formData.brand}>
                     <option value="">選擇型號</option>
                     {models.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
-                  <button type="button" onClick={() => setActiveAdd(activeAdd === 'model' ? null : 'model')} style={iconBtnStyle} disabled={!formData.type}><Plus size={18} /></button>
-                  <button type="button" onClick={() => setActiveMgmt(activeMgmt === 'model' ? null : 'model')} style={iconBtnStyle} disabled={!formData.type}><Settings2 size={18} /></button>
+                  <button type="button" onClick={() => setActiveAdd(activeAdd === 'model' ? null : 'model')} style={iconBtnStyle} disabled={!formData.brand} title="新增型號"><Plus size={18} /></button>
+                  <button type="button" onClick={() => setActiveMgmt(activeMgmt === 'model' ? null : 'model')} style={iconBtnStyle} disabled={!formData.brand} title="管理型號"><Settings2 size={18} /></button>
                 </div>
                 {activeAdd === 'model' && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newModelName} onChange={e => setNewModelName(e.target.value)} placeholder="新型號" style={inputStyle} /><button type="button" onClick={handleAddModel} style={{ ...iconBtnStyle, background: '#2563eb', color: '#fff' }}><Plus size={18} /></button></div>}
                 {activeMgmt === 'model' && <RenderInlineMgmt title="型號" items={models.map(m => ({ name: m }))} onDelete={handleDeleteModel} />}
@@ -359,8 +403,8 @@ const HwRegistration = ({ isSplitMode = false }) => {
 
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 1fr) 1fr 1fr', gap: '16px', marginBottom: '24px' }}>
               <div>
-                <label style={labelStyle}>規格 (Specification) <span style={{ color: '#ef4444' }}>*</span></label>
-                <input type="text" name="specification" value={formData.specification} onChange={handleChange} style={inputStyle} placeholder="例如: 10GbE SFP+ Dual Port" required />
+                <label style={labelStyle}>規格 (Specification) <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>(選填)</span></label>
+                <input type="text" name="specification" value={formData.specification} onChange={handleChange} style={inputStyle} placeholder="例如: 10GbE SFP+ Dual Port" />
               </div>
               <div>
                 <label style={labelStyle}>資產歸屬</label>

@@ -62,30 +62,41 @@ const MainLayout = () => {
 
       // 1. 驗證原密碼
       const hashedOld = await hashPassword(pwdOld);
-      const res = await window.electronAPI.namedQuery('fetchUserById', [authUser.id]);
-      if (res.success && res.rows.length > 0) {
-        if (res.rows[0].password_hash !== hashedOld) {
+      let res = null;
+      if (authUser?.id) {
+        res = await window.electronAPI.namedQuery('fetchUserById', [authUser.id]);
+      } else if (authUser?.username) {
+        res = await window.electronAPI.namedQuery('fetchUserByUsername', [authUser.username]);
+      } else {
+        setPwdError('無法識別當前登入使用者，請重新登入');
+        setIsPwdUpdating(false);
+        return;
+      }
+
+      if (res && res.success && res.rows.length > 0) {
+        const user = res.rows[0];
+        if (user.password_hash !== hashedOld) {
           setPwdError('原密碼錯誤');
           setIsPwdUpdating(false);
           return;
         }
+
+        // 2. 更新為新密碼
+        const hashedNew = await hashPassword(pwdNew);
+        const updateRes = await window.electronAPI.namedQuery('updateUserPassword', [hashedNew, user.id]);
+        if (updateRes.success) {
+          alert('密碼變更成功，下次登入請使用新密碼。');
+          setShowPasswordModal(false);
+          setPwdOld('');
+          setPwdNew('');
+          setPwdConfirm('');
+        } else {
+          setPwdError('變更密碼失敗：' + (updateRes.error || '資料庫更新失敗'));
+        }
       } else {
-        setPwdError('無法驗證原密碼');
+        setPwdError('無法驗證原密碼：' + (res?.error || '查無使用者帳號資料'));
         setIsPwdUpdating(false);
         return;
-      }
-      
-      // 2. 更新為新密碼
-      const hashedNew = await hashPassword(pwdNew);
-      const updateRes = await window.electronAPI.namedQuery('updateUserPassword', [hashedNew, authUser.id]);
-      if (updateRes.success) {
-        alert('密碼變更成功，下次登入請使用新密碼。');
-        setShowPasswordModal(false);
-        setPwdOld('');
-        setPwdNew('');
-        setPwdConfirm('');
-      } else {
-        setPwdError('變更密碼失敗：' + updateRes.error);
       }
     } catch (err) {
       console.error(err);

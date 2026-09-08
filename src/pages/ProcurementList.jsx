@@ -175,6 +175,18 @@ const ProcurementList = ({ isSplitMode = false }) => {
     'COMPLETED': { bg: 'rgba(34, 197, 94, 0.15)', color: '#22c55e', label: '已結案入庫' }
   };
 
+  const thStyle = { 
+    padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', 
+    fontSize: '0.88rem', 
+    color: 'var(--table-header-text)', 
+    fontWeight: 800, 
+    position: 'sticky', 
+    top: 0, 
+    zIndex: 4, 
+    backgroundColor: 'var(--table-header-bg)', 
+    boxShadow: '0 1px 0 var(--border-color)',
+    whiteSpace: 'nowrap'
+  };
 
   const [itemsPerPage, setItemsPerPage] = usePageSize('procurement_list', 10);
   const totalPages = Math.ceil(filteredOrders.length / itemsPerPage) || 1;
@@ -182,13 +194,13 @@ const ProcurementList = ({ isSplitMode = false }) => {
 
   return (
     <div className="procurement-list-container" style={isSplitMode ? { padding: 0, minHeight: 'auto', backgroundColor: 'transparent' } : {}}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--page-title-margin, 14px)', flexWrap: 'wrap', gap: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <div>
-            <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
-              <ShoppingCart size={26} color="var(--primary-color)" /> 採購列表(Purchase Order List)
+            <h1 style={{ fontSize: 'var(--page-title-size, 1.35rem)', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
+              <ShoppingCart size={24} color="var(--primary-color)" /> 採購列表(Purchase Order List)
             </h1>
-            <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>管理所有採購單 (PO) 的品項分佈與入庫進度。</p>
+            <p style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '2px', marginBottom: 0 }}>管理所有採購單 (PO) 的品項分佈與入庫進度。</p>
           </div>
           {!isSplitMode && (
             <div style={{ display: 'flex', backgroundColor: 'var(--bg-surface-subtle)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
@@ -214,11 +226,11 @@ const ProcurementList = ({ isSplitMode = false }) => {
           )}
         </div>
         
-        <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-           <div style={{ backgroundColor: 'var(--bg-surface)', padding: '12px 24px', borderRadius: '12px', border: '1px solid var(--border-color)', display: 'flex', gap: '24px', boxShadow: 'var(--card-shadow)' }}>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+           <div style={{ backgroundColor: 'var(--bg-surface)', padding: '8px 16px', borderRadius: '12px', border: '1px solid var(--border-color)', display: 'flex', gap: '16px', boxShadow: 'var(--card-shadow)' }}>
               <div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>待處理採購單</div>
-                <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#f97316' }}>
+                <div style={{ fontSize: '1.15rem', fontWeight: 700, color: '#f97316' }}>
                   {orders.filter(o => o.status !== 'COMPLETED').length} <span style={{ fontSize: '0.8rem', fontWeight: 400, opacity: 0.8 }}>單</span>
                 </div>
               </div>
@@ -226,13 +238,13 @@ const ProcurementList = ({ isSplitMode = false }) => {
         </div>
       </div>
 
-      <div className="card-surface" style={{ padding: '0', overflow: 'hidden' }}>
-        <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-surface-subtle)' }}>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+      <div className="card-surface" style={{ padding: '0', overflow: 'hidden', borderRadius: 'var(--card-radius, 14px)' }}>
+        <div style={{ padding: '12px 18px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-surface-subtle)', flexWrap: 'wrap', gap: '10px' }}>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
             <select 
               value={searchField} 
               onChange={e => setSearchField(e.target.value)}
-              style={{ padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--input-border)', outline: 'none', fontSize: '0.9rem', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', cursor: 'pointer', minWidth: '130px' }}
+              style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--input-border)', outline: 'none', fontSize: '0.88rem', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', cursor: 'pointer', minWidth: '120px' }}
             >
               {searchOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
             </select>
@@ -286,9 +298,9 @@ const ProcurementList = ({ isSplitMode = false }) => {
           </div>
         </div>
 
-        <div style={{ overflowX: 'auto' }}>
+        <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', minHeight: '300px' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
+            <thead style={{ position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)' }}>
               <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--border-color)', backgroundColor: 'var(--table-header-bg)' }}>
                 <th style={{ ...thStyle, width: '40px' }}></th>
                 <th style={thStyle}>採購單號 / 日期</th>

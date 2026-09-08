@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Search, Edit2, X, Save, MoreHorizontal, MoreVertical, MapPin, User, Trash2, CheckCircle, ShoppingBag, Wrench, ShieldAlert, Cpu, Archive, RotateCcw, Server, Send, History, Building2 } from 'lucide-react';
+import { Search, Edit2, X, Save, MoreHorizontal, MoreVertical, MapPin, User, Trash2, CheckCircle, ShoppingBag, Wrench, ShieldAlert, Cpu, Archive, RotateCcw, Server, Send, History, Building2, Info } from 'lucide-react';
 import ItemLedgerModal from '../components/ItemLedgerModal';
 import DeviceRegistrationModal from '../components/DeviceRegistrationModal';
 import { logUpdate, logDelete, logStatusChange } from '../utils/auditLogger';
@@ -19,10 +19,21 @@ const DeviceList = ({ isSplitMode = false }) => {
   const [activeMenuId, setActiveMenuId] = useState(null); 
   const [menuPosition, setMenuPosition] = useState(null);
   const brandFilter = searchParams.get('brand');
+  const [selectedCardKey, setSelectedCardKey] = useState(null);
+  const [aggregationMode, setAggregationMode] = useState(() => {
+    return localStorage.getItem('device_aggregation_mode') || 'SPEC';
+  });
+
+  const handleAggregationModeChange = (mode) => {
+    setAggregationMode(mode);
+    localStorage.setItem('device_aggregation_mode', mode);
+    setSelectedCardKey(null);
+  };
   
-  // 當側邊欄分類變動時，清除搜尋關鍵字
+  // 當側邊欄分類變動時，清除搜尋關鍵字與選取卡片
   useEffect(() => {
     setSearchTerm('');
+    setSelectedCardKey(null);
     setActiveMenuId(null);
     setMenuPosition(null);
   }, [brandFilter]);
@@ -115,6 +126,10 @@ const DeviceList = ({ isSplitMode = false }) => {
 
   const handleEditClick = (item) => {
     const f = { ...item };
+    f._origSn = (f.sn || '').trim();
+    f._origModel = f.model || '';
+    f._origSpec = f.specification || '';
+    f._origComponents = Array.isArray(f.components) ? f.components : [];
     f.ownership = f.ownership || 'FOR_SALE';
     ['installed_date', 'customer_warranty_expire', 'system_date', 'warranty_expire'].forEach(k => {
       if (f[k]) {
@@ -176,26 +191,116 @@ const DeviceList = ({ isSplitMode = false }) => {
   };
 
   const handleUpdate = async () => {
+    if (!editItem) return;
+
+    const newModel = (editItem.model || '').trim();
+    const newSpec = (editItem.specification || '').trim();
+    const newSn = (editItem.sn || '').trim();
+    const origSn = (editItem._origSn || '').trim();
+    const isSnChanged = newSn !== origSn;
+
+    if (!newModel) {
+      alert('請輸入型號 (Model)！');
+      return;
+    }
+
+    // 序號防重檢查
+    if (isSnChanged && newSn) {
+      const checkRes = await window.electronAPI.namedQuery('checkAssetSnExistsExcludeSelf', [newSn, editItem.id]);
+      if (checkRes.success && checkRes.rows?.length > 0) {
+        alert(`序號「${newSn}」已存在於其他設備或資產，請勿重複使用！`);
+        return;
+      }
+    }
+
+    // 若原設備有掛載硬體且序號發生變更，提示確認連動更新
+    const mountedComponents = editItem._origComponents || [];
+    if (isSnChanged && origSn && mountedComponents.length > 0) {
+      const confirmSync = window.confirm(
+        `偵測到本設備目前掛載了 ${mountedComponents.length} 件硬體零組件。\n\n設備序號即將由「${origSn}」變更為「${newSn || '無序號'}」，系統將一併同步更新所有掛載硬體的搭載設備序號。\n\n是否確定變更？`
+      );
+      if (!confirmSync) return;
+    }
+
+    const isModelOrSpecChanged = (newModel !== (editItem._origModel || '')) || (newSpec !== (editItem._origSpec || ''));
+    if (isModelOrSpecChanged) {
+      let targetMasterId = null;
+      const findRes = await window.electronAPI.namedQuery('findItemMaster', [
+        newSpec,
+        editItem.type || '',
+        editItem.brand || '',
+        newModel
+      ]);
+
+      if (findRes.success && findRes.rows?.length > 0) {
+        targetMasterId = findRes.rows[0].id;
+      } else {
+        const countRes = await window.electronAPI.namedQuery('countAssetsByMasterId', [editItem.item_master_id]);
+        const refCount = (countRes.success && countRes.rows?.[0]) ? parseInt(countRes.rows[0].count, 10) : 99;
+
+        if (refCount <= 1) {
+          await window.electronAPI.namedQuery('updateItemMasterSpecs', [newSpec, newModel, editItem.item_master_id]);
+          targetMasterId = editItem.item_master_id;
+        } else {
+          const createRes = await window.electronAPI.namedQuery('insertItemMaster', [
+            newSpec,
+            editItem.type || '',
+            editItem.brand || '',
+            newModel,
+            '台',
+            '設備'
+          ]);
+          if (createRes.success && createRes.rows?.length > 0) {
+            targetMasterId = createRes.rows[0].id;
+          }
+        }
+      }
+
+      if (targetMasterId && targetMasterId !== editItem.item_master_id) {
+        await window.electronAPI.namedQuery('updateAssetMasterId', [targetMasterId, editItem.id]);
+      }
+
+      await window.electronAPI.namedQuery('insertDeviceModel', [editItem.brand, newModel, '設備']);
+    }
+
     const updatedCustomAttributes = {
       ...(editItem.custom_attributes || {}),
       contact_person: editItem.contact_person || '',
       contact_phone: editItem.contact_phone || ''
     };
     const res = await window.electronAPI.namedQuery('updateAssetDetails', [
-        editItem.sn, editItem.client, editItem.hostname, editItem.location, editItem.installed_date || null,
+        newSn || null, editItem.client, editItem.hostname, editItem.location, editItem.installed_date || null,
         editItem.customer_warranty_expire || null, editItem.system_date || null, editItem.warranty_expire || null,
         editItem.os, editItem.nic, updatedCustomAttributes, editItem.ownership || 'FOR_SALE', editItem.id
     ]);
     if (res.success) {
-      logUpdate('DEVICE', editItem.sn || editItem.id, `${editItem.brand || ''} ${editItem.model || ''}`, `編輯設備詳細資訊 [${editItem.sn || editItem.id}]`, {
-        sn: editItem.sn,
-        client: editItem.client,
-        hostname: editItem.hostname,
-        location: editItem.location,
-        ownership: editItem.ownership,
-        os: editItem.os,
-        nic: editItem.nic
-      });
+      // 若序號有變更，連動更新掛載硬體以及相關明細
+      if (isSnChanged && origSn) {
+        await window.electronAPI.namedQuery('updateMountedHardwareServerSn', [newSn, origSn]);
+        await window.electronAPI.namedQuery('updateRepairItemsSn', [newSn, origSn]);
+        await window.electronAPI.namedQuery('updateOutboundItemsSn', [newSn, origSn]);
+      }
+
+      logUpdate(
+        'DEVICE', 
+        newSn || editItem.id, 
+        `${editItem.brand || ''} ${editItem.model || ''}`, 
+        isSnChanged 
+          ? `編輯設備詳細資訊，序號由 [${origSn || '無序號'}] 變更為 [${newSn || '無序號'}]（已同步連動 ${mountedComponents.length} 件掛載硬體）` 
+          : `編輯設備詳細資訊 [${newSn || editItem.id}]`, 
+        {
+          sn: newSn,
+          origSn: origSn,
+          isSnChanged,
+          syncedHardwareCount: mountedComponents.length,
+          client: editItem.client,
+          hostname: editItem.hostname,
+          location: editItem.location,
+          ownership: editItem.ownership,
+          os: editItem.os,
+          nic: editItem.nic
+        }
+      );
       setShowEditModal(false);
       window.dispatchEvent(new CustomEvent('db-update'));
       fetchAssets();
@@ -208,6 +313,17 @@ const DeviceList = ({ isSplitMode = false }) => {
 
   const sortedItems = items
     .filter(item => {
+      if (selectedCardKey) {
+        const b = item.brand || '未知';
+        const t = item.type || '未分類';
+        const m = item.model || '未設定型號';
+        const s = (item.specification || '').trim();
+        let key = '';
+        if (aggregationMode === 'SPEC') key = `${b} - ${t} - ${m} - ${s}`;
+        else if (aggregationMode === 'MODEL') key = `${b} - ${t} - ${m}`;
+        else if (aggregationMode === 'BRAND') key = `${b}`;
+        if (key !== selectedCardKey) return false;
+      }
       const searchTerms = searchTerm.toLowerCase().split(/\s+/).filter(t => t);
       if (searchTerms.length === 0) return true;
       return searchTerms.every(term => 
@@ -271,28 +387,44 @@ const DeviceList = ({ isSplitMode = false }) => {
 
 
   const handleCardClick = (st) => {
-    const target = [st.brand, st.model, st.specification].filter(Boolean).join(' ');
-    if (searchTerm === target && brandFilter === st.brand) {
-      setSearchTerm('');
-      setSearchParams({});
+    if (selectedCardKey === st.key) {
+      setSelectedCardKey(null);
     } else {
-      if (brandFilter !== st.brand) {
-        setSearchTerm('');
-      }
-      setSearchParams({ brand: st.brand });
-      setTimeout(() => setSearchTerm(target), 50);
+      setSelectedCardKey(st.key);
     }
     setCurrentPage(1);
   };
 
   const renderStats = () => {
-    const statsMap = sortedItems.reduce((acc, curr) => {
+    const statsMap = items.reduce((acc, curr) => {
       const brandStr = curr.brand || '未知';
       const typeStr = curr.type || '未分類';
       const modelStr = curr.model || '未設定型號';
       const specStr = (curr.specification || '').trim();
-      const key = `${brandStr} - ${typeStr} - ${modelStr} - ${specStr}`;
-      if (!acc[key]) acc[key] = { key, brand: brandStr, type: typeStr, model: modelStr, specification: specStr, active: 0, shipped: 0, lent: 0, repair: 0, scrapped: 0 };
+      let key = '';
+      if (aggregationMode === 'SPEC') {
+        key = `${brandStr} - ${typeStr} - ${modelStr} - ${specStr}`;
+      } else if (aggregationMode === 'MODEL') {
+        key = `${brandStr} - ${typeStr} - ${modelStr}`;
+      } else if (aggregationMode === 'BRAND') {
+        key = `${brandStr}`;
+      }
+      if (!acc[key]) {
+        acc[key] = { 
+          key, 
+          brand: brandStr, 
+          type: typeStr, 
+          model: modelStr, 
+          specification: specStr, 
+          total: 0, 
+          active: 0, 
+          shipped: 0, 
+          lent: 0, 
+          repair: 0, 
+          scrapped: 0 
+        };
+      }
+      acc[key].total++;
       const s = curr.status;
       if (s === 'ACTIVE') acc[key].active++;
       else if (s === 'SHIPPED') acc[key].shipped++;
@@ -308,11 +440,11 @@ const DeviceList = ({ isSplitMode = false }) => {
 
     if (allKeys.length === 0) return null;
 
-    if (brandFilter || searchTerm) {
+    if (brandFilter || searchTerm || selectedCardKey) {
       const searchTerms = searchTerm.toLowerCase().split(/\s+/).filter(t => t);
       const displayKeys = allKeys.filter(k => {
         const lk = k.toLowerCase();
-        return searchTerms.every(t => lk.includes(t));
+        return searchTerms.length === 0 || searchTerms.every(t => lk.includes(t));
       });
       const activeMatches = displayKeys.filter(k => !retiredKeys.includes(k)).map(k => statsMap[k]);
       const retiredMatches = displayKeys.filter(k => retiredKeys.includes(k)).map(k => statsMap[k]);
@@ -321,15 +453,14 @@ const DeviceList = ({ isSplitMode = false }) => {
         <div style={{ position: 'relative' }}>
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '24px', padding: '16px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '16px', border: '1px solid var(--border-color)' }}>
             {activeMatches.map(st => {
-              const target = [st.brand, st.model, st.specification].filter(Boolean).join(' ');
-              const isSelected = searchTerm && target && searchTerm.toLowerCase() === target.toLowerCase();
+              const isSelected = selectedCardKey === st.key;
               return (
                 <div 
                   key={st.key}
                   onClick={() => handleCardClick(st)}
                   style={{ 
-                    backgroundColor: isSelected ? 'var(--primary-bg)' : 'var(--bg-surface)', 
-                    padding: '12px', 
+                    backgroundColor: isSelected ? 'var(--primary-bg, rgba(37, 99, 235, 0.08))' : 'var(--bg-surface)', 
+                    padding: '12px 16px', 
                     borderRadius: '12px', 
                     border: isSelected ? '2px solid var(--primary-color)' : '1px solid var(--border-color)', 
                     boxShadow: isSelected ? '0 4px 12px rgba(37, 99, 235, 0.2)' : 'var(--card-shadow)',
@@ -346,24 +477,31 @@ const DeviceList = ({ isSplitMode = false }) => {
                     <Archive size={14} />
                   </button>
                   <div style={{ marginBottom: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>
-                    <div style={{ fontSize: '13px', fontWeight: '900', color: isSelected ? 'var(--primary-color)' : 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <Cpu size={12} color={isSelected ? 'var(--primary-color)' : 'var(--text-muted)'} /> {st.brand}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ fontSize: '14px', fontWeight: '900', color: isSelected ? 'var(--primary-color)' : 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                        <Cpu size={15} color={isSelected ? 'var(--primary-color)' : 'var(--text-muted)'} /> {st.brand}
+                      </div>
+                      <span style={{ fontSize: '11px', fontWeight: '800', color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', backgroundColor: 'var(--bg-surface-subtle)', padding: '2px 6px', borderRadius: '6px', marginRight: '20px' }}>
+                        共 {st.total} 台
+                      </span>
                     </div>
-                    <div style={{ color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', fontSize: '10px', fontWeight: '700', marginTop: '2px', paddingLeft: '16px' }}>
-                      {st.type} - {st.model}
-                    </div>
-                    {st.specification && (
-                      <div style={{ color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', fontSize: '9px', fontWeight: '500', marginTop: '2px', paddingLeft: '16px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }} title={st.specification}>
+                    {aggregationMode !== 'BRAND' && (
+                      <div style={{ color: 'var(--text-muted)', fontSize: '11px', fontWeight: '700', marginTop: '2px', paddingLeft: '21px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                        {st.type} - {st.model}
+                      </div>
+                    )}
+                    {aggregationMode === 'SPEC' && st.specification && (
+                      <div style={{ color: 'var(--text-subtle)', fontSize: '10px', fontWeight: '500', marginTop: '2px', paddingLeft: '21px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }} title={st.specification}>
                         {st.specification}
                       </div>
                     )}
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px 6px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>在庫</span><span style={{ color: '#16a34a', fontWeight: '800' }}>{st.active}</span></div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>出貨</span><span style={{ color: '#3b82f6', fontWeight: '800' }}>{st.shipped}</span></div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>借出</span><span style={{ color: '#d97706', fontWeight: '800' }}>{st.lent || 0}</span></div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>故障</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>報廢</span><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}><span style={{ color: 'var(--text-muted)' }}>在庫</span><span style={{ color: '#16a34a', fontWeight: '800' }}>{st.active}</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}><span style={{ color: 'var(--text-muted)' }}>出貨</span><span style={{ color: '#3b82f6', fontWeight: '800' }}>{st.shipped}</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}><span style={{ color: 'var(--text-muted)' }}>借出</span><span style={{ color: '#d97706', fontWeight: '800' }}>{st.lent || 0}</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}><span style={{ color: 'var(--text-muted)' }}>故障</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
                   </div>
                 </div>
               );
@@ -406,22 +544,30 @@ const DeviceList = ({ isSplitMode = false }) => {
         {slots.map((_, idx) => {
           const cardKey = layoutMap[idx];
           const st = statsMap[cardKey];
+          const isSelected = st && selectedCardKey === st.key;
           return (
             <div key={idx} onDragOver={handleSlotDragOver} onDrop={(e) => handleDropOnSlot(e, idx)} style={{ minHeight: '100px', borderRadius: '12px', border: draggingCardKey ? '1px dashed var(--border-color)' : '1px solid transparent', backgroundColor: draggingCardKey ? 'var(--bg-surface-hover)' : 'transparent', transition: 'all 0.2s' }}>
               {st && (
-                <div draggable onDragStart={(e) => handleCardDragStart(e, st.key)} onClick={() => handleCardClick(st)} style={{ backgroundColor: 'var(--bg-surface)', padding: '10px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: 'var(--card-shadow)', cursor: 'pointer', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', opacity: draggingCardKey === st.key ? 0.3 : 1, transform: 'scale(1)', transition: 'transform 0.1s', position: 'relative' }} onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'} onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}>
+                <div draggable onDragStart={(e) => handleCardDragStart(e, st.key)} onClick={() => handleCardClick(st)} style={{ backgroundColor: isSelected ? 'var(--primary-bg, rgba(37, 99, 235, 0.08))' : 'var(--bg-surface)', padding: '12px', borderRadius: '12px', border: isSelected ? '2px solid var(--primary-color)' : '1px solid var(--border-color)', boxShadow: isSelected ? '0 4px 12px rgba(37, 99, 235, 0.2)' : 'var(--card-shadow)', cursor: 'pointer', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', opacity: draggingCardKey === st.key ? 0.3 : 1, transform: 'scale(1)', transition: 'transform 0.1s', position: 'relative' }} onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'} onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}>
                   <button onClick={(e) => toggleRetire(e, st.key)} style={{ position: 'absolute', top: '8px', right: '8px', border: 'none', background: 'none', color: 'var(--text-subtle)', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }} title="將此卡片移至汰舊區">
                     <Archive size={14} />
                   </button>
-                  <div style={{ marginBottom: '6px', borderBottom: '1px solid var(--border-color)', paddingBottom: '4px', overflow: 'hidden' }}>
-                    <div style={{ fontSize: '12px', fontWeight: '900', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
-                      <Cpu size={12} color="var(--text-muted)" /> {st.brand}
+                  <div style={{ marginBottom: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ fontSize: '13px', fontWeight: '900', color: isSelected ? 'var(--primary-color)' : 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '5px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                        <Cpu size={14} color={isSelected ? 'var(--primary-color)' : 'var(--text-muted)'} /> {st.brand}
+                      </div>
+                      <span style={{ fontSize: '10px', fontWeight: '800', color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', backgroundColor: 'var(--bg-surface-subtle)', padding: '1px 5px', borderRadius: '4px', marginRight: '18px' }}>
+                        共 {st.total} 台
+                      </span>
                     </div>
-                    <div style={{ color: 'var(--text-muted)', fontSize: '10px', fontWeight: '700', marginTop: '1px', paddingLeft: '16px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
-                      {st.type} - {st.model}
-                    </div>
-                    {st.specification && (
-                      <div style={{ color: 'var(--text-subtle)', fontSize: '9px', fontWeight: '500', marginTop: '1px', paddingLeft: '16px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }} title={st.specification}>
+                    {aggregationMode !== 'BRAND' && (
+                      <div style={{ color: 'var(--text-muted)', fontSize: '11px', fontWeight: '700', marginTop: '2px', paddingLeft: '19px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                        {st.type} - {st.model}
+                      </div>
+                    )}
+                    {aggregationMode === 'SPEC' && st.specification && (
+                      <div style={{ color: 'var(--text-subtle)', fontSize: '10px', fontWeight: '500', marginTop: '2px', paddingLeft: '19px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }} title={st.specification}>
                         {st.specification}
                       </div>
                     )}
@@ -431,7 +577,7 @@ const DeviceList = ({ isSplitMode = false }) => {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>出貨</span><span style={{ color: '#3b82f6', fontWeight: '800' }}>{st.shipped}</span></div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>借出</span><span style={{ color: '#d97706', fontWeight: '800' }}>{st.lent || 0}</span></div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>故障</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>報廢</span><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
                   </div>
                 </div>
               )}
@@ -460,10 +606,12 @@ const DeviceList = ({ isSplitMode = false }) => {
                 <div style={{ fontSize: '12px', fontWeight: '900', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <Cpu size={12} color="var(--text-muted)" /> {st.brand}
                 </div>
-                <div style={{ color: 'var(--text-muted)', fontSize: '10px', fontWeight: '700', marginTop: '2px', paddingLeft: '16px' }}>
-                  {st.type} - {st.model}
-                </div>
-                {st.specification && (
+                {aggregationMode !== 'BRAND' && (
+                  <div style={{ color: 'var(--text-muted)', fontSize: '10px', fontWeight: '700', marginTop: '2px', paddingLeft: '16px' }}>
+                    {st.type} - {st.model}
+                  </div>
+                )}
+                {aggregationMode === 'SPEC' && st.specification && (
                   <div style={{ color: 'var(--text-subtle)', fontSize: '9px', fontWeight: '500', marginTop: '2px', paddingLeft: '16px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }} title={st.specification}>
                     {st.specification}
                   </div>
@@ -484,28 +632,53 @@ const DeviceList = ({ isSplitMode = false }) => {
   };
 
   const containerStyle = {
-    padding: isSplitMode ? '0' : '24px',
+    padding: isSplitMode ? '0' : 'var(--content-padding, 16px 20px)',
     backgroundColor: isSplitMode ? 'transparent' : 'var(--bg-app)',
-    minHeight: isSplitMode ? 'auto' : '100vh'
+    minHeight: isSplitMode ? 'auto' : '100%'
   };
-  const cardStyle = { backgroundColor: 'var(--bg-surface)', borderRadius: '16px', padding: '24px', boxShadow: 'var(--card-shadow)', border: '1px solid var(--border-color)', color: 'var(--text-main)' };
-  const menuButtonStyle = { display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', border: 'none', background: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', borderRadius: '8px', textAlign: 'left' };
+  const cardStyle = { 
+    backgroundColor: 'var(--bg-surface)', 
+    borderRadius: 'var(--card-radius, 14px)', 
+    padding: 'var(--card-padding, 16px 20px)', 
+    boxShadow: 'var(--card-shadow)', 
+    border: '1px solid var(--border-color)', 
+    color: 'var(--text-main)',
+    display: 'flex',
+    flexDirection: 'column',
+    minHeight: isSplitMode ? 'auto' : 'calc(100vh - var(--topbar-height, 56px) - 40px)'
+  };
+  const menuButtonStyle = { display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', border: 'none', background: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', borderRadius: '8px', textAlign: 'left' };
   const editLabelStyle = { display: 'block', fontWeight: 800, fontSize: '13px', marginBottom: '6px', color: 'var(--text-muted)' };
-  const editInputStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', outline: 'none', fontSize: '13px' };
-  const navBtnStyle = { padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-main)', cursor: 'pointer', fontWeight: '700' };
-  const thStyle = { padding: '14px', fontSize: '12px', color: 'var(--table-header-text)', fontWeight: '900' };
-  const tdStyle = { padding: '14px', fontSize: '13px', color: 'var(--text-main)' };
+  const editInputStyle = { width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', outline: 'none', fontSize: '13px' };
+  const navBtnStyle = { padding: '6px 14px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-main)', cursor: 'pointer', fontWeight: '700', fontSize: '12px' };
+  const thStyle = { 
+    padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', 
+    fontSize: '12px', 
+    color: 'var(--table-header-text)', 
+    fontWeight: '900',
+    position: 'sticky',
+    top: 0,
+    zIndex: 4,
+    backgroundColor: 'var(--table-header-bg)',
+    boxShadow: '0 1px 0 var(--border-color)',
+    whiteSpace: 'nowrap'
+  };
+  const tdStyle = { 
+    padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', 
+    fontSize: '13px', 
+    color: 'var(--text-main)' 
+  };
 
   return (
     <div style={containerStyle}>
       <div style={cardStyle}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--page-title-margin, 14px)', flexWrap: 'wrap', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
             <div>
-              <h1 style={{ fontSize: '24px', fontWeight: '900', color: 'var(--text-main)', margin: 0 }}>
+              <h1 style={{ fontSize: 'var(--page-title-size, 1.35rem)', fontWeight: '900', color: 'var(--text-main)', margin: 0 }}>
                 {brandFilter ? `${brandFilter} - 設備清單` : '設備列表 (Device List)'}
               </h1>
-              <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>檢視全系統的獨立設備資產狀態、出入庫歷程及硬體搭載情況。</p>
+              <p style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '2px', marginBottom: 0 }}>檢視全系統的獨立設備資產狀態、出入庫歷程及硬體搭載情況。</p>
             </div>
             {!isSplitMode && (
               <div style={{ display: 'flex', backgroundColor: 'var(--bg-surface-subtle)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
@@ -529,16 +702,77 @@ const DeviceList = ({ isSplitMode = false }) => {
                 </button>
               </div>
             )}
-            {(brandFilter || searchTerm) && (
+            {(brandFilter || searchTerm || selectedCardKey) && (
               <button 
-                onClick={() => { setSearchTerm(''); setSearchParams({}); }}
+                onClick={() => { setSearchTerm(''); setSelectedCardKey(null); setSearchParams({}); }}
                 style={{ padding: '4px 12px', borderRadius: '20px', backgroundColor: 'var(--bg-surface-subtle)', border: '1px solid var(--border-color)', color: 'var(--text-muted)', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
               >
                 清除所有篩選 ×
               </button>
             )}
           </div>
-          <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '14px', alignItems: 'center' }}>
+            {/* 卡片聚合維度選擇器 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'var(--bg-surface-subtle)', padding: '3px 8px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+              <span style={{ fontSize: '12px', fontWeight: '800', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>聚合規則:</span>
+              <div style={{ display: 'inline-flex', gap: '2px' }}>
+                <button
+                  type="button"
+                  onClick={() => handleAggregationModeChange('SPEC')}
+                  style={{
+                    padding: '5px 10px',
+                    borderRadius: '7px',
+                    border: 'none',
+                    fontSize: '11px',
+                    fontWeight: '800',
+                    cursor: 'pointer',
+                    backgroundColor: aggregationMode === 'SPEC' ? 'var(--primary-color)' : 'transparent',
+                    color: aggregationMode === 'SPEC' ? '#fff' : 'var(--text-muted)',
+                    transition: 'all 0.15s'
+                  }}
+                  title="依規格獨立生成卡片：相同廠牌、類型、型號底下，只要規格不同就獨立一張卡片"
+                >
+                  🏷️ 依規格
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAggregationModeChange('MODEL')}
+                  style={{
+                    padding: '5px 10px',
+                    borderRadius: '7px',
+                    border: 'none',
+                    fontSize: '11px',
+                    fontWeight: '800',
+                    cursor: 'pointer',
+                    backgroundColor: aggregationMode === 'MODEL' ? 'var(--primary-color)' : 'transparent',
+                    color: aggregationMode === 'MODEL' ? '#fff' : 'var(--text-muted)',
+                    transition: 'all 0.15s'
+                  }}
+                  title="依型號聚合：相同廠牌與型號合併統計（不分規格）"
+                >
+                  📦 依型號
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAggregationModeChange('BRAND')}
+                  style={{
+                    padding: '5px 10px',
+                    borderRadius: '7px',
+                    border: 'none',
+                    fontSize: '11px',
+                    fontWeight: '800',
+                    cursor: 'pointer',
+                    backgroundColor: aggregationMode === 'BRAND' ? 'var(--primary-color)' : 'transparent',
+                    color: aggregationMode === 'BRAND' ? '#fff' : 'var(--text-muted)',
+                    transition: 'all 0.15s'
+                  }}
+                  title="依廠牌聚合：純依廠牌合併統計（如 Dell、HP 各一張卡片）"
+                >
+                  🏢 依廠牌
+                </button>
+              </div>
+            </div>
+
             <button onClick={() => {
               setOriginalFieldIds(customFieldDefs.map(d => d.id));
               setShowConfigModal(true);
@@ -547,23 +781,23 @@ const DeviceList = ({ isSplitMode = false }) => {
             </button>
             <div style={{ position: 'relative' }}>
               <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-subtle)' }} />
-              <input type="text" placeholder="快速搜尋..." value={searchTerm} onChange={(e) => {setSearchTerm(e.target.value); setCurrentPage(1);}} style={{ padding: '10px 12px 10px 42px', borderRadius: '30px', border: '1.5px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', width: '300px', outline: 'none' }} />
+              <input type="text" placeholder="快速搜尋..." value={searchTerm} onChange={(e) => {setSearchTerm(e.target.value); setCurrentPage(1);}} style={{ padding: '10px 12px 10px 42px', borderRadius: '30px', border: '1.5px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', width: '220px', outline: 'none' }} />
             </div>
           </div>
         </div>
 
         {renderStats()}
 
-        { (brandFilter || searchTerm) ? (
+        { (brandFilter || searchTerm || selectedCardKey) ? (
           <>
             {loading ? (
               <div style={{ textAlign: 'center', padding: '100px', color: 'var(--text-muted)' }}>載入中...</div>
             ) : (
               paginatedItems.length > 0 ? (
                 <>
-                  <div style={{ marginBottom: '20px', overflowX: 'auto' }}>
+                  <div style={{ marginBottom: '16px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', minHeight: '300px', border: '1px solid var(--border-color)', borderRadius: '10px' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
-                      <thead>
+                      <thead style={{ position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)' }}>
                         <tr style={{ borderBottom: '2px solid var(--border-color)', backgroundColor: 'var(--table-header-bg)' }}>
                           <th style={{ ...thStyle, textAlign: 'left', width: '200px' }}>廠牌 / 型號 / 類型</th>
                           <th style={{ ...thStyle, textAlign: 'left' }}>序號 (SN)</th>
@@ -825,6 +1059,39 @@ const DeviceList = ({ isSplitMode = false }) => {
             </div>
           </div>
         )}
+
+        {/* 設備卡片聚合規則說明 */}
+        <div style={{
+          marginTop: '24px',
+          padding: '14px 18px',
+          backgroundColor: 'var(--bg-surface-subtle)',
+          borderRadius: '12px',
+          border: '1px solid var(--border-color)',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '12px',
+          fontSize: '13px',
+          color: 'var(--text-muted)',
+          lineHeight: '1.6'
+        }}>
+          <Info size={18} color="var(--primary-color)" style={{ flexShrink: 0, marginTop: '2px' }} />
+          <div>
+            <div style={{ fontWeight: '800', color: 'var(--text-main)', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              設備卡片聚合規則說明
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <div>• <b>當前聚合維度</b>：
+                <span style={{ color: 'var(--primary-color)', fontWeight: '800' }}>
+                  {aggregationMode === 'SPEC' && '🏷️ 依規格聚合（廠牌 ＋ 類型 ＋ 型號 ＋ 規格，規格不同即獨立卡片）'}
+                  {aggregationMode === 'MODEL' && '📦 依型號聚合（廠牌 ＋ 類型 ＋ 型號，同型號合併卡片不分規格）'}
+                  {aggregationMode === 'BRAND' && '🏢 依廠牌聚合（純依廠牌合併統計卡片）'}
+                </span>
+                （可於右上方自由切換）
+              </div>
+              <div>• <b>連動篩選</b>：點擊上方任一卡片，即可快速過濾呈現該卡片維度下之設備資產明細清單；再次點擊可取消篩選。</div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {showEditModal && editItem && (
@@ -845,12 +1112,25 @@ const DeviceList = ({ isSplitMode = false }) => {
                   <input type="text" value={editItem.type || ''} disabled readOnly style={{ ...editInputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', cursor: 'not-allowed' }} />
                 </div>
                 <div>
-                  <label style={editLabelStyle}>型號 (Model) (鎖定)</label>
-                  <input type="text" value={editItem.model || ''} disabled readOnly style={{ ...editInputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', cursor: 'not-allowed' }} />
+                  <label style={editLabelStyle}>型號 (Model) *</label>
+                  <input 
+                    type="text" 
+                    value={editItem.model || ''} 
+                    onChange={(e) => setEditItem({ ...editItem, model: e.target.value })} 
+                    style={editInputStyle} 
+                    placeholder="請輸入型號"
+                  />
                 </div>
                 <div>
-                  <label style={editLabelStyle}>規格 (Specification) (鎖定)</label>
-                  <input type="text" value={editItem.specification || ''} disabled readOnly title={editItem.specification || ''} style={{ ...editInputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', cursor: 'not-allowed' }} />
+                  <label style={editLabelStyle}>規格 (Specification) <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>(選填)</span></label>
+                  <input 
+                    type="text" 
+                    value={editItem.specification || ''} 
+                    onChange={(e) => setEditItem({ ...editItem, specification: e.target.value })} 
+                    style={editInputStyle} 
+                    title={editItem.specification || ''}
+                    placeholder="選填，可輸入硬體核心規格"
+                  />
                 </div>
               </div>
 

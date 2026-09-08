@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import { 
-  X, UploadCloud, FileSpreadsheet, CheckCircle2, AlertTriangle, 
+  X, UploadCloud, FileSpreadsheet, CheckCircle2, AlertTriangle, AlertCircle,
   XCircle, Filter, Layers, Database, ArrowRight, RefreshCw, Info, Download, Cpu, Server, Plus, Check
 } from 'lucide-react';
 import { logEvent, ACTION_TYPES, MODULE_MAP } from '../utils/auditLogger';
 import { parseSpreadsheetFile, fixMojibake } from '../utils/encoding';
+import { matchPartnerContact } from '../utils/partnerMatcher';
 
 const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] }) => {
   const [file, setFile] = useState(null);
@@ -21,6 +22,7 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
   const [brandList, setBrandList] = useState([]);
   const [typeList, setTypeList] = useState([]);
   const [modelList, setModelList] = useState([]);
+  const [partners, setPartners] = useState([]);
 
   const [rawJsonData, setRawJsonData] = useState([]);
   const [isProcessingFile, setIsProcessingFile] = useState(false);
@@ -31,14 +33,49 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
   const [importResult, setImportResult] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
 
+  // 自訂欄位與對應狀態
+  const [customFieldDefs, setCustomFieldDefs] = useState([]);
+  const [fileHeaders, setFileHeaders] = useState([]);
+  const [customFieldMapping, setCustomFieldMapping] = useState({});
+
   const fileInputRef = useRef(null);
 
-  // 載入既有廠牌清單與序號
+  // 智慧比對自訂欄位與檔案表頭
+  const findMatchingHeader = (headers, field) => {
+    if (!headers || headers.length === 0 || !field) return '';
+    const normalize = (str) => String(str || '').trim().toLowerCase().replace(/[\s_\(\)\-\[\]\/\\:]/g, '');
+    const normLabel = normalize(field.label);
+    const normId = normalize(field.id);
+
+    // 1. 精準比對 (對應 label 或 id)
+    for (const h of headers) {
+      const nh = normalize(h);
+      if (nh && (nh === normLabel || nh === normId)) {
+        return h;
+      }
+    }
+
+    // 2. 寬鬆比對 (包含關係，字元數大於等於 2)
+    if (normLabel.length >= 2) {
+      for (const h of headers) {
+        const nh = normalize(h);
+        if (nh && (nh.includes(normLabel) || normLabel.includes(nh))) {
+          return h;
+        }
+      }
+    }
+
+    return '';
+  };
+
+  // 載入既有廠牌清單、序號與自訂欄位
   const loadInitialData = useCallback(async () => {
     try {
-      const [brandRes, snRes] = await Promise.all([
+      const [brandRes, snRes, defsRes, partnersRes] = await Promise.all([
         window.electronAPI.namedQuery('fetchNicBrands'),
-        window.electronAPI.namedQuery('fetchAssetSns')
+        window.electronAPI.namedQuery('fetchAssetSns'),
+        window.electronAPI.namedQuery('getSystemSetting', ['customFieldDefinitions']),
+        window.electronAPI.namedQuery('fetchPartners')
       ]);
 
       if (brandRes.success && brandRes.rows) {
@@ -47,6 +84,15 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
       if (snRes.success && snRes.rows) {
         const snSet = new Set(snRes.rows.map(r => (r.sn || '').trim().toUpperCase()).filter(Boolean));
         setExistingSns(snSet);
+      }
+      if (partnersRes && partnersRes.success && partnersRes.rows) {
+        setPartners(partnersRes.rows);
+      }
+      if (defsRes && defsRes.success && defsRes.rows.length > 0) {
+        const allDefs = defsRes.rows[0].value || [];
+        const nativeIds = ['hostname', 'sn', 'specification', 'client', 'location', 'installed_date', 'system_date', 'warranty_expire', 'customer_warranty_expire'];
+        const customOnly = allDefs.filter(d => d && d.id && !nativeIds.includes(d.id));
+        setCustomFieldDefs(customOnly);
       }
     } catch (err) {
       console.error('Failed to load initial HW data:', err);
@@ -129,6 +175,8 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
     setSelectedModel('');
     setSpecification('');
     setRawJsonData([]);
+    setFileHeaders([]);
+    setCustomFieldMapping({});
     setIsProcessingFile(false);
     setIsImporting(false);
     setImportProgress(0);
@@ -205,6 +253,17 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
         return;
       }
 
+      const headers = Object.keys(rawJson[0] || {});
+      setFileHeaders(headers);
+
+      // 自動匹配自訂欄位
+      const initialMapping = {};
+      customFieldDefs.forEach(field => {
+        const matched = findMatchingHeader(headers, field);
+        if (matched) initialMapping[field.id] = matched;
+      });
+      setCustomFieldMapping(initialMapping);
+
       setRawJsonData(rawJson);
     } catch (err) {
       console.error('HW File parsing error:', err);
@@ -212,6 +271,38 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
     } finally {
       setIsProcessingFile(false);
     }
+  };
+
+  // 當表頭或自訂欄位載入後，補充尚未配對的欄位
+  useEffect(() => {
+    if (fileHeaders.length === 0 || customFieldDefs.length === 0) return;
+    setCustomFieldMapping(prev => {
+      let changed = false;
+      const updated = { ...prev };
+      customFieldDefs.forEach(field => {
+        if (updated[field.id] === undefined) {
+          const matched = findMatchingHeader(fileHeaders, field);
+          if (matched) {
+            updated[field.id] = matched;
+            changed = true;
+          } else {
+            updated[field.id] = '';
+          }
+        }
+      });
+      return changed ? updated : prev;
+    });
+  }, [fileHeaders, customFieldDefs]);
+
+  // 重新自動對應
+  const handleAutoDetectMapping = () => {
+    if (!fileHeaders || fileHeaders.length === 0) return;
+    const newMapping = {};
+    customFieldDefs.forEach(field => {
+      const matched = findMatchingHeader(fileHeaders, field);
+      newMapping[field.id] = matched || '';
+    });
+    setCustomFieldMapping(newMapping);
   };
 
   // 動態即時解析並檢核每一筆資料 (根據 rawJsonData 與上方主檔設定)
@@ -235,11 +326,15 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
       const rowModel = findColumnValue(row, ['Model', '型號', '硬體型號', 'Part Number', 'P/N']);
       const model = (rowModel || selectedModel || '').trim();
 
-      const rowSpec = findColumnValue(row, ['Specification', 'Spec', '規格', '硬體規格']);
+      const rowSpec = findColumnValue(row, ['Specification', 'Spec', '規格', '硬體規格', '設備規格', '規格內容', '產品規格', '規格描述', '詳細規格', '規格說明']);
       const spec = (rowSpec || specification || '').trim();
 
       const sn = findSnValue(row);
       const customer = findColumnValue(row, ['Customer', 'Cusomter', '客戶', 'Client', '客戶名稱']);
+      const rawContact = findColumnValue(row, [
+        'Contact', 'Contact Person', 'ContactPerson', '聯絡人', '窗口',
+        '客戶聯絡人', '廠商聯絡人', '聯絡窗口', '窗口人員', '負責人', 'Contact Name'
+      ]);
       const hostname = findColumnValue(row, ['Hostname', 'Host Name', 'HostName', '主機名稱']);
       const serverSn = findColumnValue(row, ['Server-SN', 'Server SN', 'Server_SN', 'ServerSN', '對應伺服器', '對應伺服器 SN', '對應設備序號', 'Host SN']);
       const location = findColumnValue(row, ['Location', '地點', '位置', '機房', '放置位置']);
@@ -263,7 +358,7 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
       let status = 'VALID';
       let skipReason = '';
 
-      // 規則 1：廠牌 / 類型 / 型號 / 規格 / 序號 缺一不建立
+      // 規則 1：廠牌 / 類型 / 型號 / 序號 缺一不建立 (規格改為選填)
       if (!brand) {
         status = 'SKIPPED';
         skipReason = '缺少廠牌 (Brand)';
@@ -273,9 +368,6 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
       } else if (!model) {
         status = 'SKIPPED';
         skipReason = '缺少型號 (Model)';
-      } else if (!spec) {
-        status = 'SKIPPED';
-        skipReason = '缺少規格 (Specification)';
       } else if (!sn) {
         status = 'SKIPPED';
         skipReason = '缺少硬體序號 (SN)';
@@ -294,6 +386,42 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
         }
       }
 
+      // 提取自訂欄位數值
+      const rowCustomAttrs = {};
+      let customContactVal = '';
+      customFieldDefs.forEach(f => {
+        const mappedCol = customFieldMapping[f.id];
+        if (mappedCol && row[mappedCol] !== undefined && row[mappedCol] !== null) {
+          const v = String(row[mappedCol]).trim();
+          if (v !== '') {
+            rowCustomAttrs[f.id] = fixMojibake(v);
+            if (f.id === 'contact_person' || (f.label && f.label.includes('聯絡人'))) {
+              customContactVal = v;
+            }
+          }
+        }
+      });
+
+      // 智慧客戶與聯絡人比對 (支援模糊分詞比對，例如 Niky imc -> Niky)
+      const inputContact = (rawContact || customContactVal || '').trim();
+      const contactMatch = matchPartnerContact(inputContact, customer, partners);
+      const finalContact = contactMatch.contact_person;
+      const finalPhone = contactMatch.contact_phone;
+      const finalClient = (customer || '').trim() || contactMatch.client;
+
+      if (finalContact) {
+        rowCustomAttrs.contact_person = finalContact;
+      }
+      if (finalPhone) {
+        rowCustomAttrs.contact_phone = finalPhone;
+      }
+      if (contactMatch.isFuzzy && inputContact) {
+        rowCustomAttrs.raw_contact_person = inputContact;
+      }
+      if (contactMatch.matched_project && !rowCustomAttrs.project_name) {
+        rowCustomAttrs.project_name = contactMatch.matched_project;
+      }
+
       processed.push({
         rowIndex: index + 2,
         brand,
@@ -302,18 +430,22 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
         specification: spec,
         sn: (sn || '').trim(),
         server_sn: (serverSn || '').trim(),
-        client: (customer || '').trim(),
+        client: finalClient,
+        contact_person: finalContact,
+        contact_phone: finalPhone,
+        contactMatch,
         hostname: (hostname || '').trim(),
         location: (location || '').trim(),
         order_source: (orderSource || '').trim(),
         itemStatus,
         status,
-        skipReason
+        skipReason,
+        custom_attributes: rowCustomAttrs
       });
     });
 
     return processed;
-  }, [rawJsonData, selectedBrand, selectedType, selectedModel, specification, existingSns]);
+  }, [rawJsonData, selectedBrand, selectedType, selectedModel, specification, existingSns, customFieldMapping, customFieldDefs, partners]);
 
   const handleDragOver = (e) => {
     e.preventDefault();
@@ -349,29 +481,37 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
     return parsedRows;
   }, [parsedRows, activeTab]);
 
-  // 下載硬體匯入範本 (與使用者圖片相容的格式)
+  // 下載硬體匯入範本 (動態包含自訂欄位)
   const handleDownloadTemplate = () => {
+    const sampleRow = {
+      'SF2541 SN': '254100104110222867100882',
+      'Cusomter': 'Yuanta Ryan',
+      'Hostname': 'Deliver to Hand',
+      'Server-SN': '',
+      'Order Source': 'XeAU Nov2022',
+      'Status': 'ACTIVE'
+    };
+
+    // 動態附加上自訂欄位
+    customFieldDefs.forEach(f => {
+      sampleRow[f.label] = `範例${f.label}`;
+    });
+
     const sampleData = [
+      sampleRow,
       {
-        'SF2541 SN': '254100104110222867100882',
-        'Cusomter': 'Yuanta Ryan',
-        'Hostname': 'Deliver to Hand',
-        'Server-SN': '',
-        'Order Source': 'XeAU Nov2022'
-      },
-      {
+        ...sampleRow,
         'SF2541 SN': '254100104110222867100780',
-        'Cusomter': 'Yuanta Ryan',
         'Hostname': 'HFT50-55',
         'Server-SN': 'X0341561',
-        'Order Source': 'XeAU Nov2022'
+        'Status': 'SHIPPED'
       },
       {
+        ...sampleRow,
         'SF2541 SN': '254100104110223557100675',
-        'Cusomter': 'Yuanta Ryan',
         'Hostname': 'HFT50-58',
         'Server-SN': 'X0341564',
-        'Order Source': 'XeAU Nov2022'
+        'Status': 'ACTIVE'
       }
     ];
 
@@ -385,7 +525,7 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
   const executeImport = async () => {
     const validItems = parsedRows.filter(r => r.status === 'VALID');
     if (validItems.length === 0) {
-      alert('目前沒有符合建立條件的硬體資料（請確認是否已填寫廠牌、類型、型號、規格與序號，或檢查是否序號重複）。');
+      alert('目前沒有符合建立條件的硬體資料（請確認是否已填寫廠牌、類型、型號與序號，或檢查是否序號重複）。');
       return;
     }
 
@@ -493,8 +633,11 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
             import_file: fileName,
             import_date: new Date().toISOString(),
             server_sn: item.server_sn || '',
-            order_source: item.order_source || '',
-            project_name: item.order_source || ''
+            order_source: item.order_source || item.contactMatch?.matched_project || '',
+            project_name: item.order_source || item.contactMatch?.matched_project || '',
+            ...(item.contact_person ? { contact_person: item.contact_person } : {}),
+            ...(item.contact_phone ? { contact_phone: item.contact_phone } : {}),
+            ...(item.custom_attributes || {})
           };
 
           const insertAssetRes = await window.electronAPI.namedQuery('insertAssetRecord', [
@@ -585,14 +728,15 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
       alignItems: 'center',
       justifyContent: 'center',
       zIndex: 1000,
-      padding: '20px'
+      padding: '10px'
     }}>
       <div style={{
         backgroundColor: 'var(--bg-surface)',
         borderRadius: '16px',
         width: '96%',
-        maxWidth: '1320px',
-        maxHeight: '92vh',
+        maxWidth: '1360px',
+        height: parsedRows.length > 0 ? '96vh' : 'auto',
+        maxHeight: 'calc(100vh - 16px)',
         display: 'flex',
         flexDirection: 'column',
         boxShadow: 'var(--modal-shadow)',
@@ -602,32 +746,32 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
       }}>
         {/* 頂部標題列 */}
         <div style={{
-          padding: '18px 24px',
+          padding: '10px 18px',
           borderBottom: '1px solid var(--border-color)',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
           backgroundColor: 'var(--bg-surface-subtle)'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div style={{
-              width: '40px',
-              height: '40px',
-              borderRadius: '10px',
+              width: '34px',
+              height: '34px',
+              borderRadius: '8px',
               backgroundColor: 'rgba(99, 102, 241, 0.15)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               color: '#6366f1'
             }}>
-              <Cpu size={22} />
+              <Cpu size={18} />
             </div>
             <div>
-              <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: 'var(--text-main)' }}>
+              <h2 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: 'var(--text-main)' }}>
                 硬體清單批次匯入 (Hardware Batch Import)
               </h2>
-              <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
-                上傳無廠牌型號欄位之序號清單時，請先於下方選擇或建立「廠牌 / 類型 / 型號 / 規格 / 狀態」，清單將自動套用建立。
+              <p style={{ margin: '1px 0 0', fontSize: '11px', color: 'var(--text-muted)' }}>
+                支援硬體清單自動解析、主檔層級（廠牌/類型/型號/規格）套用與序號防重複檢核
               </p>
             </div>
           </div>
@@ -642,275 +786,561 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
               borderRadius: '8px'
             }}
           >
-            <X size={20} />
+            <X size={18} />
           </button>
         </div>
 
         {/* 內容區塊 */}
         <div style={{
-          padding: '20px 24px',
-          overflowY: 'auto',
+          padding: '8px 16px',
+          overflowY: parsedRows.length > 0 ? 'hidden' : 'auto',
           flex: 1,
           display: 'flex',
           flexDirection: 'column',
-          gap: '18px'
+          gap: '8px'
         }}>
-          {/* 區塊 1：硬體主檔設定區 (廠牌 / 類型 / 型號 / 規格 / 歸屬 / 狀態) */}
-          <div style={{
-            backgroundColor: 'var(--bg-surface-subtle)',
-            padding: '18px 20px',
-            borderRadius: '14px',
-            border: '1px solid var(--border-color)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '14px'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Layers size={17} color="var(--primary-color)" /> 步驟 1：選擇或建立硬體主檔（整批套用）
-              </h4>
-              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                * 若上傳清單本身無廠牌/型號欄位，將全數套用此處之設定
-              </span>
-            </div>
+          {/* 未上傳檔案時：完整展示步驟 1 與步驟 2 */}
+          {parsedRows.length === 0 ? (
+            <>
+              {/* 區塊 1：硬體主檔設定區 (廠牌 / 類型 / 型號 / 規格 / 歸屬 / 狀態) */}
+              <div style={{
+                backgroundColor: 'var(--bg-surface-subtle)',
+                padding: '16px 18px',
+                borderRadius: '12px',
+                border: '1px solid var(--border-color)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Layers size={17} color="var(--primary-color)" /> 步驟 1：選擇或建立硬體主檔（整批套用）
+                  </h4>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                    * 若上傳清單本身無廠牌/型號欄位，將全數套用此處之設定
+                  </span>
+                </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.2fr 1.5fr 2.5fr', gap: '12px', alignItems: 'flex-start' }}>
-              {/* 廠牌 (Brand) */}
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '6px' }}>
-                  廠牌 (Brand) <span style={{ color: '#ef4444' }}>*</span>
-                </label>
-                <div style={{ position: 'relative' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.2fr 1.5fr 2.5fr', gap: '12px', alignItems: 'flex-start' }}>
+                  {/* 廠牌 (Brand) */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '6px' }}>
+                      廠牌 (Brand) <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type="text"
+                        value={selectedBrand}
+                        onChange={(e) => handleBrandChange(e.target.value)}
+                        placeholder="輸入或選取廠牌 (例: Solarflare)"
+                        style={{
+                          width: '100%',
+                          padding: '8px 10px',
+                          borderRadius: '8px',
+                          border: '1px solid var(--input-border)',
+                          backgroundColor: 'var(--input-bg)',
+                          color: 'var(--input-text)',
+                          fontSize: '13px',
+                          outline: 'none'
+                        }}
+                        list="hw-batch-brands"
+                      />
+                      <datalist id="hw-batch-brands">
+                        {brandList.map(b => (
+                          <option key={b.id || b.name} value={b.name} />
+                        ))}
+                      </datalist>
+                    </div>
+                  </div>
+
+                  {/* 類型 (Type) */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '6px' }}>
+                      類型 (Type) <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type="text"
+                        value={selectedType}
+                        onChange={(e) => handleTypeChange(e.target.value)}
+                        placeholder="輸入或選取類型 (例: NIC)"
+                        style={{
+                          width: '100%',
+                          padding: '8px 10px',
+                          borderRadius: '8px',
+                          border: '1px solid var(--input-border)',
+                          backgroundColor: 'var(--input-bg)',
+                          color: 'var(--input-text)',
+                          fontSize: '13px',
+                          outline: 'none'
+                        }}
+                        list="hw-batch-types"
+                      />
+                      <datalist id="hw-batch-types">
+                        {typeList.map(t => (
+                          <option key={t} value={t} />
+                        ))}
+                      </datalist>
+                    </div>
+                  </div>
+
+                  {/* 型號 (Model) */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '6px' }}>
+                      型號 (Model) <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type="text"
+                        value={selectedModel}
+                        onChange={(e) => handleModelChange(e.target.value)}
+                        placeholder="輸入或選取型號 (例: SF2541)"
+                        style={{
+                          width: '100%',
+                          padding: '8px 10px',
+                          borderRadius: '8px',
+                          border: '1px solid var(--input-border)',
+                          backgroundColor: 'var(--input-bg)',
+                          color: 'var(--input-text)',
+                          fontSize: '13px',
+                          outline: 'none'
+                        }}
+                        list="hw-batch-models"
+                      />
+                      <datalist id="hw-batch-models">
+                        {modelList.map(m => (
+                          <option key={m} value={m} />
+                        ))}
+                      </datalist>
+                    </div>
+                  </div>
+
+                  {/* 規格 (Specification) */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '6px' }}>
+                      規格 (Specification) <span style={{ fontSize: '11px', fontWeight: 'normal', color: 'var(--text-muted)' }}>(選填)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={specification}
+                      onChange={(e) => setSpecification(e.target.value)}
+                      placeholder="例: Dual-Port 25GbE SFP28 PCIe"
+                      style={{
+                        width: '100%',
+                        padding: '8px 10px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--input-border)',
+                        backgroundColor: 'var(--input-bg)',
+                        color: 'var(--input-text)',
+                        fontSize: '13px',
+                        outline: 'none'
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* 區塊 2：檔案拖曳與上傳區 */}
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current && fileInputRef.current.click()}
+                style={{
+                  border: `2px dashed ${isDragging ? 'var(--primary-color)' : 'var(--border-color)'}`,
+                  backgroundColor: isDragging ? 'rgba(99, 102, 241, 0.05)' : 'var(--bg-surface-subtle)',
+                  borderRadius: '12px',
+                  padding: '20px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  minHeight: '140px',
+                  textAlign: 'center'
+                }}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx, .xls, .csv"
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files.length > 0) {
+                      handleFileProcess(e.target.files[0]);
+                    }
+                  }}
+                />
+
+                <div style={{
+                  width: '42px',
+                  height: '42px',
+                  borderRadius: '50%',
+                  backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#6366f1',
+                  marginBottom: '10px'
+                }}>
+                  <UploadCloud size={24} />
+                </div>
+
+                <div>
+                  <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '4px' }}>
+                    步驟 2：點擊選擇或將硬體清單 Excel / CSV 檔案拖曳至此
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '10px' }}>
+                    支援包含序號 (如 SF2541 SN)、客戶 (Customer / Cusomter)、主機名稱 (Hostname)、伺服器序號 (Server-SN)、訂單來源 (Order Source)
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDownloadTemplate();
+                    }}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '5px 12px',
+                      borderRadius: '6px',
+                      backgroundColor: 'var(--bg-surface)',
+                      border: '1px solid var(--border-color)',
+                      color: 'var(--primary-color)',
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Download size={13} /> 下載硬體匯入範本
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : (
+            /* 解析完成後的精簡資訊列 (Compact Bar) - 專為 1080P 筆電最佳化 */
+            <div style={{
+              backgroundColor: 'var(--bg-surface-subtle)',
+              padding: '6px 14px',
+              borderRadius: '8px',
+              border: '1px solid var(--border-color)',
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '10px'
+            }}>
+              {/* 檔案資訊與按鈕 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: '700', color: 'var(--text-main)' }}>
+                  <Cpu size={16} color="#6366f1" />
+                  <span>{fileName || '已載入硬體清單'}</span>
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx, .xls, .csv"
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files.length > 0) {
+                      handleFileProcess(e.target.files[0]);
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current && fileInputRef.current.click()}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: 'var(--bg-surface)',
+                    color: 'var(--text-main)',
+                    fontSize: '11px',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  重新選檔
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadTemplate}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: 'var(--bg-surface)',
+                    color: 'var(--primary-color)',
+                    fontSize: '11px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <Download size={12} /> 範本
+                </button>
+              </div>
+
+              {/* 橫向並排之 廠牌、類型、型號、規格 輸入框 (保持與測試 placeholder 完全一致) */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-main)', whiteSpace: 'nowrap' }}>
+                    廠牌 *
+                  </label>
                   <input
                     type="text"
                     value={selectedBrand}
                     onChange={(e) => handleBrandChange(e.target.value)}
                     placeholder="輸入或選取廠牌 (例: Solarflare)"
                     style={{
-                      width: '100%',
-                      padding: '8px 10px',
-                      borderRadius: '8px',
+                      width: '140px',
+                      padding: '5px 8px',
+                      borderRadius: '6px',
                       border: '1px solid var(--input-border)',
                       backgroundColor: 'var(--input-bg)',
                       color: 'var(--input-text)',
-                      fontSize: '13px',
+                      fontSize: '12px',
                       outline: 'none'
                     }}
-                    list="hw-batch-brands"
+                    list="hw-batch-brands-compact"
                   />
-                  <datalist id="hw-batch-brands">
+                  <datalist id="hw-batch-brands-compact">
                     {brandList.map(b => (
                       <option key={b.id || b.name} value={b.name} />
                     ))}
                   </datalist>
                 </div>
-              </div>
 
-              {/* 類型 (Type) */}
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '6px' }}>
-                  類型 (Type) <span style={{ color: '#ef4444' }}>*</span>
-                </label>
-                <div style={{ position: 'relative' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-main)', whiteSpace: 'nowrap' }}>
+                    類型 *
+                  </label>
                   <input
                     type="text"
                     value={selectedType}
                     onChange={(e) => handleTypeChange(e.target.value)}
                     placeholder="輸入或選取類型 (例: NIC)"
                     style={{
-                      width: '100%',
-                      padding: '8px 10px',
-                      borderRadius: '8px',
+                      width: '120px',
+                      padding: '5px 8px',
+                      borderRadius: '6px',
                       border: '1px solid var(--input-border)',
                       backgroundColor: 'var(--input-bg)',
                       color: 'var(--input-text)',
-                      fontSize: '13px',
+                      fontSize: '12px',
                       outline: 'none'
                     }}
-                    list="hw-batch-types"
+                    list="hw-batch-types-compact"
                   />
-                  <datalist id="hw-batch-types">
+                  <datalist id="hw-batch-types-compact">
                     {typeList.map(t => (
                       <option key={t} value={t} />
                     ))}
                   </datalist>
                 </div>
-              </div>
 
-              {/* 型號 (Model) */}
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '6px' }}>
-                  型號 (Model) <span style={{ color: '#ef4444' }}>*</span>
-                </label>
-                <div style={{ position: 'relative' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-main)', whiteSpace: 'nowrap' }}>
+                    型號 *
+                  </label>
                   <input
                     type="text"
                     value={selectedModel}
                     onChange={(e) => handleModelChange(e.target.value)}
                     placeholder="輸入或選取型號 (例: SF2541)"
                     style={{
-                      width: '100%',
-                      padding: '8px 10px',
-                      borderRadius: '8px',
+                      width: '130px',
+                      padding: '5px 8px',
+                      borderRadius: '6px',
                       border: '1px solid var(--input-border)',
                       backgroundColor: 'var(--input-bg)',
                       color: 'var(--input-text)',
-                      fontSize: '13px',
+                      fontSize: '12px',
                       outline: 'none'
                     }}
-                    list="hw-batch-models"
+                    list="hw-batch-models-compact"
                   />
-                  <datalist id="hw-batch-models">
+                  <datalist id="hw-batch-models-compact">
                     {modelList.map(m => (
                       <option key={m} value={m} />
                     ))}
                   </datalist>
                 </div>
-              </div>
 
-              {/* 規格 (Specification) */}
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '6px' }}>
-                  規格 (Specification) <span style={{ color: '#ef4444' }}>*</span>
-                </label>
-                <input
-                  type="text"
-                  value={specification}
-                  onChange={(e) => setSpecification(e.target.value)}
-                  placeholder="例: Dual-Port 25GbE SFP28 PCIe"
-                  style={{
-                    width: '100%',
-                    padding: '8px 10px',
-                    borderRadius: '8px',
-                    border: '1px solid var(--input-border)',
-                    backgroundColor: 'var(--input-bg)',
-                    color: 'var(--input-text)',
-                    fontSize: '13px',
-                    outline: 'none'
-                  }}
-                />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-main)', whiteSpace: 'nowrap' }}>
+                    規格 (選填)
+                  </label>
+                  <input
+                    type="text"
+                    value={specification}
+                    onChange={(e) => setSpecification(e.target.value)}
+                    placeholder="例: Dual-Port 25GbE SFP28 PCIe"
+                    style={{
+                      width: '180px',
+                      padding: '5px 8px',
+                      borderRadius: '6px',
+                      border: '1px solid var(--input-border)',
+                      backgroundColor: 'var(--input-bg)',
+                      color: 'var(--input-text)',
+                      fontSize: '12px',
+                      outline: 'none'
+                    }}
+                  />
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
-          {/* 區塊 2：檔案拖曳與上傳區 */}
-          <div
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current && fileInputRef.current.click()}
-            style={{
-              border: `2px dashed ${isDragging ? 'var(--primary-color)' : 'var(--border-color)'}`,
-              backgroundColor: isDragging ? 'rgba(99, 102, 241, 0.05)' : 'var(--bg-surface-subtle)',
-              borderRadius: '12px',
-              padding: '20px',
+          {/* 自訂欄位對應面板 - 專為 1080P 筆電最佳化緊湊高度 */}
+          {!importResult && customFieldDefs.length > 0 && (
+            <div style={{
+              backgroundColor: 'var(--bg-surface-subtle)',
+              padding: '8px 14px',
+              borderRadius: '10px',
+              border: '1px solid var(--border-color)',
               display: 'flex',
               flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-              minHeight: '140px',
-              textAlign: 'center'
-            }}
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx, .xls, .csv"
-              style={{ display: 'none' }}
-              onChange={(e) => {
-                if (e.target.files && e.target.files.length > 0) {
-                  handleFileProcess(e.target.files[0]);
-                }
-              }}
-            />
-
-            <div style={{
-              width: '42px',
-              height: '42px',
-              borderRadius: '50%',
-              backgroundColor: 'rgba(99, 102, 241, 0.1)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#6366f1',
-              marginBottom: '10px'
+              gap: '6px'
             }}>
-              <UploadCloud size={24} />
-            </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                <h4 style={{ margin: 0, fontSize: '13px', fontWeight: '700', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Layers size={15} color="var(--primary-color)" />
+                  自訂欄位對應 (Custom Fields Mapping)
+                  <span style={{ fontSize: '11px', fontWeight: 'normal', color: 'var(--text-muted)' }}>
+                    （系統已載入 {customFieldDefs.length} 個自訂欄位，可指定與 Excel 檔案表頭之對應）
+                  </span>
+                </h4>
+                {fileHeaders.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleAutoDetectMapping}
+                    style={{
+                      padding: '3px 8px',
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: 'var(--bg-surface)',
+                      color: 'var(--primary-color)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                  >
+                    <RefreshCw size={11} /> 重新自動匹配
+                  </button>
+                )}
+              </div>
 
-            {fileName ? (
-              <div>
-                <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '4px' }}>
-                  已載入清單：{fileName}
-                </div>
-                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                  點擊或拖曳其他檔案可重新上傳
-                </div>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+                gap: '8px',
+                maxHeight: '115px',
+                overflowY: 'auto'
+              }}>
+                {customFieldDefs.map(field => {
+                  const mappedCol = customFieldMapping[field.id] || '';
+                  const isMatched = Boolean(mappedCol);
+                  return (
+                    <div key={field.id} style={{
+                      padding: '6px 10px',
+                      backgroundColor: 'var(--bg-surface)',
+                      border: isMatched ? '1px solid #10b981' : '1px solid var(--border-color)',
+                      borderRadius: '6px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{
+                          fontSize: '11px',
+                          fontWeight: '700',
+                          color: field.color || 'var(--text-main)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '5px'
+                        }}>
+                          <span style={{
+                            width: '7px',
+                            height: '7px',
+                            borderRadius: '50%',
+                            backgroundColor: field.color || '#3b82f6',
+                            display: 'inline-block'
+                          }} />
+                          {field.label}
+                        </span>
+                        {isMatched ? (
+                          <span style={{ fontSize: '10px', color: '#10b981', fontWeight: '700' }}>✓ 已對應: {mappedCol}</span>
+                        ) : (
+                          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>未對應</span>
+                        )}
+                      </div>
+
+                      <select
+                        aria-label={`自訂欄位對應: ${field.label}`}
+                        value={mappedCol}
+                        onChange={(e) => setCustomFieldMapping(prev => ({ ...prev, [field.id]: e.target.value }))}
+                        style={{
+                          width: '100%',
+                          padding: '4px 6px',
+                          borderRadius: '5px',
+                          border: '1px solid var(--input-border)',
+                          backgroundColor: 'var(--input-bg)',
+                          color: 'var(--input-text)',
+                          fontSize: '11px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <option value="">-- 未對應 (不匯入) --</option>
+                        {fileHeaders.map(h => (
+                          <option key={h} value={h}>{h}</option>
+                        ))}
+                      </select>
+                    </div>
+                  );
+                })}
               </div>
-            ) : (
-              <div>
-                <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '4px' }}>
-                  步驟 2：點擊選擇或將硬體清單 Excel / CSV 檔案拖曳至此
-                </div>
-                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '10px' }}>
-                  支援包含序號 (如 SF2541 SN)、客戶 (Customer / Cusomter)、主機名稱 (Hostname)、伺服器序號 (Server-SN)、訂單來源 (Order Source)
-                </div>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDownloadTemplate();
-                  }}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '5px 12px',
-                    borderRadius: '6px',
-                    backgroundColor: 'var(--bg-surface)',
-                    border: '1px solid var(--border-color)',
-                    color: 'var(--primary-color)',
-                    fontSize: '12px',
-                    fontWeight: '600',
-                    cursor: 'pointer'
-                  }}
-                >
-                  <Download size={13} /> 下載硬體匯入範本
-                </button>
-              </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* 區塊 3：解析預覽與檢核分頁 */}
           {rawJsonData.length > 0 && (
             <div style={{
               backgroundColor: 'var(--bg-surface)',
               border: '1px solid var(--border-color)',
-              borderRadius: '12px',
+              borderRadius: '8px',
               overflow: 'hidden',
               display: 'flex',
-              flexDirection: 'column'
+              flexDirection: 'column',
+              flex: 1,
+              minHeight: 0
             }}>
               {/* 分頁籤與摘要統計 */}
               <div style={{
-                padding: '12px 16px',
+                padding: '6px 12px',
                 borderBottom: '1px solid var(--border-color)',
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 backgroundColor: 'var(--bg-surface-subtle)',
                 flexWrap: 'wrap',
-                gap: '10px'
+                gap: '8px'
               }}>
                 <div style={{ display: 'flex', gap: '6px' }}>
                   <button
                     type="button"
                     onClick={() => setActiveTab('all')}
                     style={{
-                      padding: '6px 14px',
-                      borderRadius: '8px',
+                      padding: '5px 12px',
+                      borderRadius: '6px',
                       fontSize: '12px',
                       fontWeight: '700',
                       cursor: 'pointer',
@@ -921,175 +1351,234 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
                   >
                     全部解析 ({stats.total})
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('valid')}
-                    style={{
-                      padding: '6px 14px',
-                      borderRadius: '8px',
-                      fontSize: '12px',
-                      fontWeight: '700',
-                      cursor: 'pointer',
-                      border: 'none',
-                      backgroundColor: activeTab === 'valid' ? '#10b981' : 'transparent',
-                      color: activeTab === 'valid' ? '#fff' : '#10b981'
-                    }}
-                  >
-                    <CheckCircle2 size={13} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} />
-                    待建立 ({stats.valid})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('skipped')}
-                    style={{
-                      padding: '6px 14px',
-                      borderRadius: '8px',
-                      fontSize: '12px',
-                      fontWeight: '700',
-                      cursor: 'pointer',
-                      border: 'none',
-                      backgroundColor: activeTab === 'skipped' ? '#f59e0b' : 'transparent',
-                      color: activeTab === 'skipped' ? '#fff' : '#f59e0b'
-                    }}
-                  >
-                    <AlertTriangle size={13} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} />
-                    略過項目 ({stats.skipped})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('duplicate')}
-                    style={{
-                      padding: '6px 14px',
-                      borderRadius: '8px',
-                      fontSize: '12px',
-                      fontWeight: '700',
-                      cursor: 'pointer',
-                      border: 'none',
-                      backgroundColor: activeTab === 'duplicate' ? '#ef4444' : 'transparent',
-                      color: activeTab === 'duplicate' ? '#fff' : '#ef4444'
-                    }}
-                  >
-                    <XCircle size={13} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} />
-                    序號重複 ({stats.duplicate})
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('valid')}
+                      style={{
+                        padding: '5px 12px',
+                        borderRadius: '6px',
+                        fontSize: '12px',
+                        fontWeight: '700',
+                        cursor: 'pointer',
+                        border: 'none',
+                        backgroundColor: activeTab === 'valid' ? '#10b981' : 'transparent',
+                        color: activeTab === 'valid' ? '#fff' : '#10b981'
+                      }}
+                    >
+                      <CheckCircle2 size={13} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} />
+                      待建立 ({stats.valid})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('skipped')}
+                      style={{
+                        padding: '5px 12px',
+                        borderRadius: '6px',
+                        fontSize: '12px',
+                        fontWeight: '700',
+                        cursor: 'pointer',
+                        border: 'none',
+                        backgroundColor: activeTab === 'skipped' ? '#f59e0b' : 'transparent',
+                        color: activeTab === 'skipped' ? '#fff' : '#f59e0b'
+                      }}
+                    >
+                      <AlertTriangle size={13} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} />
+                      略過項目 ({stats.skipped})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('duplicate')}
+                      style={{
+                        padding: '5px 12px',
+                        borderRadius: '6px',
+                        fontSize: '12px',
+                        fontWeight: '700',
+                        cursor: 'pointer',
+                        border: 'none',
+                        backgroundColor: activeTab === 'duplicate' ? '#ef4444' : 'transparent',
+                        color: activeTab === 'duplicate' ? '#fff' : '#ef4444'
+                      }}
+                    >
+                      <XCircle size={13} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} />
+                      序號重複 ({stats.duplicate})
+                    </button>
+                  </div>
                 </div>
 
-                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                  共 {stats.total} 筆 • 可寫入 <b style={{ color: '#10b981' }}>{stats.valid}</b> 筆
-                </div>
-              </div>
-
-              {/* 資料表格 */}
-              <div style={{ maxHeight: '340px', overflowY: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' }}>
-                  <thead style={{
-                    position: 'sticky',
-                    top: 0,
-                    backgroundColor: 'var(--table-header-bg)',
-                    borderBottom: '2px solid var(--border-color)',
-                    zIndex: 1
-                  }}>
-                    <tr>
-                      <th style={{ padding: '10px 12px', color: 'var(--text-muted)', fontWeight: '700', width: '50px' }}>行號</th>
-                      <th style={{ padding: '10px 12px', color: 'var(--text-muted)', fontWeight: '700' }}>檢核狀態</th>
-                      <th style={{ padding: '10px 12px', color: 'var(--text-muted)', fontWeight: '700' }}>初始狀態</th>
-                      <th style={{ padding: '10px 12px', color: 'var(--text-muted)', fontWeight: '700' }}>廠牌 / 類型 / 型號</th>
-                      <th style={{ padding: '10px 12px', color: 'var(--text-muted)', fontWeight: '700' }}>硬體序號 (SN)</th>
-                      <th style={{ padding: '10px 12px', color: 'var(--text-muted)', fontWeight: '700' }}>對應伺服器 (Server-SN)</th>
-                      <th style={{ padding: '10px 12px', color: 'var(--text-muted)', fontWeight: '700' }}>主機名稱 (Hostname)</th>
-                      <th style={{ padding: '10px 12px', color: 'var(--text-muted)', fontWeight: '700' }}>客戶 (Customer)</th>
-                      <th style={{ padding: '10px 12px', color: 'var(--text-muted)', fontWeight: '700' }}>訂單來源 (Order Source)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {displayRows.map((row, idx) => {
-                      let statusBadge = null;
-                      if (row.status === 'VALID') {
-                        statusBadge = (
-                          <span style={{ padding: '3px 8px', borderRadius: '12px', backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981', fontWeight: '700', fontSize: '11px', whiteSpace: 'nowrap' }}>
-                            ✓ 可建立
-                          </span>
-                        );
-                      } else if (row.status === 'SKIPPED') {
-                        statusBadge = (
-                          <span style={{ padding: '3px 8px', borderRadius: '12px', backgroundColor: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', fontWeight: '700', fontSize: '11px', whiteSpace: 'nowrap' }} title={row.skipReason}>
-                            ⚠️ 略過：{row.skipReason}
-                          </span>
-                        );
-                      } else {
-                        statusBadge = (
-                          <span style={{ padding: '3px 8px', borderRadius: '12px', backgroundColor: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', fontWeight: '700', fontSize: '11px', whiteSpace: 'nowrap' }} title={row.skipReason}>
-                            ❌ 重複：{row.skipReason}
-                          </span>
-                        );
-                      }
-
-                      return (
-                        <tr
-                          key={idx}
-                          style={{
-                            borderBottom: '1px solid var(--border-color)',
-                            backgroundColor: row.status === 'SKIPPED' ? 'rgba(245, 158, 11, 0.03)' : (row.status === 'DUPLICATE' ? 'rgba(239, 68, 68, 0.03)' : 'transparent')
-                          }}
-                        >
-                          <td style={{ padding: '8px 12px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>#{row.rowIndex}</td>
-                          <td style={{ padding: '8px 12px' }}>{statusBadge}</td>
-                          <td style={{ padding: '8px 12px' }}>
-                            <span style={{
-                              padding: '2px 8px',
-                              borderRadius: '12px',
-                              fontSize: '11px',
-                              fontWeight: '700',
-                              backgroundColor: row.itemStatus === 'SHIPPED' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(16, 185, 129, 0.15)',
-                              color: row.itemStatus === 'SHIPPED' ? '#3b82f6' : '#10b981',
-                              whiteSpace: 'nowrap'
-                            }}>
-                              {row.itemStatus === 'SHIPPED' ? '📦 已出貨' : '🟢 在庫'}
+              {/* 資料表格容器 - 1080P 自適應彈性填滿 */}
+              <div style={{
+                border: 'none',
+                backgroundColor: 'var(--bg-surface)',
+                flex: 1,
+                minHeight: '220px',
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden'
+              }}>
+                <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' }}>
+                    <thead style={{
+                      position: 'sticky',
+                      top: 0,
+                      backgroundColor: 'var(--table-header-bg)',
+                      borderBottom: '2px solid var(--border-color)',
+                      zIndex: 1
+                    }}>
+                      <tr>
+                        <th style={{ padding: '8px 12px', color: 'var(--text-muted)', fontWeight: '700', width: '50px' }}>行號</th>
+                        <th style={{ padding: '8px 12px', color: 'var(--text-muted)', fontWeight: '700' }}>檢核狀態</th>
+                        <th style={{ padding: '8px 12px', color: 'var(--text-muted)', fontWeight: '700' }}>初始狀態</th>
+                        <th style={{ padding: '8px 12px', color: 'var(--text-muted)', fontWeight: '700' }}>廠牌 / 類型 / 型號</th>
+                        <th style={{ padding: '8px 12px', color: 'var(--text-muted)', fontWeight: '700' }}>硬體序號 (SN)</th>
+                        <th style={{ padding: '8px 12px', color: 'var(--text-muted)', fontWeight: '700' }}>對應伺服器 (Server-SN)</th>
+                        <th style={{ padding: '8px 12px', color: 'var(--text-muted)', fontWeight: '700' }}>主機名稱 (Hostname)</th>
+                        <th style={{ padding: '8px 12px', color: 'var(--text-muted)', fontWeight: '700' }}>客戶 (Customer)</th>
+                        <th style={{ padding: '8px 12px', color: 'var(--text-muted)', fontWeight: '700' }}>聯絡人 (Contact)</th>
+                        <th style={{ padding: '8px 12px', color: 'var(--text-muted)', fontWeight: '700' }}>訂單來源 (Order Source)</th>
+                        {customFieldDefs.filter(f => customFieldMapping[f.id]).map(f => (
+                          <th key={f.id} style={{ padding: '8px 12px', color: f.color || 'var(--primary-color)', fontWeight: '700', whiteSpace: 'nowrap' }}>
+                            {f.label} <span style={{ fontSize: '10px', opacity: 0.8 }}>(自訂)</span>
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {displayRows.map((row, idx) => {
+                        let statusBadge = null;
+                        if (row.status === 'VALID') {
+                          statusBadge = (
+                            <span style={{ padding: '3px 8px', borderRadius: '12px', backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981', fontWeight: '700', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                              ✓ 可建立
                             </span>
-                          </td>
-                          <td style={{ padding: '8px 12px' }}>
-                            <div style={{ fontWeight: '700', color: 'var(--text-main)' }}>
-                              {row.brand || <span style={{ color: '#ef4444' }}>[未填廠牌]</span>}
-                            </div>
-                            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                              {row.type || <span style={{ color: '#ef4444' }}>[未填類型]</span>} - {row.model || <span style={{ color: '#ef4444' }}>[未填型號]</span>}
-                            </div>
-                            <div style={{ fontSize: '10px', color: row.specification ? 'var(--text-subtle)' : '#ef4444' }}>
-                              {row.specification ? `規格: ${row.specification}` : '[未填規格]'}
-                            </div>
-                          </td>
-                          <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: '700', color: row.sn ? 'var(--primary-color)' : '#ef4444' }}>
-                            {row.sn || '[缺少序號]'}
-                          </td>
-                          <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: '#818cf8', fontWeight: 600 }}>
-                            {row.server_sn ? `🖥️ ${row.server_sn}` : '--'}
-                          </td>
-                          <td style={{ padding: '8px 12px' }}>
-                            <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{row.hostname || '--'}</span>
-                          </td>
-                          <td style={{ padding: '8px 12px' }}>
-                            <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{row.client || '--'}</span>
-                          </td>
-                          <td style={{ padding: '8px 12px', color: 'var(--text-muted)' }}>
-                            {row.order_source || '--'}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                          );
+                        } else if (row.status === 'SKIPPED') {
+                          statusBadge = (
+                            <span style={{ padding: '3px 8px', borderRadius: '12px', backgroundColor: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', fontWeight: '700', fontSize: '11px', whiteSpace: 'nowrap' }} title={row.skipReason}>
+                              ⚠️ 略過：{row.skipReason}
+                            </span>
+                          );
+                        } else {
+                          statusBadge = (
+                            <span style={{ padding: '3px 8px', borderRadius: '12px', backgroundColor: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', fontWeight: '700', fontSize: '11px', whiteSpace: 'nowrap' }} title={row.skipReason}>
+                              ❌ 重複：{row.skipReason}
+                            </span>
+                          );
+                        }
+
+                        return (
+                          <tr
+                            key={idx}
+                            style={{
+                              borderBottom: '1px solid var(--border-color)',
+                              backgroundColor: row.status === 'SKIPPED' ? 'rgba(245, 158, 11, 0.03)' : (row.status === 'DUPLICATE' ? 'rgba(239, 68, 68, 0.03)' : 'transparent')
+                            }}
+                          >
+                            <td style={{ padding: '8px 12px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>#{row.rowIndex}</td>
+                            <td style={{ padding: '8px 12px' }}>{statusBadge}</td>
+                            <td style={{ padding: '8px 12px' }}>
+                              <span style={{
+                                padding: '2px 8px',
+                                borderRadius: '12px',
+                                fontSize: '11px',
+                                fontWeight: '700',
+                                backgroundColor: row.itemStatus === 'SHIPPED' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                                color: row.itemStatus === 'SHIPPED' ? '#3b82f6' : '#10b981',
+                                whiteSpace: 'nowrap'
+                              }}>
+                                {row.itemStatus === 'SHIPPED' ? '📦 已出貨' : '🟢 在庫'}
+                              </span>
+                            </td>
+                            <td style={{ padding: '8px 12px' }}>
+                              <div style={{ fontWeight: '700', color: 'var(--text-main)' }}>
+                                {row.brand || <span style={{ color: '#ef4444' }}>[未填廠牌]</span>}
+                              </div>
+                              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                {row.type || <span style={{ color: '#ef4444' }}>[未填類型]</span>} - {row.model || <span style={{ color: '#ef4444' }}>[未填型號]</span>}
+                              </div>
+                              <div style={{ fontSize: '10px', color: 'var(--text-subtle)' }}>
+                                {row.specification ? `規格: ${row.specification}` : '(無規格)'}
+                              </div>
+                            </td>
+                            <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: '700', color: row.sn ? 'var(--primary-color)' : '#ef4444' }}>
+                              {row.sn || '[缺少序號]'}
+                            </td>
+                            <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: '#818cf8', fontWeight: 600 }}>
+                              {row.server_sn ? `🖥️ ${row.server_sn}` : '--'}
+                            </td>
+                            <td style={{ padding: '8px 12px' }}>
+                              <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{row.hostname || '--'}</span>
+                            </td>
+                            <td style={{ padding: '8px 12px' }}>
+                              <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{row.client || '--'}</span>
+                            </td>
+                            <td style={{ padding: '8px 12px' }}>
+                              {row.contact_person ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                  <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>
+                                    {row.contact_person}
+                                  </span>
+                                  {row.contactMatch?.isFuzzy && (
+                                    <span style={{
+                                      fontSize: '10px',
+                                      color: '#10b981',
+                                      backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                                      padding: '1px 5px',
+                                      borderRadius: '4px',
+                                      display: 'inline-block',
+                                      width: 'fit-content'
+                                    }} title={`原文字串: ${row.contactMatch?.raw_contact || row.contactMatch?.raw_client || ''}`}>
+                                      🔗 已帶入: {row.contact_person}
+                                    </span>
+                                  )}
+                                  {row.contactMatch?.matched_project && (
+                                    <span style={{
+                                      fontSize: '10px',
+                                      color: '#3b82f6',
+                                      backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                      padding: '1px 5px',
+                                      borderRadius: '4px',
+                                      display: 'inline-block',
+                                      width: 'fit-content'
+                                    }}>
+                                      🏷️ 專案: {row.contactMatch.matched_project}
+                                    </span>
+                                  )}
+                                  {row.contact_phone && (
+                                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                      📞 {row.contact_phone}
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span style={{ color: 'var(--text-muted)' }}>--</span>
+                              )}
+                            </td>
+                            <td style={{ padding: '8px 12px', color: 'var(--text-muted)' }}>
+                              {row.order_source || row.contactMatch?.matched_project || '--'}
+                            </td>
+                            {customFieldDefs.filter(f => customFieldMapping[f.id]).map(f => (
+                              <td key={f.id} style={{ padding: '8px 12px', color: 'var(--text-main)', whiteSpace: 'nowrap' }}>
+                                {row.custom_attributes?.[f.id] || <span style={{ color: 'var(--text-muted)' }}>--</span>}
+                              </td>
+                            ))}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
 
           {/* 匯入進度與結果報告 */}
           {isImporting && (
-            <div style={{ backgroundColor: 'var(--bg-surface-subtle)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: '700', marginBottom: '8px', color: 'var(--text-main)' }}>
+            <div style={{ backgroundColor: 'var(--bg-surface-subtle)', padding: '12px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: '700', marginBottom: '6px', color: 'var(--text-main)' }}>
                 <span>正在匯入硬體並建立主檔層級...</span>
                 <span>{importProgress}%</span>
               </div>
-              <div style={{ height: '8px', backgroundColor: 'var(--border-color)', borderRadius: '4px', overflow: 'hidden' }}>
+              <div style={{ height: '6px', backgroundColor: 'var(--border-color)', borderRadius: '4px', overflow: 'hidden' }}>
                 <div style={{ height: '100%', width: `${importProgress}%`, backgroundColor: '#6366f1', transition: 'width 0.2s ease-out' }} />
               </div>
             </div>
@@ -1117,7 +1606,7 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
 
         {/* 底部按鈕列 */}
         <div style={{
-          padding: '16px 24px',
+          padding: '8px 16px',
           borderTop: '1px solid var(--border-color)',
           display: 'flex',
           justifyContent: 'space-between',
@@ -1134,12 +1623,12 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
               type="button"
               onClick={onClose}
               style={{
-                padding: '9px 18px',
+                padding: '7px 16px',
                 borderRadius: '8px',
                 border: '1px solid var(--border-color)',
                 backgroundColor: 'var(--bg-surface)',
                 color: 'var(--text-main)',
-                fontSize: '13px',
+                fontSize: '12px',
                 fontWeight: '600',
                 cursor: 'pointer'
               }}
@@ -1151,12 +1640,12 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
               disabled={isImporting || stats.valid === 0}
               onClick={executeImport}
               style={{
-                padding: '9px 24px',
+                padding: '7px 20px',
                 borderRadius: '8px',
                 border: 'none',
                 backgroundColor: (isImporting || stats.valid === 0) ? 'var(--border-color)' : '#6366f1',
                 color: '#fff',
-                fontSize: '13px',
+                fontSize: '12px',
                 fontWeight: '700',
                 cursor: (isImporting || stats.valid === 0) ? 'not-allowed' : 'pointer',
                 display: 'flex',
@@ -1165,7 +1654,7 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
                 boxShadow: (isImporting || stats.valid === 0) ? 'none' : '0 2px 6px rgba(99, 102, 241, 0.35)'
               }}
             >
-              <Database size={15} />
+              <Database size={14} />
               {isImporting ? '匯入處理中...' : `確認批次匯入 (${stats.valid})`}
             </button>
           </div>

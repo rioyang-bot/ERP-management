@@ -56,13 +56,13 @@ function parseItemInfo(rawName, defaultType = '') {
     brand = 'METECH';
   }
 
-  // 4. 若仍無明確廠牌，以 defaultType 或通用分類作為廠牌
+  // 4. 若無明確廠牌，則保留為空，由匯入檢核程序檢查有無輸入廠牌
   if (!brand) {
-    brand = defaultType || '通用';
+    brand = '';
   }
 
   // 型號處理：如果型號開頭包含廠牌前綴，提取主體型號
-  if (cleanName.toLowerCase().startsWith(brand.toLowerCase()) && cleanName.length > brand.length) {
+  if (brand && cleanName.toLowerCase().startsWith(brand.toLowerCase()) && cleanName.length > brand.length) {
     model = cleanName.slice(brand.length).trim().replace(/^[-_\s/]+/, '');
   }
   if (!model) {
@@ -88,10 +88,12 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
   const [fileName, setFileName] = useState('');
   
   // 覆蓋/預設設定
+  const [overrideBrand, setOverrideBrand] = useState('');
   const [overrideType, setOverrideType] = useState('');
   const [duplicateMode, setDuplicateMode] = useState('REPLACE'); // 'REPLACE' (覆蓋總數) or 'ADD' (累加庫存)
 
   const [rawJsonData, setRawJsonData] = useState([]);
+  const [fileHeaders, setFileHeaders] = useState([]);
   const [isProcessingFile, setIsProcessingFile] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
@@ -132,9 +134,11 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
   const resetState = () => {
     setFile(null);
     setFileName('');
+    setOverrideBrand('');
     setOverrideType('');
     setDuplicateMode('REPLACE');
     setRawJsonData([]);
+    setFileHeaders([]);
     setIsProcessingFile(false);
     setIsImporting(false);
     setImportProgress(0);
@@ -143,6 +147,15 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
     setEditingRowIndex(null);
     setCustomEdits({});
   };
+
+  // 判斷上傳檔案表頭是否有明確的廠牌欄位
+  const hasBrandHeader = useMemo(() => {
+    if (!fileHeaders || fileHeaders.length === 0) return true;
+    return fileHeaders.some(h => {
+      const lh = h.toLowerCase().replace(/[\s_\(\)\-]/g, '');
+      return lh.includes('brand') || lh.includes('廠牌') || lh.includes('品牌');
+    });
+  }, [fileHeaders]);
 
   // 解析 Excel / CSV 為原始物件資料
   const handleFileProcess = async (selectedFile) => {
@@ -162,6 +175,8 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
         return;
       }
 
+      const headers = Object.keys(rawJson[0] || {});
+      setFileHeaders(headers);
       setRawJsonData(rawJson);
     } catch (err) {
       console.error('Consumable File parsing error:', err);
@@ -194,10 +209,10 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
 
       for (const [k, v] of entries) {
         const lk = k.toLowerCase().replace(/[\s_\(\)\-]/g, '');
-        if (lk.includes('brand') || lk.includes('廠牌')) brandVal = v;
+        if (lk.includes('brand') || lk.includes('廠牌') || lk.includes('品牌')) brandVal = v;
         else if (lk.includes('type') || lk.includes('類型')) typeVal = v;
         else if (lk.includes('model') || lk.includes('型號')) modelVal = v;
-        else if (lk.includes('spec') || lk.includes('規格') || lk.includes('品項') || lk.includes('名稱')) specVal = v;
+        else if (lk.includes('remark') || lk.includes('備註') || lk.includes('note') || lk.includes('spec') || lk.includes('規格') || lk.includes('品項') || lk.includes('名稱')) specVal = v;
         else if (lk.includes('total') || lk.includes('總數') || lk.includes('數量') || lk.includes('stock') || lk.includes('庫存')) {
           if (!qtyVal) qtyVal = v;
         } else if (lk.includes('unit') || lk.includes('單位')) unitVal = v;
@@ -220,9 +235,9 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
         return; // 標題列跳過，不作為物料
       }
 
-      // 提取品項名稱與規格
+      // 提取品項名稱與規格/備註
       const rawItemName = specVal || firstEntryVal;
-      if (!rawItemName) return;
+      if (!rawItemName && !modelVal) return;
 
       const activeType = overrideType || typeVal || currentSectionType || '未分類耗材';
 
@@ -233,20 +248,23 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
 
       // 智慧推導廠牌與型號
       const derived = parseItemInfo(rawItemName, activeType);
-      const brand = brandVal || derived.brand;
-      const model = modelVal || derived.model;
-      const spec = rawItemName;
+      const brand = (brandVal || overrideBrand || derived.brand || '').trim();
+      const model = (modelVal || derived.model || '').trim();
+      const spec = specVal !== undefined && specVal !== '' ? specVal : (rawItemName || '');
       const unit = unitVal || getSuggestedUnit(activeType);
 
       let status = 'VALID';
       let skipReason = '';
 
-      if (!spec && !model) {
+      if (!brand) {
         status = 'SKIPPED';
-        skipReason = '缺少品項規格或型號';
+        skipReason = '缺少廠牌';
+      } else if (!model) {
+        status = 'SKIPPED';
+        skipReason = '缺少型號/規格';
       }
 
-      const matchKey = `${brand.toLowerCase()}___${activeType.toLowerCase()}___${model.toLowerCase()}___${spec.toLowerCase()}`;
+      const matchKey = `${brand.toLowerCase()}___${activeType.toLowerCase()}___${model.toLowerCase()}___${(spec || '').toLowerCase()}`;
       const existingRecord = existingItemsMap.get(matchKey);
       const isExisting = !!existingRecord;
 
@@ -271,19 +289,46 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
     return processed.map((item, idx) => {
       const edit = customEdits[idx];
       if (edit) {
+        const brand = (edit.brand !== undefined ? edit.brand : item.brand).trim();
+        const type = (edit.type !== undefined ? edit.type : item.type).trim();
+        const model = (edit.model !== undefined ? edit.model : item.model).trim();
+        const specification = (edit.specification !== undefined ? edit.specification : item.specification).trim();
+        const quantity = edit.quantity !== undefined ? edit.quantity : item.quantity;
+        const unit = edit.unit !== undefined ? edit.unit : item.unit;
+
+        let status = 'VALID';
+        let skipReason = '';
+
+        if (!brand) {
+          status = 'SKIPPED';
+          skipReason = '缺少廠牌';
+        } else if (!model) {
+          status = 'SKIPPED';
+          skipReason = '缺少型號/規格';
+        }
+
+        const matchKey = `${brand.toLowerCase()}___${type.toLowerCase()}___${model.toLowerCase()}___${specification.toLowerCase()}`;
+        const existingRecord = existingItemsMap.get(matchKey);
+        const isExisting = !!existingRecord;
+
         return {
           ...item,
-          brand: edit.brand !== undefined ? edit.brand : item.brand,
-          type: edit.type !== undefined ? edit.type : item.type,
-          model: edit.model !== undefined ? edit.model : item.model,
-          specification: edit.specification !== undefined ? edit.specification : item.specification,
-          quantity: edit.quantity !== undefined ? edit.quantity : item.quantity,
-          unit: edit.unit !== undefined ? edit.unit : item.unit
+          brand,
+          type,
+          model,
+          specification,
+          quantity,
+          unit,
+          isExisting,
+          existingStock: existingRecord ? existingRecord.stock_qty : 0,
+          existingLab: existingRecord ? existingRecord.lab_qty : 0,
+          status: status === 'VALID' ? (isExisting ? 'EXISTING' : 'VALID') : status,
+          skipReason
         };
       }
       return item;
     });
-  }, [rawJsonData, overrideType, existingItemsMap, customEdits]);
+  }, [rawJsonData, overrideBrand, overrideType, existingItemsMap, customEdits]);
 
   // 統計數據
   const stats = useMemo(() => {
@@ -313,10 +358,21 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
     }
   };
 
-  // 下載範本 (階層式/分組式範本)
+  // 下載範本 (提供標準欄位與階層分組式雙工作表)
   const handleDownloadTemplate = () => {
+    // 工作表 1：標準欄位清單 (明確包含廠牌)
+    const standardData = [
+      ['廠牌', '類型', '型號/規格', '備註', 'Total 數量', '單位'],
+      ['Cisco', '線材', 'SFP-10G-SR', '10G 光纖跳線 3M', 25, '個'],
+      ['Solarflare', '網卡', 'SF 2522-Plus', 'Dual-Port 10/25GbE', 10, '個'],
+      ['METECH', '模組', 'DAC-40G-SR(3M)', '40G 直連銅纜', 50, '條'],
+      ['Intel', '網卡', 'X520-DA2', '10G 雙埠網卡', 8, '張'],
+      ['Mellanox', '網卡', 'CX6-DX', 'ConnectX-6 Dx 100G', 4, '張']
+    ];
+
+    // 工作表 2：階層分組式範本
     const sampleData = [
-      ['品項名稱 / 規格', 'Total', 'Stock', 'LAB'],
+      ['型號/規格 / 備註', 'Total', 'Stock', 'LAB'],
       ['NIC', '', '', ''],
       ['Cisco/Exablaze X10', 1, 1, ''],
       ['Cisco/Exablaze X25 (DDR)', 5, 4, 1],
@@ -337,9 +393,12 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
       ['100G QSFP28 AOC (METECH)', 12, 10, 2]
     ];
 
-    const ws = XLSX.utils.aoa_to_sheet(sampleData);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, '耗材庫存匯入清單');
+    const wsStandard = XLSX.utils.aoa_to_sheet(standardData);
+    const wsGrouped = XLSX.utils.aoa_to_sheet(sampleData);
+
+    XLSX.utils.book_append_sheet(wb, wsStandard, '標準欄位範本(推薦)');
+    XLSX.utils.book_append_sheet(wb, wsGrouped, '階層分組式範本');
     XLSX.writeFile(wb, '耗材批次匯入範本.xlsx');
   };
 
@@ -508,15 +567,16 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
       justifyContent: 'center',
       zIndex: 1000,
       backdropFilter: 'blur(6px)',
-      padding: '20px'
+      padding: 'clamp(8px, 1.5vh, 16px)'
     }}>
       <div style={{
         backgroundColor: 'var(--bg-surface)',
         border: '1px solid var(--border-color)',
-        borderRadius: '20px',
-        width: '92vw',
-        maxWidth: '1280px',
-        maxHeight: '92vh',
+        borderRadius: '16px',
+        width: '94vw',
+        maxWidth: '1320px',
+        height: rawJsonData.length > 0 ? '96vh' : 'auto',
+        maxHeight: 'calc(100vh - 16px)',
         display: 'flex',
         flexDirection: 'column',
         boxShadow: 'var(--modal-shadow)',
@@ -528,26 +588,26 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          padding: '20px 28px',
+          padding: '10px 18px',
           borderBottom: '1px solid var(--border-color)',
           backgroundColor: 'var(--bg-surface)'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div style={{
-              width: '44px',
-              height: '44px',
-              borderRadius: '12px',
+              width: '34px',
+              height: '34px',
+              borderRadius: '8px',
               backgroundColor: 'var(--primary-bg)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               color: 'var(--primary-color)'
             }}>
-              <Package size={24} />
+              <Package size={18} />
             </div>
             <div>
-              <h2 style={{ fontSize: '20px', fontWeight: 800, margin: 0 }}>耗材清冊批次匯入 (Batch Consumables Import)</h2>
-              <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
+              <h2 style={{ fontSize: '16px', fontWeight: 800, margin: 0 }}>耗材清冊批次匯入 (Batch Consumables Import)</h2>
+              <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: '1px 0 0 0' }}>
                 支援分類分組清單（NIC、DAC Cable、GBIC 等）與標準 Excel/CSV 格式，自動建立主檔與 Total 總庫存。
               </p>
             </div>
@@ -560,16 +620,16 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
               border: 'none',
               cursor: isImporting ? 'not-allowed' : 'pointer',
               color: 'var(--text-subtle)',
-              padding: '8px',
+              padding: '6px',
               borderRadius: '8px'
             }}
           >
-            <X size={20} />
+            <X size={18} />
           </button>
         </div>
 
         {/* Modal Body */}
-        <div style={{ padding: '24px 28px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div style={{ padding: '8px 16px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '8px', minHeight: 0 }}>
           
           {/* 匯入完成成功狀態視窗 */}
           {importResult && (
@@ -647,225 +707,398 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
 
           {!importResult && (
             <>
+              {/* 隱藏原生 File Input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx, .xls, .csv"
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  if (e.target.files && e.target.files.length > 0) {
+                    handleFileProcess(e.target.files[0]);
+                  }
+                }}
+              />
+
               {/* 上傳與設定卡片 */}
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'minmax(300px, 1fr) minmax(320px, 1.2fr)',
-                gap: '20px',
-                alignItems: 'stretch'
-              }}>
-                {/* 左側：上傳區塊 */}
-                <div
-                  onDragOver={handleDragOver}
-                  onDragLeave={handleDragLeave}
-                  onDrop={handleDrop}
-                  onClick={() => fileInputRef.current?.click()}
-                  style={{
-                    border: `2px dashed ${isDragging ? 'var(--primary-color)' : 'var(--border-color)'}`,
-                    borderRadius: '16px',
-                    backgroundColor: isDragging ? 'var(--primary-bg)' : 'var(--bg-surface-subtle)',
-                    padding: '24px',
+              {rawJsonData.length === 0 ? (
+                /* 尚未上傳檔案時：顯示完整引導大卡片 */
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'minmax(300px, 1fr) minmax(320px, 1.2fr)',
+                  gap: '16px',
+                  alignItems: 'stretch'
+                }}>
+                  {/* 左側：上傳區塊 */}
+                  <div
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                    style={{
+                      border: `2px dashed ${isDragging ? 'var(--primary-color)' : 'var(--border-color)'}`,
+                      borderRadius: '14px',
+                      backgroundColor: isDragging ? 'var(--primary-bg)' : 'var(--bg-surface-subtle)',
+                      padding: '24px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      textAlign: 'center',
+                      minHeight: '160px'
+                    }}
+                  >
+                    <div style={{
+                      width: '44px',
+                      height: '44px',
+                      borderRadius: '50%',
+                      backgroundColor: 'var(--bg-surface)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: 'var(--primary-color)',
+                      marginBottom: '10px',
+                      boxShadow: 'var(--card-shadow)'
+                    }}>
+                      <UploadCloud size={24} />
+                    </div>
+                    <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-main)', marginBottom: '4px' }}>
+                      點擊或將 Excel / CSV 檔案拖曳至此
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                      支援 .xlsx, .xls, .csv 格式 (自動解析第一欄品項名稱與 Total 數量)
+                    </div>
+                  </div>
+
+                  {/* 右側：匯入參數與範本下載 */}
+                  <div style={{
+                    backgroundColor: 'var(--bg-surface-subtle)',
+                    borderRadius: '14px',
+                    border: '1px solid var(--border-color)',
+                    padding: '16px 20px',
                     display: 'flex',
                     flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    textAlign: 'center',
-                    minHeight: '180px'
-                  }}
-                >
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".xlsx, .xls, .csv"
-                    style={{ display: 'none' }}
-                    onChange={(e) => {
-                      if (e.target.files && e.target.files.length > 0) {
-                        handleFileProcess(e.target.files[0]);
-                      }
-                    }}
-                  />
-                  <div style={{
-                    width: '48px',
-                    height: '48px',
-                    borderRadius: '50%',
-                    backgroundColor: 'var(--bg-surface)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: 'var(--primary-color)',
-                    marginBottom: '12px',
-                    boxShadow: 'var(--card-shadow)'
+                    justifyContent: 'space-between',
+                    gap: '12px'
                   }}>
-                    <UploadCloud size={26} />
-                  </div>
-                  <div style={{ fontWeight: 700, fontSize: '15px', color: 'var(--text-main)', marginBottom: '4px' }}>
-                    {fileName ? fileName : '點擊或將 Excel / CSV 檔案拖曳至此'}
-                  </div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                    支援 .xlsx, .xls, .csv 格式 (自動解析第一欄品項名稱與 Total 數量)
+                    <div>
+                      <div style={{ fontSize: '13px', fontWeight: 800, marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Layers size={15} color="var(--primary-color)" /> 匯入規則設定
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px' }}>
+                        {/* 重複品項處理模式 */}
+                        <div>
+                          <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '4px' }}>
+                            若品項已存在時：
+                          </label>
+                          <select
+                            value={duplicateMode}
+                            onChange={(e) => setDuplicateMode(e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '6px 10px',
+                              borderRadius: '6px',
+                              border: '1px solid var(--input-border)',
+                              backgroundColor: 'var(--input-bg)',
+                              color: 'var(--input-text)',
+                              fontSize: '12px',
+                              fontWeight: 600
+                            }}
+                          >
+                            <option value="REPLACE">覆蓋為檔案中的 Total 庫存</option>
+                            <option value="ADD">累加至既有庫存 (+Total)</option>
+                          </select>
+                        </div>
+
+                        {/* 預設/強制廠牌 (選填) */}
+                        <div>
+                          <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '4px' }}>
+                            預設/強制廠牌 (選填)：
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="例如: Cisco (若檔案無廠牌)"
+                            value={overrideBrand}
+                            onChange={(e) => setOverrideBrand(e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '6px 10px',
+                              borderRadius: '6px',
+                              border: '1px solid var(--input-border)',
+                              backgroundColor: 'var(--input-bg)',
+                              color: 'var(--input-text)',
+                              fontSize: '12px',
+                              boxSizing: 'border-box'
+                            }}
+                          />
+                        </div>
+
+                        {/* 強制指定類型 (選填) */}
+                        <div>
+                          <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '4px' }}>
+                            預設/強制類型 (選填)：
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="例如: NIC (留空則依檔案標題)"
+                            value={overrideType}
+                            onChange={(e) => setOverrideType(e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '6px 10px',
+                              borderRadius: '6px',
+                              border: '1px solid var(--input-border)',
+                              backgroundColor: 'var(--input-bg)',
+                              color: 'var(--input-text)',
+                              fontSize: '12px',
+                              boxSizing: 'border-box'
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 範本下載按鈕 */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border-color)', paddingTop: '10px' }}>
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                        首次使用或格式不確定？
+                      </div>
+                      <button
+                        onClick={handleDownloadTemplate}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          padding: '5px 12px',
+                          backgroundColor: 'var(--bg-surface)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '6px',
+                          color: 'var(--text-main)',
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          boxShadow: 'var(--card-shadow)'
+                        }}
+                      >
+                        <Download size={13} color="var(--primary-color)" /> 下載匯入範本 (Template)
+                      </button>
+                    </div>
                   </div>
                 </div>
-
-                {/* 右側：匯入參數與範本下載 */}
+              ) : (
+                /* 已載入檔案時：轉換為精簡橫向資訊列，騰出高度給表格預覽 */
                 <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'minmax(240px, 1fr) 2.2fr',
+                  gap: '12px',
+                  alignItems: 'center',
                   backgroundColor: 'var(--bg-surface-subtle)',
-                  borderRadius: '16px',
                   border: '1px solid var(--border-color)',
-                  padding: '20px 24px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'space-between',
-                  gap: '16px'
+                  borderRadius: '12px',
+                  padding: '8px 14px'
                 }}>
-                  <div>
-                    <div style={{ fontSize: '14px', fontWeight: 800, marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <Layers size={16} color="var(--primary-color)" /> 匯入規則設定
+                  {/* 左側：精簡檔案資訊標籤 */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                    <div style={{
+                      width: '34px',
+                      height: '34px',
+                      borderRadius: '8px',
+                      backgroundColor: 'var(--primary-bg)',
+                      color: 'var(--primary-color)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0
+                    }}>
+                      <FileSpreadsheet size={18} />
                     </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-                      {/* 重複品項處理模式 */}
-                      <div>
-                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '6px' }}>
-                          若品項已存在時：
-                        </label>
-                        <select
-                          value={duplicateMode}
-                          onChange={(e) => setDuplicateMode(e.target.value)}
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontWeight: 800, fontSize: '13px', color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={fileName}>
+                        {fileName || '未命名檔案'}
+                      </div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '8px', marginTop: '1px' }}>
+                        <span>共 {stats.total} 筆資料</span>
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
                           style={{
-                            width: '100%',
-                            padding: '8px 12px',
-                            borderRadius: '8px',
-                            border: '1px solid var(--input-border)',
-                            backgroundColor: 'var(--input-bg)',
-                            color: 'var(--input-text)',
-                            fontSize: '13px',
-                            fontWeight: 600
+                            background: 'none',
+                            border: 'none',
+                            color: 'var(--primary-color)',
+                            fontSize: '11px',
+                            cursor: 'pointer',
+                            padding: 0,
+                            textDecoration: 'underline',
+                            fontWeight: 700
                           }}
                         >
-                          <option value="REPLACE">覆蓋為檔案中的 Total 庫存</option>
-                          <option value="ADD">累加至既有庫存 (+Total)</option>
-                        </select>
-                      </div>
-
-                      {/* 強制指定類型 (選填) */}
-                      <div>
-                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '6px' }}>
-                          預設/強制類型 (選填)：
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="例如: NIC (留空則依檔案標題)"
-                          value={overrideType}
-                          onChange={(e) => setOverrideType(e.target.value)}
-                          style={{
-                            width: '100%',
-                            padding: '8px 12px',
-                            borderRadius: '8px',
-                            border: '1px solid var(--input-border)',
-                            backgroundColor: 'var(--input-bg)',
-                            color: 'var(--input-text)',
-                            fontSize: '13px',
-                            boxSizing: 'border-box'
-                          }}
-                        />
+                          重新選擇檔案
+                        </button>
                       </div>
                     </div>
                   </div>
 
-                  {/* 範本下載按鈕 */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
-                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                      首次使用或格式不確定？
+                  {/* 右側：精簡規則設定 (3欄橫排 + 下載範本按鈕) */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr auto', gap: '10px', alignItems: 'center' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '2px' }}>
+                        若品項已存在：
+                      </label>
+                      <select
+                        value={duplicateMode}
+                        onChange={(e) => setDuplicateMode(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '5px 8px',
+                          borderRadius: '6px',
+                          border: '1px solid var(--input-border)',
+                          backgroundColor: 'var(--input-bg)',
+                          color: 'var(--input-text)',
+                          fontSize: '12px',
+                          fontWeight: 600
+                        }}
+                      >
+                        <option value="REPLACE">覆蓋為 Total 庫存</option>
+                        <option value="ADD">累加 (+Total)</option>
+                      </select>
                     </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '2px' }}>
+                        預設/強制廠牌：
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="例如: Cisco (若檔案無廠牌)"
+                        value={overrideBrand}
+                        onChange={(e) => setOverrideBrand(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '5px 8px',
+                          borderRadius: '6px',
+                          border: '1px solid var(--input-border)',
+                          backgroundColor: 'var(--input-bg)',
+                          color: 'var(--input-text)',
+                          fontSize: '12px',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '2px' }}>
+                        預設/強制類型：
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="例如: NIC (留空則依檔案標題)"
+                        value={overrideType}
+                        onChange={(e) => setOverrideType(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '5px 8px',
+                          borderRadius: '6px',
+                          border: '1px solid var(--input-border)',
+                          backgroundColor: 'var(--input-bg)',
+                          color: 'var(--input-text)',
+                          fontSize: '12px',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                    </div>
+
                     <button
+                      type="button"
                       onClick={handleDownloadTemplate}
+                      title="下載範本"
                       style={{
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '6px',
-                        padding: '6px 14px',
+                        gap: '4px',
+                        padding: '5px 10px',
                         backgroundColor: 'var(--bg-surface)',
                         border: '1px solid var(--border-color)',
-                        borderRadius: '8px',
+                        borderRadius: '6px',
                         color: 'var(--text-main)',
-                        fontSize: '12px',
+                        fontSize: '11px',
                         fontWeight: 700,
                         cursor: 'pointer',
-                        boxShadow: 'var(--card-shadow)'
+                        marginTop: '16px'
                       }}
                     >
-                      <Download size={14} color="var(--primary-color)" /> 下載匯入範本 (Template)
+                      <Download size={13} color="var(--primary-color)" /> 範本
                     </button>
                   </div>
                 </div>
-              </div>
+              )}
 
               {/* 統計指標 Cards */}
               {rawJsonData.length > 0 && (
                 <div style={{
                   display: 'grid',
                   gridTemplateColumns: 'repeat(5, 1fr)',
-                  gap: '12px'
+                  gap: '8px'
                 }}>
                   <div style={{
-                    padding: '12px 16px',
-                    borderRadius: '12px',
+                    padding: '6px 12px',
+                    borderRadius: '10px',
                     backgroundColor: 'var(--bg-surface-subtle)',
                     border: '1px solid var(--border-color)'
                   }}>
-                    <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)' }}>讀取總品項</div>
-                    <div style={{ fontSize: '20px', fontWeight: 900, color: 'var(--text-main)', marginTop: '2px' }}>
-                      {stats.total} <span style={{ fontSize: '12px', fontWeight: 500 }}>項</span>
+                    <div style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)' }}>讀取總品項</div>
+                    <div style={{ fontSize: '16px', fontWeight: 900, color: 'var(--text-main)', marginTop: '1px' }}>
+                      {stats.total} <span style={{ fontSize: '11px', fontWeight: 500 }}>項</span>
                     </div>
                   </div>
 
                   <div style={{
-                    padding: '12px 16px',
-                    borderRadius: '12px',
+                    padding: '6px 12px',
+                    borderRadius: '10px',
                     backgroundColor: 'rgba(16, 185, 129, 0.08)',
                     border: '1px solid rgba(16, 185, 129, 0.25)'
                   }}>
-                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#10b981' }}>全新品項 (可建立)</div>
-                    <div style={{ fontSize: '20px', fontWeight: 900, color: '#10b981', marginTop: '2px' }}>
-                      {stats.validNew} <span style={{ fontSize: '12px', fontWeight: 500 }}>項</span>
+                    <div style={{ fontSize: '10px', fontWeight: 700, color: '#10b981' }}>全新品項 (可建立)</div>
+                    <div style={{ fontSize: '16px', fontWeight: 900, color: '#10b981', marginTop: '1px' }}>
+                      {stats.validNew} <span style={{ fontSize: '11px', fontWeight: 500 }}>項</span>
                     </div>
                   </div>
 
                   <div style={{
-                    padding: '12px 16px',
-                    borderRadius: '12px',
+                    padding: '6px 12px',
+                    borderRadius: '10px',
                     backgroundColor: 'rgba(59, 130, 246, 0.08)',
                     border: '1px solid rgba(59, 130, 246, 0.25)'
                   }}>
-                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#3b82f6' }}>既有品項 (更新庫存)</div>
-                    <div style={{ fontSize: '20px', fontWeight: 900, color: '#3b82f6', marginTop: '2px' }}>
-                      {stats.existing} <span style={{ fontSize: '12px', fontWeight: 500 }}>項</span>
+                    <div style={{ fontSize: '10px', fontWeight: 700, color: '#3b82f6' }}>既有品項 (更新庫存)</div>
+                    <div style={{ fontSize: '16px', fontWeight: 900, color: '#3b82f6', marginTop: '1px' }}>
+                      {stats.existing} <span style={{ fontSize: '11px', fontWeight: 500 }}>項</span>
                     </div>
                   </div>
 
                   <div style={{
-                    padding: '12px 16px',
-                    borderRadius: '12px',
+                    padding: '6px 12px',
+                    borderRadius: '10px',
                     backgroundColor: 'rgba(239, 68, 68, 0.08)',
                     border: '1px solid rgba(239, 68, 68, 0.25)'
                   }}>
-                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#ef4444' }}>略過品項</div>
-                    <div style={{ fontSize: '20px', fontWeight: 900, color: '#ef4444', marginTop: '2px' }}>
-                      {stats.skipped} <span style={{ fontSize: '12px', fontWeight: 500 }}>項</span>
+                    <div style={{ fontSize: '10px', fontWeight: 700, color: '#ef4444' }}>略過品項</div>
+                    <div style={{ fontSize: '16px', fontWeight: 900, color: '#ef4444', marginTop: '1px' }}>
+                      {stats.skipped} <span style={{ fontSize: '11px', fontWeight: 500 }}>項</span>
                     </div>
                   </div>
 
                   <div style={{
-                    padding: '12px 16px',
-                    borderRadius: '12px',
+                    padding: '6px 12px',
+                    borderRadius: '10px',
                     backgroundColor: 'var(--primary-bg)',
                     border: '1px solid var(--primary-border)'
                   }}>
-                    <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--primary-color)' }}>總入庫數量</div>
-                    <div style={{ fontSize: '20px', fontWeight: 900, color: 'var(--primary-color)', marginTop: '2px' }}>
-                      {stats.totalQuantity} <span style={{ fontSize: '12px', fontWeight: 500 }}>件</span>
+                    <div style={{ fontSize: '10px', fontWeight: 700, color: 'var(--primary-color)' }}>總入庫數量</div>
+                    <div style={{ fontSize: '16px', fontWeight: 900, color: 'var(--primary-color)', marginTop: '1px' }}>
+                      {stats.totalQuantity} <span style={{ fontSize: '11px', fontWeight: 500 }}>件</span>
                     </div>
                   </div>
                 </div>
@@ -875,27 +1108,30 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
               {rawJsonData.length > 0 && (
                 <div style={{
                   border: '1px solid var(--border-color)',
-                  borderRadius: '14px',
+                  borderRadius: '12px',
                   overflow: 'hidden',
                   display: 'flex',
                   flexDirection: 'column',
-                  backgroundColor: 'var(--bg-surface)'
+                  backgroundColor: 'var(--bg-surface)',
+                  flex: 1,
+                  minHeight: '260px'
                 }}>
                   {/* Tab 篩選列 */}
                   <div style={{
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    padding: '12px 16px',
+                    padding: '6px 12px',
                     backgroundColor: 'var(--bg-surface-subtle)',
-                    borderBottom: '1px solid var(--border-color)'
+                    borderBottom: '1px solid var(--border-color)',
+                    flexShrink: 0
                   }}>
                     <div style={{ display: 'flex', gap: '6px' }}>
                       <button
                         onClick={() => setActiveTab('all')}
                         style={{
-                          padding: '6px 14px',
-                          borderRadius: '8px',
+                          padding: '5px 12px',
+                          borderRadius: '6px',
                           border: 'none',
                           cursor: 'pointer',
                           fontSize: '12px',
@@ -909,8 +1145,8 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
                       <button
                         onClick={() => setActiveTab('valid')}
                         style={{
-                          padding: '6px 14px',
-                          borderRadius: '8px',
+                          padding: '5px 12px',
+                          borderRadius: '6px',
                           border: 'none',
                           cursor: 'pointer',
                           fontSize: '12px',
@@ -924,8 +1160,8 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
                       <button
                         onClick={() => setActiveTab('existing')}
                         style={{
-                          padding: '6px 14px',
-                          borderRadius: '8px',
+                          padding: '5px 12px',
+                          borderRadius: '6px',
                           border: 'none',
                           cursor: 'pointer',
                           fontSize: '12px',
@@ -939,8 +1175,8 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
                       <button
                         onClick={() => setActiveTab('skipped')}
                         style={{
-                          padding: '6px 14px',
-                          borderRadius: '8px',
+                          padding: '5px 12px',
+                          borderRadius: '6px',
                           border: 'none',
                           cursor: 'pointer',
                           fontSize: '12px',
@@ -953,29 +1189,34 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
                       </button>
                     </div>
 
-                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                      💡 點擊品項欄位可直接在預覽中修正
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                      {!hasBrandHeader && !overrideBrand && (
+                        <span style={{ color: '#eab308', fontWeight: 600 }}>
+                          ⚠️ 上傳檔案未包含「廠牌」欄位，缺少廠牌的列將被略過 (可於上方輸入「預設/強制廠牌」統一套用)
+                        </span>
+                      )}
+                      <span>💡 點擊品項欄位可直接在預覽中修正</span>
                     </div>
                   </div>
 
-                  {/* 表格內容 */}
-                  <div style={{ maxHeight: '360px', overflowY: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                      <thead>
+                  {/* 表格內容：flex: 1 彈性自適應高度 */}
+                  <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                      <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
                         <tr style={{
                           backgroundColor: 'var(--bg-surface-subtle)',
                           borderBottom: '1px solid var(--border-color)',
                           color: 'var(--text-muted)',
                           textAlign: 'left'
                         }}>
-                          <th style={{ padding: '10px 14px', width: '60px' }}>行號</th>
-                          <th style={{ padding: '10px 14px', width: '110px' }}>狀態</th>
-                          <th style={{ padding: '10px 14px', width: '120px' }}>類型 (Type)</th>
-                          <th style={{ padding: '10px 14px', width: '140px' }}>廠牌 (Brand)</th>
-                          <th style={{ padding: '10px 14px', width: '160px' }}>型號 (Model)</th>
-                          <th style={{ padding: '10px 14px' }}>規格名稱 (Specification)</th>
-                          <th style={{ padding: '10px 14px', width: '90px', textAlign: 'right' }}>Total 數量</th>
-                          <th style={{ padding: '10px 14px', width: '70px', textAlign: 'center' }}>單位</th>
+                          <th style={{ padding: '8px 12px', width: '50px' }}>行號</th>
+                          <th style={{ padding: '8px 12px', width: '110px' }}>狀態</th>
+                          <th style={{ padding: '8px 12px', width: '110px' }}>類型 (Type)</th>
+                          <th style={{ padding: '8px 12px', width: '130px' }}>廠牌 (Brand)</th>
+                          <th style={{ padding: '8px 12px', width: '160px' }}>型號/規格 (Model / Spec)</th>
+                          <th style={{ padding: '8px 12px' }}>備註 (Remarks)</th>
+                          <th style={{ padding: '8px 12px', width: '80px', textAlign: 'right' }}>Total 數量</th>
+                          <th style={{ padding: '8px 12px', width: '60px', textAlign: 'center' }}>單位</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -988,14 +1229,14 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
                               transition: 'background-color 0.15s'
                             }}
                           >
-                            <td style={{ padding: '10px 14px', color: 'var(--text-muted)' }}>#{row.rowIndex}</td>
-                            <td style={{ padding: '10px 14px' }}>
+                            <td style={{ padding: '8px 12px', color: 'var(--text-muted)' }}>#{row.rowIndex}</td>
+                            <td style={{ padding: '8px 12px' }}>
                               {row.status === 'VALID' && (
                                 <span style={{
                                   display: 'inline-flex',
                                   alignItems: 'center',
                                   gap: '4px',
-                                  padding: '3px 8px',
+                                  padding: '2px 8px',
                                   borderRadius: '6px',
                                   backgroundColor: 'rgba(16, 185, 129, 0.12)',
                                   color: '#10b981',
@@ -1010,7 +1251,7 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
                                   display: 'inline-flex',
                                   alignItems: 'center',
                                   gap: '4px',
-                                  padding: '3px 8px',
+                                  padding: '2px 8px',
                                   borderRadius: '6px',
                                   backgroundColor: 'rgba(59, 130, 246, 0.12)',
                                   color: '#3b82f6',
@@ -1025,27 +1266,27 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
                                   display: 'inline-flex',
                                   alignItems: 'center',
                                   gap: '4px',
-                                  padding: '3px 8px',
+                                  padding: '2px 8px',
                                   borderRadius: '6px',
                                   backgroundColor: 'rgba(239, 68, 68, 0.12)',
                                   color: '#ef4444',
                                   fontSize: '11px',
                                   fontWeight: 800
                                 }} title={row.skipReason}>
-                                  略過
+                                  略過 {row.skipReason ? `(${row.skipReason})` : ''}
                                 </span>
                               )}
                             </td>
-                            <td style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--primary-color)' }}>
+                            <td style={{ padding: '8px 12px', fontWeight: 600, color: 'var(--primary-color)' }}>
                               {row.type}
                             </td>
-                            <td style={{ padding: '10px 14px', fontWeight: 600 }}>
-                              {row.brand}
+                            <td style={{ padding: '8px 12px', fontWeight: 600, color: !row.brand ? '#ef4444' : 'inherit' }}>
+                              {row.brand || <span style={{ color: '#ef4444', fontStyle: 'italic', fontSize: '11px' }}>未輸入廠牌</span>}
                             </td>
-                            <td style={{ padding: '10px 14px', color: 'var(--text-main)' }}>
+                            <td style={{ padding: '8px 12px', color: 'var(--text-main)' }}>
                               {row.model}
                             </td>
-                            <td style={{ padding: '10px 14px', color: 'var(--text-main)', fontWeight: 500 }}>
+                            <td style={{ padding: '8px 12px', color: 'var(--text-main)', fontWeight: 500 }}>
                               {row.specification}
                               {row.isExisting && (
                                 <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: '8px' }}>
@@ -1053,10 +1294,10 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
                                 </span>
                               )}
                             </td>
-                            <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 800, color: 'var(--text-main)' }}>
+                            <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 800, color: 'var(--text-main)' }}>
                               {row.quantity}
                             </td>
-                            <td style={{ padding: '10px 14px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                            <td style={{ padding: '8px 12px', textAlign: 'center', color: 'var(--text-muted)' }}>
                               {row.unit}
                             </td>
                           </tr>
@@ -1071,14 +1312,14 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
 
           {/* 匯入進度條 */}
           {isImporting && (
-            <div style={{ marginTop: '12px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 700, marginBottom: '6px' }}>
+            <div style={{ marginTop: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 700, marginBottom: '4px' }}>
                 <span>資料庫寫入中，請稍候...</span>
                 <span>{importProgress}%</span>
               </div>
               <div style={{
-                height: '8px',
-                borderRadius: '4px',
+                height: '6px',
+                borderRadius: '3px',
                 backgroundColor: 'var(--bg-surface-subtle)',
                 overflow: 'hidden',
                 border: '1px solid var(--border-color)'
@@ -1100,7 +1341,7 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            padding: '18px 28px',
+            padding: '8px 16px',
             borderTop: '1px solid var(--border-color)',
             backgroundColor: 'var(--bg-surface)'
           }}>
@@ -1109,18 +1350,18 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
                 <span>共準備匯入 <strong>{stats.validNew + stats.existing}</strong> 筆品項，總計 <strong>{stats.totalQuantity}</strong> 件庫存</span>
               )}
             </div>
-            <div style={{ display: 'flex', gap: '12px' }}>
+            <div style={{ display: 'flex', gap: '10px' }}>
               <button
                 onClick={onClose}
                 disabled={isImporting}
                 style={{
-                  padding: '10px 20px',
-                  borderRadius: '10px',
+                  padding: '8px 18px',
+                  borderRadius: '8px',
                   border: '1px solid var(--border-color)',
                   backgroundColor: 'var(--bg-surface)',
                   color: 'var(--text-main)',
                   fontWeight: 600,
-                  fontSize: '14px',
+                  fontSize: '13px',
                   cursor: isImporting ? 'not-allowed' : 'pointer'
                 }}
               >
@@ -1130,13 +1371,13 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
                 onClick={executeImport}
                 disabled={isImporting || parsedRows.filter(r => r.status === 'VALID' || r.status === 'EXISTING').length === 0}
                 style={{
-                  padding: '10px 24px',
-                  borderRadius: '10px',
+                  padding: '8px 22px',
+                  borderRadius: '8px',
                   border: 'none',
                   backgroundColor: isImporting || parsedRows.filter(r => r.status === 'VALID' || r.status === 'EXISTING').length === 0 ? 'var(--input-border)' : 'var(--primary-color)',
                   color: '#fff',
                   fontWeight: 800,
-                  fontSize: '14px',
+                  fontSize: '13px',
                   cursor: isImporting || parsedRows.filter(r => r.status === 'VALID' || r.status === 'EXISTING').length === 0 ? 'not-allowed' : 'pointer',
                   display: 'flex',
                   alignItems: 'center',
@@ -1144,7 +1385,7 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
                   boxShadow: '0 4px 14px rgba(37, 99, 235, 0.35)'
                 }}
               >
-                <UploadCloud size={18} />
+                <UploadCloud size={16} />
                 {isImporting ? '匯入處理中...' : `確認批次匯入 (${stats.validNew + stats.existing} 筆)`}
               </button>
             </div>

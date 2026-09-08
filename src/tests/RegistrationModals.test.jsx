@@ -19,10 +19,10 @@ describe('全模組彈窗建檔 (Registration Modals) 整合測試', () => {
         if (queryName === 'fetchDeviceBrands') {
           return { success: true, rows: [{ name: 'Dell' }, { name: 'Supermicro' }] };
         }
-        if (queryName === 'fetchTypesByBrand') {
+        if (queryName === 'fetchTypesByBrand' || queryName === 'fetchDeviceTypes') {
           return { success: true, rows: [{ name: 'Server' }] };
         }
-        if (queryName === 'fetchModelsByBrandType') {
+        if (queryName === 'fetchModelsByBrandType' || queryName === 'fetchModelsByBrand') {
           return { success: true, rows: [{ name: 'R740' }] };
         }
         if (queryName === 'fetchCustomers') {
@@ -83,7 +83,7 @@ describe('全模組彈窗建檔 (Registration Modals) 整合測試', () => {
     window.confirm = vi.fn(() => true);
   });
 
-  it('DeviceRegistrationModal 應能順利渲染並在未填規格時給予警示', async () => {
+  it('DeviceRegistrationModal 應能順利渲染並在未填必填欄位時給予警示', async () => {
     const handleClose = vi.fn();
     const handleSuccess = vi.fn();
 

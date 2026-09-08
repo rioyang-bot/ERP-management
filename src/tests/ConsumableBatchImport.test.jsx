@@ -92,4 +92,47 @@ describe('ConsumableBatchImportModal Component', () => {
     // Check stats
     expect(screen.getByText(/確認批次匯入/)).toBeInTheDocument();
   });
+
+  it('未輸入廠牌欄位之資料應標記為略過 (缺少廠牌)，填入預設廠牌後應轉為有效', async () => {
+    const testData = [
+      { '型號/規格': 'CAT6-STP-3M', '備註': '網路跳線', 'Total 數量': '10' },
+      { '廠牌': 'Cisco', '型號/規格': 'SFP-10G-SR', '備註': '光纖模組', 'Total 數量': '5' }
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(testData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Consumables');
+    const u8 = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+    const file = new File([u8], 'consumables_brand_test.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+    const { container } = render(
+      <ConsumableBatchImportModal
+        isOpen={true}
+        onClose={vi.fn()}
+        onSuccess={vi.fn()}
+      />
+    );
+
+    const fileInput = container.querySelector('input[type="file"]');
+    await userEvent.upload(fileInput, file);
+
+    // 1. 驗證 CAT6-STP-3M 因未輸入廠牌被標記為略過
+    await waitFor(() => {
+      expect(screen.getByText('CAT6-STP-3M')).toBeInTheDocument();
+      expect(screen.getByText('SFP-10G-SR')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText(/缺少廠牌/)).toBeInTheDocument();
+    expect(screen.getByText('未輸入廠牌')).toBeInTheDocument();
+
+    // 2. 在「預設/強制廠牌」輸入框輸入 "CommScope"
+    const overrideBrandInput = screen.getByPlaceholderText(/例如: Cisco/);
+    fireEvent.change(overrideBrandInput, { target: { value: 'CommScope' } });
+
+    // 3. 驗證 CAT6-STP-3M 自動獲得 CommScope 廠牌並轉為有效
+    await waitFor(() => {
+      expect(screen.getByText('CommScope')).toBeInTheDocument();
+      expect(screen.queryByText('未輸入廠牌')).not.toBeInTheDocument();
+    });
+  });
 });

@@ -1,16 +1,16 @@
 /* Reports.css - Modern Report Hub Styling */
 
 .reports-hub-container {
-  padding: 24px;
+  padding: var(--content-padding, 16px);
   max-width: 100%;
   box-sizing: border-box;
   background-color: var(--bg-app);
-  min-height: 100vh;
+  min-height: calc(100vh - var(--topbar-height, 56px) - 40px);
   animation: fadeIn 0.3s ease-in-out;
 }
 
 .reports-hub-header {
-  margin-bottom: 32px;
+  margin-bottom: var(--spacing-md, 16px);
 }
 
 .reports-hub-title {

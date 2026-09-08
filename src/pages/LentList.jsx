@@ -349,13 +349,13 @@ const LentList = () => {
 
   return (
     <div className="page-container">
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--page-title-margin, 14px)', flexWrap: 'wrap', gap: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
           <div>
-            <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
-              <FileText size={26} color="var(--primary-color)" /> 設備/硬體借用列表 (Device/HW Lent List)
+            <h1 style={{ fontSize: 'var(--page-title-size, 1.35rem)', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
+              <FileText size={24} color="var(--primary-color)" /> 設備/硬體借用列表 (Device/HW Lent List)
             </h1>
-            <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>檢視所有借出中的設備與硬體紀錄，並可上傳/管理客戶已簽收單據供日後查驗。</p>
+            <p style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '2px', marginBottom: 0 }}>檢視所有借出中的設備與硬體紀錄，並可上傳/管理客戶已簽收單據供日後查驗。</p>
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
             <button
@@ -374,21 +374,21 @@ const LentList = () => {
                 boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)'
               }}
             >
-              <Clock size={18} /> ➕ 新增借用單 (New Lent Order)
+              <Clock size={16} /> ➕ 新增借用單 (New Lent Order)
             </button>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-          <div style={{ backgroundColor: 'var(--bg-surface)', padding: '12px 24px', borderRadius: '12px', border: '1px solid var(--border-color)', display: 'flex', gap: '24px', boxShadow: 'var(--card-shadow)' }}>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <div style={{ backgroundColor: 'var(--bg-surface)', padding: '8px 16px', borderRadius: '12px', border: '1px solid var(--border-color)', display: 'flex', gap: '16px', boxShadow: 'var(--card-shadow)' }}>
               <div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>待出貨單據</div>
-                <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#3b82f6' }}>
+                <div style={{ fontSize: '1.15rem', fontWeight: 700, color: '#3b82f6' }}>
                   {pendingCount} <span style={{ fontSize: '0.8rem', fontWeight: 400, opacity: 0.8 }}>單</span>
                 </div>
               </div>
-              <div style={{ borderLeft: '1px solid var(--border-color)', paddingLeft: '24px' }}>
+              <div style={{ borderLeft: '1px solid var(--border-color)', paddingLeft: '16px' }}>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>借出中 (待歸還)</div>
-                <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#f59e0b' }}>
+                <div style={{ fontSize: '1.15rem', fontWeight: 700, color: '#f59e0b' }}>
                   {shippedCount} <span style={{ fontSize: '0.8rem', fontWeight: 400, opacity: 0.8 }}>單</span>
                 </div>
               </div>
@@ -396,28 +396,28 @@ const LentList = () => {
         </div>
       </div>
 
-      <div className="card-surface" style={{ padding: '0', overflow: 'hidden' }}>
+      <div className="card-surface" style={{ padding: '0', overflow: 'hidden', borderRadius: 'var(--card-radius, 14px)' }}>
         {/* 三大頁籤 */}
         <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)' }}>
           <button 
             onClick={() => setActiveTab('PENDING')}
             style={{ 
-              padding: '16px 24px', 
+              padding: '10px 18px', 
               border: 'none', 
               backgroundColor: activeTab === 'PENDING' ? 'var(--bg-surface)' : 'transparent',
               borderBottom: activeTab === 'PENDING' ? '3px solid #3b82f6' : '3px solid transparent',
               color: activeTab === 'PENDING' ? '#3b82f6' : 'var(--text-muted)',
               fontWeight: activeTab === 'PENDING' ? 800 : 600,
-              fontSize: '0.95rem',
+              fontSize: '0.9rem',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: '8px'
+              gap: '6px'
             }}
           >
-            <Clock size={18} /> 已建立 (待借出)
+            <Clock size={16} /> 已建立 (待借出)
             {pendingCount > 0 && (
-              <span style={{ backgroundColor: '#3b82f6', color: '#fff', padding: '2px 8px', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 800 }}>
+              <span style={{ backgroundColor: '#3b82f6', color: '#fff', padding: '1px 6px', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 800 }}>
                 {pendingCount}
               </span>
             )}
@@ -425,7 +425,7 @@ const LentList = () => {
           <button 
             onClick={() => setActiveTab('SHIPPED')}
             style={{ 
-              padding: '16px 24px', 
+              padding: '10px 18px', 
               border: 'none', 
               backgroundColor: activeTab === 'SHIPPED' ? 'var(--bg-surface)' : 'transparent',
               borderBottom: activeTab === 'SHIPPED' ? '3px solid #f59e0b' : '3px solid transparent',
@@ -517,19 +517,19 @@ const LentList = () => {
           </div>
         )}
 
-        <div style={{ overflowX: 'auto', padding: '0 24px 24px', backgroundColor: 'var(--bg-surface)' }}>
-          <table className="vibrant-table" style={{ width: '100%', borderCollapse: 'collapse', marginTop: '16px' }}>
-            <thead style={{ backgroundColor: 'var(--table-header-bg)', borderBottom: '2px solid var(--border-color)' }}>
+        <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 290px)', minHeight: '300px', margin: '0 16px 16px', borderRadius: '10px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)' }}>
+          <table className="vibrant-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead style={{ position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', borderBottom: '2px solid var(--border-color)' }}>
               <tr style={{ textAlign: 'left' }}>
-                <th style={{ padding: '14px 12px', fontSize: '0.95rem', color: 'var(--table-header-text)', fontWeight: 800 }}>借用單號</th>
-                <th style={{ padding: '14px 12px', fontSize: '0.95rem', color: 'var(--table-header-text)', fontWeight: 800 }}>借出日期</th>
-                <th style={{ padding: '14px 12px', fontSize: '0.95rem', color: 'var(--table-header-text)', fontWeight: 800 }}>客戶/對象</th>
-                <th style={{ padding: '14px 12px', fontSize: '0.95rem', color: 'var(--table-header-text)', fontWeight: 800 }}>預計歸還日</th>
-                {activeTab === 'RETURNED' && <th style={{ padding: '14px 12px', fontSize: '0.95rem', color: 'var(--table-header-text)', fontWeight: 800 }}>實際歸還日</th>}
-                <th style={{ padding: '14px 12px', fontSize: '0.95rem', color: 'var(--table-header-text)', fontWeight: 800 }}>狀態</th>
-                <th style={{ padding: '14px 12px', fontSize: '0.95rem', color: 'var(--table-header-text)', fontWeight: 800 }}>簽收單據</th>
-                <th style={{ padding: '14px 12px', fontSize: '0.95rem', color: 'var(--table-header-text)', fontWeight: 800 }}>所屬專案</th>
-                <th style={{ padding: '14px 12px', fontSize: '0.95rem', color: 'var(--table-header-text)', fontWeight: 800 }}>操作</th>
+                <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>借用單號</th>
+                <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>借出日期</th>
+                <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>客戶/對象</th>
+                <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>預計歸還日</th>
+                {activeTab === 'RETURNED' && <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>實際歸還日</th>}
+                <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>狀態</th>
+                <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>簽收單據</th>
+                <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>所屬專案</th>
+                <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>操作</th>
               </tr>
             </thead>
             <tbody>

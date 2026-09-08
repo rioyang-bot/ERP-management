@@ -32,4 +32,5 @@ ssl/ca.key
 ssl/server.key
 ssl/*.srl
 ssl/*.csr
-
+# 暫存腳本
+scratch/

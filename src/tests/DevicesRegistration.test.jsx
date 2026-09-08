@@ -13,16 +13,13 @@ describe('設備建檔聯絡人連動整合測試', () => {
     insertSpy.mockClear();
     
     window.electronAPI.namedQuery.mockImplementation((query, params) => {
-      if (query === 'fetchBrands') {
+      if (query === 'fetchBrands' || query === 'fetchDeviceBrands') {
         return Promise.resolve({ success: true, rows: [{ id: 1, name: 'BrandA' }] });
       }
-      if (query === 'fetchTypes') {
+      if (query === 'fetchTypes' || query === 'fetchTypesByBrand' || query === 'fetchDeviceTypes') {
         return Promise.resolve({ success: true, rows: [{ id: 1, name: 'TypeA' }] });
       }
-      if (query === 'fetchTypesByBrand') {
-        return Promise.resolve({ success: true, rows: [{ id: 1, name: 'TypeA' }] });
-      }
-      if (query === 'fetchModelsByBrandType') {
+      if (query === 'fetchModelsByBrandType' || query === 'fetchModelsByBrand') {
         return Promise.resolve({ success: true, rows: [{ id: 1, name: 'ModelA' }] });
       }
       if (query === 'fetchRecentAssets') {

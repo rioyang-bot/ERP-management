@@ -48,7 +48,13 @@ export const queries = {
   updateAssetStatus: `UPDATE assets SET status = $1 WHERE id = $2`,
   updateAssetOwnership: `UPDATE assets SET ownership = $1 WHERE id = $2`,
   updateMountedHardwareStatus: `UPDATE assets SET status = $1 WHERE custom_attributes->>'server_sn' = $2`,
+  checkAssetSnExistsExcludeSelf: `SELECT id, sn FROM assets WHERE TRIM(sn) = TRIM($1) AND id != $2 LIMIT 1`,
+  updateMountedHardwareServerSn: `UPDATE assets SET custom_attributes = jsonb_set(COALESCE(custom_attributes, '{}'::jsonb), '{server_sn}', to_jsonb($1::text)) WHERE custom_attributes->>'server_sn' IS NOT NULL AND TRIM(custom_attributes->>'server_sn') = TRIM($2)`,
+  updateRepairItemsSn: `UPDATE repair_items SET sn = $1 WHERE sn IS NOT NULL AND TRIM(sn) = TRIM($2)`,
+  updateOutboundItemsSn: `UPDATE outbound_items SET sn = $1 WHERE sn IS NOT NULL AND TRIM(sn) = TRIM($2)`,
   updateItemMasterSpecs: `UPDATE item_master SET specification = $1, model = $2 WHERE id = $3`,
+  countAssetsByMasterId: `SELECT COUNT(*) as count FROM assets WHERE item_master_id = $1`,
+  updateAssetMasterId: `UPDATE assets SET item_master_id = $1 WHERE id = $2`,
   updateAssetDetails: `UPDATE assets SET sn = $1, client = $2, hostname = $3, location = $4, installed_date = $5, customer_warranty_expire = $6, system_date = $7, warranty_expire = $8, os = $9, nic = $10, custom_attributes = $11, ownership = COALESCE($12, 'FOR_SALE') WHERE id = $13`,
   
   fetchCompanyAssets: `
@@ -102,16 +108,38 @@ export const queries = {
         ))
       )
       WHERE c.name = '設備' ORDER BY a.id DESC LIMIT 10`,
-  fetchModelsByBrandType: `
-      SELECT m.name FROM item_models m JOIN item_types t ON m.type_id = t.id JOIN item_brands b ON t.brand_id = b.id
-      WHERE b.name = $1 AND t.name = $2 AND b.category_id = (SELECT id FROM categories WHERE name = '設備') AND t.category_id = (SELECT id FROM categories WHERE name = '設備') ORDER BY m.name ASC`,
-  fetchTypesByBrand: `
-      SELECT name FROM item_types WHERE category_id = (SELECT id FROM categories WHERE name = '設備') AND brand_id = (SELECT id FROM item_brands WHERE name = $1 AND category_id = (SELECT id FROM categories WHERE name = '設備')) ORDER BY name ASC`,
+  fetchDeviceTypes: `SELECT id, name FROM item_types WHERE category_id = (SELECT id FROM categories WHERE name = '設備') ORDER BY name ASC`,
+  fetchTypesByBrand: `SELECT id, name FROM item_types WHERE category_id = (SELECT id FROM categories WHERE name = '設備') ORDER BY name ASC`,
   fetchDeviceBrands: `SELECT id, name FROM item_brands WHERE category_id = (SELECT id FROM categories WHERE name = '設備') ORDER BY name ASC`,
-  insertDeviceType: `INSERT INTO item_types (category_id, brand_id, name) VALUES ((SELECT id FROM categories WHERE name = $1), (SELECT id FROM item_brands WHERE name = $2 AND category_id = (SELECT id FROM categories WHERE name = $1)), $3) ON CONFLICT DO NOTHING`,
-  deleteDeviceType: `DELETE FROM item_types WHERE name = $1 AND category_id = (SELECT id FROM categories WHERE name = $2) AND brand_id IN (SELECT id FROM item_brands WHERE name = $3 AND category_id = (SELECT id FROM categories WHERE name = $2))`,
-  insertDeviceModel: `INSERT INTO item_models (type_id, name) SELECT t.id, $4 FROM item_types t JOIN item_brands b ON t.brand_id = b.id WHERE LOWER(b.name) = LOWER($1) AND LOWER(t.name) = LOWER($2) AND b.category_id = (SELECT id FROM categories WHERE name = $3) ON CONFLICT DO NOTHING`,
-  deleteDeviceModel: `DELETE FROM item_models WHERE name = $1 AND type_id IN (SELECT t.id FROM item_types t JOIN item_brands b ON t.brand_id = b.id WHERE LOWER(b.name) = LOWER($2) AND LOWER(t.name) = LOWER($3) AND b.category_id = (SELECT id FROM categories WHERE name = $4))`,
+  fetchModelsByBrand: `
+      SELECT DISTINCT m.name FROM item_models m 
+      LEFT JOIN item_brands b ON m.brand_id = b.id
+      LEFT JOIN item_types t ON m.type_id = t.id
+      LEFT JOIN item_brands tb ON t.brand_id = tb.id
+      WHERE (LOWER(b.name) = LOWER($1) OR LOWER(tb.name) = LOWER($1))
+        AND (b.category_id = (SELECT id FROM categories WHERE name = '設備') OR t.category_id = (SELECT id FROM categories WHERE name = '設備'))
+      ORDER BY m.name ASC`,
+  fetchModelsByBrandType: `
+      SELECT DISTINCT m.name FROM item_models m 
+      LEFT JOIN item_brands b ON m.brand_id = b.id
+      LEFT JOIN item_types t ON m.type_id = t.id
+      LEFT JOIN item_brands tb ON t.brand_id = tb.id
+      WHERE (LOWER(b.name) = LOWER($1) OR LOWER(tb.name) = LOWER($1))
+        AND (b.category_id = (SELECT id FROM categories WHERE name = '設備') OR t.category_id = (SELECT id FROM categories WHERE name = '設備'))
+      ORDER BY m.name ASC`,
+  insertDeviceType: `INSERT INTO item_types (category_id, name) VALUES ((SELECT id FROM categories WHERE name = $1), $2) ON CONFLICT DO NOTHING`,
+  deleteDeviceType: `DELETE FROM item_types WHERE name = $1 AND category_id = (SELECT id FROM categories WHERE name = $2)`,
+  insertDeviceModel: `
+      INSERT INTO item_models (brand_id, name) 
+      SELECT b.id, $2 FROM item_brands b 
+      WHERE LOWER(b.name) = LOWER($1) AND b.category_id = (SELECT id FROM categories WHERE name = $3) 
+      ON CONFLICT DO NOTHING`,
+  deleteDeviceModel: `
+      DELETE FROM item_models 
+      WHERE name = $1 AND (
+        brand_id IN (SELECT id FROM item_brands WHERE LOWER(name) = LOWER($2) AND category_id = (SELECT id FROM categories WHERE name = $3))
+        OR type_id IN (SELECT t.id FROM item_types t JOIN item_brands b ON t.brand_id = b.id WHERE LOWER(b.name) = LOWER($2) AND b.category_id = (SELECT id FROM categories WHERE name = $3))
+      )`,
   insertDeviceBrand: `INSERT INTO item_brands (category_id, name) VALUES ((SELECT id FROM categories WHERE name = $1), $2) ON CONFLICT ON CONSTRAINT item_brands_category_id_name_key DO NOTHING`,
   deleteDeviceBrand: `DELETE FROM item_brands WHERE name = $1 AND category_id = (SELECT id FROM categories WHERE name = $2)`,
   
@@ -209,15 +237,16 @@ export const queries = {
   // Inventory.jsx
 
   // Partners.jsx
-  fetchPartners: `SELECT id, partner_type as type, name, contact_person as contact, phone, address, COALESCE(is_active, TRUE) as is_active FROM partners ORDER BY name ASC, contact_person ASC, id DESC`,
-  insertPartner: `INSERT INTO partners (partner_type, name, contact_person, phone, address, is_active) VALUES ($1, $2, $3, $4, $5, TRUE)`,
-  updatePartner: `UPDATE partners SET partner_type = $1, name = $2, contact_person = $3, phone = $4, address = $5 WHERE id = $6`,
+  fetchPartners: `SELECT id, partner_type as type, name, contact_person as contact, phone, address, project_info, COALESCE(is_active, TRUE) as is_active FROM partners ORDER BY name ASC, contact_person ASC, id DESC`,
+  insertPartner: `INSERT INTO partners (partner_type, name, contact_person, phone, address, project_info, is_active) VALUES ($1, $2, $3, $4, $5, $6, TRUE)`,
+  updatePartner: `UPDATE partners SET partner_type = $1, name = $2, contact_person = $3, phone = $4, address = $5, project_info = $6 WHERE id = $7`,
   checkDuplicatePartner: `SELECT id FROM partners WHERE partner_type = $1 AND LOWER(TRIM(name)) = LOWER(TRIM($2)) AND LOWER(TRIM(contact_person)) = LOWER(TRIM($3))`,
   checkDuplicatePartnerForUpdate: `SELECT id FROM partners WHERE partner_type = $1 AND LOWER(TRIM(name)) = LOWER(TRIM($2)) AND LOWER(TRIM(contact_person)) = LOWER(TRIM($3)) AND id != $4`,
   updatePartnerActive: `UPDATE partners SET is_active = $1 WHERE id = $2`,
   deletePartner: `DELETE FROM partners WHERE id = $1`,
   migratePartnersActive: `ALTER TABLE partners ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE`,
   migratePartnersAddress: `ALTER TABLE partners ADD COLUMN IF NOT EXISTS address TEXT`,
+  migratePartnersProjectInfo: `ALTER TABLE partners ADD COLUMN IF NOT EXISTS project_info TEXT`,
   initPartnersActive: `UPDATE partners SET is_active = TRUE WHERE is_active IS NULL`,
 
   // Settings.jsx
@@ -227,14 +256,30 @@ export const queries = {
   deleteUser: `DELETE FROM users WHERE id = $1`,
   updateUserAccess: `UPDATE users SET menu_access = $1::jsonb WHERE id = $2`,
   updateUserPassword: `UPDATE users SET password_hash = $1 WHERE id = $2`,
+  fetchUserById: `SELECT id, username, password_hash, role, full_name, is_active FROM users WHERE id = $1`,
+  fetchUserByUsername: `SELECT id, username, password_hash, role, full_name, is_active FROM users WHERE LOWER(username) = LOWER($1)`,
 
-  // NIC Registration & List
+  // Hardware / NIC Registration & List
   fetchNicBrands: `SELECT id, name FROM item_brands WHERE category_id = (SELECT id FROM categories WHERE name = '硬體') ORDER BY name ASC`,
-  fetchNicTypesByBrand: `
-      SELECT name FROM item_types WHERE category_id = (SELECT id FROM categories WHERE name = '硬體') AND brand_id = (SELECT id FROM item_brands WHERE name = $1 AND category_id = (SELECT id FROM categories WHERE name = '硬體')) ORDER BY name ASC`,
+  fetchHwBrands: `SELECT id, name FROM item_brands WHERE category_id = (SELECT id FROM categories WHERE name = '硬體') ORDER BY name ASC`,
+  fetchHwTypes: `SELECT id, name FROM item_types WHERE category_id = (SELECT id FROM categories WHERE name = '硬體') ORDER BY name ASC`,
+  fetchNicTypesByBrand: `SELECT id, name FROM item_types WHERE category_id = (SELECT id FROM categories WHERE name = '硬體') ORDER BY name ASC`,
+  fetchHwModelsByBrand: `
+      SELECT DISTINCT m.name FROM item_models m 
+      LEFT JOIN item_brands b ON m.brand_id = b.id
+      LEFT JOIN item_types t ON m.type_id = t.id
+      LEFT JOIN item_brands tb ON t.brand_id = tb.id
+      WHERE (LOWER(b.name) = LOWER($1) OR LOWER(tb.name) = LOWER($1))
+        AND (b.category_id = (SELECT id FROM categories WHERE name = '硬體') OR t.category_id = (SELECT id FROM categories WHERE name = '硬體'))
+      ORDER BY m.name ASC`,
   fetchNicModelsByBrandType: `
-      SELECT m.name FROM item_models m JOIN item_types t ON m.type_id = t.id JOIN item_brands b ON t.brand_id = b.id
-      WHERE b.name = $1 AND t.name = $2 AND b.category_id = (SELECT id FROM categories WHERE name = '硬體') AND t.category_id = (SELECT id FROM categories WHERE name = '硬體') ORDER BY m.name ASC`,
+      SELECT DISTINCT m.name FROM item_models m 
+      LEFT JOIN item_brands b ON m.brand_id = b.id
+      LEFT JOIN item_types t ON m.type_id = t.id
+      LEFT JOIN item_brands tb ON t.brand_id = tb.id
+      WHERE (LOWER(b.name) = LOWER($1) OR LOWER(tb.name) = LOWER($1))
+        AND (b.category_id = (SELECT id FROM categories WHERE name = '硬體') OR t.category_id = (SELECT id FROM categories WHERE name = '硬體'))
+      ORDER BY m.name ASC`,
   fetchNicSpecByBrandTypeModel: `
       SELECT specification FROM item_master WHERE brand = $1 AND type = $2 AND model = $3 AND category_id = (SELECT id FROM categories WHERE name = '硬體') LIMIT 1`,
   fetchNicListByType: `
@@ -300,6 +345,12 @@ export const queries = {
   // Outbound Workflow
   countOutboundRequests: `WITH seqs AS (SELECT CAST(SUBSTRING(request_no FROM '-([0-9]+)$') AS INTEGER) as sq FROM outbound_requests WHERE request_no LIKE $1 || '%') SELECT s.val as count FROM generate_series(1, 1000) as s(val) WHERE NOT EXISTS (SELECT 1 FROM seqs WHERE seqs.sq = s.val) ORDER BY s.val ASC LIMIT 1`,
   insertOutboundRequest: `INSERT INTO outbound_requests (request_no, customer, location, shipping_date, status, creator_id, contact_info, request_type, expected_return_date) VALUES ($1, $2, $3, $4, 'PENDING', $5, $6, $7, $8) RETURNING id`,
+  insertOutboundRequestWithProject: `INSERT INTO outbound_requests (request_no, customer, location, shipping_date, status, creator_id, contact_info, request_type, expected_return_date, project_name) VALUES ($1, $2, $3, $4, 'PENDING', $5, $6, $7, $8, $9) RETURNING id`,
+  updateOutboundRequestProjectName: `UPDATE outbound_requests SET project_name = $1 WHERE id = $2`,
+  migrateOutboundProjectName: `ALTER TABLE outbound_requests ADD COLUMN IF NOT EXISTS project_name VARCHAR(100);`,
+  updateAssetProjectAndClientBySn: `UPDATE assets SET custom_attributes = jsonb_set(COALESCE(custom_attributes, '{}'::jsonb), '{project_name}', to_jsonb($1::text)), client = COALESCE($2, client) WHERE sn IS NOT NULL AND TRIM(sn) = TRIM($3)`,
+  updateMountedHardwareProjectAndClient: `UPDATE assets SET custom_attributes = jsonb_set(COALESCE(custom_attributes, '{}'::jsonb), '{project_name}', to_jsonb($1::text)), client = COALESCE($2, client) WHERE custom_attributes->>'server_sn' IS NOT NULL AND TRIM(custom_attributes->>'server_sn') = TRIM($3)`,
+  checkProjectExistsByName: `SELECT id, project_no, name FROM projects WHERE TRIM(LOWER(name)) = TRIM(LOWER($1)) LIMIT 1`,
   insertOutboundItem: `INSERT INTO outbound_items (request_id, item_id, sn, quantity, location) VALUES ($1, $2, $3, $4, $5)`,
   insertLendOutboundItem: `INSERT INTO outbound_items (request_id, item_id, sn, quantity, location, purpose) VALUES ($1, $2, $3, $4, $5, COALESCE($6, '運作測試'))`,
   migrateOutboundItemPurpose: `ALTER TABLE outbound_items ADD COLUMN IF NOT EXISTS purpose VARCHAR(255) DEFAULT '運作測試'`,
@@ -337,11 +388,13 @@ export const queries = {
   fetchDNList: `
     SELECT r.*, u.full_name as creator_name, 
            (SELECT COUNT(*) FROM outbound_items WHERE request_id = r.id) as item_count,
-           (SELECT a.custom_attributes->>'project_name' 
-            FROM outbound_items oi 
-            JOIN assets a ON oi.sn = a.sn 
-            WHERE oi.request_id = r.id AND a.custom_attributes->>'project_name' IS NOT NULL 
-            LIMIT 1) as project_name
+           COALESCE(r.project_name, 
+             (SELECT a.custom_attributes->>'project_name' 
+              FROM outbound_items oi 
+              JOIN assets a ON oi.sn = a.sn 
+              WHERE oi.request_id = r.id AND a.custom_attributes->>'project_name' IS NOT NULL 
+              LIMIT 1)
+           ) as project_name
     FROM outbound_requests r
     LEFT JOIN users u ON r.creator_id = u.id
     ORDER BY r.created_at DESC
@@ -349,11 +402,13 @@ export const queries = {
   fetchLentRequests: `
     SELECT r.*, u.full_name as creator_name, 
            (SELECT COUNT(*) FROM outbound_items WHERE request_id = r.id) as item_count,
-           (SELECT a.custom_attributes->>'project_name' 
-            FROM outbound_items oi 
-            JOIN assets a ON oi.sn = a.sn 
-            WHERE oi.request_id = r.id AND a.custom_attributes->>'project_name' IS NOT NULL 
-            LIMIT 1) as project_name,
+           COALESCE(r.project_name, 
+             (SELECT a.custom_attributes->>'project_name' 
+              FROM outbound_items oi 
+              JOIN assets a ON oi.sn = a.sn 
+              WHERE oi.request_id = r.id AND a.custom_attributes->>'project_name' IS NOT NULL 
+              LIMIT 1)
+           ) as project_name,
            (SELECT string_agg(COALESCE(oi.sn, '') || ' ' || COALESCE(im.model, '') || ' ' || COALESCE(im.brand, ''), ' ')
             FROM outbound_items oi
             JOIN item_master im ON oi.item_id = im.id
@@ -387,6 +442,7 @@ export const queries = {
   
   // --- Projects ---
   fetchProjects: `SELECT * FROM projects ORDER BY created_at DESC`,
+  countProjectsByPrefix: `SELECT COUNT(*) as count FROM projects WHERE project_no LIKE $1 || '%'`,
   createProject: `INSERT INTO projects (project_no, customer_name, customer_contact, name, start_date, end_date, remarks, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
   updateProject: `UPDATE projects SET customer_name = $1, customer_contact = $2, name = $3, start_date = $4, end_date = $5, remarks = $6, status = $7, documents = $8, updated_at = CURRENT_TIMESTAMP WHERE id = $9 RETURNING *`,
   deleteProject: `DELETE FROM projects WHERE id = $1`,

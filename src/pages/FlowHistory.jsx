@@ -110,14 +110,17 @@ const FlowHistory = () => {
     }
     .modern-table th {
       text-align: left;
-      padding: 16px;
+      padding: var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 12px);
       font-weight: 800;
       color: var(--table-header-text);
       border-bottom: 2px solid var(--border-color);
       background-color: var(--table-header-bg);
+      position: sticky;
+      top: 0;
+      z-index: 4;
     }
     .modern-table td {
-      padding: 16px;
+      padding: var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 12px);
       border-bottom: 1px solid var(--table-border);
       vertical-align: middle;
       color: var(--text-main);
@@ -129,7 +132,7 @@ const FlowHistory = () => {
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      padding: 8px 16px;
+      padding: 6px 14px;
       background-color: var(--bg-surface);
       color: var(--text-main);
       border: 1px solid var(--border-color);
@@ -149,30 +152,28 @@ const FlowHistory = () => {
   const navBtnStyle = { padding: '6px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', backgroundColor: 'var(--bg-surface)', cursor: 'pointer', fontSize: '13px', fontWeight: '600', color: 'var(--text-main)' };
 
   return (
-    <div style={{ padding: '24px', backgroundColor: 'var(--bg-app)', minHeight: '100vh', boxSizing: 'border-box' }}>
+    <div style={{ padding: 'var(--content-padding, 16px)', backgroundColor: 'var(--bg-app)', minHeight: 'calc(100vh - var(--topbar-height, 56px) - 40px)', boxSizing: 'border-box' }}>
       <style>{tableStyles}</style>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{ padding: '12px', backgroundColor: '#7c3aed', borderRadius: '12px', color: '#fff', boxShadow: '0 4px 6px rgba(124, 58, 237, 0.2)' }}>
-            <History size={24} />
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--spacing-md, 14px)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ padding: '8px', backgroundColor: '#7c3aed', borderRadius: '10px', color: '#fff', boxShadow: '0 4px 6px rgba(124, 58, 237, 0.2)' }}>
+            <History size={20} />
           </div>
           <div>
-            <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-main)', margin: 0 }}>進出貨日誌 Stock In/Out Log</h1>
-            <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>
-              按時間序列追蹤所有進貨入庫、出貨發貨、借用與異動軌跡。
-            </p>
+            <h1 style={{ fontSize: 'var(--page-title-size, 1.4rem)', fontWeight: 800, color: 'var(--text-main)', margin: 0 }}>進出貨日誌 Stock In/Out Log</h1>
           </div>
         </div>
         <div style={{ display: 'flex', gap: '12px' }}>
-          <button onClick={fetchRecords} className="btn-refresh-vibrant">
-            <RefreshCw size={18} className={loading ? 'spinner' : ''} /> 重新整理
+          <button onClick={fetchRecords} className="btn-refresh-vibrant" disabled={loading}>
+            <RefreshCw size={15} className={loading ? 'spinner' : ''} />
+            <span>重新整理</span>
           </button>
         </div>
       </div>
 
-      <div className="card-surface" style={{ padding: '0', overflow: 'hidden', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '16px', boxShadow: 'var(--card-shadow)' }}>
+      <div className="card-surface" style={{ padding: '0', overflow: 'hidden', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '12px', boxShadow: 'var(--card-shadow)' }}>
         {/* Toolbar */}
-        <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border-color)', display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center', backgroundColor: 'var(--bg-surface-subtle)' }}>
+        <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', backgroundColor: 'var(--bg-surface-subtle)' }}>
           
           <div className="search-box-vibrant" style={{ flex: 1, minWidth: '300px', display: 'flex', alignItems: 'center', backgroundColor: 'var(--input-bg)', border: '1.5px solid var(--input-border)', borderRadius: '8px', padding: '2px 8px' }}>
             <Search size={18} style={{ color: 'var(--text-subtle)' }} />
@@ -243,7 +244,7 @@ const FlowHistory = () => {
         </div>
 
         {/* Table */}
-        <div className="table-responsive">
+        <div className="table-responsive" style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', minHeight: '300px' }}>
           <table className="modern-table">
             <thead>
               <tr>

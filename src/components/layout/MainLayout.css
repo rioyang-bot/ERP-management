@@ -107,12 +107,12 @@
 }
 
 .topbar {
-  height: 64px;
+  height: var(--topbar-height, 56px);
   background-color: var(--bg-topbar);
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  padding: 0 24px;
+  padding: 0 20px;
   border-bottom: 1px solid var(--border-color);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   z-index: 5;
@@ -120,7 +120,7 @@
 
 .content-area {
   flex: 1;
-  padding: 24px;
+  padding: var(--content-padding, 20px);
   overflow-y: auto;
   background-color: var(--bg-app);
 }
@@ -129,17 +129,17 @@
 .card-surface {
   background-color: var(--bg-surface);
   border: 1px solid var(--border-color);
-  border-radius: 16px;
-  padding: 24px;
+  border-radius: var(--card-radius, 14px);
+  padding: var(--card-padding, 20px);
   box-shadow: var(--card-shadow);
-  margin-bottom: 24px;
+  margin-bottom: var(--card-margin-bottom, 20px);
   color: var(--text-main);
 }
 
 .page-title {
-  font-size: 1.75rem;
+  font-size: var(--page-title-size, 1.5rem);
   color: var(--text-main);
-  margin-bottom: 24px;
+  margin-bottom: var(--page-title-margin, 16px);
   font-weight: 700;
 }
 

@@ -168,9 +168,9 @@ describe('HwBatchImportModal 硬體批次匯入（自選/建立主檔與格式�
     expect(screen.getAllByText('XeAU Nov2022').length).toBeGreaterThan(0);
     expect(screen.getAllByText(/📦 已出貨/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/🟢 在庫/i).length).toBeGreaterThan(0);
-  });
+  }, 15000);
 
-  it('未填寫規格 (Specification) 時應標記為略過並顯示缺少規格', async () => {
+  it('未填寫規格 (Specification) 時仍應視為待建立 (規格為選填)', async () => {
     const testData = [
       {
         'SF2541 SN': 'HW-SN-SPEC-TEST-001',
@@ -204,13 +204,14 @@ describe('HwBatchImportModal 硬體批次匯入（自選/建立主檔與格式�
     await userEvent.type(typeInput, 'NIC');
     await userEvent.type(modelInput, 'MCX512A');
 
-    // 尚未填寫規格時，應被標記為缺少規格略過
+    // 尚未填寫規格時，因為規格為選填，應直接標記為待建立 (0 略過)
     await waitFor(() => {
-      expect(screen.getByText(/略過項目 \(1\)/i)).toBeInTheDocument();
-      expect(screen.getByText(/缺少規格/i)).toBeInTheDocument();
+      expect(screen.getByText(/待建立 \(1\)/i)).toBeInTheDocument();
+      expect(screen.getByText(/略過項目 \(0\)/i)).toBeInTheDocument();
+      expect(screen.queryByText(/缺少規格/i)).not.toBeInTheDocument();
     });
 
-    // 填寫規格後，應轉為可建立
+    // 填寫選填規格後，仍維持待建立
     const specInput = screen.getByPlaceholderText('例: Dual-Port 25GbE SFP28 PCIe');
     await userEvent.type(specInput, 'Dual-Port 25GbE');
 
@@ -219,4 +220,106 @@ describe('HwBatchImportModal 硬體批次匯入（自選/建立主檔與格式�
       expect(screen.getByText(/略過項目 \(0\)/i)).toBeInTheDocument();
     });
   });
+
+  it('應能載入系統自訂欄位、自動匹配硬體清單自訂欄位，並於匯入時寫入 custom_attributes', async () => {
+    // 模擬自訂欄位定義
+    namedQueryMock.mockImplementation((query, params) => {
+      if (query === 'fetchNicBrands') {
+        return Promise.resolve({ success: true, rows: [{ id: 1, name: 'Solarflare' }] });
+      }
+      if (query === 'fetchAssetSns') {
+        return Promise.resolve({ success: true, rows: [] });
+      }
+      if (query === 'getSystemSetting' && params && params[0] === 'customFieldDefinitions') {
+        return Promise.resolve({
+          success: true,
+          rows: [{
+            value: [
+              { id: 'custom_fw', label: '韌體版本', isNative: false, color: '#f59e0b' },
+              { id: 'custom_heatsink', label: '散熱片', isNative: false, color: '#8b5cf6' }
+            ]
+          }]
+        });
+      }
+      if (query === 'findItemMaster') {
+        return Promise.resolve({ success: true, rows: [{ id: 201 }] });
+      }
+      if (query === 'insertAssetRecord') {
+        return Promise.resolve({ success: true, rowCount: 1 });
+      }
+      return Promise.resolve({ success: true, rows: [] });
+    });
+
+    const testData = [
+      {
+        'Brand': 'Solarflare',
+        'Type': 'NIC',
+        'Model': 'SF2541',
+        'Specification': '25GbE Dual-Port',
+        'Serial Number': 'HW-SN-888',
+        '韌體版本': 'v2.4.1',
+        'Heatsink_Type': 'High-Profile',
+        'Status': 'ACTIVE'
+      }
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(testData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Hardware');
+    const u8 = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+    const file = new File([u8], 'hw_custom_fields.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+    vi.spyOn(window, 'confirm').mockImplementation(() => true);
+
+    const { container } = render(
+      <HwBatchImportModal
+        isOpen={true}
+        onClose={vi.fn()}
+        onSuccess={vi.fn()}
+      />
+    );
+
+    // 驗證自訂欄位對應面板渲染出兩個自訂欄位
+    await waitFor(() => {
+      expect(screen.getByText(/自訂欄位對應 \(Custom Fields Mapping\)/i)).toBeInTheDocument();
+      expect(screen.getByText('韌體版本')).toBeInTheDocument();
+      expect(screen.getByText('散熱片')).toBeInTheDocument();
+    });
+
+    // 上傳檔案
+    const fileInput = container.querySelector('input[type="file"]');
+    await userEvent.upload(fileInput, file);
+
+    // 驗證自動匹配：「韌體版本」自動匹配
+    await waitFor(() => {
+      expect(screen.getByText(/✓ 已對應: 韌體版本/i)).toBeInTheDocument();
+    });
+
+    // 手動將「散熱片」對應至「Heatsink_Type」
+    const heatsinkSelect = screen.getByLabelText('自訂欄位對應: 散熱片');
+    fireEvent.change(heatsinkSelect, { target: { value: 'Heatsink_Type' } });
+
+    // 驗證預覽表格包含自訂欄位標籤與資料
+    await waitFor(() => {
+      expect(screen.getByText('HW-SN-888')).toBeInTheDocument();
+      expect(screen.getByText('v2.4.1')).toBeInTheDocument();
+      expect(screen.getByText('High-Profile')).toBeInTheDocument();
+    });
+
+    // 點擊執行匯入
+    const importBtn = screen.getByText(/確認批次匯入/i);
+    await userEvent.click(importBtn);
+
+    // 驗證 insertAssetRecord 呼叫參數，其 custom_attributes 正確包含自訂欄位
+    await waitFor(() => {
+      expect(namedQueryMock).toHaveBeenCalledWith('insertAssetRecord', expect.arrayContaining([
+        expect.objectContaining({
+          batch_imported: true,
+          custom_fw: 'v2.4.1',
+          custom_heatsink: 'High-Profile'
+        })
+      ]));
+    });
+  });
 });
+

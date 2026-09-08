@@ -8,7 +8,8 @@ const Partners = () => {
   const [partners, setPartners] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [formData, setFormData] = useState({ type: 'CUSTOMER', name: '', contact: '', phone: '', address: '' });
+  const [typeFilter, setTypeFilter] = useState('ALL'); // 'ALL' | 'CUSTOMER' | 'SUPPLIER'
+  const [formData, setFormData] = useState({ type: 'CUSTOMER', name: '', contact: '', phone: '', address: '', project_info: '' });
   
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -23,6 +24,7 @@ const Partners = () => {
     // 嘗試建立欄位 (如果已存在則會報錯但不影響後續)
     try { await window.electronAPI.namedQuery('migratePartnersActive'); } catch(e) {}
     try { await window.electronAPI.namedQuery('migratePartnersAddress'); } catch(e) {}
+    try { await window.electronAPI.namedQuery('migratePartnersProjectInfo'); } catch(e) {}
     // 確保現有資料的 is_active 不是 NULL
     try { await window.electronAPI.namedQuery('initPartnersActive'); } catch(e) {}
     
@@ -55,6 +57,7 @@ const Partners = () => {
     const cleanContact = sanitizeValue(formData.contact);
     const cleanPhone = sanitizeValue(formData.phone);
     const cleanAddress = sanitizeValue(formData.address);
+    const cleanProjectInfo = sanitizeValue(formData.project_info);
 
     // 必填欄位驗證：公司名稱(全稱)與聯絡人
     if (!cleanName) return alert('請填寫公司名稱(全稱) (必填)');
@@ -78,7 +81,8 @@ const Partners = () => {
         cleanName, 
         cleanContact, 
         cleanPhone,
-        cleanAddress
+        cleanAddress,
+        cleanProjectInfo
       ]
     );
 
@@ -87,11 +91,11 @@ const Partners = () => {
         'PARTNER', 
         cleanName, 
         formData.type === 'CUSTOMER' ? '客戶' : '供應商', 
-        `新增夥伴 [${cleanName}] 聯絡人: [${cleanContact}] 類別: ${formData.type === 'CUSTOMER' ? '客戶' : '供應商'}`, 
-        { type: formData.type, name: cleanName, contact: cleanContact, phone: cleanPhone, address: cleanAddress }
+        `新增夥伴 [${cleanName}] 聯絡人: [${cleanContact}] 專案: [${cleanProjectInfo}] 類別: ${formData.type === 'CUSTOMER' ? '客戶' : '供應商'}`, 
+        { type: formData.type, name: cleanName, contact: cleanContact, phone: cleanPhone, address: cleanAddress, project_info: cleanProjectInfo }
       );
       await fetchPartners();
-      setFormData({ type: 'CUSTOMER', name: '', contact: '', phone: '', address: '' });
+      setFormData({ type: 'CUSTOMER', name: '', contact: '', phone: '', address: '', project_info: '' });
     } else {
       alert('系統訊息：資料庫寫入失敗，請檢查資料格式或聯絡系統管理員。');
     }
@@ -114,6 +118,7 @@ const Partners = () => {
     const cleanContact = sanitizeValue(editingItem.contact);
     const cleanPhone = sanitizeValue(editingItem.phone);
     const cleanAddress = sanitizeValue(editingItem.address);
+    const cleanProjectInfo = sanitizeValue(editingItem.project_info);
 
     // 必填欄位驗證：公司名稱(全稱)與聯絡人
     if (!cleanName) return alert('請填寫公司名稱(全稱) (必填)');
@@ -137,16 +142,18 @@ const Partners = () => {
         cleanContact, 
         cleanPhone, 
         cleanAddress,
+        cleanProjectInfo,
         editingItem.id
       ]
     );
     if (res.success) {
-      logUpdate('PARTNER', editingItem.id, cleanName, `編輯夥伴資料 [${cleanName}] 聯絡人: [${cleanContact}]`, {
+      logUpdate('PARTNER', editingItem.id, cleanName, `編輯夥伴資料 [${cleanName}] 聯絡人: [${cleanContact}] 專案: [${cleanProjectInfo}]`, {
         type: editingItem.type,
         name: cleanName,
         contact: cleanContact,
         phone: cleanPhone,
-        address: cleanAddress
+        address: cleanAddress,
+        project_info: cleanProjectInfo
       });
       setShowEditModal(false);
       await fetchPartners();
@@ -170,46 +177,183 @@ const Partners = () => {
     }
   };
 
+  const allCount = partners.length;
+  const customerCount = partners.filter(p => p.type === 'CUSTOMER').length;
+  const supplierCount = partners.filter(p => p.type === 'SUPPLIER').length;
+
   const filteredPartners = partners.filter(p => {
+    if (typeFilter !== 'ALL' && p.type !== typeFilter) return false;
     const s = searchTerm.toLowerCase();
     return (p.name || '').toLowerCase().includes(s) || 
            (p.contact || '').toLowerCase().includes(s) || 
            (p.phone || '').toLowerCase().includes(s) ||
-           (p.address || '').toLowerCase().includes(s);
+           (p.address || '').toLowerCase().includes(s) ||
+           (p.project_info || '').toLowerCase().includes(s);
   });
 
   const totalPages = Math.ceil(filteredPartners.length / itemsPerPage);
   const paginatedPartners = filteredPartners.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
-  const cardStyle = { backgroundColor: 'var(--bg-surface)', borderRadius: '16px', padding: '24px', boxShadow: 'var(--card-shadow)', border: '1px solid var(--border-color)', color: 'var(--text-main)' };
-  const thStyle = { textAlign: 'left', padding: '14px', borderBottom: '2px solid var(--border-color)', color: 'var(--table-header-text, var(--text-muted))', fontSize: '12px', fontWeight: '800', backgroundColor: 'var(--table-header-bg)' };
-  const tdStyle = { padding: '14px', fontSize: '13px', color: 'var(--text-main)', borderBottom: '1px solid var(--table-border)' };
+  const cardStyle = { 
+    backgroundColor: 'var(--bg-surface)', 
+    borderRadius: 'var(--card-radius, 14px)', 
+    padding: 'var(--card-padding, 16px 20px)', 
+    boxShadow: 'var(--card-shadow)', 
+    border: '1px solid var(--border-color)', 
+    color: 'var(--text-main)',
+    minHeight: 'calc(100vh - var(--topbar-height, 56px) - 40px)'
+  };
+  const thStyle = { 
+    textAlign: 'left', 
+    padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', 
+    borderBottom: '2px solid var(--border-color)', 
+    color: 'var(--table-header-text, var(--text-muted))', 
+    fontSize: '12px', 
+    fontWeight: '800', 
+    backgroundColor: 'var(--table-header-bg)',
+    position: 'sticky',
+    top: 0,
+    zIndex: 4,
+    boxShadow: '0 1px 0 var(--border-color)',
+    whiteSpace: 'nowrap'
+  };
+  const tdStyle = { 
+    padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', 
+    fontSize: '12.5px', 
+    color: 'var(--text-main)', 
+    borderBottom: '1px solid var(--table-border)' 
+  };
 
   return (
-    <div style={{ padding: '24px', backgroundColor: 'var(--bg-app)', minHeight: '100vh' }}>
+    <div style={{ padding: 'var(--content-padding, 16px 20px)', backgroundColor: 'var(--bg-app)', minHeight: '100%' }}>
       <div style={cardStyle}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--page-title-margin, 14px)', flexWrap: 'wrap', gap: '10px' }}>
           <div>
-            <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
-              <Users size={26} color="var(--primary-color)" /> 客戶/廠商管理 (Partners)
+            <h1 style={{ fontSize: 'var(--page-title-size, 1.35rem)', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
+              <Users size={24} color="var(--primary-color)" /> 客戶/廠商管理 (Partners)
             </h1>
-            <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>
-              管理客戶與供應商之公司名稱(全稱)、聯絡人、電話與公司地址。同一公司可建立多位聯絡人，系統將自動校驗防止重複。
+            <p style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '2px', marginBottom: 0 }}>
+              管理客戶與供應商之公司名稱(全稱)、聯絡人、電話、公司地址與關聯資訊。同一公司可建立多位聯絡人，系統將自動校驗防止重複。
             </p>
           </div>
-          <div style={{ position: 'relative' }}>
-            <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-subtle)' }} />
-            <input 
-              type="text" 
-              placeholder="搜尋公司名稱、聯絡人、地址..." 
-              value={searchTerm}
-              onChange={(e) => {setSearchTerm(e.target.value); setCurrentPage(1);}}
-              style={{ padding: '10px 12px 10px 42px', borderRadius: '30px', border: '1.5px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', width: '320px', outline: 'none' }}
-            />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            {/* 分類快速篩選：全部 / 客戶 / 供應商 */}
+            <div style={{
+              display: 'inline-flex',
+              backgroundColor: 'var(--bg-surface-subtle)',
+              padding: '3px',
+              borderRadius: '10px',
+              border: '1px solid var(--border-color)',
+              gap: '4px'
+            }}>
+              <button
+                type="button"
+                onClick={() => { setTypeFilter('ALL'); setCurrentPage(1); }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 14px',
+                  borderRadius: '7px',
+                  border: 'none',
+                  fontSize: '13px',
+                  fontWeight: '800',
+                  cursor: 'pointer',
+                  backgroundColor: typeFilter === 'ALL' ? 'var(--primary-color)' : 'transparent',
+                  color: typeFilter === 'ALL' ? '#fff' : 'var(--text-muted)',
+                  boxShadow: typeFilter === 'ALL' ? '0 2px 6px rgba(0,0,0,0.15)' : 'none',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <span>全部</span>
+                <span style={{
+                  padding: '1px 6px',
+                  borderRadius: '10px',
+                  fontSize: '11px',
+                  fontWeight: '800',
+                  backgroundColor: typeFilter === 'ALL' ? 'rgba(255,255,255,0.25)' : 'var(--border-color)',
+                  color: typeFilter === 'ALL' ? '#fff' : 'var(--text-subtle)'
+                }}>{allCount}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setTypeFilter('CUSTOMER'); setCurrentPage(1); }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 14px',
+                  borderRadius: '7px',
+                  border: 'none',
+                  fontSize: '13px',
+                  fontWeight: '800',
+                  cursor: 'pointer',
+                  backgroundColor: typeFilter === 'CUSTOMER' ? '#3b82f6' : 'transparent',
+                  color: typeFilter === 'CUSTOMER' ? '#fff' : 'var(--text-muted)',
+                  boxShadow: typeFilter === 'CUSTOMER' ? '0 2px 6px rgba(59,130,246,0.3)' : 'none',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <UserCheck size={14} />
+                <span>客戶</span>
+                <span style={{
+                  padding: '1px 6px',
+                  borderRadius: '10px',
+                  fontSize: '11px',
+                  fontWeight: '800',
+                  backgroundColor: typeFilter === 'CUSTOMER' ? 'rgba(255,255,255,0.25)' : 'rgba(59, 130, 246, 0.15)',
+                  color: typeFilter === 'CUSTOMER' ? '#fff' : '#3b82f6'
+                }}>{customerCount}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setTypeFilter('SUPPLIER'); setCurrentPage(1); }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 14px',
+                  borderRadius: '7px',
+                  border: 'none',
+                  fontSize: '13px',
+                  fontWeight: '800',
+                  cursor: 'pointer',
+                  backgroundColor: typeFilter === 'SUPPLIER' ? '#f97316' : 'transparent',
+                  color: typeFilter === 'SUPPLIER' ? '#fff' : 'var(--text-muted)',
+                  boxShadow: typeFilter === 'SUPPLIER' ? '0 2px 6px rgba(249,115,22,0.3)' : 'none',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <Truck size={14} />
+                <span>供應商</span>
+                <span style={{
+                  padding: '1px 6px',
+                  borderRadius: '10px',
+                  fontSize: '11px',
+                  fontWeight: '800',
+                  backgroundColor: typeFilter === 'SUPPLIER' ? 'rgba(255,255,255,0.25)' : 'rgba(249, 115, 22, 0.15)',
+                  color: typeFilter === 'SUPPLIER' ? '#fff' : '#f97316'
+                }}>{supplierCount}</span>
+              </button>
+            </div>
+
+            {/* 搜尋框 */}
+            <div style={{ position: 'relative' }}>
+              <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-subtle)' }} />
+              <input 
+                type="text" 
+                placeholder="搜尋公司名稱、聯絡人、關聯資訊、地址..." 
+                value={searchTerm}
+                onChange={(e) => {setSearchTerm(e.target.value); setCurrentPage(1);}}
+                style={{ padding: '8px 12px 8px 36px', borderRadius: '24px', border: '1.5px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', width: '260px', outline: 'none', fontSize: '0.88rem' }}
+              />
+            </div>
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: '32px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 320px) 1fr', gap: '20px' }}>
           {/* 左側：新增表單 */}
           <div style={{ backgroundColor: 'var(--bg-surface-subtle)', padding: '24px', borderRadius: '16px', border: '1px solid var(--border-color)', alignSelf: 'start' }}>
             <h3 style={{ marginBottom: '20px', fontSize: '16px', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-main)' }}>
@@ -240,6 +384,17 @@ const Partners = () => {
                   name="contact" 
                   value={formData.contact} 
                   onChange={handleChange} 
+                  style={inputStyle} 
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>關聯資訊 (關鍵字)</label>
+                <input 
+                  type="text" 
+                  name="project_info" 
+                  value={formData.project_info || ''} 
+                  onChange={handleChange} 
+                  placeholder="如：國法、IMC（多筆關聯以逗點分隔）"
                   style={inputStyle} 
                 />
               </div>
@@ -278,12 +433,14 @@ const Partners = () => {
               <div style={{ textAlign: 'center', padding: '100px', color: 'var(--text-muted)' }}>載入中...</div>
             ) : (
               <>
+                <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 270px)', minHeight: '300px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
+                  <thead style={{ position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)' }}>
                     <tr>
                       <th style={thStyle}>夥伴類型</th>
                       <th style={thStyle}>公司名稱(全稱)</th>
                       <th style={thStyle}>聯絡人與電話</th>
+                      <th style={thStyle}>關聯資訊</th>
                       <th style={thStyle}>公司地址</th>
                       <th style={{ ...thStyle, textAlign: 'center' }}>狀態</th>
                       <th style={{ ...thStyle, textAlign: 'center', width: '100px' }}>操作</th>
@@ -307,6 +464,28 @@ const Partners = () => {
                         <td style={tdStyle}>
                           <div style={{ fontWeight: '700', color: 'var(--text-main)' }}>{p.contact || '--'}</div>
                           <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{p.phone || '--'}</div>
+                        </td>
+                        <td style={tdStyle}>
+                          {p.project_info ? (
+                            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', maxWidth: '200px' }}>
+                              {p.project_info.split(/[、,，\s]+/).filter(Boolean).map((tag, idx) => (
+                                <span key={idx} style={{
+                                  fontSize: '11px',
+                                  fontWeight: '700',
+                                  color: '#8b5cf6',
+                                  backgroundColor: 'rgba(139, 92, 246, 0.12)',
+                                  border: '1px solid rgba(139, 92, 246, 0.25)',
+                                  padding: '2px 8px',
+                                  borderRadius: '12px',
+                                  whiteSpace: 'nowrap'
+                                }}>
+                                  🏷️ {tag}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span style={{ color: 'var(--text-subtle)', fontSize: '11px' }}>--</span>
+                          )}
                         </td>
                         <td style={{ ...tdStyle, color: 'var(--text-muted)', fontSize: '12px', maxWidth: '200px' }} title={p.address}>
                           {p.address ? (
@@ -353,20 +532,21 @@ const Partners = () => {
                     ))}
                   </tbody>
                 </table>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginTop: '24px' }}>
-                  <PageSizeSelector pageSize={itemsPerPage} onChange={(newSize) => { setItemsPerPage(newSize); setCurrentPage(1); }} />
-                  {totalPages > 1 && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <button disabled={currentPage === 1} onClick={() => setCurrentPage(prev => prev - 1)} style={pageButtonStyle}>上一頁</button>
-                      <span style={{ display: 'flex', alignItems: 'center', fontWeight: '800', color: 'var(--text-muted)', fontSize: '13px' }}>{currentPage} / {totalPages}</span>
-                      <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(prev => prev + 1)} style={pageButtonStyle}>下一頁</button>
-                    </div>
-                  )}
-                </div>
-                {paginatedPartners.length === 0 && <div style={{ textAlign: 'center', padding: '60px', color: 'var(--text-muted)' }}>尚無符合條件的夥伴</div>}
-              </>
-            )}
-          </div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginTop: '16px' }}>
+                <PageSizeSelector pageSize={itemsPerPage} onChange={(newSize) => { setItemsPerPage(newSize); setCurrentPage(1); }} />
+                {totalPages > 1 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <button disabled={currentPage === 1} onClick={() => setCurrentPage(prev => prev - 1)} style={pageButtonStyle}>上一頁</button>
+                    <span style={{ display: 'flex', alignItems: 'center', fontWeight: '800', color: 'var(--text-muted)', fontSize: '13px' }}>{currentPage} / {totalPages}</span>
+                    <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(prev => prev + 1)} style={pageButtonStyle}>下一頁</button>
+                  </div>
+                )}
+              </div>
+              {paginatedPartners.length === 0 && <div style={{ textAlign: 'center', padding: '60px', color: 'var(--text-muted)' }}>尚無符合條件的夥伴</div>}
+            </>
+          )}
+        </div>
         </div>
       </div>
 
@@ -393,6 +573,17 @@ const Partners = () => {
               <div>
                 <label style={labelStyle}>聯絡人 *</label>
                 <input type="text" name="contact" value={editingItem.contact || ''} onChange={(e) => setEditingItem({...editingItem, contact: e.target.value})} style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>關聯資訊 (關鍵字)</label>
+                <input 
+                  type="text" 
+                  name="project_info" 
+                  value={editingItem.project_info || ''} 
+                  onChange={(e) => setEditingItem({...editingItem, project_info: e.target.value})} 
+                  placeholder="如：國法、IMC（多筆關聯以逗點分隔）"
+                  style={inputStyle} 
+                />
               </div>
               <div>
                 <label style={labelStyle}>聯絡電話</label>
