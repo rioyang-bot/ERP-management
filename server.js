@@ -74,10 +74,13 @@ const pool = new Pool({
     await pool.query(`
       ALTER TABLE item_master ALTER COLUMN specification DROP NOT NULL;
       ALTER TABLE item_master ALTER COLUMN specification SET DEFAULT '';
+      ALTER TABLE inbound_orders ADD COLUMN IF NOT EXISTS order_date DATE DEFAULT CURRENT_DATE;
+      ALTER TABLE assets ADD COLUMN IF NOT EXISTS end_user VARCHAR(100);
+      ALTER TABLE assets ADD COLUMN IF NOT EXISTS ownership VARCHAR(30) DEFAULT 'FOR_SALE';
     `);
-    console.log('✅ Repair Order Tables (RMA) & item_master schema checked & ready');
+    console.log('✅ Repair Order Tables (RMA) & schema migrations checked & ready');
   } catch (e) {
-    console.error('⚠️ Notice on auto-initializing repair tables / schema migration:', e.message);
+    console.error('⚠️ Notice on auto-initializing tables / schema migration:', e.message);
   }
 })();
 

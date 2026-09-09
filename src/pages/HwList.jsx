@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Search, Edit2, X, Server, User, MapPin, MoreHorizontal, Trash2, ShoppingBag, AlertTriangle, CheckCircle, Save, Monitor, Settings, ShieldAlert, Archive, RotateCcw, Cpu, Send, History, Building2, Info } from 'lucide-react';
+import { Search, Edit2, X, Server, User, MapPin, MoreHorizontal, Trash2, ShoppingBag, AlertTriangle, CheckCircle, Save, Monitor, Settings, ShieldAlert, Archive, RotateCcw, Cpu, Send, History, Building2, Info, RefreshCw } from 'lucide-react';
 import ItemLedgerModal from '../components/ItemLedgerModal';
 import HwRegistrationModal from '../components/HwRegistrationModal';
+import RmaReplacementModal from '../components/RmaReplacementModal';
 import { logUpdate, logDelete, logStatusChange } from '../utils/auditLogger';
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
+import { isItemRetired, getItemAggregationKey, aggregateCards, computeNewRetiredKeys } from '../utils/cardAggregation';
 
 const HwList = ({ isSplitMode = false }) => {
   const location = useLocation();
@@ -22,10 +24,21 @@ const HwList = ({ isSplitMode = false }) => {
   const [showServerDetails, setShowServerDetails] = useState(true);
   const [ledgerItem, setLedgerItem] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [rmaAsset, setRmaAsset] = useState(null);
 
-  // 當側邊欄分類變動時，清除搜尋關鍵字
+  const [selectedCardKey, setSelectedCardKey] = useState(null);
+  const [aggregationMode, setAggregationMode] = useState(() => {
+    return localStorage.getItem('hw_aggregation_mode') || 'SPEC';
+  });
+  const [retiredKeys, setRetiredKeys] = useState(() => {
+    const saved = localStorage.getItem('hw_list_retired_keys');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  // 當側邊欄分類變動時，清除搜尋關鍵字與選取卡片
   useEffect(() => {
     setSearchTerm('');
+    setSelectedCardKey(null);
     setActiveMenuId(null);
     setMenuPosition(null);
   }, [filterType]);
@@ -111,8 +124,9 @@ const HwList = ({ isSplitMode = false }) => {
       _origSpec: nic.specification || '',
       ownership: nic.ownership || 'FOR_SALE',
       temp_server_sn: nic.custom_attributes?.server_sn || '',
-      temp_order_date: nic.custom_attributes?.order_date || '',
-      temp_project_name: nic.custom_attributes?.project_name || ''
+      temp_order_source: nic.custom_attributes?.order_source !== undefined ? nic.custom_attributes?.order_source : (nic.custom_attributes?.order_date || ''),
+      temp_project_name: nic.custom_attributes?.project_name || '',
+      temp_end_user: nic.end_user || nic.custom_attributes?.end_user || nic.server_end_user || ''
     });
     setShowEditModal(true);
     setActiveMenuId(null);
@@ -188,20 +202,23 @@ const HwList = ({ isSplitMode = false }) => {
       editItem.client || null,
       editItem.location || null,
       editItem.temp_server_sn ? editItem.temp_server_sn.trim() : null,
-      editItem.temp_order_date || null,
+      editItem.temp_order_source !== undefined ? editItem.temp_order_source : null,
       editItem.hostname || null,
       parseInt(editItem.id, 10),
       editItem.temp_project_name || null,
-      editItem.ownership || 'FOR_SALE'
+      editItem.ownership || 'FOR_SALE',
+      editItem.temp_end_user !== undefined ? editItem.temp_end_user : (editItem.end_user || editItem.custom_attributes?.end_user || null)
     ]);
     if (res.success) { 
       logUpdate('HARDWARE', editItem.sn || editItem.id, `${editItem.brand || ''} ${editItem.model || ''}`, `編輯硬體詳細資訊 [${editItem.sn || editItem.id}]`, {
         sn: editItem.sn,
         client: editItem.client,
+        end_user: editItem.temp_end_user,
         location: editItem.location,
         ownership: editItem.ownership,
         server_sn: editItem.temp_server_sn,
-        project_name: editItem.temp_project_name
+        project_name: editItem.temp_project_name,
+        order_source: editItem.temp_order_source
       });
       setShowEditModal(false); 
       window.dispatchEvent(new CustomEvent('db-update'));
@@ -294,6 +311,13 @@ const HwList = ({ isSplitMode = false }) => {
 
   const filteredNics = nics
     .filter(n => {
+      if (selectedCardKey) {
+        const isTargetRetired = selectedCardKey.endsWith(':::RETIRED');
+        const targetKey = isTargetRetired ? selectedCardKey.replace(':::RETIRED', '') : selectedCardKey;
+        const itemKey = getItemAggregationKey(n, aggregationMode);
+        const itemRetired = isItemRetired(n, retiredKeys);
+        if (itemKey !== targetKey || itemRetired !== isTargetRetired) return false;
+      }
       const searchTerms = searchTerm.toLowerCase().split(/\s+/).filter(t => t);
       if (searchTerms.length === 0) return true;
       return searchTerms.every(term => 
@@ -301,6 +325,9 @@ const HwList = ({ isSplitMode = false }) => {
         (n.brand || '').toLowerCase().includes(term) ||
         (n.model || '').toLowerCase().includes(term) ||
         (n.specification || '').toLowerCase().includes(term) ||
+        (n.client || n.server_client || '').toLowerCase().includes(term) ||
+        (n.end_user || n.custom_attributes?.end_user || n.server_end_user || '').toLowerCase().includes(term) ||
+        (n.custom_attributes?.order_source || '').toLowerCase().includes(term) ||
         (n.custom_attributes?.server_sn || '').toLowerCase().includes(term)
       );
     })
@@ -314,14 +341,11 @@ const HwList = ({ isSplitMode = false }) => {
     return saved ? JSON.parse(saved) : {};
   });
 
-  const [aggregationMode, setAggregationMode] = useState(() => {
-    return localStorage.getItem('hw_aggregation_mode') || 'SPEC';
-  });
-
   const handleAggregationModeChange = (mode) => {
     setAggregationMode(mode);
     localStorage.setItem('hw_aggregation_mode', mode);
     setSearchTerm('');
+    setSelectedCardKey(null);
   };
 
   // 當搜尋或類型變動時，回到第一頁
@@ -345,23 +369,16 @@ const HwList = ({ isSplitMode = false }) => {
     setDraggingCardKey(null);
   };
 
-  const [retiredKeys, setRetiredKeys] = useState(() => {
-    const saved = localStorage.getItem('hw_list_retired_keys');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const toggleRetire = (e, key) => {
+  const toggleRetire = (e, key, isRetiredParam) => {
     e.stopPropagation();
-    const isRetired = retiredKeys.includes(key);
+    const isRetired = isRetiredParam !== undefined ? isRetiredParam : retiredKeys.includes(key);
     const msg = isRetired ? `確定要將此卡片從汰舊區復原嗎？` : `確定要將此卡片移至汰舊區嗎？`;
     
     setConfirmModal({
       show: true,
       msg,
       onConfirm: () => {
-        const newRetired = isRetired 
-          ? retiredKeys.filter(k => k !== key)
-          : [...retiredKeys, key];
+        const newRetired = computeNewRetiredKeys(key, isRetired, retiredKeys, aggregationMode);
         setRetiredKeys(newRetired);
         localStorage.setItem('hw_list_retired_keys', JSON.stringify(newRetired));
         window.dispatchEvent(new CustomEvent('retired-update'));
@@ -370,29 +387,12 @@ const HwList = ({ isSplitMode = false }) => {
     });
   };
 
-
   const handleCardClick = (st) => {
-    let target = '';
-    if (aggregationMode === 'SPEC') {
-      target = [st.brand, st.model, st.specification].filter(Boolean).join(' ');
-    } else if (aggregationMode === 'MODEL') {
-      target = [st.brand, st.model].filter(Boolean).join(' ');
-    } else if (aggregationMode === 'BRAND') {
-      target = st.brand;
-    }
-
-    if (searchTerm === target && (aggregationMode === 'BRAND' || filterType === st.type)) {
-      // 如果完全相同，則清除
-      setSearchTerm('');
-      navigate('?');
+    const cardId = st.isRetired ? `${st.key}:::RETIRED` : st.key;
+    if (selectedCardKey === cardId) {
+      setSelectedCardKey(null);
     } else {
-      // 如果類別變更，先清空搜尋詞避免舊資料衝突
-      if (aggregationMode !== 'BRAND' && filterType !== st.type) {
-        setSearchTerm('');
-        navigate(`?type=${encodeURIComponent(st.type)}`);
-      }
-      // 稍微延遲設定搜尋詞，讓 useEffect 優先處理資料載入
-      setTimeout(() => setSearchTerm(target), 50);
+      setSelectedCardKey(cardId);
     }
     setCurrentPage(1);
   };
@@ -429,9 +429,9 @@ const HwList = ({ isSplitMode = false }) => {
             </button>
           </div>
         )}
-        {(filterType || searchTerm) && (
+        {(filterType || searchTerm || selectedCardKey) && (
           <button 
-            onClick={() => { setSearchTerm(''); navigate('?'); }}
+            onClick={() => { setSearchTerm(''); setSelectedCardKey(null); navigate('?'); }}
             style={{ padding: '4px 12px', borderRadius: '20px', backgroundColor: 'var(--bg-surface-subtle)', border: '1px solid var(--border-color)', color: 'var(--text-muted)', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
           >
             清除所有篩選 ×
@@ -517,38 +517,11 @@ const HwList = ({ isSplitMode = false }) => {
   );
 
   const renderStats = () => {
-    const statsMap = filteredNics.reduce((acc, curr) => {
-      const brandStr = curr.brand || '未知';
-      const typeStr = curr.type || '未分類';
-      const modelStr = curr.model || '未設定型號';
-      const specStr = (curr.specification || '').trim();
-      let key = '';
-      if (aggregationMode === 'SPEC') {
-        key = `${brandStr} - ${typeStr} - ${modelStr} - ${specStr}`;
-      } else if (aggregationMode === 'MODEL') {
-        key = `${brandStr} - ${typeStr} - ${modelStr}`;
-      } else if (aggregationMode === 'BRAND') {
-        key = `${brandStr}`;
-      }
-      if (!acc[key]) acc[key] = { key, brand: brandStr, type: typeStr, model: modelStr, specification: specStr, active: 0, shipped: 0, lent: 0, repair: 0, scrapped: 0 };
-      const status = curr.status || 'ACTIVE';
-      if (status === 'ACTIVE') acc[key].active++;
-      else if (status === 'SHIPPED') acc[key].shipped++;
-      else if (status === 'LENT') acc[key].lent++;
-      else if (status === 'REPAIR' || status === 'REPAIRING') acc[key].repair++;
-      else if (status === 'SCRAPPED' || status === 'PENDING_SCRAP') acc[key].scrapped++;
-      return acc;
-    }, {});
+    const { activeStatsMap, retiredStatsMap } = aggregateCards(nics, aggregationMode, retiredKeys);
+    const activeKeys = Object.keys(activeStatsMap);
+    const retiredList = Object.values(retiredStatsMap);
 
-    const allKeys = Object.keys(statsMap);
-    const displayKeys = allKeys.filter(k => {
-      if (!searchTerm) return true;
-      const lk = k.toLowerCase();
-      const terms = searchTerm.toLowerCase().split(/\s+/).filter(t => t);
-      return terms.every(t => lk.includes(t));
-    });
-
-    if (allKeys.length === 0) return null;
+    if (activeKeys.length === 0 && retiredList.length === 0) return null;
 
     const renderRetiredSection = (list) => {
       if (list.length === 0) return null;
@@ -558,85 +531,20 @@ const HwList = ({ isSplitMode = false }) => {
             <Archive size={18} /> 汰舊 / 停用區塊 (Retired Items)
           </h3>
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-            {list.map(st => (
-              <div key={st.key} onClick={() => handleCardClick(st)} style={{ backgroundColor: 'var(--bg-surface)', padding: '10px', borderRadius: '12px', border: '1px solid var(--border-color)', cursor: 'pointer', minWidth: '220px', opacity: 0.6, position: 'relative' }} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.6'}>
-                <button onClick={(e) => toggleRetire(e, st.key)} style={{ position: 'absolute', top: '8px', right: '8px', border: 'none', background: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', borderRadius: '4px', padding: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center' }} title="復原此卡片">
-                  <RotateCcw size={14} />
-                </button>
-              <div style={{ marginBottom: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>
-                <div style={{ fontSize: '12px', fontWeight: '900', color: 'var(--text-main)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <Monitor size={12} color="var(--text-muted)" /> {st.brand}
-                  </span>
-                  <span style={{ fontSize: '10px', fontWeight: '800', color: 'var(--text-muted)', backgroundColor: 'var(--bg-surface-subtle)', padding: '1px 5px', borderRadius: '4px', marginRight: '22px' }}>
-                    共 {st.active + st.shipped + (st.lent || 0) + st.repair + st.scrapped} 個
-                  </span>
-                </div>
-                {aggregationMode !== 'BRAND' && (
-                  <div style={{ color: 'var(--text-muted)', fontSize: '10px', fontWeight: '700', marginTop: '2px', paddingLeft: '16px' }}>
-                    {st.type} - {st.model}
-                  </div>
-                )}
-                {aggregationMode === 'SPEC' && st.specification && (
-                  <div style={{ color: 'var(--text-subtle)', fontSize: '9px', fontWeight: '500', marginTop: '2px', paddingLeft: '16px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }} title={st.specification}>
-                    {st.specification}
-                  </div>
-                )}
-              </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '3px 6px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>在庫</span><span style={{ color: '#16a34a', fontWeight: '800' }}>{st.active}</span></div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>出貨</span><span style={{ color: '#3b82f6', fontWeight: '800' }}>{st.shipped}</span></div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>借出</span><span style={{ color: '#d97706', fontWeight: '800' }}>{st.lent || 0}</span></div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>故障</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>報廢</span><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      );
-    };
-
-    // --- 過濾模式：卡片置頂靠左 ---
-    if (filterType || searchTerm) {
-      const activeMatches = displayKeys.filter(k => !retiredKeys.includes(k)).map(k => statsMap[k]);
-      const retiredMatches = displayKeys.filter(k => retiredKeys.includes(k)).map(k => statsMap[k]);
-
-      return (
-        <div style={{ position: 'relative' }}>
-          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '24px', padding: '16px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '16px', border: '1px solid var(--border-color)' }}>
-            {activeMatches.map(st => {
-              const target = [st.brand, st.model, st.specification].filter(Boolean).join(' ');
-              const isSelected = searchTerm && target && searchTerm.toLowerCase() === target.toLowerCase();
+            {list.map(st => {
+              const isSelected = selectedCardKey === `${st.key}:::RETIRED`;
               return (
-                <div 
-                  key={st.key}
-                  onClick={() => handleCardClick(st)}
-                  style={{ 
-                    backgroundColor: isSelected ? 'var(--primary-bg)' : 'var(--bg-surface)', 
-                    padding: '12px', 
-                    borderRadius: '12px', 
-                    border: isSelected ? '2px solid var(--primary-color)' : '1px solid var(--border-color)', 
-                    boxShadow: isSelected ? '0 4px 12px rgba(37, 99, 235, 0.2)' : 'var(--card-shadow)',
-                    cursor: 'pointer',
-                    minWidth: '220px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between',
-                    transition: 'all 0.2s',
-                    position: 'relative'
-                  }}
-                >
-                  <button onClick={(e) => toggleRetire(e, st.key)} style={{ position: 'absolute', top: '8px', right: '8px', border: 'none', background: 'none', color: 'var(--text-subtle)', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }} title="將此卡片移至汰舊區">
-                    <Archive size={14} />
+                <div key={st.key} onClick={() => handleCardClick(st)} style={{ backgroundColor: isSelected ? 'var(--primary-bg)' : 'var(--bg-surface)', padding: '10px', borderRadius: '12px', border: isSelected ? '2px solid var(--primary-color)' : '1px solid var(--border-color)', cursor: 'pointer', minWidth: '220px', opacity: isSelected ? 1 : 0.6, position: 'relative' }} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.opacity = '0.6'; }}>
+                  <button onClick={(e) => toggleRetire(e, st.key, true)} style={{ position: 'absolute', top: '8px', right: '8px', border: 'none', background: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', borderRadius: '4px', padding: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center' }} title="復原此卡片">
+                    <RotateCcw size={14} />
                   </button>
                   <div style={{ marginBottom: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>
-                    <div style={{ fontSize: '13px', fontWeight: '900', color: isSelected ? 'var(--primary-color)' : 'var(--text-main)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
+                    <div style={{ fontSize: '12px', fontWeight: '900', color: isSelected ? 'var(--primary-color)' : 'var(--text-main)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
                       <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <Monitor size={12} color={isSelected ? 'var(--primary-color)' : 'var(--text-muted)'} /> {st.brand}
                       </span>
                       <span style={{ fontSize: '10px', fontWeight: '800', color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', backgroundColor: 'var(--bg-surface-subtle)', padding: '1px 5px', borderRadius: '4px', marginRight: '22px' }}>
-                        共 {st.active + st.shipped + (st.lent || 0) + st.repair + st.scrapped} 個
+                        共 {st.total} 個
                       </span>
                     </div>
                     {aggregationMode !== 'BRAND' && (
@@ -661,15 +569,87 @@ const HwList = ({ isSplitMode = false }) => {
               );
             })}
           </div>
+        </div>
+      );
+    };
+
+    // --- 過濾模式：卡片置頂靠左 ---
+    if (filterType || searchTerm || selectedCardKey) {
+      const searchTerms = searchTerm.toLowerCase().split(/\s+/).filter(t => t);
+      const filterCard = (st) => {
+        if (searchTerms.length === 0) return true;
+        const target = `${st.brand} ${st.type} ${st.model} ${st.specification}`.toLowerCase();
+        return searchTerms.every(t => target.includes(t));
+      };
+
+      const activeMatches = Object.values(activeStatsMap).filter(filterCard);
+      const retiredMatches = Object.values(retiredStatsMap).filter(filterCard);
+
+      return (
+        <div style={{ position: 'relative' }}>
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '24px', padding: '16px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '16px', border: '1px solid var(--border-color)' }}>
+            {activeMatches.map(st => {
+              const isSelected = selectedCardKey === st.key;
+              return (
+                <div 
+                  key={st.key}
+                  onClick={() => handleCardClick(st)}
+                  style={{ 
+                    backgroundColor: isSelected ? 'var(--primary-bg)' : 'var(--bg-surface)', 
+                    padding: '12px', 
+                    borderRadius: '12px', 
+                    border: isSelected ? '2px solid var(--primary-color)' : '1px solid var(--border-color)', 
+                    boxShadow: isSelected ? '0 4px 12px rgba(37, 99, 235, 0.2)' : 'var(--card-shadow)',
+                    cursor: 'pointer',
+                    minWidth: '220px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    transition: 'all 0.2s',
+                    position: 'relative'
+                  }}
+                >
+                  <button onClick={(e) => toggleRetire(e, st.key, false)} style={{ position: 'absolute', top: '8px', right: '8px', border: 'none', background: 'none', color: 'var(--text-subtle)', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }} title="將此卡片移至汰舊區">
+                    <Archive size={14} />
+                  </button>
+                  <div style={{ marginBottom: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>
+                    <div style={{ fontSize: '13px', fontWeight: '900', color: isSelected ? 'var(--primary-color)' : 'var(--text-main)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <Monitor size={12} color={isSelected ? 'var(--primary-color)' : 'var(--text-muted)'} /> {st.brand}
+                      </span>
+                      <span style={{ fontSize: '10px', fontWeight: '800', color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', backgroundColor: 'var(--bg-surface-subtle)', padding: '1px 5px', borderRadius: '4px', marginRight: '22px' }}>
+                        共 {st.total} 個
+                      </span>
+                    </div>
+                    {aggregationMode !== 'BRAND' && (
+                      <div style={{ color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', fontSize: '10px', fontWeight: '700', marginTop: '2px', paddingLeft: '16px' }}>
+                        {st.type} - {st.model}
+                      </div>
+                    )}
+                    {aggregationMode === 'SPEC' && st.specification && (
+                      <div style={{ color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', fontSize: '9px', fontWeight: '500', marginTop: '2px', paddingLeft: '16px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }} title={st.specification}>
+                        {st.specification}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '3px 6px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>在庫</span><span style={{ color: '#16a34a', fontWeight: '800' }}>{st.active}</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>出貨</span><span style={{ color: '#3b82f6', fontWeight: '800' }}>{st.shipped}</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>借出</span><span style={{ color: '#d97706', fontWeight: '800' }}>{st.lent || 0}</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>故障</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
           {renderRetiredSection(retiredMatches)}
         </div>
       );
     }
 
-    const activeKeys = allKeys.filter(k => !retiredKeys.includes(k));
-    const retiredList = allKeys.filter(k => retiredKeys.includes(k)).map(k => statsMap[k]);
 
-    // 1. 自動清理佈局：移除已不存在的 Key
+    // 1. 自動清理佈局：移除已不存在於 activeKeys 的 Key
     const cleanedLayoutMap = {};
     Object.entries(layoutMap).forEach(([idx, key]) => {
       if (activeKeys.includes(key)) cleanedLayoutMap[idx] = key;
@@ -677,6 +657,7 @@ const HwList = ({ isSplitMode = false }) => {
 
     const assignedKeys = Object.values(cleanedLayoutMap);
     const missingKeys = activeKeys.filter(k => !assignedKeys.includes(k));
+    let currentLayoutMap = cleanedLayoutMap;
     if (missingKeys.length > 0 || Object.keys(cleanedLayoutMap).length !== Object.keys(layoutMap).length) {
       const updatedMap = { ...cleanedLayoutMap };
       let currentIdx = 0;
@@ -686,9 +667,10 @@ const HwList = ({ isSplitMode = false }) => {
       });
       setLayoutMap(updatedMap);
       localStorage.setItem('hw_list_layout_map', JSON.stringify(updatedMap));
+      currentLayoutMap = updatedMap;
     }
 
-    const maxOccupiedIdx = Object.keys(cleanedLayoutMap).reduce((max, current) => Math.max(max, parseInt(current)), -1);
+    const maxOccupiedIdx = Object.keys(currentLayoutMap).reduce((max, current) => Math.max(max, parseInt(current)), -1);
     const rows = Math.max(1, Math.ceil((maxOccupiedIdx + 1) / 6) + (draggingCardKey ? 1 : 0));
     const SLOTS_COUNT = rows * 6;
     const slots = Array.from({ length: SLOTS_COUNT });
@@ -696,41 +678,42 @@ const HwList = ({ isSplitMode = false }) => {
     return (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '12px', marginBottom: '24px', padding: '16px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '16px', border: '1px solid var(--border-color)' }}>
         {slots.map((_, idx) => {
-          const cardKey = layoutMap[idx];
-          const st = statsMap[cardKey];
+          const cardKey = currentLayoutMap[idx];
+          const st = activeStatsMap[cardKey];
+          const isSelected = st && selectedCardKey === st.key;
           return (
             <div key={idx} onDragOver={handleSlotDragOver} onDrop={(e) => handleDropOnSlot(e, idx)} style={{ minHeight: '100px', borderRadius: '12px', border: draggingCardKey ? '1px dashed var(--border-color)' : '1px solid transparent', backgroundColor: draggingCardKey ? 'var(--bg-surface-hover)' : 'transparent', transition: 'all 0.2s' }}>
               {st && (
-                <div draggable onDragStart={(e) => handleCardDragStart(e, st.key)} onClick={() => handleCardClick(st)} style={{ backgroundColor: 'var(--bg-surface)', padding: '10px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: 'var(--card-shadow)', cursor: 'pointer', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', opacity: draggingCardKey === st.key ? 0.3 : 1, transform: 'scale(1)', transition: 'transform 0.1s', position: 'relative' }} onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'} onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}>
-                  <button onClick={(e) => toggleRetire(e, st.key)} style={{ position: 'absolute', top: '8px', right: '8px', border: 'none', background: 'none', color: 'var(--text-subtle)', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }} title="將此卡片移至汰舊區">
+                <div draggable onDragStart={(e) => handleCardDragStart(e, st.key)} onClick={() => handleCardClick(st)} style={{ backgroundColor: isSelected ? 'var(--primary-bg)' : 'var(--bg-surface)', padding: '10px', borderRadius: '12px', border: isSelected ? '2px solid var(--primary-color)' : '1px solid var(--border-color)', boxShadow: 'var(--card-shadow)', cursor: 'pointer', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', opacity: draggingCardKey === st.key ? 0.3 : 1, transform: 'scale(1)', transition: 'transform 0.1s', position: 'relative' }} onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'} onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}>
+                  <button onClick={(e) => toggleRetire(e, st.key, false)} style={{ position: 'absolute', top: '8px', right: '8px', border: 'none', background: 'none', color: 'var(--text-subtle)', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }} title="將此卡片移至汰舊區">
                     <Archive size={14} />
                   </button>
                   <div style={{ marginBottom: '6px', borderBottom: '1px solid var(--border-color)', paddingBottom: '4px', overflow: 'hidden' }}>
-                    <div style={{ fontSize: '12px', fontWeight: '900', color: 'var(--text-main)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                    <div style={{ fontSize: '12px', fontWeight: '900', color: isSelected ? 'var(--primary-color)' : 'var(--text-main)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
                       <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <Monitor size={12} color="var(--text-muted)" /> {st.brand}
+                        <Monitor size={12} color={isSelected ? 'var(--primary-color)' : 'var(--text-muted)'} /> {st.brand}
                       </span>
-                      <span style={{ fontSize: '10px', fontWeight: '800', color: 'var(--text-muted)', backgroundColor: 'var(--bg-surface-subtle)', padding: '1px 5px', borderRadius: '4px', marginRight: '20px' }}>
-                        共 {st.active + st.shipped + (st.lent || 0) + st.repair + st.scrapped} 個
+                      <span style={{ fontSize: '10px', fontWeight: '800', color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', backgroundColor: 'var(--bg-surface-subtle)', padding: '1px 5px', borderRadius: '4px', marginRight: '20px' }}>
+                        共 {st.total} 個
                       </span>
                     </div>
                     {aggregationMode !== 'BRAND' && (
-                      <div style={{ color: 'var(--text-muted)', fontSize: '10px', fontWeight: '700', marginTop: '1px', paddingLeft: '16px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                      <div style={{ color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', fontSize: '10px', fontWeight: '700', marginTop: '1px', paddingLeft: '16px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
                         {st.type} - {st.model}
                       </div>
                     )}
                     {aggregationMode === 'SPEC' && st.specification && (
-                      <div style={{ color: 'var(--text-subtle)', fontSize: '9px', fontWeight: '500', marginTop: '1px', paddingLeft: '16px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }} title={st.specification}>
+                      <div style={{ color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', fontSize: '9px', fontWeight: '500', marginTop: '1px', paddingLeft: '16px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }} title={st.specification}>
                         {st.specification}
                       </div>
                     )}
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '3px 4px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '3px 6px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>在庫</span><span style={{ color: '#16a34a', fontWeight: '800' }}>{st.active}</span></div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>出貨</span><span style={{ color: '#3b82f6', fontWeight: '800' }}>{st.shipped}</span></div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>借出</span><span style={{ color: '#d97706', fontWeight: '800' }}>{st.lent || 0}</span></div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>故障</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>報廢</span><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
                   </div>
                 </div>
               )}
@@ -751,10 +734,11 @@ const HwList = ({ isSplitMode = false }) => {
             <th style={{ ...thStyle, textAlign: 'left' }}>序號 (SN)</th>
             <th style={{ ...thStyle, textAlign: 'left' }}>規格 (Spec)</th>
             <th style={{ ...thStyle, textAlign: 'left' }}>專案編號/名稱 (Project)</th>
-            <th style={{ ...thStyle, textAlign: 'left' }}>訂單日期</th>
+            <th style={{ ...thStyle, textAlign: 'left' }}>訂單來源 (OrderSource)</th>
             <th style={{ ...thStyle, textAlign: 'left' }}>對應伺服器</th>
             {showServerDetails && <th style={{ ...thStyle, textAlign: 'left' }}>伺服器屬性</th>}
             <th style={{ ...thStyle, textAlign: 'left' }}>客戶</th>
+            <th style={{ ...thStyle, textAlign: 'left' }}>End-user</th>
             {showServerDetails && <th style={{ ...thStyle, textAlign: 'left' }}>位置</th>}
             <th style={{ ...thStyle, textAlign: 'left', width: '100px' }}>狀態</th>
             <th style={{ ...thStyle, textAlign: 'center', width: '80px' }}>功能</th>
@@ -798,7 +782,7 @@ const HwList = ({ isSplitMode = false }) => {
                     );
                   })()}
                 </td>
-                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{nic.custom_attributes?.order_date || '--'}</td>
+                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{nic.custom_attributes?.order_source !== undefined ? (nic.custom_attributes?.order_source || '--') : (nic.custom_attributes?.order_date || '--')}</td>
                 <td style={tdStyle}>
                   <div style={{ color: '#818cf8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <Server size={12} /> {nic.custom_attributes?.server_sn || '--'}
@@ -850,6 +834,11 @@ const HwList = ({ isSplitMode = false }) => {
                         {nic.partner_contact} {nic.partner_phone}
                       </div>
                     )}
+                  </div>
+                </td>
+                <td style={tdStyle}>
+                  <div style={{ fontWeight: 700, color: 'var(--text-main)' }}>
+                    {nic.server_end_user || serverAttrs.end_user || nic.end_user || nic.custom_attributes?.end_user || '--'}
                   </div>
                 </td>
                 {showServerDetails && (
@@ -917,6 +906,16 @@ const HwList = ({ isSplitMode = false }) => {
                         <History size={14} /> 履歷 (History)
                       </button>
                       <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '2px 0' }} />
+                      <button 
+                        onClick={() => { 
+                          setActiveMenuId(null); 
+                          setMenuPosition(null); 
+                          setRmaAsset(nic); 
+                        }} 
+                        style={{ ...menuButtonStyle, color: '#0ea5e9', fontWeight: '700' }}
+                      >
+                        <RefreshCw size={14} /> 原廠換新 / 更換序號 (RMA)
+                      </button>
                       <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); handleEdit(nic); }} style={menuButtonStyle}><Edit2 size={14} /> 編輯詳細資訊</button>
                       <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '2px 0' }} />
                       {nic.ownership === 'COMPANY' ? (
@@ -968,7 +967,7 @@ const HwList = ({ isSplitMode = false }) => {
       <div style={cardStyle}>
         {renderHeader()}
         {renderStats()}
-        {filterType ? (
+        {filterType || selectedCardKey || searchTerm ? (
           renderTable()
         ) : (
           <div style={{ textAlign: 'center', padding: '60px 20px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '16px', border: '1px dashed var(--border-color)', marginTop: '20px' }}>
@@ -1124,12 +1123,21 @@ const HwList = ({ isSplitMode = false }) => {
                 <label style={editLabelStyle}>主機名稱 (HostName)<input type="text" value={editItem.hostname || ''} onChange={(e) => setEditItem({ ...editItem, hostname: e.target.value })} style={editInputStyle} /></label>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
                 <label style={editLabelStyle}>客戶名稱
                   <select value={editItem.client || ''} onChange={(e) => setEditItem({ ...editItem, client: e.target.value })} style={editInputStyle}>
                     <option value="">-- 未設定 --</option>
                     {customers.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
+                </label>
+                <label style={editLabelStyle}>End-user (最終使用者)
+                  <input 
+                    type="text" 
+                    value={editItem.temp_end_user !== undefined ? editItem.temp_end_user : (editItem.end_user || editItem.custom_attributes?.end_user || '')} 
+                    onChange={(e) => setEditItem({ ...editItem, temp_end_user: e.target.value })} 
+                    placeholder="請輸入 End-user"
+                    style={editInputStyle} 
+                  />
                 </label>
                 <label style={editLabelStyle}>放置位置 (Location)<input type="text" value={editItem.location || ''} onChange={(e) => setEditItem({ ...editItem, location: e.target.value })} style={editInputStyle} /></label>
               </div>
@@ -1185,7 +1193,16 @@ const HwList = ({ isSplitMode = false }) => {
                     </div>
                   )}
                 </div>
-                <label style={editLabelStyle}>訂單日期<input type="date" value={editItem.temp_order_date || ''} onChange={(e) => setEditItem({ ...editItem, temp_order_date: e.target.value })} style={editInputStyle} /></label>
+                <label style={editLabelStyle}>
+                  訂單來源 (OrderSource)
+                  <input 
+                    type="text" 
+                    value={editItem.temp_order_source !== undefined ? editItem.temp_order_source : ''} 
+                    onChange={(e) => setEditItem({ ...editItem, temp_order_source: e.target.value })} 
+                    placeholder="請輸入訂單來源 (例: XeAU Nov2022)"
+                    style={editInputStyle} 
+                  />
+                </label>
               </div>
 
               <div style={{ display: 'flex', gap: '12px', marginTop: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '24px' }}>
@@ -1230,6 +1247,14 @@ const HwList = ({ isSplitMode = false }) => {
       <HwRegistrationModal
         isOpen={showAddModal}
         onClose={() => setShowAddModal(false)}
+        onSuccess={loadData}
+      />
+
+      {/* 原廠換新 (RMA) 更換序號彈窗 */}
+      <RmaReplacementModal
+        isOpen={!!rmaAsset}
+        asset={rmaAsset}
+        onClose={() => setRmaAsset(null)}
         onSuccess={loadData}
       />
     </div>

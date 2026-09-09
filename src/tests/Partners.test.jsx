@@ -18,7 +18,7 @@ describe('客戶/廠商管理 (Partners) 升級功能測試', () => {
     window.alert = alertMock;
 
     existingPartners = [
-      { id: 1, type: 'CUSTOMER', name: '富邦綜合證券', contact: 'David Chen', phone: '0918600800', address: '台北市仁愛路四段 169 號 5 樓', is_active: true },
+      { id: 1, type: 'CUSTOMER', name: '富邦綜合證券', contact: 'David Chen', phone: '0918600800', address: '台北市仁愛路四段 169 號 5 樓', project_info: '國法、Project Alpha, IMC', is_active: true },
       { id: 2, type: 'CUSTOMER', name: '富邦綜合證券', contact: 'Mary Wang', phone: '0922111222', address: '台北市仁愛路四段 169 號 6 樓', is_active: true },
       { id: 3, type: 'CUSTOMER', name: '國泰金控', contact: 'David Chen', phone: '0933444555', address: '台北市信義區松仁路 7 號', is_active: true },
       { id: 4, type: 'SUPPLIER', name: '華碩電腦', contact: 'Ken', phone: '02-28943447', address: '台北市北投區立德路 15 號', is_active: true }
@@ -62,7 +62,7 @@ describe('客戶/廠商管理 (Partners) 升級功能測試', () => {
     });
   });
 
-  it('列表應正確顯示公司名稱(全稱)、聯絡人、電話與公司地址', async () => {
+  it('列表應正確顯示公司名稱(全稱)、聯絡人、電話、公司地址與關聯資訊標籤 (空白不被當作分隔符號)', async () => {
     render(<Partners />);
 
     await waitFor(() => {
@@ -72,6 +72,12 @@ describe('客戶/廠商管理 (Partners) 升級功能測試', () => {
       expect(screen.getByText('台北市仁愛路四段 169 號 5 樓')).toBeInTheDocument();
       expect(screen.getByText('關聯資訊')).toBeInTheDocument();
       expect(screen.getByText('關聯資訊 (關鍵字)')).toBeInTheDocument();
+      // 驗證關聯資訊標籤：Project Alpha 中間有空白，應維持同一標籤，不被當作、號切割
+      expect(screen.getByText('🏷️ 國法')).toBeInTheDocument();
+      expect(screen.getByText('🏷️ Project Alpha')).toBeInTheDocument();
+      expect(screen.getByText('🏷️ IMC')).toBeInTheDocument();
+      expect(screen.queryByText('🏷️ Project')).not.toBeInTheDocument();
+      expect(screen.queryByText('🏷️ Alpha')).not.toBeInTheDocument();
     });
   });
 

@@ -23,7 +23,7 @@ if ($LASTEXITCODE -ne 0) {
 
 # 3. Remote Execute
 Write-Host "[3/3] Running migrations and restarting services on server..." -ForegroundColor Yellow
-$remoteCmd = 'cat /opt/erp-management/database/migration_brand_models_types.sql | sudo -u postgres psql -d ERP_db; cat /opt/erp-management/database/migration_spec_optional.sql | sudo -u postgres psql -d ERP_db; cat /opt/erp-management/database/migration_partners_project_info.sql | sudo -u postgres psql -d ERP_db; cat /opt/erp-management/database/migration_outbound_project_name.sql | sudo -u postgres psql -d ERP_db; pm2 restart all; systemctl reload nginx'
+$remoteCmd = 'cat /opt/erp-management/database/migration_brand_models_types.sql | sudo -u postgres psql -d ERP_db; cat /opt/erp-management/database/migration_spec_optional.sql | sudo -u postgres psql -d ERP_db; cat /opt/erp-management/database/migration_partners_project_info.sql | sudo -u postgres psql -d ERP_db; cat /opt/erp-management/database/migration_outbound_project_name.sql | sudo -u postgres psql -d ERP_db; cat /opt/erp-management/database/migration_add_end_user.sql | sudo -u postgres psql -d ERP_db; cat /opt/erp-management/database/migration_inbound_history.sql | sudo -u postgres psql -d ERP_db; pm2 restart all; systemctl reload nginx'
 ssh root@192.168.100.249 $remoteCmd
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Remote commands failed!" -ForegroundColor Red

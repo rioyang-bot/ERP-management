@@ -49,6 +49,25 @@ export const queries = {
   updateAssetOwnership: `UPDATE assets SET ownership = $1 WHERE id = $2`,
   updateMountedHardwareStatus: `UPDATE assets SET status = $1 WHERE custom_attributes->>'server_sn' = $2`,
   checkAssetSnExistsExcludeSelf: `SELECT id, sn FROM assets WHERE TRIM(sn) = TRIM($1) AND id != $2 LIMIT 1`,
+  checkAssetSnExists: `SELECT id, sn FROM assets WHERE TRIM(sn) = TRIM($1) LIMIT 1`,
+  fetchAssetBySn: `
+    SELECT a.*, im.brand, im.model, im.type, im.specification, c.name as category_name
+    FROM assets a
+    JOIN item_master im ON a.item_master_id = im.id
+    LEFT JOIN categories c ON im.category_id = c.id
+    WHERE TRIM(UPPER(a.sn)) = TRIM(UPPER($1))
+    LIMIT 1
+  `,
+  insertRmaAssetRecord: `
+    INSERT INTO assets (
+      item_master_id, sn, client, end_user, hostname, location,
+      installed_date, customer_warranty_expire, system_date, warranty_expire,
+      os, nic, custom_attributes, ownership, status
+    ) VALUES (
+      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14, 'FOR_SALE'), COALESCE($15, 'ACTIVE')
+    ) RETURNING id, sn, status
+  `,
+  updateAssetStatusAndAttributes: `UPDATE assets SET status = $1, custom_attributes = $2 WHERE id = $3`,
   updateMountedHardwareServerSn: `UPDATE assets SET custom_attributes = jsonb_set(COALESCE(custom_attributes, '{}'::jsonb), '{server_sn}', to_jsonb($1::text)) WHERE custom_attributes->>'server_sn' IS NOT NULL AND TRIM(custom_attributes->>'server_sn') = TRIM($2)`,
   updateRepairItemsSn: `UPDATE repair_items SET sn = $1 WHERE sn IS NOT NULL AND TRIM(sn) = TRIM($2)`,
   updateOutboundItemsSn: `UPDATE outbound_items SET sn = $1 WHERE sn IS NOT NULL AND TRIM(sn) = TRIM($2)`,
@@ -287,6 +306,7 @@ export const queries = {
              s.client as server_client, s.location as server_location,
              s.hostname as server_hostname, s.os as server_os, s.nic as server_nic,
              s.custom_attributes as server_custom_attributes,
+             s.custom_attributes->>'end_user' as server_end_user,
              COALESCE(a.custom_attributes->>'contact_person', p.contact_person) as partner_contact,
              COALESCE(a.custom_attributes->>'contact_phone', p.phone) as partner_phone
       FROM assets a 
@@ -305,6 +325,7 @@ export const queries = {
              s.client as server_client, s.location as server_location,
              s.hostname as server_hostname, s.os as server_os, s.nic as server_nic,
              s.custom_attributes as server_custom_attributes,
+             s.custom_attributes->>'end_user' as server_end_user,
              COALESCE(a.custom_attributes->>'contact_person', p.contact_person) as partner_contact,
              COALESCE(a.custom_attributes->>'contact_phone', p.phone) as partner_phone
       FROM assets a 
@@ -318,7 +339,7 @@ export const queries = {
       )
       WHERE i.category_id = (SELECT id FROM categories WHERE name = '硬體')
       ORDER BY a.id DESC`,
-  updateNicDetails: `UPDATE assets SET sn = $1, client = $2, location = $3, custom_attributes = COALESCE(custom_attributes, '{}'::jsonb) || jsonb_build_object('server_sn', $4::text, 'order_date', $5::text, 'project_name', $8::text), hostname = $6, ownership = COALESCE($9, 'FOR_SALE') WHERE id = $7`,
+  updateNicDetails: `UPDATE assets SET sn = $1, client = $2, location = $3, custom_attributes = COALESCE(custom_attributes, '{}'::jsonb) || jsonb_build_object('server_sn', $4::text, 'order_source', $5::text, 'project_name', $8::text, 'end_user', $10::text), hostname = $6, ownership = COALESCE($9, 'FOR_SALE') WHERE id = $7`,
   updateAssetProjectName: `UPDATE assets SET custom_attributes = COALESCE(custom_attributes, '{}'::jsonb) || jsonb_build_object('project_name', $1::text) WHERE id = $2`,
   updateNicSn: `UPDATE assets SET sn = $1 WHERE id = $2`,
   findAssetBySn: `SELECT id FROM assets WHERE TRIM(LOWER(sn)) = TRIM(LOWER($1))`,
@@ -546,7 +567,7 @@ export const queries = {
   fetchFlowHistory: `
     SELECT 
       'INBOUND' as transaction_type,
-      io.order_date as transaction_date,
+      COALESCE(io.order_date, io.created_at::date) as transaction_date,
       io.order_no,
       p.name as partner_name,
       ii.quantity,
@@ -562,10 +583,58 @@ export const queries = {
     WHERE io.status = 'COMPLETED'
     
     UNION ALL
+
+    SELECT 
+      'BATCH_IMPORT' as transaction_type,
+      COALESCE(a.installed_date, a.system_date, a.created_at::date) as transaction_date,
+      COALESCE(a.custom_attributes->>'import_file', a.custom_attributes->>'order_source', '批次匯入') as order_no,
+      COALESCE(a.client, '系統批次匯入') as partner_name,
+      1 as quantity,
+      a.sn,
+      im.brand,
+      im.model,
+      im.specification,
+      a.created_at
+    FROM assets a
+    JOIN item_master im ON a.item_master_id = im.id
+    WHERE (
+      a.custom_attributes->>'batch_imported' = 'true' 
+      OR (a.custom_attributes->>'batch_imported')::boolean = true
+      OR a.custom_attributes->>'import_file' IS NOT NULL
+      OR a.custom_attributes->>'import_date' IS NOT NULL
+      OR NOT EXISTS (
+        SELECT 1 FROM inbound_items ii 
+        WHERE ii.item_id = a.item_master_id 
+          AND ii.sn IS NOT NULL AND a.sn IS NOT NULL 
+          AND TRIM(LOWER(ii.sn)) = TRIM(LOWER(a.sn))
+      )
+    )
+
+    UNION ALL
+
+    SELECT 
+      'BATCH_IMPORT' as transaction_type,
+      im.created_at::date as transaction_date,
+      '初始庫存/批次匯入' as order_no,
+      '系統初始建立' as partner_name,
+      im.stock_qty as quantity,
+      NULL as sn,
+      im.brand,
+      im.model,
+      im.specification,
+      im.created_at
+    FROM item_master im
+    JOIN categories c ON im.category_id = c.id
+    WHERE c.name = '耗材'
+      AND NOT EXISTS (
+        SELECT 1 FROM inbound_items ii WHERE ii.item_id = im.id
+      )
+    
+    UNION ALL
     
     SELECT 
       CASE WHEN o.request_type = 'LEND' THEN 'OUTBOUND_LEND' ELSE 'OUTBOUND_SALE' END as transaction_type,
-      o.shipping_date as transaction_date,
+      COALESCE(o.shipping_date, o.created_at::date) as transaction_date,
       o.request_no as order_no,
       o.customer as partner_name,
       oi.quantity,
@@ -584,7 +653,7 @@ export const queries = {
   fetchItemFlowHistory: `
     SELECT 
       'INBOUND' as transaction_type,
-      io.order_date as transaction_date,
+      COALESCE(io.order_date, io.created_at::date) as transaction_date,
       io.order_no,
       p.name as partner_name,
       ii.quantity,
@@ -597,13 +666,62 @@ export const queries = {
     JOIN inbound_orders io ON ii.inbound_order_id = io.id
     LEFT JOIN partners p ON io.partner_id = p.id
     LEFT JOIN item_master im ON ii.item_id = im.id
-    WHERE io.status = 'COMPLETED' AND ii.item_id = $1
+    WHERE io.status = 'COMPLETED' AND ii.item_id = $1::integer
+    
+    UNION ALL
+
+    SELECT 
+      'BATCH_IMPORT' as transaction_type,
+      COALESCE(a.installed_date, a.system_date, a.created_at::date) as transaction_date,
+      COALESCE(a.custom_attributes->>'import_file', a.custom_attributes->>'order_source', '批次匯入') as order_no,
+      COALESCE(a.client, '系統批次匯入') as partner_name,
+      1 as quantity,
+      a.sn,
+      im.brand,
+      im.model,
+      im.specification,
+      a.created_at
+    FROM assets a
+    JOIN item_master im ON a.item_master_id = im.id
+    WHERE a.item_master_id = $1::integer
+      AND (
+        a.custom_attributes->>'batch_imported' = 'true' 
+        OR (a.custom_attributes->>'batch_imported')::boolean = true
+        OR a.custom_attributes->>'import_file' IS NOT NULL
+        OR a.custom_attributes->>'import_date' IS NOT NULL
+        OR NOT EXISTS (
+          SELECT 1 FROM inbound_items ii 
+          WHERE ii.item_id = a.item_master_id 
+            AND ii.sn IS NOT NULL AND a.sn IS NOT NULL 
+            AND TRIM(LOWER(ii.sn)) = TRIM(LOWER(a.sn))
+        )
+      )
+
+    UNION ALL
+
+    SELECT 
+      'BATCH_IMPORT' as transaction_type,
+      im.created_at::date as transaction_date,
+      '初始庫存/批次匯入' as order_no,
+      '系統初始建立' as partner_name,
+      im.stock_qty as quantity,
+      NULL as sn,
+      im.brand,
+      im.model,
+      im.specification,
+      im.created_at
+    FROM item_master im
+    JOIN categories c ON im.category_id = c.id
+    WHERE im.id = $1::integer AND c.name = '耗材'
+      AND NOT EXISTS (
+        SELECT 1 FROM inbound_items ii WHERE ii.item_id = im.id
+      )
     
     UNION ALL
     
     SELECT 
       CASE WHEN o.request_type = 'LEND' THEN 'OUTBOUND_LEND' ELSE 'OUTBOUND_SALE' END as transaction_type,
-      o.shipping_date as transaction_date,
+      COALESCE(o.shipping_date, o.created_at::date) as transaction_date,
       o.request_no as order_no,
       o.customer as partner_name,
       oi.quantity,
@@ -615,7 +733,7 @@ export const queries = {
     FROM outbound_items oi
     JOIN outbound_requests o ON oi.request_id = o.id
     LEFT JOIN item_master im ON oi.item_id = im.id
-    WHERE o.status IN ('SHIPPED', 'RETURNED') AND oi.item_id = $1
+    WHERE o.status IN ('SHIPPED', 'RETURNED') AND oi.item_id = $1::integer
     
     ORDER BY transaction_date DESC, created_at DESC
   `,

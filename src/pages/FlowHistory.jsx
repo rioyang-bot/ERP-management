@@ -84,6 +84,8 @@ const FlowHistory = () => {
     switch (type) {
       case 'INBOUND':
         return { label: '進貨入庫', icon: <ArrowDownToLine size={16} />, color: '#10b981', bg: 'rgba(16, 185, 129, 0.15)', border: 'rgba(16, 185, 129, 0.3)' };
+      case 'BATCH_IMPORT':
+        return { label: '批次匯入', icon: <FileSpreadsheet size={16} />, color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.15)', border: 'rgba(139, 92, 246, 0.3)' };
       case 'OUTBOUND_SALE':
         return { label: '出貨發貨', icon: <ArrowUpFromLine size={16} />, color: '#60a5fa', bg: 'rgba(59, 130, 246, 0.15)', border: 'rgba(59, 130, 246, 0.3)' };
       case 'OUTBOUND_LEND':
@@ -206,6 +208,12 @@ const FlowHistory = () => {
               style={{ padding: '6px 12px', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '13px', backgroundColor: typeFilter === 'INBOUND' ? '#10b981' : 'transparent', color: typeFilter === 'INBOUND' ? '#ffffff' : 'var(--text-muted)' }}
             >
               進貨入庫
+            </button>
+            <button
+              onClick={() => setTypeFilter('BATCH_IMPORT')}
+              style={{ padding: '6px 12px', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '13px', backgroundColor: typeFilter === 'BATCH_IMPORT' ? '#8b5cf6' : 'transparent', color: typeFilter === 'BATCH_IMPORT' ? '#ffffff' : 'var(--text-muted)' }}
+            >
+              批次匯入
             </button>
             <button
               onClick={() => setTypeFilter('OUTBOUND_SALE')}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, History, ArrowDownToLine, ArrowUpFromLine, ArrowRightLeft, RefreshCw, Box, Layers, Hash, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, History, ArrowDownToLine, ArrowUpFromLine, ArrowRightLeft, RefreshCw, Box, Layers, Hash, ChevronLeft, ChevronRight, FileSpreadsheet } from 'lucide-react';
 
 const ItemLedgerModal = ({ isOpen, onClose, item }) => {
   const [records, setRecords] = useState([]);
@@ -8,21 +8,26 @@ const ItemLedgerModal = ({ isOpen, onClose, item }) => {
   const itemsPerPage = 10;
 
   const fetchHistory = useCallback(async () => {
-    if (!item?.item_master_id) return;
+    const targetMasterId = item?.item_master_id || item?.id;
+    if (!targetMasterId) {
+      setRecords([]);
+      return;
+    }
     setLoading(true);
     try {
-      const res = await window.electronAPI.namedQuery('fetchItemFlowHistory', [item.item_master_id]);
+      const res = await window.electronAPI.namedQuery('fetchItemFlowHistory', [targetMasterId]);
       if (res.success) {
         let rows = res.rows || [];
-        // 如果有指定 SN (例如設備)，只顯示該 SN 的進出紀錄
+        // 如果有指定 SN (例如設備/硬體)，只顯示該 SN 的進出紀錄 (忽略大小寫與前後空白)
         if (item.sn) {
-          rows = rows.filter(r => r.sn === item.sn);
+          const targetSn = String(item.sn).trim().toLowerCase();
+          rows = rows.filter(r => r.sn && String(r.sn).trim().toLowerCase() === targetSn);
         }
         setRecords(rows);
         setCurrentPage(1); // 重置頁碼
       } else {
         console.error('Fetch item flow history failed:', res.error);
-        alert('載入履歷失敗');
+        alert('載入履歷失敗：' + (res.error || '無法取得歷史軌跡'));
       }
     } catch (err) {
       console.error('Error fetching item history:', err);
@@ -44,6 +49,8 @@ const ItemLedgerModal = ({ isOpen, onClose, item }) => {
     switch (type) {
       case 'INBOUND':
         return { label: '進貨入庫', icon: <ArrowDownToLine size={14} />, color: '#10b981', bg: 'rgba(16, 185, 129, 0.15)' };
+      case 'BATCH_IMPORT':
+        return { label: '批次匯入', icon: <FileSpreadsheet size={14} />, color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.15)' };
       case 'OUTBOUND_SALE':
         return { label: '出貨發貨', icon: <ArrowUpFromLine size={14} />, color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.15)' };
       case 'OUTBOUND_LEND':

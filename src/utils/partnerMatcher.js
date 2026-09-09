@@ -137,7 +137,7 @@ export function matchPartnerContact(rawContact = '', rawClient = '', partners = 
 
     // 6. 專案資訊 / 關鍵字比對 (例如 rawContact 為 'Yuanta imc'，其中 'imc' 命中 Niky 的專案資訊 '國法、IMC')
     if (pProject) {
-      const rawProjectList = pProject.split(/[\s,，、/\\|;；]+/).map(s => s.trim()).filter(Boolean);
+      const rawProjectList = pProject.split(/[,，、/\\|;；]+/).map(s => s.trim()).filter(Boolean);
       for (const projName of rawProjectList) {
         const normProj = normalizeStr(projName);
         if (
@@ -197,6 +197,7 @@ export function matchPartnerContact(rawContact = '', rawClient = '', partners = 
       raw_contact: cleanRawContact,
       raw_client: cleanRawClient,
       matched_project: bestMatchedProject || '',
+      matched_relation: bestMatchedProject || '',
       isFuzzy: cleanRawContact
         ? (normRawContact !== normalizeStr(standardContact))
         : Boolean(standardContact && (normRawClient !== normalizeStr(standardClient) || normRawClient.includes(normalizeStr(standardContact)))),
@@ -214,6 +215,7 @@ export function matchPartnerContact(rawContact = '', rawClient = '', partners = 
     raw_contact: cleanRawContact,
     raw_client: cleanRawClient,
     matched_project: '',
+    matched_relation: '',
     isFuzzy: false,
     score: 0
   };

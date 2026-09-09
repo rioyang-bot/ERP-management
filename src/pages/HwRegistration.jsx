@@ -27,7 +27,7 @@ const HwRegistration = ({ isSplitMode = false }) => {
 
   const [formData, setFormData] = useState({
     brand: '', type: '', model: '', specification: '', sn: '',
-    order_date: '', server_sn: '', project_name: '', ownership: 'FOR_SALE'
+    order_source: '', server_sn: '', project_name: '', ownership: 'FOR_SALE'
   });
 
   const validateAndSanitize = (val, fieldName = '欄位') => {
@@ -222,7 +222,7 @@ const HwRegistration = ({ isSplitMode = false }) => {
 
       for (const sn of snList) {
         const custom_attributes = {
-          order_date: formData.order_date,
+          order_source: formData.order_source || '',
           server_sn: safeServerSn,
           project_name: formData.project_name || ''
         };
@@ -493,8 +493,15 @@ const HwRegistration = ({ isSplitMode = false }) => {
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
               <div>
-                <label style={labelStyle}>訂單日期 (Order Date)</label>
-                <input type="date" name="order_date" value={formData.order_date} onChange={handleChange} style={inputStyle} />
+                <label style={labelStyle}>訂單來源 (OrderSource)</label>
+                <input 
+                  type="text" 
+                  name="order_source" 
+                  value={formData.order_source} 
+                  onChange={handleChange} 
+                  style={inputStyle} 
+                  placeholder="請輸入訂單來源 (例: XeAU Nov2022)" 
+                />
               </div>
               <div>
                 <label style={labelStyle}>對應 Server SN</label>

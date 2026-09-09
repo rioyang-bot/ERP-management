@@ -321,5 +321,47 @@ describe('HwBatchImportModal 硬體批次匯入（自選/建立主檔與格式�
       ]));
     });
   });
+
+  it('匯入硬體資料時，應能自動識別並呈現 End-user 欄位，並寫入 custom_attributes.end_user', async () => {
+    const testData = [
+      {
+        'Brand': 'Solarflare',
+        'Type': 'NIC',
+        'Model': 'SF2541',
+        'SF2541 SN': 'HW-ENDUSER-999',
+        'Customer': 'Yuanta',
+        'End-user': '新竹分行',
+        'Status': 'ACTIVE'
+      }
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(testData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'NICs');
+    const u8 = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+    const file = new File([u8], 'hw_end_user.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+    const { container } = render(<HwBatchImportModal isOpen={true} onClose={vi.fn()} />);
+
+    const fileInput = container.querySelector('input[type="file"]');
+    await userEvent.upload(fileInput, file);
+
+    await waitFor(() => {
+      expect(screen.getByText('HW-ENDUSER-999')).toBeInTheDocument();
+      expect(screen.getByText('新竹分行')).toBeInTheDocument();
+    });
+
+    const importBtn = screen.getByText(/確認批次匯入/i);
+    await userEvent.click(importBtn);
+
+    await waitFor(() => {
+      expect(namedQueryMock).toHaveBeenCalledWith('insertAssetRecord', expect.arrayContaining([
+        expect.objectContaining({
+          batch_imported: true,
+          end_user: '新竹分行'
+        })
+      ]));
+    });
+  });
 });
 

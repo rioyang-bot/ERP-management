@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Search, Edit2, X, Save, MoreHorizontal, MoreVertical, MapPin, User, Trash2, CheckCircle, ShoppingBag, Wrench, ShieldAlert, Cpu, Archive, RotateCcw, Server, Send, History, Building2, Info } from 'lucide-react';
+import { Search, Edit2, X, Save, MoreHorizontal, MoreVertical, MapPin, User, Trash2, CheckCircle, ShoppingBag, Wrench, ShieldAlert, Cpu, Archive, RotateCcw, Server, Send, History, Building2, Info, RefreshCw } from 'lucide-react';
 import ItemLedgerModal from '../components/ItemLedgerModal';
 import DeviceRegistrationModal from '../components/DeviceRegistrationModal';
+import RmaReplacementModal from '../components/RmaReplacementModal';
 import { logUpdate, logDelete, logStatusChange } from '../utils/auditLogger';
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
+import { isItemRetired, getItemAggregationKey, aggregateCards, computeNewRetiredKeys } from '../utils/cardAggregation';
 
 const DeviceList = ({ isSplitMode = false }) => {
   const navigate = useNavigate();
@@ -22,6 +24,10 @@ const DeviceList = ({ isSplitMode = false }) => {
   const [selectedCardKey, setSelectedCardKey] = useState(null);
   const [aggregationMode, setAggregationMode] = useState(() => {
     return localStorage.getItem('device_aggregation_mode') || 'SPEC';
+  });
+  const [retiredKeys, setRetiredKeys] = useState(() => {
+    const saved = localStorage.getItem('device_list_retired_keys');
+    return saved ? JSON.parse(saved) : [];
   });
 
   const handleAggregationModeChange = (mode) => {
@@ -73,6 +79,7 @@ const DeviceList = ({ isSplitMode = false }) => {
   const [expandedItems, setExpandedItems] = useState({}); // 控制摺疊狀態
   const [expandedLabItems, setExpandedLabItems] = useState({}); // 控制 LAB 耗材摺疊
   const [ledgerItem, setLedgerItem] = useState(null); // 品項履歷 Modal
+  const [rmaAsset, setRmaAsset] = useState(null); // 原廠換新 RMA Modal
 
   const statusConfig = {
     ACTIVE: { label: '在庫', color: '#047857', bgColor: '#dcfce7', borderColor: '#bbf7d0' },
@@ -139,6 +146,7 @@ const DeviceList = ({ isSplitMode = false }) => {
     let attrs = {};
     try { attrs = typeof f.custom_attributes === 'string' ? JSON.parse(f.custom_attributes) : (f.custom_attributes || {}); } catch { attrs = {}; }
     f.custom_attributes = attrs;
+    f.end_user = f.end_user || attrs.end_user || '';
     f.contact_person = attrs.contact_person || f.partner_contact || '';
     f.contact_phone = attrs.contact_phone || f.partner_phone || '';
     setEditItem(f);
@@ -265,6 +273,7 @@ const DeviceList = ({ isSplitMode = false }) => {
 
     const updatedCustomAttributes = {
       ...(editItem.custom_attributes || {}),
+      end_user: editItem.end_user || '',
       contact_person: editItem.contact_person || '',
       contact_phone: editItem.contact_phone || ''
     };
@@ -314,24 +323,23 @@ const DeviceList = ({ isSplitMode = false }) => {
   const sortedItems = items
     .filter(item => {
       if (selectedCardKey) {
-        const b = item.brand || '未知';
-        const t = item.type || '未分類';
-        const m = item.model || '未設定型號';
-        const s = (item.specification || '').trim();
-        let key = '';
-        if (aggregationMode === 'SPEC') key = `${b} - ${t} - ${m} - ${s}`;
-        else if (aggregationMode === 'MODEL') key = `${b} - ${t} - ${m}`;
-        else if (aggregationMode === 'BRAND') key = `${b}`;
-        if (key !== selectedCardKey) return false;
+        const isTargetRetired = selectedCardKey.endsWith(':::RETIRED');
+        const targetKey = isTargetRetired ? selectedCardKey.replace(':::RETIRED', '') : selectedCardKey;
+        const itemKey = getItemAggregationKey(item, aggregationMode);
+        const itemRetired = isItemRetired(item, retiredKeys);
+        if (itemKey !== targetKey || itemRetired !== isTargetRetired) return false;
       }
       const searchTerms = searchTerm.toLowerCase().split(/\s+/).filter(t => t);
       if (searchTerms.length === 0) return true;
-      return searchTerms.every(term => 
-        (item.sn || '').toLowerCase().includes(term) || (item.specification || '').toLowerCase().includes(term) ||
-        (item.hostname || '').toLowerCase().includes(term) || (item.brand || '').toLowerCase().includes(term) ||
-        (item.model || '').toLowerCase().includes(term) || (item.client || '').toLowerCase().includes(term) ||
-        (item.location || '').toLowerCase().includes(term)
-      );
+      return searchTerms.every(term => {
+        let attrs = {};
+        try { attrs = typeof item.custom_attributes === 'string' ? JSON.parse(item.custom_attributes) : (item.custom_attributes || {}); } catch {}
+        return (item.sn || '').toLowerCase().includes(term) || (item.specification || '').toLowerCase().includes(term) ||
+          (item.hostname || '').toLowerCase().includes(term) || (item.brand || '').toLowerCase().includes(term) ||
+          (item.model || '').toLowerCase().includes(term) || (item.client || '').toLowerCase().includes(term) ||
+          (item.end_user || attrs.end_user || '').toLowerCase().includes(term) ||
+          (item.location || '').toLowerCase().includes(term);
+      });
     })
     .sort((a, b) => (statusPriority[a.status] || 99) - (statusPriority[b.status] || 99));
 
@@ -360,23 +368,17 @@ const DeviceList = ({ isSplitMode = false }) => {
     setDraggingCardKey(null);
   };
 
-  const [retiredKeys, setRetiredKeys] = useState(() => {
-    const saved = localStorage.getItem('device_list_retired_keys');
-    return saved ? JSON.parse(saved) : [];
-  });
 
-  const toggleRetire = (e, key) => {
+  const toggleRetire = (e, key, isRetiredParam) => {
     e.stopPropagation();
-    const isRetired = retiredKeys.includes(key);
+    const isRetired = isRetiredParam !== undefined ? isRetiredParam : retiredKeys.includes(key);
     const msg = isRetired ? `確定要將此卡片從汰舊區復原嗎？` : `確定要將此卡片移至汰舊區嗎？`;
     
     setConfirmModal({
       show: true,
       msg,
       onConfirm: () => {
-        const newRetired = isRetired 
-          ? retiredKeys.filter(k => k !== key)
-          : [...retiredKeys, key];
+        const newRetired = computeNewRetiredKeys(key, isRetired, retiredKeys, aggregationMode);
         setRetiredKeys(newRetired);
         localStorage.setItem('device_list_retired_keys', JSON.stringify(newRetired));
         window.dispatchEvent(new CustomEvent('retired-update'));
@@ -385,69 +387,34 @@ const DeviceList = ({ isSplitMode = false }) => {
     });
   };
 
-
   const handleCardClick = (st) => {
-    if (selectedCardKey === st.key) {
+    const cardId = st.isRetired ? `${st.key}:::RETIRED` : st.key;
+    if (selectedCardKey === cardId) {
       setSelectedCardKey(null);
     } else {
-      setSelectedCardKey(st.key);
+      setSelectedCardKey(cardId);
     }
     setCurrentPage(1);
   };
 
   const renderStats = () => {
-    const statsMap = items.reduce((acc, curr) => {
-      const brandStr = curr.brand || '未知';
-      const typeStr = curr.type || '未分類';
-      const modelStr = curr.model || '未設定型號';
-      const specStr = (curr.specification || '').trim();
-      let key = '';
-      if (aggregationMode === 'SPEC') {
-        key = `${brandStr} - ${typeStr} - ${modelStr} - ${specStr}`;
-      } else if (aggregationMode === 'MODEL') {
-        key = `${brandStr} - ${typeStr} - ${modelStr}`;
-      } else if (aggregationMode === 'BRAND') {
-        key = `${brandStr}`;
-      }
-      if (!acc[key]) {
-        acc[key] = { 
-          key, 
-          brand: brandStr, 
-          type: typeStr, 
-          model: modelStr, 
-          specification: specStr, 
-          total: 0, 
-          active: 0, 
-          shipped: 0, 
-          lent: 0, 
-          repair: 0, 
-          scrapped: 0 
-        };
-      }
-      acc[key].total++;
-      const s = curr.status;
-      if (s === 'ACTIVE') acc[key].active++;
-      else if (s === 'SHIPPED') acc[key].shipped++;
-      else if (s === 'LENT') acc[key].lent++;
-      else if (s === 'REPAIRING' || s === 'REPAIR') acc[key].repair++;
-      else if (s === 'PENDING_SCRAP' || s === 'SCRAPPED') acc[key].scrapped++;
-      return acc;
-    }, {});
+    const { activeStatsMap, retiredStatsMap } = aggregateCards(items, aggregationMode, retiredKeys);
+    const activeKeys = Object.keys(activeStatsMap);
+    const retiredList = Object.values(retiredStatsMap);
 
-    const allKeys = Object.keys(statsMap);
-    const activeKeys = allKeys.filter(k => !retiredKeys.includes(k));
-    const retiredList = allKeys.filter(k => retiredKeys.includes(k)).map(k => statsMap[k]);
-
-    if (allKeys.length === 0) return null;
+    if (activeKeys.length === 0 && retiredList.length === 0) return null;
 
     if (brandFilter || searchTerm || selectedCardKey) {
       const searchTerms = searchTerm.toLowerCase().split(/\s+/).filter(t => t);
-      const displayKeys = allKeys.filter(k => {
-        const lk = k.toLowerCase();
-        return searchTerms.length === 0 || searchTerms.every(t => lk.includes(t));
-      });
-      const activeMatches = displayKeys.filter(k => !retiredKeys.includes(k)).map(k => statsMap[k]);
-      const retiredMatches = displayKeys.filter(k => retiredKeys.includes(k)).map(k => statsMap[k]);
+      const filterCard = (st) => {
+        if (brandFilter && st.brand !== brandFilter) return false;
+        if (searchTerms.length === 0) return true;
+        const target = `${st.brand} ${st.type} ${st.model} ${st.specification}`.toLowerCase();
+        return searchTerms.every(t => target.includes(t));
+      };
+
+      const activeMatches = Object.values(activeStatsMap).filter(filterCard);
+      const retiredMatches = Object.values(retiredStatsMap).filter(filterCard);
 
       return (
         <div style={{ position: 'relative' }}>
@@ -473,7 +440,7 @@ const DeviceList = ({ isSplitMode = false }) => {
                     position: 'relative'
                   }}
                 >
-                  <button onClick={(e) => toggleRetire(e, st.key)} style={{ position: 'absolute', top: '8px', right: '8px', border: 'none', background: 'none', color: 'var(--text-subtle)', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }} title="將此卡片移至汰舊區">
+                  <button onClick={(e) => toggleRetire(e, st.key, false)} style={{ position: 'absolute', top: '8px', right: '8px', border: 'none', background: 'none', color: 'var(--text-subtle)', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }} title="將此卡片移至汰舊區">
                     <Archive size={14} />
                   </button>
                   <div style={{ marginBottom: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>
@@ -512,7 +479,7 @@ const DeviceList = ({ isSplitMode = false }) => {
       );
     }
 
-    // 1. 自動清理佈局：移除已不存在於 allKeys 的幽靈 Key
+    // 1. 自動清理佈局：移除已不存在於 activeKeys 的幽靈 Key
     const cleanedLayoutMap = {};
     Object.entries(layoutMap).forEach(([idx, key]) => {
       if (activeKeys.includes(key)) cleanedLayoutMap[idx] = key;
@@ -522,6 +489,7 @@ const DeviceList = ({ isSplitMode = false }) => {
     const assignedKeys = Object.values(cleanedLayoutMap);
     const missingKeys = activeKeys.filter(k => !assignedKeys.includes(k));
     
+    let currentLayoutMap = cleanedLayoutMap;
     if (missingKeys.length > 0 || Object.keys(cleanedLayoutMap).length !== Object.keys(layoutMap).length) {
       const updatedMap = { ...cleanedLayoutMap };
       let currentIdx = 0;
@@ -531,10 +499,11 @@ const DeviceList = ({ isSplitMode = false }) => {
       });
       setLayoutMap(updatedMap);
       localStorage.setItem('device_list_layout_map', JSON.stringify(updatedMap));
+      currentLayoutMap = updatedMap;
     }
 
     // 3. 根據清理後的佈局計算實際需要的行數
-    const maxOccupiedIdx = Object.keys(cleanedLayoutMap).reduce((max, current) => Math.max(max, parseInt(current)), -1);
+    const maxOccupiedIdx = Object.keys(currentLayoutMap).reduce((max, current) => Math.max(max, parseInt(current)), -1);
     const rows = Math.max(1, Math.ceil((maxOccupiedIdx + 1) / 6) + (draggingCardKey ? 1 : 0));
     const SLOTS_COUNT = rows * 6;
     const slots = Array.from({ length: SLOTS_COUNT });
@@ -542,14 +511,14 @@ const DeviceList = ({ isSplitMode = false }) => {
     return (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '12px', marginBottom: '24px', padding: '16px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '16px', border: '1px solid var(--border-color)' }}>
         {slots.map((_, idx) => {
-          const cardKey = layoutMap[idx];
-          const st = statsMap[cardKey];
+          const cardKey = currentLayoutMap[idx];
+          const st = activeStatsMap[cardKey];
           const isSelected = st && selectedCardKey === st.key;
           return (
             <div key={idx} onDragOver={handleSlotDragOver} onDrop={(e) => handleDropOnSlot(e, idx)} style={{ minHeight: '100px', borderRadius: '12px', border: draggingCardKey ? '1px dashed var(--border-color)' : '1px solid transparent', backgroundColor: draggingCardKey ? 'var(--bg-surface-hover)' : 'transparent', transition: 'all 0.2s' }}>
               {st && (
                 <div draggable onDragStart={(e) => handleCardDragStart(e, st.key)} onClick={() => handleCardClick(st)} style={{ backgroundColor: isSelected ? 'var(--primary-bg, rgba(37, 99, 235, 0.08))' : 'var(--bg-surface)', padding: '12px', borderRadius: '12px', border: isSelected ? '2px solid var(--primary-color)' : '1px solid var(--border-color)', boxShadow: isSelected ? '0 4px 12px rgba(37, 99, 235, 0.2)' : 'var(--card-shadow)', cursor: 'pointer', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', opacity: draggingCardKey === st.key ? 0.3 : 1, transform: 'scale(1)', transition: 'transform 0.1s', position: 'relative' }} onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'} onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}>
-                  <button onClick={(e) => toggleRetire(e, st.key)} style={{ position: 'absolute', top: '8px', right: '8px', border: 'none', background: 'none', color: 'var(--text-subtle)', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }} title="將此卡片移至汰舊區">
+                  <button onClick={(e) => toggleRetire(e, st.key, false)} style={{ position: 'absolute', top: '8px', right: '8px', border: 'none', background: 'none', color: 'var(--text-subtle)', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }} title="將此卡片移至汰舊區">
                     <Archive size={14} />
                   </button>
                   <div style={{ marginBottom: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>
@@ -597,35 +566,58 @@ const DeviceList = ({ isSplitMode = false }) => {
           <Archive size={18} /> 汰舊 / 停用區塊 (Retired Items)
         </h3>
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-          {list.map(st => (
-            <div key={st.key} onClick={() => handleCardClick(st)} style={{ backgroundColor: 'var(--bg-surface)', padding: '10px', borderRadius: '12px', border: '1px solid var(--border-color)', cursor: 'pointer', minWidth: '220px', opacity: 0.6, position: 'relative' }} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} onMouseLeave={(e) => e.currentTarget.style.opacity = '0.6'}>
-              <button onClick={(e) => toggleRetire(e, st.key)} style={{ position: 'absolute', top: '8px', right: '8px', border: 'none', background: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', borderRadius: '4px', padding: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center' }} title="復原此卡片">
-                <RotateCcw size={14} />
-              </button>
-              <div style={{ marginBottom: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>
-                <div style={{ fontSize: '12px', fontWeight: '900', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <Cpu size={12} color="var(--text-muted)" /> {st.brand}
+          {list.map(st => {
+            const isSelected = selectedCardKey === `${st.key}:::RETIRED`;
+            return (
+              <div 
+                key={st.key} 
+                onClick={() => handleCardClick(st)} 
+                style={{ 
+                  backgroundColor: isSelected ? 'var(--primary-bg, rgba(37, 99, 235, 0.08))' : 'var(--bg-surface)', 
+                  padding: '10px', 
+                  borderRadius: '12px', 
+                  border: isSelected ? '2px solid var(--primary-color)' : '1px solid var(--border-color)', 
+                  cursor: 'pointer', 
+                  minWidth: '220px', 
+                  opacity: isSelected ? 1 : 0.6, 
+                  position: 'relative' 
+                }} 
+                onMouseEnter={(e) => e.currentTarget.style.opacity = '1'} 
+                onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.opacity = '0.6'; }}
+              >
+                <button onClick={(e) => toggleRetire(e, st.key, true)} style={{ position: 'absolute', top: '8px', right: '8px', border: 'none', background: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', borderRadius: '4px', padding: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center' }} title="復原此卡片">
+                  <RotateCcw size={14} />
+                </button>
+                <div style={{ marginBottom: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: '900', color: isSelected ? 'var(--primary-color)' : 'var(--text-main)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Cpu size={12} color={isSelected ? 'var(--primary-color)' : 'var(--text-muted)'} /> {st.brand}
+                    </span>
+                    <span style={{ fontSize: '10px', fontWeight: '800', color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', backgroundColor: 'var(--bg-surface-subtle)', padding: '1px 5px', borderRadius: '4px', marginRight: '22px' }}>
+                      共 {st.total} 台
+                    </span>
+                  </div>
+                  {aggregationMode !== 'BRAND' && (
+                    <div style={{ color: 'var(--text-muted)', fontSize: '10px', fontWeight: '700', marginTop: '2px', paddingLeft: '16px' }}>
+                      {st.type} - {st.model}
+                    </div>
+                  )}
+                  {aggregationMode === 'SPEC' && st.specification && (
+                    <div style={{ color: 'var(--text-subtle)', fontSize: '9px', fontWeight: '500', marginTop: '2px', paddingLeft: '16px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }} title={st.specification}>
+                      {st.specification}
+                    </div>
+                  )}
                 </div>
-                {aggregationMode !== 'BRAND' && (
-                  <div style={{ color: 'var(--text-muted)', fontSize: '10px', fontWeight: '700', marginTop: '2px', paddingLeft: '16px' }}>
-                    {st.type} - {st.model}
-                  </div>
-                )}
-                {aggregationMode === 'SPEC' && st.specification && (
-                  <div style={{ color: 'var(--text-subtle)', fontSize: '9px', fontWeight: '500', marginTop: '2px', paddingLeft: '16px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }} title={st.specification}>
-                    {st.specification}
-                  </div>
-                )}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '3px 6px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>在庫</span><span style={{ color: '#16a34a', fontWeight: '800' }}>{st.active}</span></div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>出貨</span><span style={{ color: '#3b82f6', fontWeight: '800' }}>{st.shipped}</span></div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>借出</span><span style={{ color: '#d97706', fontWeight: '800' }}>{st.lent || 0}</span></div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>故障</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>報廢</span><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
+                </div>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '3px 6px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>在庫</span><span style={{ color: '#16a34a', fontWeight: '800' }}>{st.active}</span></div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>出貨</span><span style={{ color: '#3b82f6', fontWeight: '800' }}>{st.shipped}</span></div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>借出</span><span style={{ color: '#d97706', fontWeight: '800' }}>{st.lent || 0}</span></div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>故障</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>報廢</span><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     );
@@ -807,6 +799,7 @@ const DeviceList = ({ isSplitMode = false }) => {
                           <th style={{ ...thStyle, textAlign: 'left' }}>自訂設備屬性</th>
                           <th style={{ ...thStyle, textAlign: 'left' }}>搭載硬體</th>
                           <th style={{ ...thStyle, textAlign: 'left' }}>客戶</th>
+                          <th style={{ ...thStyle, textAlign: 'left' }}>End-user</th>
                           <th style={{ ...thStyle, textAlign: 'left' }}>位置</th>
                           <th style={{ ...thStyle, textAlign: 'left' }}>保固資訊 (P/S/W/C)</th>
                           <th style={{ ...thStyle, textAlign: 'left', width: '100px' }}>狀態</th>
@@ -915,6 +908,11 @@ const DeviceList = ({ isSplitMode = false }) => {
                                 </div>
                               </td>
                               <td style={tdStyle}>
+                                <div style={{ fontWeight: 700, color: 'var(--text-main)' }}>
+                                  {item.end_user || attrs.end_user || '--'}
+                                </div>
+                              </td>
+                              <td style={tdStyle}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-main)' }}>
                                   <MapPin size={14} color="var(--text-muted)" /> {item.location || '--'}
                                 </div>
@@ -1000,6 +998,17 @@ const DeviceList = ({ isSplitMode = false }) => {
                                     </button>
                                     <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '2px 0' }} />
                                     <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); handleEditClick(item); }} style={menuButtonStyle}><Edit2 size={14} /> 編輯詳細資訊</button>
+                                    <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '2px 0' }} />
+                                    <button 
+                                      onClick={() => { 
+                                        setActiveMenuId(null); 
+                                        setMenuPosition(null); 
+                                        setRmaAsset(item); 
+                                      }} 
+                                      style={{ ...menuButtonStyle, color: '#0ea5e9', fontWeight: '700' }}
+                                    >
+                                      <RefreshCw size={14} /> 原廠換新 / 更換序號 (RMA)
+                                    </button>
                                     <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '2px 0' }} />
                                     {item.ownership === 'COMPANY' ? (
                                       <button 
@@ -1229,7 +1238,7 @@ const DeviceList = ({ isSplitMode = false }) => {
                 </div>
                 <div><label style={editLabelStyle}>主機名稱 (HostName)</label><input type="text" value={editItem.hostname || ''} onChange={(e) => setEditItem({...editItem, hostname: e.target.value})} style={editInputStyle} /></div>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
                 <div>
                   <label htmlFor="edit-client-select" style={editLabelStyle}>客戶名稱</label>
                   <select 
@@ -1252,6 +1261,19 @@ const DeviceList = ({ isSplitMode = false }) => {
                     <option value="">請選擇</option>
                     {Array.from(new Set(customers.map(c => c.name))).map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
+                </div>
+                <div>
+                  <label style={editLabelStyle}>End-user (最終使用者)</label>
+                  <input 
+                    type="text" 
+                    value={editItem.end_user || ''} 
+                    onChange={(e) => setEditItem({
+                      ...editItem, 
+                      end_user: e.target.value
+                    })} 
+                    placeholder="輸入 End-user" 
+                    style={editInputStyle} 
+                  />
                 </div>
                 <div>
                   <label htmlFor="edit-contact-select" style={editLabelStyle}>聯絡人</label>
@@ -1455,6 +1477,16 @@ const DeviceList = ({ isSplitMode = false }) => {
         onClose={() => setShowAddModal(false)}
         onSuccess={fetchAssets}
       />
+
+      {/* 原廠換新 RMA Modal */}
+      {rmaAsset && (
+        <RmaReplacementModal
+          isOpen={!!rmaAsset}
+          asset={rmaAsset}
+          onClose={() => setRmaAsset(null)}
+          onSuccess={fetchAssets}
+        />
+      )}
     </div>
   );
 };

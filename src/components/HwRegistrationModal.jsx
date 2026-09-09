@@ -23,7 +23,7 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
 
   const [formData, setFormData] = useState({
     brand: '', type: '', model: '', specification: '', sn: '',
-    order_date: '', server_sn: '', project_name: '', ownership: 'FOR_SALE'
+    order_source: '', server_sn: '', project_name: '', ownership: 'FOR_SALE'
   });
 
   const validateAndSanitize = (val, fieldName = '欄位') => {
@@ -217,7 +217,7 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
 
       for (const sn of snList) {
         const custom_attributes = {
-          order_date: formData.order_date,
+          order_source: formData.order_source || '',
           server_sn: safeServerSn,
           project_name: formData.project_name || ''
         };
@@ -501,8 +501,15 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                 <input name="project_name" value={formData.project_name} onChange={handleChange} style={inputStyle} placeholder="輸入或選取專案" />
               </div>
               <div>
-                <label style={labelStyle}>下單日期 (Order Date)</label>
-                <input type="date" name="order_date" value={formData.order_date} onChange={handleChange} style={inputStyle} />
+                <label style={labelStyle}>訂單來源 (OrderSource)</label>
+                <input 
+                  type="text" 
+                  name="order_source" 
+                  value={formData.order_source} 
+                  onChange={handleChange} 
+                  style={inputStyle} 
+                  placeholder="請輸入訂單來源 (例: XeAU Nov2022)" 
+                />
               </div>
             </div>
           </form>

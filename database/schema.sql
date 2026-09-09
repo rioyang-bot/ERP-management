@@ -120,6 +120,7 @@ CREATE TABLE IF NOT EXISTS assets (
     sn VARCHAR(100) UNIQUE, -- 序號 (唯一列管，為支援無SN設備可為空)
     hostname VARCHAR(100),           -- 主機名稱
     client VARCHAR(100),             -- 客戶
+    end_user VARCHAR(100),           -- 最終使用者 (End-user)
     location VARCHAR(100),           -- 地點
     status VARCHAR(20) DEFAULT 'ACTIVE', -- ACTIVE, BROKEN, PENDING, SHIPPED, LENT
     ownership VARCHAR(20) DEFAULT 'FOR_SALE', -- FOR_SALE, COMPANY

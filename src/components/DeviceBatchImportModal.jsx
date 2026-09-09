@@ -111,39 +111,57 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
     return '';
   };
 
-  // 標準化日期解析函式 (支援 DD/MM/YYYY, YYYY-MM-DD, YYYY/MM/DD, Excel 序列數字)
+  // 標準化日期解析函式 (支援 DD/MM/YYYY, YYYY-MM-DD, YYYY/MM/DD, Excel 序列數字與數值字串)
   const parseNormalizedDate = (rawVal) => {
     if (rawVal === undefined || rawVal === null || rawVal === '') return null;
 
-    // 1. 如果是 Excel 序列日期數字 (如 45484)
-    if (typeof rawVal === 'number' && !isNaN(rawVal)) {
-      try {
-        const dateObj = XLSX.SSF.parse_date_code(rawVal);
-        if (dateObj && dateObj.y && dateObj.m && dateObj.d) {
-          const y = String(dateObj.y).padStart(4, '0');
-          const m = String(dateObj.m).padStart(2, '0');
-          const d = String(dateObj.d).padStart(2, '0');
-          return `${y}-${m}-${d}`;
-        }
-      } catch (e) {
-        console.warn('Excel date parsing error:', e);
-      }
-    }
-
-    const str = String(rawVal).trim();
-    if (!str) return null;
-
-    // 2. 如果是 DD/MM/YYYY 或 D/M/YYYY
-    const dmyMatch = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
-    if (dmyMatch) {
-      const d = String(dmyMatch[1]).padStart(2, '0');
-      const m = String(dmyMatch[2]).padStart(2, '0');
-      const y = dmyMatch[3];
+    // 1. Date 物件 (使用本地年月日時區，避免 toISOString() 造成日期被減一天)
+    if (rawVal instanceof Date && !isNaN(rawVal.getTime())) {
+      const y = rawVal.getFullYear();
+      const m = String(rawVal.getMonth() + 1).padStart(2, '0');
+      const d = String(rawVal.getDate()).padStart(2, '0');
       return `${y}-${m}-${d}`;
     }
 
-    // 3. 如果是 YYYY/MM/DD 或 YYYY-MM-DD
-    const ymdMatch = str.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/);
+    // 2. 如果是 Excel 序列日期數字或純數字字串 (例如 45484 或 '45484')
+    const strVal = String(rawVal).trim();
+    const isPureNum = typeof rawVal === 'number' || (/^\d{4,6}(\.\d+)?$/.test(strVal) && !strVal.includes('/') && !strVal.includes('-'));
+    if (isPureNum) {
+      const numVal = Number(rawVal);
+      if (!isNaN(numVal) && numVal >= 1000 && numVal <= 100000) {
+        try {
+          const dateObj = XLSX.SSF.parse_date_code(numVal);
+          if (dateObj && dateObj.y && dateObj.m && dateObj.d) {
+            const y = String(dateObj.y).padStart(4, '0');
+            const m = String(dateObj.m).padStart(2, '0');
+            const d = String(dateObj.d).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+          }
+        } catch (e) {
+          console.warn('Excel date parsing error:', e);
+        }
+      }
+    }
+
+    if (!strVal) return null;
+
+    // 清除時間部分 (例如 '2024-07-10 00:00:00' 或 '26/05/2023 14:30:00')
+    const dateStr = strVal.replace(/T.*$/, '').split(/\s+/)[0];
+
+    // 3. 如果是 DD/MM/YYYY 或 D/M/YYYY
+    const dmyMatch = dateStr.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
+    if (dmyMatch) {
+      const d = String(dmyMatch[1]).padStart(2, '0');
+      const m = String(dmyMatch[2]).padStart(2, '0');
+      let y = dmyMatch[3];
+      if (y.length === 2) {
+        y = Number(y) > 50 ? '19' + y : '20' + y;
+      }
+      return `${y}-${m}-${d}`;
+    }
+
+    // 4. 如果是 YYYY/MM/DD 或 YYYY-MM-DD
+    const ymdMatch = dateStr.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/);
     if (ymdMatch) {
       const y = ymdMatch[1];
       const m = String(ymdMatch[2]).padStart(2, '0');
@@ -151,14 +169,13 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
       return `${y}-${m}-${d}`;
     }
 
-    // 4. JS Date 物件嘗試轉換
-    const parsed = new Date(str);
-    if (!isNaN(parsed.getTime())) {
-      try {
-        return parsed.toISOString().split('T')[0];
-      } catch {
-        return null;
-      }
+    // 5. JS Date 物件嘗試轉換 (限制合理年份 1970 ~ 2100，避免年份誤轉為 +045359)
+    const parsed = new Date(strVal);
+    if (!isNaN(parsed.getTime()) && parsed.getFullYear() >= 1970 && parsed.getFullYear() <= 2100) {
+      const y = parsed.getFullYear();
+      const m = String(parsed.getMonth() + 1).padStart(2, '0');
+      const d = String(parsed.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
     }
 
     return null;
@@ -166,6 +183,7 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
 
   // 智慧匹配欄位名稱
   const findColumnValue = (rowObj, possibleKeys) => {
+    if (!rowObj) return '';
     // 1. 精準比對 (忽略空格、大小寫、符號等)
     for (const key of Object.keys(rowObj)) {
       const normalizedKey = key.trim().toLowerCase().replace(/[\s_\(\)\-\[\]\/\\:]/g, '');
@@ -173,7 +191,8 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
         const normalizedPk = pk.trim().toLowerCase().replace(/[\s_\(\)\-\[\]\/\\:]/g, '');
         if (normalizedKey === normalizedPk) {
           const val = rowObj[key];
-          return val !== undefined && val !== null ? fixMojibake(String(val).trim()) : '';
+          if (val === undefined || val === null || val === '') return '';
+          return typeof val === 'number' ? val : fixMojibake(String(val).trim());
         }
       }
     }
@@ -184,8 +203,8 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
         const normalizedPk = pk.trim().toLowerCase().replace(/[\s_\(\)\-\[\]\/\\:]/g, '');
         if (normalizedPk.length >= 2 && normalizedKey.includes(normalizedPk)) {
           const val = rowObj[key];
-          if (val !== undefined && val !== null && String(val).trim() !== '') {
-            return fixMojibake(String(val).trim());
+          if (val !== undefined && val !== null && val !== '' && String(val).trim() !== '') {
+            return typeof val === 'number' ? val : fixMojibake(String(val).trim());
           }
         }
       }
@@ -266,6 +285,7 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
   const handleDownloadTemplate = () => {
     const sampleRow = {
       'Customer': '元大Yuanta',
+      'End-user': '範例使用者',
       'Contact': 'Niky',
       'HostName': 'HFT24C-16',
       'System Type': 'Server',
@@ -276,6 +296,8 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
       'Serial Number ( Current )': 'SN-SAMPLE-001',
       'Project Date ( Installed )': '2024-07-11',
       'Customer Warranty Expire': '2027-06-20',
+      'BlackCore System Date': '2024-07-11',
+      'BlackCore Warranty Expire': '2027-06-20',
       'Status': 'ACTIVE'
     };
 
@@ -313,6 +335,11 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
       if (values.length === 0) return; // 略過全空行
 
       const customer = findColumnValue(row, ['Customer', '客戶', 'Client', '客戶名稱']);
+      const endUser = findColumnValue(row, [
+        'End-user', 'End user', 'EndUser', 'End_user',
+        '最終使用者', '最終客戶', '終端使用者', '終端客戶', '使用者',
+        'End Customer', 'EndCustomer'
+      ]);
       const rawContact = findColumnValue(row, [
         'Contact', 'Contact Person', 'ContactPerson', '聯絡人', '窗口',
         '客戶聯絡人', '廠商聯絡人', '聯絡窗口', '窗口人員', '負責人', 'Contact Name'
@@ -329,10 +356,44 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
       const rawSpec = findColumnValue(row, ['Specification', 'Spec', '規格', '設備規格', '規格內容', '產品規格', '硬體規格', '規格描述', '詳細規格', '規格說明']);
       const spec = (rawSpec || '').trim();
 
-      const installedDateRaw = row['Project Date ( Installed )'] || row['Project Date( Installed )'] || row['Project Date (Installed)'] || findColumnValue(row, ['Project Date ( Installed )', 'Installed Date', '安裝日期', 'Project Date']);
-      const customerWarrantyRaw = row['Customer Warranty Expire'] || findColumnValue(row, ['Customer Warranty Expire', 'Customer Warranty', '客戶保固到期', '客戶保固']);
-      const systemDateRaw = row['BlackCore System Date'] || findColumnValue(row, ['BlackCore System Date', 'System Date', '系統日期', '原廠系統日期']);
-      const warrantyExpireRaw = row['BlackCore Warranty Expire'] || findColumnValue(row, ['BlackCore Warranty Expire', 'Warranty Expire', '原廠保固到期', '原廠保固', '保固到期']);
+      // 智慧匹配 4 種日期欄位 (支援各種別名、空格與英文字母拼寫)
+      const installedDateRaw = 
+        row['Project Date ( Installedl )'] ||
+        row['Project Date (Installedl)'] ||
+        row['Project Date ( Installed )'] || 
+        row['Project Date( Installed )'] || 
+        row['Project Date (Installed)'] || 
+        findColumnValue(row, [
+          'Project Date ( Installedl )', 'Project Date (Installedl)',
+          'Project Date ( Installed )', 'Project Date (Installed)', 'Project Date( Installed )',
+          'Installed Date', 'InstalledDate', 'Installed', '安裝日期', '專案安裝日期', '安裝日', 'Project Date', 'ProjectDate'
+        ]);
+
+      const customerWarrantyRaw = 
+        row['Customer Warranty Expire'] || 
+        row['Customer Warranty Expiry'] || 
+        row['Customer Warranty'] || 
+        findColumnValue(row, [
+          'Customer Warranty Expire', 'Customer Warranty Expiry', 'Customer Warranty', 
+          '客戶保固到期', '客戶保固', '客戶保固日', 'Cust Warranty Expire', 'Cust Warranty', 'CustomerWarrantyExpire'
+        ]);
+
+      const systemDateRaw = 
+        row['BlackCore System Date'] || 
+        row['System Date'] || 
+        findColumnValue(row, [
+          'BlackCore System Date', 'Black Core System Date', 'System Date', 'SystemDate', 
+          '原廠系統日期', '原廠系統日', '系統日期', '系統日', 'BC System Date'
+        ]);
+
+      const warrantyExpireRaw = 
+        row['BlackCore Warranty Expire'] || 
+        row['BlackCore Warranty Expiry'] || 
+        row['Warranty Expire'] || 
+        findColumnValue(row, [
+          'BlackCore Warranty Expire', 'Black Core Warranty Expire', 'BlackCore Warranty Expiry', 'BlackCore Warranty', 
+          'Warranty Expire', 'Warranty Expiry', '原廠保固到期', '原廠保固', '保固到期', '保固到期日', 'BC Warranty Expire'
+        ]);
 
       const installedDate = parseNormalizedDate(installedDateRaw);
       const customerWarrantyExpire = parseNormalizedDate(customerWarrantyRaw);
@@ -414,8 +475,15 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
       if (contactMatch.isFuzzy && inputContact) {
         rowCustomAttrs.raw_contact_person = inputContact;
       }
-      if (contactMatch.matched_project && !rowCustomAttrs.project_name) {
-        rowCustomAttrs.project_name = contactMatch.matched_project;
+      if (contactMatch.matched_project || contactMatch.matched_relation) {
+        const matchedRel = contactMatch.matched_relation || contactMatch.matched_project;
+        if (!rowCustomAttrs.related_info) rowCustomAttrs.related_info = matchedRel;
+        if (!rowCustomAttrs.關聯) rowCustomAttrs.關聯 = matchedRel;
+        if (!rowCustomAttrs.關聯資訊) rowCustomAttrs.關聯資訊 = matchedRel;
+      }
+
+      if (endUser && String(endUser).trim()) {
+        rowCustomAttrs.end_user = String(endUser).trim();
       }
 
       processed.push({
@@ -426,6 +494,7 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
         specification: spec,
         sn: (sn || '').trim(),
         client: finalClient,
+        end_user: (endUser || '').trim(),
         contact_person: finalContact,
         contact_phone: finalPhone,
         contactMatch,
@@ -572,6 +641,7 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
             import_date: new Date().toISOString(),
             ...(item.contact_person ? { contact_person: item.contact_person } : {}),
             ...(item.contact_phone ? { contact_phone: item.contact_phone } : {}),
+            ...(item.end_user ? { end_user: item.end_user } : {}),
             ...(item.custom_attributes || {})
           };
 
@@ -1356,6 +1426,7 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
                         <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>初始狀態</th>
                         <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>設備序號 (SN)</th>
                         <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>客戶 (Customer)</th>
+                        <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>End-user</th>
                         <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>聯絡人 (Contact)</th>
                         <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>主機名稱 (HostName)</th>
                         <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>廠牌 (Brand)</th>
@@ -1363,8 +1434,10 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
                         <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>型號 (Model)</th>
                         <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>規格 (Spec)</th>
                         <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>地點 (Location)</th>
-                        <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>安裝日期</th>
-                        <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>保固到期</th>
+                        <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>安裝日期</th>
+                        <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>客戶保固到期</th>
+                        <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>系統日期</th>
+                        <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>原廠保固到期</th>
                         {customFieldDefs.filter(f => customFieldMapping[f.id]).map(f => (
                           <th key={f.id} style={{ padding: '8px 12px', fontWeight: '700', color: f.color || 'var(--primary-color)', whiteSpace: 'nowrap' }}>
                             {f.label} <span style={{ fontSize: '10px', opacity: 0.8 }}>(自訂)</span>
@@ -1375,7 +1448,7 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
                     <tbody>
                       {displayedRows.length === 0 ? (
                         <tr>
-                          <td colSpan={14 + customFieldDefs.filter(f => customFieldMapping[f.id]).length} style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                          <td colSpan={17 + customFieldDefs.filter(f => customFieldMapping[f.id]).length} style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)' }}>
                             此分類目前無資料
                           </td>
                         </tr>
@@ -1437,6 +1510,7 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
                                 {row.sn || '<無序號>'}
                               </td>
                               <td style={{ padding: '8px 12px', color: 'var(--text-main)' }}>{row.client || '-'}</td>
+                              <td style={{ padding: '8px 12px', color: 'var(--text-main)' }}>{row.end_user || '-'}</td>
                               <td style={{ padding: '8px 12px' }}>
                                 {row.contact_person ? (
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -1456,17 +1530,18 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
                                         🔗 已帶入: {row.contact_person}
                                       </span>
                                     )}
-                                    {row.contactMatch?.matched_project && (
+                                    {(row.contactMatch?.matched_project || row.contactMatch?.matched_relation) && (
                                       <span style={{
                                         fontSize: '10px',
-                                        color: '#3b82f6',
-                                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                        color: '#8b5cf6',
+                                        backgroundColor: 'rgba(139, 92, 246, 0.12)',
+                                        border: '1px solid rgba(139, 92, 246, 0.25)',
                                         padding: '1px 5px',
                                         borderRadius: '4px',
                                         display: 'inline-block',
                                         width: 'fit-content'
                                       }}>
-                                        🏷️ 專案: {row.contactMatch.matched_project}
+                                        🏷️ 關聯: {row.contactMatch.matched_relation || row.contactMatch.matched_project}
                                       </span>
                                     )}
                                     {row.contact_phone && (
@@ -1515,8 +1590,10 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
                                 )}
                               </td>
                               <td style={{ padding: '8px 12px', color: 'var(--text-muted)' }}>{row.location || '-'}</td>
-                              <td style={{ padding: '8px 12px', color: 'var(--text-muted)' }}>{row.installed_date || '-'}</td>
-                              <td style={{ padding: '8px 12px', color: 'var(--text-muted)' }}>{row.warranty_expire || '-'}</td>
+                              <td style={{ padding: '8px 12px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{row.installed_date || '-'}</td>
+                              <td style={{ padding: '8px 12px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{row.customer_warranty_expire || '-'}</td>
+                              <td style={{ padding: '8px 12px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{row.system_date || '-'}</td>
+                              <td style={{ padding: '8px 12px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{row.warranty_expire || '-'}</td>
                               {customFieldDefs.filter(f => customFieldMapping[f.id]).map(f => (
                                 <td key={f.id} style={{ padding: '8px 12px', color: 'var(--text-main)', whiteSpace: 'nowrap' }}>
                                   {row.custom_attributes?.[f.id] || <span style={{ color: 'var(--text-muted)' }}>--</span>}

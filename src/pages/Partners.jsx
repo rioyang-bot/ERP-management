@@ -468,7 +468,7 @@ const Partners = () => {
                         <td style={tdStyle}>
                           {p.project_info ? (
                             <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', maxWidth: '200px' }}>
-                              {p.project_info.split(/[、,，\s]+/).filter(Boolean).map((tag, idx) => (
+                              {p.project_info.split(/[、,，;；]+/).map(tag => tag.trim()).filter(Boolean).map((tag, idx) => (
                                 <span key={idx} style={{
                                   fontSize: '11px',
                                   fontWeight: '700',

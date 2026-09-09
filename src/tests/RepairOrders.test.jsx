@@ -138,6 +138,32 @@ describe('維修單管理系統 (Repair Orders / RMA List) 四階段流程與設
         if (query === 'updateRepairOEMReturn') {
           return { success: true, rows: [{ id: params[3], status: 'OEM_RETURNED', oem_return_date: params[0], results: params[1] }] };
         }
+        if (query === 'fetchAssetBySn') {
+          return {
+            success: true,
+            rows: [
+              {
+                id: 102,
+                sn: params[0],
+                item_master_id: 2,
+                brand: 'BC',
+                model: '96C',
+                type: '96C',
+                status: 'REPAIRING',
+                client: 'Yuanta Ryan'
+              }
+            ]
+          };
+        }
+        if (query === 'checkAssetSnExists' || query === 'checkAssetSnExistsExcludeSelf') {
+          return { success: true, rows: [] };
+        }
+        if (query === 'updateAssetDetails' || query === 'updateAssetStatus') {
+          return { success: true };
+        }
+        if (query === 'updateMountedHardwareServerSn' || query === 'updateRepairItemsSn' || query === 'updateOutboundItemsSn') {
+          return { success: true };
+        }
         if (query === 'updateRepairCompleted') {
           return { success: true, rows: [{ id: params[2], status: 'COMPLETED', completion_date: params[0] }] };
         }
@@ -300,6 +326,53 @@ describe('維修單管理系統 (Repair Orders / RMA List) 四階段流程與設
       expect(window.electronAPI.namedQuery).toHaveBeenCalledWith(
         'updateAssetStatusBySn',
         ['SHIPPED', 'BC025778']
+      );
+      expect(onSuccessMock).toHaveBeenCalled();
+    });
+  });
+
+  it('6. 階段 3 原廠良品/新品換新勾選時，應執行 RMA 替換並同步更新維修單明細序號', async () => {
+    const onSuccessMock = vi.fn();
+    render(
+      <RepairActionModal
+        isOpen={true}
+        onClose={vi.fn()}
+        repairOrder={mockRepairOrders[1]}
+        actionType="OEM_RETURN"
+        onSuccess={onSuccessMock}
+      />
+    );
+
+    // 填寫維修結果
+    const quickResultBtn = screen.getByText('+ 原廠更換良品寄回');
+    fireEvent.click(quickResultBtn);
+
+    // 勾選原廠提供新品/良品更換 (RMA)
+    const rmaCheckbox = screen.getByRole('checkbox');
+    fireEvent.click(rmaCheckbox);
+
+    // 輸入原廠新品序號
+    const newSnInput = screen.getByPlaceholderText('輸入原廠新品序號');
+    fireEvent.change(newSnInput, { target: { value: 'BC025778_NEW_RMA' } });
+
+    const submitBtn = screen.getByText(/確認原廠返還/i);
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      // 應同步呼叫 updateRepairItemsSn 更新維修明細序號
+      expect(window.electronAPI.namedQuery).toHaveBeenCalledWith(
+        'updateRepairItemsSn',
+        ['BC025778_NEW_RMA', 'BC025778']
+      );
+      // 應呼叫 updateRepairOEMReturn 記錄包含 RMA 註記的結果
+      expect(window.electronAPI.namedQuery).toHaveBeenCalledWith(
+        'updateRepairOEMReturn',
+        expect.arrayContaining([expect.stringContaining('BC025778_NEW_RMA'), mockRepairOrders[1].id])
+      );
+      // 應將新序號設為 ACTIVE 在庫
+      expect(window.electronAPI.namedQuery).toHaveBeenCalledWith(
+        'updateAssetStatusBySn',
+        ['ACTIVE', 'BC025778_NEW_RMA']
       );
       expect(onSuccessMock).toHaveBeenCalled();
     });

@@ -107,7 +107,7 @@ describe('PartnerMatcher Utility', () => {
     expect(resNiky.isFuzzy).toBe(true);
   });
 
-  it('當匯入聯絡人寫「Yuanta imc」（無Niky名字）時，應能透過專案關鍵字 IMC 自動定位並帶入 Niky 的聯絡人資訊與電話，且回傳 matched_project 為 IMC', () => {
+  it('當匯入聯絡人寫「Yuanta imc」（無Niky名字）時，應能透過專案關鍵字 IMC 自動定位並帶入 Niky 的聯絡人資訊與電話，且回傳 matched_project 與 matched_relation 為 IMC', () => {
     const res = matchPartnerContact('Yuanta imc', '', mockPartners);
     expect(res.matched).toBe(true);
     expect(res.contact_person).toBe('Niky');
@@ -115,9 +115,10 @@ describe('PartnerMatcher Utility', () => {
     expect(res.client).toBe('元大Yuanta');
     expect(res.isFuzzy).toBe(true);
     expect(res.matched_project).toBe('IMC');
+    expect(res.matched_relation).toBe('IMC');
   });
 
-  it('當客戶名稱為 Niky 且專案資訊為「國法、IMC」時，匯入「Yuanta imc」能自動將 imc 帶入 Niky 的聯絡人資訊並回傳 matched_project 為 IMC', () => {
+  it('當客戶名稱為 Niky 且專案資訊為「國法、IMC」時，匯入「Yuanta imc」能自動將 imc 帶入 Niky 的聯絡人資訊並回傳 matched_project 與 matched_relation 為 IMC', () => {
     const customPartners = [
       {
         id: 99,
@@ -133,14 +134,16 @@ describe('PartnerMatcher Utility', () => {
     expect(res.contact_person).toBe('Niky');
     expect(res.contact_phone).toBe('0988-111222');
     expect(res.matched_project).toBe('IMC');
+    expect(res.matched_relation).toBe('IMC');
   });
 
-  it('當匯入聯絡人為「IMC」時，應直接對應到 Niky 且 matched_project 為「IMC」，以便在設備列表中明確顯示', () => {
+  it('當匯入聯絡人為「IMC」時，應直接對應到 Niky 且 matched_relation 為「IMC」，以便在設備列表中明確顯示', () => {
     const res = matchPartnerContact('IMC', '', mockPartners);
     expect(res.matched).toBe(true);
     expect(res.contact_person).toBe('Niky');
     expect(res.contact_phone).toBe('0912-345678');
     expect(res.client).toBe('元大Yuanta');
     expect(res.matched_project).toBe('IMC');
+    expect(res.matched_relation).toBe('IMC');
   });
 });

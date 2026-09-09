@@ -337,6 +337,260 @@ describe('DeviceBatchImportModal 設備批次匯入檢核與建立測試', () =>
       ]));
     });
   });
+
+  it('當合作夥伴具備關聯資訊（如 project_info 為 IMC），匯入對應關鍵字時，預覽表格應呈現「🏷️ 關聯: IMC」標籤，且匯入時 custom_attributes 包含 project_name 與 related_info', async () => {
+    namedQueryMock.mockImplementation((query) => {
+      if (query === 'fetchAssetSns') {
+        return Promise.resolve({ success: true, rows: [] });
+      }
+      if (query === 'fetchDeviceTypes') {
+        return Promise.resolve({ success: true, rows: [{ name: 'Server' }] });
+      }
+      if (query === 'fetchPartners') {
+        return Promise.resolve({
+          success: true,
+          rows: [
+            { id: 8, name: '元大Yuanta', contact: 'Niky', phone: '0912-345678', project_info: '國法、IMC', type: 'CUSTOMER' }
+          ]
+        });
+      }
+      if (query === 'findItemMaster') {
+        return Promise.resolve({ success: true, rows: [{ id: 999 }] });
+      }
+      if (query === 'insertAssetRecord') {
+        return Promise.resolve({ success: true, rowCount: 1 });
+      }
+      return Promise.resolve({ success: true, rows: [] });
+    });
+
+    const testData = [
+      {
+        'Customer': '元大',
+        'Contact': 'Yuanta imc',
+        'HostName': 'YUANTA-SRV-IMC',
+        'System Type': 'Server',
+        'Brand': 'BlackCore',
+        'Model': 'BC-IMC',
+        'Specification': '32C 128G',
+        'Serial Number ( Current )': 'SN-IMC-001',
+        'Status': 'ACTIVE'
+      }
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(testData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Devices');
+    const u8 = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+    const file = new File([u8], 'relation_test.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+    vi.spyOn(window, 'confirm').mockImplementation(() => true);
+
+    const { container } = render(
+      <DeviceBatchImportModal
+        isOpen={true}
+        onClose={vi.fn()}
+        onSuccess={vi.fn()}
+      />
+    );
+
+    const fileInput = container.querySelector('input[type="file"]');
+    await userEvent.upload(fileInput, file);
+
+    // 預覽表格應成功顯示「🏷️ 關聯: IMC」標籤
+    await waitFor(() => {
+      expect(screen.getByText('Niky')).toBeInTheDocument();
+      expect(screen.getByText(/🏷️ 關聯: IMC/i)).toBeInTheDocument();
+    });
+
+    // 執行匯入
+    const importBtn = screen.getByText(/確認匯入/i);
+    await userEvent.click(importBtn);
+
+    // 驗證寫入時 custom_attributes 包含 related_info，但不寫入 project_name（專案保持為空）
+    await waitFor(() => {
+      expect(namedQueryMock).toHaveBeenCalledWith('insertAssetRecord', expect.arrayContaining([
+        expect.objectContaining({
+          related_info: 'IMC',
+          contact_person: 'Niky'
+        })
+      ]));
+      const insertCall = namedQueryMock.mock.calls.find(c => c[0] === 'insertAssetRecord');
+      const customAttrs = insertCall[1][11];
+      expect(customAttrs.project_name).toBeUndefined();
+    });
+  });
+
+  it('應能正確解析 4 種日期格式（包含 Project Date ( Installedl ) 錯字別名、DD/MM/YYYY 及 Excel 序列數字），並於預覽表格完整呈現 4 種日期', async () => {
+    namedQueryMock.mockImplementation((query, params) => {
+      if (query === 'fetchAssetSns') {
+        return Promise.resolve({ success: true, rows: [] });
+      }
+      if (query === 'findItemMaster') {
+        return Promise.resolve({ success: true, rows: [{ id: 88 }] });
+      }
+      if (query === 'insertAssetRecord') {
+        return Promise.resolve({ success: true, rowCount: 1 });
+      }
+      return Promise.resolve({ success: true, rows: [] });
+    });
+
+    const testData = [
+      {
+        'Customer': '元大',
+        'HostName': 'HFT24C-01',
+        'System Type': 'Server',
+        'Brand': 'BlackCore',
+        'Model': 'BCHFT-1PC',
+        'Serial Number ( Current )': 'SN-DATE-001',
+        'Project Date ( Installedl )': '26/05/2023',
+        'Customer Warranty Expire': '18/01/2026',
+        'BlackCore System Date': '26/05/2023',
+        'BlackCore Warranty Expire': '04/01/2027'
+      },
+      {
+        'Customer': '元大',
+        'HostName': 'HFT24C-02',
+        'System Type': 'Server',
+        'Brand': 'BlackCore',
+        'Model': 'BCHFT-1PC',
+        'Serial Number ( Current )': 'SN-DATE-002',
+        // 模擬 Excel 序列數字 (45483 = 2024-07-10, 45360 = 2024-03-09)
+        'Project Date ( Installedl )': 45483,
+        'Customer Warranty Expire': '10/07/2026',
+        'BlackCore System Date': 45360,
+        'BlackCore Warranty Expire': '20/06/2027'
+      }
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(testData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Devices');
+    const u8 = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+    const file = new File([u8], 'four_dates_test.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+    vi.spyOn(window, 'confirm').mockImplementation(() => true);
+
+    const { container } = render(
+      <DeviceBatchImportModal
+        isOpen={true}
+        onClose={vi.fn()}
+        onSuccess={vi.fn()}
+      />
+    );
+
+    const fileInput = container.querySelector('input[type="file"]');
+    await userEvent.upload(fileInput, file);
+
+    // 1. 驗證表頭完整包含 4 種日期
+    await waitFor(() => {
+      expect(screen.getByText('安裝日期')).toBeInTheDocument();
+      expect(screen.getByText('客戶保固到期')).toBeInTheDocument();
+      expect(screen.getByText('系統日期')).toBeInTheDocument();
+      expect(screen.getByText('原廠保固到期')).toBeInTheDocument();
+    });
+
+    // 2. 驗證資料列格式轉換正確，無 +045359-12-31 等異常年份
+    await waitFor(() => {
+      // 第一列 DD/MM/YYYY 轉換為 YYYY-MM-DD
+      expect(screen.getAllByText('2023-05-26').length).toBeGreaterThanOrEqual(2); // installed_date 與 system_date
+      expect(screen.getByText('2026-01-18')).toBeInTheDocument();
+      expect(screen.getByText('2027-01-04')).toBeInTheDocument();
+
+      // 第二列 Excel 序列號轉換為 YYYY-MM-DD
+      expect(screen.getByText('2024-07-10')).toBeInTheDocument();
+      expect(screen.getByText('2026-07-10')).toBeInTheDocument();
+      expect(screen.getByText('2024-03-09')).toBeInTheDocument();
+      expect(screen.getByText('2027-06-20')).toBeInTheDocument();
+
+      // 絕不出現異常年份
+      expect(screen.queryByText(/\+045/i)).not.toBeInTheDocument();
+    });
+
+    // 3. 執行匯入並驗證 4 種日期正確存入 DB
+    const importBtn = screen.getByText(/確認匯入/i);
+    await userEvent.click(importBtn);
+
+    await waitFor(() => {
+      // 驗證第一筆
+      expect(namedQueryMock).toHaveBeenCalledWith('insertAssetRecord', [
+        88,
+        'SN-DATE-001',
+        '元大',
+        'HFT24C-01',
+        null,
+        '2023-05-26', // installed_date
+        '2026-01-18', // customer_warranty_expire
+        '2023-05-26', // system_date
+        '2027-01-04', // warranty_expire
+        null,
+        null,
+        expect.any(Object),
+        'FOR_SALE',
+        'ACTIVE'
+      ]);
+
+      // 驗證第二筆
+      expect(namedQueryMock).toHaveBeenCalledWith('insertAssetRecord', [
+        88,
+        'SN-DATE-002',
+        '元大',
+        'HFT24C-02',
+        null,
+        '2024-07-10', // installed_date
+        '2026-07-10', // customer_warranty_expire
+        '2024-03-09', // system_date
+        '2027-06-20', // warranty_expire
+        null,
+        null,
+        expect.any(Object),
+        'FOR_SALE',
+        'ACTIVE'
+      ]);
+    });
+  });
+
+  it('匯入設備資料時，應能自動識別並呈現 End-user 欄位，並寫入 custom_attributes.end_user', async () => {
+    const testData = [
+      {
+        'Brand': 'BlackCore',
+        'Type': 'Server',
+        'Model': 'BCHFT-1PC',
+        'Serial Number': 'SN-ENDUSER-001',
+        'Customer': '元大',
+        'End-user': '台北分行A棟',
+        'Status': 'ACTIVE'
+      }
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(testData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Devices');
+    const u8 = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+    const file = new File([u8], 'devices_end_user.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+    const { container } = render(<DeviceBatchImportModal isOpen={true} onClose={vi.fn()} />);
+
+    const fileInput = container.querySelector('input[type="file"]');
+    await userEvent.upload(fileInput, file);
+
+    await waitFor(() => {
+      expect(screen.getByText('SN-ENDUSER-001')).toBeInTheDocument();
+      expect(screen.getByText('台北分行A棟')).toBeInTheDocument();
+    });
+
+    const importBtn = screen.getByText(/確認匯入/i);
+    await userEvent.click(importBtn);
+
+    await waitFor(() => {
+      expect(namedQueryMock).toHaveBeenCalledWith('insertAssetRecord', expect.arrayContaining([
+        expect.objectContaining({
+          batch_imported: true,
+          end_user: '台北分行A棟'
+        })
+      ]));
+    });
+  });
 });
+
 
 

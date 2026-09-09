@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { 
   X, Send, PackageCheck, CheckCircle2, AlertCircle, Calendar, 
-  FileText, Truck, Wrench, ShieldCheck
+  FileText, Truck, Wrench, ShieldCheck, RefreshCw, ArrowRight, Info
 } from 'lucide-react';
 import { logStatusChange, logUpdate } from '../utils/auditLogger';
+import { validateNewSn, performInPlaceReplacement, performOneToOneReplacement } from '../utils/rmaService';
 
 const QUICK_RESULTS = [
   '原廠修復寄回',
@@ -25,11 +26,21 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
 
+  // 原廠換新 (RMA) 序號變更狀態
+  const [isRmaReplacement, setIsRmaReplacement] = useState(false);
+  const [rmaMode, setRmaMode] = useState('IN_PLACE'); // 'IN_PLACE' | 'ONE_TO_ONE'
+  const [rmaNo, setRmaNo] = useState('');
+  const [replacementSns, setReplacementSns] = useState({});
+
   useEffect(() => {
     if (isOpen && repairOrder) {
       setDate(new Date().toISOString().split('T')[0]);
       setResults(repairOrder.results || '');
       setRemarks(repairOrder.remarks || '');
+      setIsRmaReplacement(false);
+      setRmaMode('IN_PLACE');
+      setRmaNo('');
+      setReplacementSns({});
       setError('');
     }
   }, [isOpen, repairOrder]);
@@ -119,10 +130,62 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
           }
         }
       } else if (actionType === 'OEM_RETURN') {
+        let rmaSummaryNotes = [];
+
+        // 若有勾選原廠新品/良品更換 (序號變更 RMA)
+        if (isRmaReplacement) {
+          const itemsToReplace = items.filter(it => it.sn && replacementSns[it.sn]?.trim());
+          if (itemsToReplace.length === 0) {
+            throw new Error('您已勾選「原廠良品/新品換新」，請至少為一台設備填寫原廠新品序號！');
+          }
+
+          // 逐筆進行序號檢核與 RMA 替換
+          for (const it of itemsToReplace) {
+            const oldSn = it.sn.trim();
+            const newSn = replacementSns[it.sn].trim();
+
+            if (newSn.toUpperCase() === oldSn.toUpperCase()) {
+              throw new Error(`設備 [${oldSn}] 的新序號不能與舊序號相同`);
+            }
+
+            // 抓取原資產物件
+            const assetRes = await window.electronAPI.namedQuery('fetchAssetBySn', [oldSn]);
+            if (!assetRes.success || !assetRes.rows || assetRes.rows.length === 0) {
+              throw new Error(`找不到原資產資料 (序號: ${oldSn})，無法執行 RMA 更換`);
+            }
+            const assetObj = assetRes.rows[0];
+
+            if (rmaMode === 'IN_PLACE') {
+              await performInPlaceReplacement(assetObj, newSn, {
+                date,
+                rmaNo,
+                remarks: `維修單 [${repairOrder.repair_no}] 原廠返還更換序號: ${results || ''}`
+              });
+            } else {
+              await performOneToOneReplacement(assetObj, newSn, {
+                date,
+                rmaNo,
+                remarks: `維修單 [${repairOrder.repair_no}] 原廠 RMA 一換一換出: ${results || ''}`
+              });
+            }
+
+            // 同步更新維修單明細的序號
+            await window.electronAPI.namedQuery('updateRepairItemsSn', [newSn, oldSn]);
+
+            rmaSummaryNotes.push(`[RMA ${rmaMode === 'IN_PLACE' ? '直接換號' : '一換一'}: ${oldSn} ➔ ${newSn}]`);
+          }
+        }
+
+        // 整理最後的維修結果與備註說明
+        let finalResults = results.trim();
+        if (rmaSummaryNotes.length > 0) {
+          finalResults = `${finalResults} ${rmaSummaryNotes.join(' ')}`.trim();
+        }
+
         // 1. 寫入 OEM Return Date 與 Results，更新為 OEM_RETURNED
         const res = await window.electronAPI.namedQuery('updateRepairOEMReturn', [
           date,
-          results.trim(),
+          finalResults,
           remarks.trim() || null,
           repairOrder.id
         ]);
@@ -130,9 +193,12 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
 
         // 2. 將該維修單下的設備序號全部改為 ACTIVE (在庫)
         for (const item of items) {
-          if (item.sn) {
-            await window.electronAPI.namedQuery('updateAssetStatusBySn', ['ACTIVE', item.sn.trim()]);
-            await logStatusChange('DEVICE', item.sn.trim(), item.sn.trim(), 'REPAIRING', 'ACTIVE', `維修單 [${repairOrder.repair_no}] 原廠修復寄回入庫檢測`);
+          const effectiveSn = (isRmaReplacement && replacementSns[item.sn]?.trim())
+            ? replacementSns[item.sn].trim()
+            : item.sn;
+          if (effectiveSn) {
+            await window.electronAPI.namedQuery('updateAssetStatusBySn', ['ACTIVE', effectiveSn.trim()]);
+            await logStatusChange('DEVICE', effectiveSn.trim(), effectiveSn.trim(), 'REPAIRING', 'ACTIVE', `維修單 [${repairOrder.repair_no}] 原廠修復寄回入庫檢測`);
           }
         }
       } else if (actionType === 'COMPLETE') {
@@ -360,6 +426,160 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
                   </button>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* 原廠新品/良品更換序號 (RMA) 選項 */}
+          {actionType === 'OEM_RETURN' && (
+            <div style={{
+              backgroundColor: isRmaReplacement ? 'rgba(14, 165, 233, 0.05)' : 'var(--bg-surface-subtle)',
+              border: isRmaReplacement ? '1.5px solid #0ea5e9' : '1px solid var(--border-color)',
+              borderRadius: '12px',
+              padding: '14px 16px',
+              transition: 'all 0.2s'
+            }}>
+              <label style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                cursor: 'pointer',
+                fontWeight: 700,
+                fontSize: '13px',
+                color: isRmaReplacement ? '#0ea5e9' : 'var(--text-main)',
+                userSelect: 'none'
+              }}>
+                <input
+                  type="checkbox"
+                  checked={isRmaReplacement}
+                  onChange={(e) => setIsRmaReplacement(e.target.checked)}
+                  style={{ width: '16px', height: '16px', accentColor: '#0ea5e9', cursor: 'pointer' }}
+                />
+                <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <RefreshCw size={15} /> 原廠提供新品 / 良品更換（序號變更 RMA）
+                </span>
+              </label>
+
+              {isRmaReplacement && (
+                <div style={{ marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {/* 模式選擇 */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '6px' }}>
+                      選擇更換模式：
+                    </label>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                      <div
+                        onClick={() => setRmaMode('IN_PLACE')}
+                        style={{
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          border: rmaMode === 'IN_PLACE' ? '2px solid #0ea5e9' : '1px solid var(--border-color)',
+                          backgroundColor: rmaMode === 'IN_PLACE' ? 'rgba(14, 165, 233, 0.1)' : 'var(--bg-surface)',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <div style={{ fontSize: '12px', fontWeight: 800, color: rmaMode === 'IN_PLACE' ? '#0ea5e9' : 'var(--text-main)' }}>
+                          🔄 模式一：直接更換序號
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.4 }}>
+                          就地更換序號，保留原歷史履歷、合約及內部關聯。
+                        </div>
+                      </div>
+
+                      <div
+                        onClick={() => setRmaMode('ONE_TO_ONE')}
+                        style={{
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          border: rmaMode === 'ONE_TO_ONE' ? '2px solid #8b5cf6' : '1px solid var(--border-color)',
+                          backgroundColor: rmaMode === 'ONE_TO_ONE' ? 'rgba(139, 92, 246, 0.1)' : 'var(--bg-surface)',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <div style={{ fontSize: '12px', fontWeight: 800, color: rmaMode === 'ONE_TO_ONE' ? '#8b5cf6' : 'var(--text-main)' }}>
+                          ✨ 模式二：RMA 一換一更換
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.4 }}>
+                          舊機標記報廢換出，建立新資產並自動轉移掛載硬體。
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* RMA 單號 (選填) */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '4px' }}>
+                      原廠 RMA 單號 (選填)：
+                    </label>
+                    <input
+                      type="text"
+                      value={rmaNo}
+                      onChange={(e) => setRmaNo(e.target.value)}
+                      placeholder="例: RMA-2026-0909-01"
+                      style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: 'var(--bg-surface)',
+                        color: 'var(--text-main)',
+                        fontSize: '12px'
+                      }}
+                    />
+                  </div>
+
+                  {/* 設備更換序號輸入列表 */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '6px' }}>
+                      各設備原廠新品序號 (New SN) *：
+                    </label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {(repairOrder.items || []).map((it, idx) => (
+                        <div
+                          key={idx}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '10px',
+                            backgroundColor: 'var(--bg-surface)',
+                            padding: '8px 12px',
+                            borderRadius: '8px',
+                            border: '1px solid var(--border-color)'
+                          }}
+                        >
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-main)' }}>
+                              {it.brand} {it.model}
+                            </div>
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                              舊序號: {it.sn}
+                            </div>
+                          </div>
+                          <ArrowRight size={14} color="var(--text-subtle)" />
+                          <div style={{ flex: 1.2 }}>
+                            <input
+                              type="text"
+                              value={replacementSns[it.sn] || ''}
+                              onChange={(e) => setReplacementSns({ ...replacementSns, [it.sn]: e.target.value })}
+                              placeholder="輸入原廠新品序號"
+                              style={{
+                                width: '100%',
+                                padding: '6px 10px',
+                                borderRadius: '6px',
+                                border: '1px solid var(--border-color)',
+                                backgroundColor: 'var(--bg-surface-subtle)',
+                                color: 'var(--text-main)',
+                                fontSize: '12px',
+                                fontWeight: 700,
+                                fontFamily: 'monospace'
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

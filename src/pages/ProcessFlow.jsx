@@ -107,6 +107,7 @@ const ProcessFlow = () => {
         '卡片聚合規則：設備與硬體以「廠牌 + 類型 + 型號 + 規格」四欄完全一致作為同一張卡片的聚合條件，任一欄位不同即會自動生成獨立卡片。',
         '欄位必填與唯一性：設備、硬體與耗材建檔之「規格 (Specification)」皆為必填欄位；耗材品項全面移除單位設定，由 (廠牌, 類型, 型號, 規格) 四欄共同識別唯一物料。',
         '支援「Excel / CSV 批次匯入」：具備中文字元編碼自動校正 (Mojibake Fix)、重複序號阻擋與廠牌/類型/型號缺一不建檢核，移除資產隸屬選擇（一律預設為一般銷售），並直接依檔案內 Status 欄位自動判定「已出貨 (SHIPPED)」或「在庫 (ACTIVE)」。',
+        '匯入欄位規範與履歷：批次匯入欄位已升級為獨立的「訂單來源 (OrderSource)」非日期格式，且專案名稱獨立；系統自動建立匯入履歷 (BATCH_IMPORT 交易類型)，品項台帳與進出日誌均能精準載入追溯。',
         '完成進貨驗收與設備/硬體建檔（含批次匯入）後，庫存池狀態立即同步更新，並自動發送即時事件與稽核日誌。'
       ]
     },
@@ -118,20 +119,21 @@ const ProcessFlow = () => {
       color: '#d97706',
       badge: '核心樞紐',
       icon: <Package size={24} />,
-      desc: '維護全廠設備、硬體模組與耗材之即時在線量，提供品項台帳歷程與定期盤點機制。',
+      desc: '維護全廠設備、硬體模組與耗材之即時在線量，提供品項台帳歷程、定期盤點與原廠 RMA 換新序號處理機制。',
       subModules: [
-        { name: '設備列表 (Device List)', path: '/device-list', desc: '伺服器/主機資產清冊、四欄聚合卡片、狀態過濾與規格檢視' },
-        { name: '硬體列表 (HW List)', path: '/hw-list', desc: '網卡、模組等硬體庫存、四欄聚合卡片與規格搜尋清單' },
+        { name: '設備列表 (Device List)', path: '/device-list', desc: '伺服器/主機資產清冊、四欄聚合卡片、汰舊區管理、狀態過濾與 RMA 換新序號' },
+        { name: '硬體列表 (HW List)', path: '/hw-list', desc: '網卡、模組等硬體庫存、四欄聚合卡片、汰舊區管理、規格搜尋與 RMA 換新序號' },
         { name: '耗材列表 (Consumable List)', path: '/consumable-list', desc: '耗材現存量、安全水位警戒、調撥與品項規格管理（已完全移除單位）' },
         { name: '實體庫存盤點 (Stocktaking)', path: '/stocktaking', desc: '定期盤點全廠資產，支援內部公司資產核對' }
       ],
-      inputs: ['進貨驗收完成資產', '借用歸還驗收合格品', '盤點實盤數據'],
-      outputs: ['在庫可用資產清單', '品項異動台帳 (Item Ledger)', '盤點實盤比對總表'],
+      inputs: ['進貨驗收完成資產', '借用歸還驗收合格品', '原廠 RMA 換新良品', '盤點實盤數據'],
+      outputs: ['在庫可用資產清單', '品項異動台帳 (Item Ledger)', 'RMA 換號歷程', '盤點實盤比對總表'],
       businessRules: [
         '每件設備/硬體具備唯一生命週期狀態：在庫 (ACTIVE) / 借出 (LENT) / 已出貨 (SHIPPED) / 維修 (REPAIRING) / 報廢 (SCRAPPED)。',
-        '儀表板卡片依「廠牌 + 類型 + 型號 + 規格」即時聚合統計各狀態數量，點擊卡片可精確篩選該規格之設備/硬體序號。',
+        '卡片聚合與汰舊區規則：支援「依規格 (SPEC)」、「依型號 (MODEL)」與「依廠牌 (BRAND)」三種維度即時切換；可拖曳或點選將卡片移至「汰舊區 (Retired Zone)」，切換聚合維度時汰舊區精準排除，不混入在席數量統計。',
+        '原廠 RMA 換新序號雙模式支援：設備清單與硬體清單操作選單皆提供「🔄 原廠換新 / 更換序號 (RMA)」，可依業務需求選擇【模式一：直接更換序號（原機承接履歷、合約及零組件 server_sn 連動）】或【模式二：RMA 一換一更換（舊機報廢 SCRAPPED、自動新增新品 ACTIVE 並轉移零組件）】。',
         '支援資產歸屬切換（公司資產 COMPANY ➔ 一般銷售 FOR_SALE）與搭載硬體狀態同步聯動（設備出貨/入庫時同步更新其搭載硬體）。',
-        '點選任一資產即可開啟「品項台帳 (Ledger)」，完整追溯其入庫、借還與出貨全歷史。'
+        '點選任一資產即可開啟「品項台帳 (Ledger)」，完整追溯其入庫、批次匯入、借還、RMA 換號與出貨全歷史。'
       ]
     },
     {
@@ -167,17 +169,19 @@ const ProcessFlow = () => {
       color: '#ef4444',
       badge: '售後品質',
       icon: <Wrench size={24} />,
-      desc: '管理客戶設備報修、現場取件、送修原廠、原廠修復返還與完工交付出庫，全自動同步設備庫存狀態。',
+      desc: '管理客戶設備報修、現場取件、送修原廠、原廠修復或良品換新 (RMA) 與完工交付出庫，全自動同步設備狀態、連動明細序號與轉移掛載硬體。',
       subModules: [
-        { name: '維修單列表 (Repair List)', path: '/repair-list', desc: '追蹤 RMA 案件進度、四階段狀態推進、套印 RMA 單據' }
+        { name: '維修單列表 (Repair List)', path: '/repair-list', desc: '追蹤 RMA 案件進度、四階段狀態推進、原廠換新品序號處理、套印 RMA 單據' }
       ],
-      inputs: ['客戶報修申請', '現場取回設備序號 (SN)', '原廠維修結果與檢測報告'],
-      outputs: ['維修單號 (RMA-YYYYMMDD-01)', '設備狀態連動 (ACTIVE / REPAIRING / SHIPPED)', '完工交件證明'],
+      inputs: ['客戶報修申請', '現場取回設備序號 (SN)', '原廠維修結果', '原廠更換良品/新品序號 (New SN)'],
+      outputs: ['維修單號 (RMA-YYYYMMDD-01)', '設備狀態連動 (ACTIVE / REPAIRING / SHIPPED / SCRAPPED)', 'RMA 換號歷程紀錄', '完工交件證明'],
       businessRules: [
         '維修單號比照出貨單規則，依現場處理日期從 01 開始依序編號 (RMA-YYYYMMDD-01)。',
         '階段 1 建立維修單：寫入現場處理日與狀況，自動將設備狀態設為「在庫 (ACTIVE)」。',
         '階段 2 送修原廠：點選送修寫入送修日，自動將設備狀態設為「維修 (REPAIRING)」。',
-        '階段 3 原廠返還：點選返還寫入原廠寄回日與結果 (Results)，自動將設備狀態設為「在庫 (ACTIVE)」。',
+        '階段 3 原廠返還：填寫 OEM Return Date 與 Results，設備狀態自動設為「在庫 (ACTIVE)」。若原廠提供新品/良品寄回，可勾選「原廠提供新品 / 良品更換（序號變更 RMA）」：',
+        '  • 模式一（直接更換序號）：原資產序號就地變更為新序號，保留原履歷並自動連動搭載零組件之 server_sn，同步更新維修單明細序號。',
+        '  • 模式二（RMA 一換一更換）：舊資產轉報廢 (SCRAPPED) 換出結案，系統自動建立新序號資產 (ACTIVE) 承接客戶與規格，並自動將原搭載硬體轉移綁定至新設備。',
         '階段 4 客戶出貨：點選出貨寫入完工出貨日，自動將設備狀態設為「出庫 (SHIPPED)」。'
       ]
     },
@@ -617,25 +621,25 @@ const ProcessFlow = () => {
                     <Wrench size={20} color="#fff" />
                   </div>
                   <div>
-                    <h3 className="step-name">5. 售後維修流轉 (RMA)</h3>
-                    <span className="step-tag">維修與原廠</span>
+                    <h3 className="step-name">5. 售後維修流轉與原廠換新 (RMA & Serial Replacement)</h3>
+                    <span className="step-tag">維修、原廠與換號</span>
                   </div>
                 </div>
                 <div className="step-body">
-                  <p>設備故障現場取回入庫檢測，可推進送修原廠、原廠返還復庫與完工出貨交件。</p>
+                  <p>設備故障現場取回入庫檢測，可推進送修原廠、原廠返還復庫（支援原廠換新序號雙模式）與完工出貨交件。</p>
                   {(flowStreamType === 'ALL' || flowStreamType === 'DOC') && (
                     <div className="stream-item doc">
-                      <strong>📄 單據流：</strong> 產出維修單 <code>RMA-YYYYMMDD-01</code>（支援 RMA 列印/PDF）
+                      <strong>📄 單據流：</strong> 產出維修單 <code>RMA-YYYYMMDD-01</code>，支援原廠 RMA 序號變更自動同步連動維修明細與列印
                     </div>
                   )}
                   {(flowStreamType === 'ALL' || flowStreamType === 'ASSET') && (
                     <div className="stream-item asset">
-                      <strong>📦 物料流：</strong> 建立維修單 (ACTIVE 在庫) ➔ 送修原廠 (REPAIRING 維修) ➔ 原廠返還 (ACTIVE 在庫) ➔ 客戶出貨 (SHIPPED 出庫)
+                      <strong>📦 物料流：</strong> 建立維修單 (ACTIVE 在庫) ➔ 送修原廠 (REPAIRING 維修) ➔ 原廠返還【原機修復 (ACTIVE) 或 良品換新 (模式一就地換號 / 模式二舊機報廢 SCRAPPED+新品入庫 ACTIVE 轉移搭載零組件)】➔ 客戶完工 (SHIPPED 出庫)
                     </div>
                   )}
                   {(flowStreamType === 'ALL' || flowStreamType === 'REPORT') && (
                     <div className="stream-item report">
-                      <strong>📊 營運流：</strong> 集中顯示於營運總覽 RMA 看板，全自動連動設備生命週期狀態
+                      <strong>📊 營運流：</strong> 集中顯示於營運總覽 RMA 看板，全自動連動設備生命週期狀態與換號歷程
                     </div>
                   )}
                 </div>
@@ -700,7 +704,7 @@ const ProcessFlow = () => {
             <Info size={20} color="#2563eb" />
             <div>
               <strong>METECH ERP 資產狀態轉移與連動準則：</strong>
-              全系統單機設備 (Devices) 與硬體零組件 (HW) 均嚴格遵循以下狀態機生命週期，並支援「維修流轉四階段自動切換」、「搭載硬體自動連動 (Mounted HW Sync)」與「資產歸屬切換 (COMPANY ➔ FOR_SALE)」，確保帳實相符與流向透明。
+              全系統單機設備 (Devices) 與硬體零組件 (HW) 均嚴格遵循以下狀態機生命週期，並支援「維修流轉四階段自動切換」、「原廠 RMA 換新雙模式序號更換」、「搭載硬體自動連動 (Mounted HW Sync)」與「資產歸屬切換 (COMPANY ➔ FOR_SALE)」，確保帳實相符與流向透明。
             </div>
           </div>
 
@@ -710,14 +714,14 @@ const ProcessFlow = () => {
                 <span className="state-dot available" />
                 <h3>ACTIVE (在庫可用)</h3>
               </div>
-              <p className="state-desc">貨品已入庫驗收完畢，實體存放於庫位，可供隨時調撥、銷貨、借用或組裝搭載。</p>
+              <p className="state-desc">貨品已入庫驗收完畢，實體存放於庫位，可供隨時調撥、銷貨、借用、組裝搭載或執行 RMA 換號。</p>
               <div className="state-transitions">
                 <div className="trans-title">可轉入狀態：</div>
                 <ul>
                   <li>➔ <strong>SHIPPED (已出貨)</strong>：開立銷貨出貨單 (SALE) 或維修單完工出貨，嚴格防重複驗證僅在庫品項可加入，連動更新搭載硬體並自動回寫專案/客戶綁定</li>
                   <li>➔ <strong>LENT (借出中)</strong>：開立借用調撥單 (LENT)</li>
                   <li>➔ <strong>REPAIRING (維修中)</strong>：點選維修單「送修原廠」寫入 Send OEM Date，自動轉維修中</li>
-                  <li>➔ <strong>SCRAPPED (報廢)</strong>：損壞無法修復或過期汰除</li>
+                  <li>➔ <strong>SCRAPPED (報廢/汰除)</strong>：損壞無法修復、過期汰除，或執行 RMA 一換一換新報廢</li>
                 </ul>
               </div>
             </div>
@@ -762,9 +766,10 @@ const ProcessFlow = () => {
               <div className="state-transitions">
                 <div className="trans-title">可轉入狀態：</div>
                 <ul>
-                  <li>➔ <strong>ACTIVE (在庫)</strong>：原廠返還 (OEM Return) 填寫 Results 後自動復庫</li>
+                  <li>➔ <strong>ACTIVE (在庫)</strong>：原廠原機修復返還 (OEM Return)，或經由【模式一：直接更換序號】就地換號後復庫（自動連動零組件 server_sn）</li>
+                  <li>➔ <strong>SCRAPPED (報廢換出) + 新機 ACTIVE</strong>：經由【模式二：RMA 一換一更換】，舊機轉 SCRAPPED 報廢結案，系統自動建立新品資產入庫 (ACTIVE) 並將搭載零組件自動轉移至新品</li>
                   <li>➔ <strong>SHIPPED (出庫)</strong>：完工確認出貨 (Completion Date) 交件給客戶</li>
-                  <li>➔ <strong>SCRAPPED (報廢)</strong>：判定無法修復轉報廢</li>
+                  <li>➔ <strong>SCRAPPED (報廢)</strong>：判定無法修復直接轉報廢</li>
                 </ul>
               </div>
             </div>
@@ -772,13 +777,14 @@ const ProcessFlow = () => {
             <div className="state-box state-scrapped">
               <div className="state-header">
                 <span className="state-dot" style={{ backgroundColor: '#6b7280' }} />
-                <h3>SCRAPPED (報廢汰除)</h3>
+                <h3>SCRAPPED (報廢汰除 / RMA換出)</h3>
               </div>
-              <p className="state-desc">經評估已無法使用或過保損壞之資產，完成報廢核准程序，封存除役。</p>
+              <p className="state-desc">經評估已無法使用、過保汰除，或執行【原廠 RMA 一換一更換】結案換出之資產。系統完整保留舊品序號、報廢關聯 (replaced_by_sn) 與履歷，供嚴格稽核與盤點追溯。</p>
               <div className="state-transitions">
                 <div className="trans-title">可轉入狀態：</div>
                 <ul>
-                  <li>➔ <strong>永久除役存檔</strong>：保留歷程供盤點與稽核查詢</li>
+                  <li>➔ <strong>永久除役存檔</strong>：保留完整台帳歷程供盤點、財務核銷與稽核查詢</li>
+                  <li>➔ <strong>雙向換號追溯</strong>：若為 RMA 一換一，可雙向連結至新品序號查看承接資訊</li>
                 </ul>
               </div>
             </div>
@@ -846,13 +852,13 @@ const ProcessFlow = () => {
             {selectedRole === 'IT' && (
               <div className="role-panel">
                 <h3 className="role-panel-title">工程與倉庫主管 (IT) 核心職責與操作指南</h3>
-                <p className="role-panel-desc">負責採購發起、進貨單驗收與序號展開、規格填寫、在庫資產盤點及出貨單開立。</p>
+                <p className="role-panel-desc">負責採購發起、進貨單驗收與序號展開、規格填寫、在庫資產盤點、出貨單開立與原廠 RMA 換新維修。</p>
                 <div className="role-checklist">
                   <div className="checklist-item">
                     <CheckCircle2 size={18} color="#059669" />
                     <div>
                       <strong>貨到驗收、序號建檔與批次匯入：</strong>
-                      進入 <button className="inline-link" onClick={() => navigate('/inbound')}>進貨登記</button> 點選「展開明細」，或透過 <button className="inline-link" onClick={() => navigate('/devices')}>設備建檔</button>、<button className="inline-link" onClick={() => navigate('/hw-registration')}>硬體建檔</button> 右上角之「📊 批次匯入 (Excel/CSV)」功能快速導入資產（硬體規格為選填欄位，匯入一律預設為一般銷售並自動依檔案判斷出貨/在庫狀態）。
+                      進入 <button className="inline-link" onClick={() => navigate('/inbound')}>進貨登記</button> 點選「展開明細」，或透過 <button className="inline-link" onClick={() => navigate('/devices')}>設備建檔</button>、<button className="inline-link" onClick={() => navigate('/hw-registration')}>硬體建檔</button> 右上角之「📊 批次匯入 (Excel/CSV)」功能快速導入資產（硬體規格為選填欄位，訂單來源獨立識別，系統自動建立匯入履歷並依 Status 自動標記出貨/在庫）。
                     </div>
                   </div>
                   <div className="checklist-item">
@@ -865,8 +871,15 @@ const ProcessFlow = () => {
                   <div className="checklist-item">
                     <CheckCircle2 size={18} color="#059669" />
                     <div>
-                      <strong>四欄聚合卡片與定期實體盤點：</strong>
-                      使用 <button className="inline-link" onClick={() => navigate('/device-list')}>設備列表</button> / <button className="inline-link" onClick={() => navigate('/hw-list')}>硬體列表</button> 依「廠牌+類型+型號+規格」檢視各規格庫存，並使用 <button className="inline-link" onClick={() => navigate('/stocktaking')}>庫存盤點 (Stocktaking)</button> 檢查在線數量與安全水位。
+                      <strong>卡片聚合、汰舊區隔離與定期盤點：</strong>
+                      使用 <button className="inline-link" onClick={() => navigate('/device-list')}>設備列表</button> / <button className="inline-link" onClick={() => navigate('/hw-list')}>硬體列表</button> 切換「依規格/依型號/依廠牌」檢視庫存，支援拖曳或點選將卡片移至「汰舊區」精確隔離，並使用 <button className="inline-link" onClick={() => navigate('/stocktaking')}>庫存盤點 (Stocktaking)</button> 檢查在線數量與安全水位。
+                    </div>
+                  </div>
+                  <div className="checklist-item">
+                    <CheckCircle2 size={18} color="#059669" />
+                    <div>
+                      <strong>維修流轉與原廠 RMA 換新品序號：</strong>
+                      在 <button className="inline-link" onClick={() => navigate('/repair-list')}>維修單列表</button> 推進送修與返還，返還時支援勾選「原廠良品換新」；或隨時在設備/硬體列表操作選單點選「🔄 原廠換新」，自由選用【模式一：直接更換序號（原機承接、零組件連動）】或【模式二：RMA 一換一更換（舊品報廢、新品入庫轉移零組件）】。
                     </div>
                   </div>
                 </div>
