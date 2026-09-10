@@ -266,6 +266,9 @@ const DeviceList = ({ isSplitMode = false }) => {
 
       if (targetMasterId && targetMasterId !== editItem.item_master_id) {
         await window.electronAPI.namedQuery('updateAssetMasterId', [targetMasterId, editItem.id]);
+        if (editItem.item_master_id) {
+          await window.electronAPI.namedQuery('deleteItemMasterIfOrphan', [editItem.item_master_id]);
+        }
       }
 
       await window.electronAPI.namedQuery('insertDeviceModel', [editItem.brand, newModel, '設備']);

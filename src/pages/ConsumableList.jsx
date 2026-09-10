@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Search, Edit2, Trash2, X, Save, MoreHorizontal, ArrowLeftRight, ClipboardList, ShoppingBag, AlertTriangle, Archive, RotateCcw, Package, History, Layers } from 'lucide-react';
+import { Search, Edit2, Trash2, X, Save, MoreHorizontal, ArrowLeftRight, ClipboardList, ShoppingBag, AlertTriangle, Archive, RotateCcw, Package, History, Layers, Tag } from 'lucide-react';
 import ItemLedgerModal from '../components/ItemLedgerModal';
 import ConsumableRegistrationModal from '../components/ConsumableRegistrationModal';
 import ConsumableBatchImportModal from '../components/ConsumableBatchImportModal';
+import ConsumableCustomTagsModal from '../components/ConsumableCustomTagsModal';
 import { logUpdate, logDelete } from '../utils/auditLogger';
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
@@ -27,6 +28,35 @@ const ConsumableList = ({ isSplitMode = false }) => {
   const [activeMenuId, setActiveMenuId] = useState(null);
   const [menuPosition, setMenuPosition] = useState(null);
   const [ledgerItem, setLedgerItem] = useState(null);
+
+  // 自訂查詢標籤相關狀態（依登入者帳號隔離）
+  const [currentUser, setCurrentUser] = useState('default');
+  const [customTags, setCustomTags] = useState([]);
+  const [showCustomTagsModal, setShowCustomTagsModal] = useState(false);
+
+  // 讀取當前登入者帳號與其專屬標籤
+  useEffect(() => {
+    try {
+      const session = JSON.parse(localStorage.getItem('erp_session') || '{}');
+      const user = session.username || session.id || 'default';
+      setCurrentUser(user);
+      const stored = localStorage.getItem(`consumable_custom_tags_${user}`);
+      if (stored) {
+        setCustomTags(JSON.parse(stored));
+      }
+    } catch (e) {
+      console.error('Failed to load custom tags:', e);
+    }
+  }, []);
+
+  const handleUpdateCustomTags = (newTags) => {
+    setCustomTags(newTags);
+    try {
+      localStorage.setItem(`consumable_custom_tags_${currentUser}`, JSON.stringify(newTags));
+    } catch (e) {
+      console.error('Failed to save custom tags:', e);
+    }
+  };
 
   // 當側邊欄分類變動時，清除搜尋關鍵字並同步選取類型
   useEffect(() => {
@@ -88,7 +118,7 @@ const ConsumableList = ({ isSplitMode = false }) => {
     } else {
       res = await window.electronAPI.namedQuery('fetchConsumablesList');
     }
-    if (res.success) setItems(res.rows);
+    if (res && res.success) setItems(res.rows);
     setLoading(false);
   }, [typeFilter]);
 
@@ -107,22 +137,29 @@ const ConsumableList = ({ isSplitMode = false }) => {
   };
 
   const handleUpdate = async () => {
-    if (!editItem.model?.trim()) return alert('請填寫型號/規格 (必填)');
+    if (!editItem.model?.trim()) return alert('請填寫耗材型號 (必填)');
     const res = await window.electronAPI.namedQuery('updateConsumableMaster', [
-        editItem.brand, editItem.type, editItem.model, 
-        (editItem.specification || '').trim(), editItem.unit || '個', editItem.safety_stock,
+        (editItem.brand || '').trim(), 
+        (editItem.type || '').trim(), 
+        editItem.model.trim(), 
+        (editItem.specification || '').trim(), 
+        editItem.unit || '個', 
+        parseInt(editItem.safety_stock, 10) || 0,
         editItem.id
     ]);
     if (res.success) {
-      logUpdate('CONSUMABLE', editItem.id, `${editItem.brand} ${editItem.model}`, `編輯耗材規格/型號 [${editItem.brand} ${editItem.model}]`, {
+      logUpdate('CONSUMABLE', editItem.id, `${editItem.brand} ${editItem.model}`, `編輯耗材型號/規格 [${editItem.brand} ${editItem.model}]`, {
         brand: editItem.brand,
         type: editItem.type,
         model: editItem.model,
         specification: editItem.specification,
+        unit: editItem.unit,
         safety_stock: editItem.safety_stock
       });
       setShowEditModal(false);
       fetchConsumables();
+    } else {
+      alert('更新失敗，請確認資料後重試。');
     }
   };
 
@@ -574,33 +611,95 @@ const ConsumableList = ({ isSplitMode = false }) => {
                 >
                   ➕ 新增耗材 (Add Consumable)
                 </button>
-                <button
-                  onClick={() => setShowBatchImport(true)}
-                  style={{
-                    padding: '8px 16px',
-                    backgroundColor: 'var(--bg-surface)',
-                    color: 'var(--text-main)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    fontWeight: 700,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    boxShadow: 'var(--card-shadow)'
-                  }}
-                >
-                  📥 批次匯入 (Batch Import)
-                </button>
               </div>
             )}
           </div>
 
-          <div style={{ display: 'flex', gap: '14px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+            {/* 搜尋列左邊：自訂查詢標籤 (點擊直接帶入搜尋列) */}
+            {customTags.length > 0 && (
+              <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }} data-testid="custom-tags-container">
+                {customTags.map((tag, idx) => {
+                  const isActive = searchTerm === tag;
+                  return (
+                    <button
+                      key={`${tag}-${idx}`}
+                      type="button"
+                      onClick={() => {
+                        if (isActive) {
+                          setSearchTerm('');
+                        } else {
+                          setSearchTerm(tag);
+                          setCurrentPage(1);
+                        }
+                      }}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        padding: '6px 12px',
+                        borderRadius: '20px',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        border: isActive ? '1.5px solid var(--primary-color)' : '1px solid var(--border-color)',
+                        backgroundColor: isActive ? 'var(--primary-color)' : 'var(--bg-surface-subtle)',
+                        color: isActive ? '#ffffff' : 'var(--text-main)',
+                        boxShadow: isActive ? '0 2px 8px rgba(37, 99, 235, 0.3)' : 'none',
+                        transition: 'all 0.15s ease'
+                      }}
+                      title={isActive ? `點擊取消篩選「${tag}」` : `點擊篩選「${tag}」`}
+                      data-testid={`custom-tag-btn-${tag}`}
+                    >
+                      <span>🏷️</span>
+                      <span>{tag}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             <div style={{ position: 'relative' }}>
               <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-subtle)' }} />
               <input type="text" placeholder="快速搜尋廠牌、型號/規格、備註..." value={searchTerm} onChange={(e) => {setSearchTerm(e.target.value); setCurrentPage(1);}} style={{ padding: '10px 12px 10px 42px', borderRadius: '30px', border: '1.5px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', width: '280px' }} />
             </div>
+
+            {/* 自訂標籤管理按鈕 */}
+            <button
+              type="button"
+              onClick={() => setShowCustomTagsModal(true)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '8px 14px',
+                borderRadius: '20px',
+                border: '1px dashed var(--primary-border, #93c5fd)',
+                backgroundColor: 'var(--primary-bg, #eff6ff)',
+                color: 'var(--primary-color, #2563eb)',
+                fontSize: '12px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
+              }}
+              title="管理者自訂查詢標籤（最多10筆）"
+              data-testid="open-custom-tags-btn"
+            >
+              <Tag size={14} />
+              <span>自訂標籤</span>
+              {customTags.length > 0 && (
+                <span style={{
+                  backgroundColor: 'var(--primary-color, #2563eb)',
+                  color: '#ffffff',
+                  borderRadius: '10px',
+                  padding: '1px 6px',
+                  fontSize: '10px',
+                  lineHeight: '1.2'
+                }}>
+                  {customTags.length}
+                </span>
+              )}
+            </button>
 
             {(searchTerm || selectedType || typeFilter) && (
               <button 
@@ -685,7 +784,12 @@ const ConsumableList = ({ isSplitMode = false }) => {
                           {item.model || '--'}
                         </span>
                       </td>
-                      <td style={{ ...tdStyle, fontSize: '12px', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '200px' }} title={item.specification}>{item.specification || '--'}</td>
+                      <td 
+                        style={{ ...tdStyle, fontSize: '12px', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '200px' }} 
+                        title={item.specification || '--'}
+                      >
+                        {item.specification || '--'}
+                      </td>
                       <td style={{ ...tdStyle, fontWeight: 700, color: 'var(--primary-color)', textAlign: 'center' }}>{item.stock_qty || 0}</td>
                       <td style={{ ...tdStyle, fontWeight: 700, color: '#a855f7', cursor: 'pointer', textDecoration: 'underline', textAlign: 'center' }} onClick={() => viewAssignments(item)}>{item.lab_qty || 0}</td>
                       <td style={{ 
@@ -700,6 +804,7 @@ const ConsumableList = ({ isSplitMode = false }) => {
                       <td style={{ ...tdStyle, textAlign: 'center', width: '120px', position: 'relative' }}>
                         <button 
                           className="action-menu-btn"
+                          data-testid="consumable-action-menu-btn"
                           onClick={(e) => {
                             e.stopPropagation();
                             if (activeMenuId === item.id) {
@@ -754,7 +859,13 @@ const ConsumableList = ({ isSplitMode = false }) => {
                               <History size={14} /> 履歷 (History)
                             </button>
                             <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '2px 0' }} />
-                            <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); setEditItem({ ...item }); setShowEditModal(true); }} style={menuButtonStyle}><Edit2 size={14} /> 編輯詳細資訊</button>
+                            <button 
+                              data-testid="consumable-edit-detail-btn"
+                              onClick={() => { setActiveMenuId(null); setMenuPosition(null); setEditItem({ ...item }); setShowEditModal(true); }} 
+                              style={menuButtonStyle}
+                            >
+                              <Edit2 size={14} /> 編輯詳細資訊
+                            </button>
                             <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); setTransferData({ itemId: item.id, direction: 'TO_LAB', quantity: 1, deviceSn: '', note: '' }); setShowTransferModal(true); }} style={{ ...menuButtonStyle, color: 'var(--primary-color)' }}><ArrowLeftRight size={14} /> 庫存異動 (Stock↔LAB)</button>
                             <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '4px 0' }} />
                             <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); handleDelete(item.item_id || item.id, item.specification); }} style={{ ...menuButtonStyle, color: '#f43f5e', backgroundColor: 'rgba(244,63,94,0.1)' }}><Trash2 size={14} /> 刪除耗材</button>
@@ -794,31 +905,122 @@ const ConsumableList = ({ isSplitMode = false }) => {
 
       {showEditModal && editItem && (
         <div style={modalOverlayStyle}>
-          <div style={modalContentStyle}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}><h2 style={{ fontSize: '20px', fontWeight: '900' }}>修改耗材資訊</h2><X size={24} style={{ cursor: 'pointer' }} onClick={() => setShowEditModal(false)} /></div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <div>
-                <label style={editLabelStyle}>廠牌 / 類型 / 型號/規格 (鎖定)</label>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <input type="text" value={editItem.brand || ''} disabled style={{ ...editInputStyle, backgroundColor: '#f1f5f9', width: '30%', cursor: 'not-allowed' }} />
-                  <input type="text" value={editItem.type || ''} disabled style={{ ...editInputStyle, backgroundColor: '#f1f5f9', width: '30%', cursor: 'not-allowed' }} />
-                  <input type="text" value={editItem.model || ''} disabled style={{ ...editInputStyle, backgroundColor: '#f1f5f9', flex: 1, cursor: 'not-allowed' }} />
+          <div style={{ ...modalContentStyle, width: '560px', maxWidth: '95vw', padding: '28px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Edit2 size={20} color="var(--primary-color)" />
+                <h2 style={{ fontSize: '18px', fontWeight: '900', margin: 0, color: 'var(--text-main)' }}>編輯耗材型號與規格</h2>
+              </div>
+              <X size={20} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setShowEditModal(false)} />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={editLabelStyle}>廠牌 (Brand) (鎖定)</label>
+                  <input 
+                    type="text" 
+                    value={editItem.brand || ''} 
+                    disabled
+                    readOnly
+                    style={{ ...editInputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', cursor: 'not-allowed' }} 
+                    placeholder="例如：METECH" 
+                  />
                 </div>
+                <div>
+                  <label style={editLabelStyle}>類型 (Type) (鎖定)</label>
+                  <input 
+                    type="text" 
+                    value={editItem.type || ''} 
+                    disabled
+                    readOnly
+                    style={{ ...editInputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', cursor: 'not-allowed' }} 
+                    placeholder="例如：光纖線、電源線" 
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={editLabelStyle}>
+                  型號 (Model) <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <input 
+                  type="text" 
+                  value={editItem.model || ''} 
+                  onChange={(e) => setEditItem({ ...editItem, model: e.target.value })}
+                  style={{ ...editInputStyle, fontWeight: 700, fontFamily: 'monospace' }} 
+                  placeholder="請輸入耗材型號（必填，可手動修改）..." 
+                  data-testid="edit-consumable-model-input"
+                />
               </div>
               
               <div>
-                <label style={editLabelStyle}>備註 (選填)</label>
-                <textarea value={editItem.specification || ''} onChange={(e) => setEditItem({...editItem, specification: e.target.value})} style={{ ...editInputStyle, minHeight: '80px', lineHeight: '1.5' }} placeholder="請輸入備註說明 (選填)..." />
+                <label style={editLabelStyle}>規格說明 / 備註 (Specification)</label>
+                <textarea 
+                  value={editItem.specification || ''} 
+                  onChange={(e) => setEditItem({ ...editItem, specification: e.target.value })} 
+                  style={{ ...editInputStyle, minHeight: '80px', lineHeight: '1.5' }} 
+                  placeholder="請輸入耗材詳細規格說明（如：多模雙芯 OM4 3米、12V 2A 等，可手動修改）..." 
+                  data-testid="edit-consumable-spec-input"
+                />
               </div>
 
-              <div>
-                <label style={editLabelStyle}>安全庫存</label>
-                <input type="number" value={editItem.safety_stock} onChange={(e) => setEditItem({...editItem, safety_stock: parseInt(e.target.value) || 0})} style={editInputStyle} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={editLabelStyle}>安全庫存</label>
+                  <input 
+                    type="number" 
+                    min="0"
+                    value={editItem.safety_stock} 
+                    onChange={(e) => setEditItem({ ...editItem, safety_stock: parseInt(e.target.value, 10) || 0 })} 
+                    style={editInputStyle} 
+                  />
+                </div>
+                <div>
+                  <label style={editLabelStyle}>單位 (Unit)</label>
+                  <input 
+                    type="text" 
+                    value={editItem.unit || '個'} 
+                    onChange={(e) => setEditItem({ ...editItem, unit: e.target.value })} 
+                    style={editInputStyle} 
+                    placeholder="例如：個、條、捲、包"
+                  />
+                </div>
               </div>
 
-              <div style={{ display: 'flex', gap: '12px', marginTop: '12px', borderTop: '1px solid #f1f5f9', paddingTop: '24px' }}>
-                <button onClick={handleUpdate} style={{ flex: 1, padding: '14px', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 700, cursor: 'pointer' }}>儲存變更</button>
-                <button onClick={() => setShowEditModal(false)} style={{ padding: '14px 24px', backgroundColor: '#f1f5f9', border: 'none', borderRadius: '10px', cursor: 'pointer' }}>取消</button>
+              <div style={{ display: 'flex', gap: '12px', marginTop: '8px', borderTop: '1px solid var(--border-color)', paddingTop: '20px' }}>
+                <button 
+                  onClick={handleUpdate} 
+                  style={{ 
+                    flex: 1, 
+                    padding: '12px', 
+                    backgroundColor: 'var(--primary-color)', 
+                    color: 'white', 
+                    border: 'none', 
+                    borderRadius: '10px', 
+                    fontWeight: 700, 
+                    fontSize: '14px',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(37, 99, 235, 0.2)'
+                  }}
+                  data-testid="save-edit-consumable-btn"
+                >
+                  儲存變更
+                </button>
+                <button 
+                  onClick={() => setShowEditModal(false)} 
+                  style={{ 
+                    padding: '12px 24px', 
+                    backgroundColor: 'var(--bg-surface-subtle)', 
+                    border: '1px solid var(--border-color)', 
+                    color: 'var(--text-main)',
+                    borderRadius: '10px', 
+                    cursor: 'pointer',
+                    fontWeight: 600
+                  }}
+                >
+                  取消
+                </button>
               </div>
             </div>
           </div>
@@ -987,6 +1189,15 @@ const ConsumableList = ({ isSplitMode = false }) => {
           setShowBatchImport(false);
           fetchConsumables();
         }}
+      />
+
+      {/* 自訂查詢標籤管理 Modal */}
+      <ConsumableCustomTagsModal
+        isOpen={showCustomTagsModal}
+        onClose={() => setShowCustomTagsModal(false)}
+        username={currentUser}
+        tags={customTags}
+        onUpdateTags={handleUpdateCustomTags}
       />
     </div>
   );

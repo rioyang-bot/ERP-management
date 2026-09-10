@@ -739,11 +739,15 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
       }
 
       // 2. 逐筆建立 item_master 與 assets
-      const masterCache = new Map(); // `${brand}___${type}___${model}___${spec}` -> masterId
+      const masterCache = new Map(); // `${normBrand}___${normType}___${normModel}___${normSpec}` -> masterId
 
       for (let i = 0; i < validItems.length; i++) {
         const item = validItems[i];
-        const masterKey = `${item.brand}___${item.type}___${item.model}___${item.specification}`;
+        const safeBrand = (item.brand || '').trim();
+        const safeType = (item.type || '').trim();
+        const safeModel = (item.model || '').trim();
+        const safeSpec = (item.specification || '').trim();
+        const masterKey = `${safeBrand.toLowerCase()}___${safeType.toLowerCase()}___${safeModel.toLowerCase()}___${safeSpec.toLowerCase()}`;
 
         try {
           let masterId = masterCache.get(masterKey);

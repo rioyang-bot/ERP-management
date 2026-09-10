@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useContext } from 'react';
 import { RoleContext } from '../context/RoleContext';
 import { hashPassword, validatePassword } from '../utils/auth';
-import { Shield, User, Settings as SettingsIcon, CheckSquare, Square, X, Save, Key, Lock, Trash2, Power } from 'lucide-react';
-import { logCreate, logUpdate, logDelete, logStatusChange } from '../utils/auditLogger';
+import { Shield, User, Settings as SettingsIcon, CheckSquare, Square, X, Save, Key, Lock, Trash2, Power, GitMerge, RefreshCw, Database, CheckCircle2 } from 'lucide-react';
+import { logCreate, logUpdate, logDelete, logStatusChange, logEvent } from '../utils/auditLogger';
 
 const MENU_OPTIONS = [
   { id: 'overview', label: '營運總覽 (Overview)' },
@@ -43,12 +43,78 @@ const Settings = () => {
   const [passwordPolicy, setPasswordPolicy] = useState(defaultPolicy);
   const [isSavingPolicy, setIsSavingPolicy] = useState(false);
 
+  // 品項主檔大小寫整併狀態 (Master Merger State)
+  const [duplicateMasters, setDuplicateMasters] = useState([]);
+  const [isScanningDuplicates, setIsScanningDuplicates] = useState(false);
+  const [isMergingDuplicates, setIsMergingDuplicates] = useState(false);
+  const [mergeMessage, setMergeMessage] = useState(null);
+
   const fetchSettings = useCallback(async () => {
     const res = await window.electronAPI.namedQuery('getSystemSetting', ['password_policy']);
     if (res.success && res.rows.length > 0) {
       setPasswordPolicy(res.rows[0].value || defaultPolicy);
     }
   }, []);
+
+  // 掃描大小寫重複品項主檔
+  const handleScanDuplicates = async (keepMessage = false) => {
+    setIsScanningDuplicates(true);
+    if (!keepMessage) setMergeMessage(null);
+    try {
+      const res = await window.electronAPI.namedQuery('scanDuplicateItemMasters');
+      if (res.success) {
+        setDuplicateMasters(res.rows || []);
+        if (res.rows && res.rows.length === 0 && !keepMessage) {
+          setMergeMessage({ type: 'success', text: '🎉 恭喜！目前資料庫中無任何英文字母大小寫重複的設備/硬體主檔。' });
+        }
+      } else {
+        alert('掃描失敗：' + res.error);
+      }
+    } catch (err) {
+      alert('掃描發生錯誤：' + err.message);
+    } finally {
+      setIsScanningDuplicates(false);
+    }
+  };
+
+  // 執行整併大小寫重複品項主檔
+  const handleMergeDuplicates = async () => {
+    if (duplicateMasters.length === 0) return;
+    if (!window.confirm(`確定要將目前掃描到的 ${duplicateMasters.length} 組大小寫重複主檔進行安全整併嗎？\n\n系統將自動轉移所有關聯設備資產與出入庫明細至主要主檔，並清理重複項目。`)) {
+      return;
+    }
+
+    setIsMergingDuplicates(true);
+    setMergeMessage(null);
+    try {
+      // 呼叫伺服器端整併 API
+      const res = await fetch('/api/item-master/merge-duplicates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (data.success) {
+        logEvent({
+          action: 'MERGE_DUPLICATE_MASTERS',
+          module: 'SYSTEM_SETTINGS',
+          target_id: 'ITEM_MASTER',
+          details: `管理員執行品項主檔大小寫整併：共整併 ${data.mergedGroups} 組，刪除 ${data.removedMasters} 筆重複主檔`
+        });
+        setMergeMessage({
+          type: 'success',
+          text: `✅ 成功完成大小寫主檔整併！共整併 ${data.mergedGroups} 組重複主檔，清理了 ${data.removedMasters} 筆重複資料。`
+        });
+        // 重新掃描確認 (保留完成提示訊息)
+        await handleScanDuplicates(true);
+      } else {
+        alert('整併失敗：' + data.error);
+      }
+    } catch (err) {
+      alert('執行整併時發生網路或系統錯誤：' + err.message);
+    } finally {
+      setIsMergingDuplicates(false);
+    }
+  };
 
   const fetchUsers = useCallback(async () => {
     setLoadingUsers(true);
@@ -447,6 +513,155 @@ const Settings = () => {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* 品項主檔規格型號大小寫整併工具 */}
+      <div className="card-surface" style={{ padding: '32px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '16px', boxShadow: 'var(--card-shadow)' }}>
+        <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <h2 style={{ fontSize: '1.25rem', color: 'var(--text-main)', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', fontWeight: '800' }}>
+                <GitMerge size={22} color="var(--primary-color)" /> 品項主檔規格型號大小寫整併工具
+              </h2>
+              <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>(Master Case-Insensitive Merger)</span>
+            </div>
+            <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '6px', marginBottom: 0 }}>
+              自動偵測設備與硬體中因匯入時英文大小寫或空格不一致（如 Cisco vs cisco、C9300-48P vs c9300-48p）而產生的重複品項主檔，一鍵將所有關聯資產安全整併至主要主檔。
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <button
+              onClick={handleScanDuplicates}
+              disabled={isScanningDuplicates || isMergingDuplicates}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '10px 18px',
+                backgroundColor: 'var(--bg-surface-subtle)',
+                color: 'var(--text-main)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '8px',
+                fontWeight: 700,
+                fontSize: '13px',
+                cursor: 'pointer'
+              }}
+              data-testid="scan-duplicates-btn"
+            >
+              <RefreshCw size={15} className={isScanningDuplicates ? 'spin-animation' : ''} />
+              {isScanningDuplicates ? '正在掃描中...' : '掃描大小寫重複主檔'}
+            </button>
+
+            {duplicateMasters.length > 0 && (
+              <button
+                onClick={handleMergeDuplicates}
+                disabled={isMergingDuplicates || isScanningDuplicates}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '10px 20px',
+                  backgroundColor: '#2563eb',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontWeight: 700,
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)'
+                }}
+                data-testid="merge-duplicates-btn"
+              >
+                <GitMerge size={15} />
+                {isMergingDuplicates ? '正在安全整併中...' : `立即一鍵整併 (${duplicateMasters.length} 組)`}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {mergeMessage && (
+          <div style={{
+            padding: '12px 16px',
+            marginBottom: '16px',
+            borderRadius: '8px',
+            backgroundColor: mergeMessage.type === 'success' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+            border: `1px solid ${mergeMessage.type === 'success' ? '#10b981' : '#ef4444'}`,
+            color: mergeMessage.type === 'success' ? '#10b981' : '#ef4444',
+            fontSize: '13px',
+            fontWeight: 700,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            <CheckCircle2 size={16} />
+            {mergeMessage.text}
+          </div>
+        )}
+
+        {duplicateMasters.length > 0 ? (
+          <div style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: '12px' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+              <thead>
+                <tr style={{ backgroundColor: 'var(--table-header-bg)', textAlign: 'left', borderBottom: '2px solid var(--border-color)' }}>
+                  <th style={{ padding: '12px 16px', fontWeight: 800 }}>類別</th>
+                  <th style={{ padding: '12px 16px', fontWeight: 800 }}>標準規格型號</th>
+                  <th style={{ padding: '12px 16px', fontWeight: 800 }}>重複的主檔寫法與 ID</th>
+                  <th style={{ padding: '12px 16px', fontWeight: 800, textAlign: 'center' }}>重複主檔數</th>
+                  <th style={{ padding: '12px 16px', fontWeight: 800, textAlign: 'center' }}>關聯資產總數</th>
+                </tr>
+              </thead>
+              <tbody>
+                {duplicateMasters.map((dup, idx) => (
+                  <tr key={`${dup.norm_brand}-${dup.norm_model}-${idx}`} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                    <td style={{ padding: '12px 16px', fontWeight: 700 }}>
+                      <span style={{
+                        padding: '3px 8px',
+                        borderRadius: '4px',
+                        backgroundColor: dup.category_name === '設備' ? 'rgba(59, 130, 246, 0.12)' : 'rgba(168, 85, 247, 0.12)',
+                        color: dup.category_name === '設備' ? '#2563eb' : '#a855f7',
+                        fontSize: '12px'
+                      }}>
+                        {dup.category_name}
+                      </span>
+                    </td>
+                    <td style={{ padding: '12px 16px' }}>
+                      <div style={{ fontWeight: 800, color: 'var(--text-main)', fontFamily: 'monospace' }}>
+                        {dup.norm_brand.toUpperCase()} {dup.norm_model}
+                      </div>
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                        類型：{dup.norm_type} | 規格：{dup.norm_specification || '(無特別備註)'}
+                      </div>
+                    </td>
+                    <td style={{ padding: '12px 16px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        {dup.master_ids.map((id, mIdx) => (
+                          <div key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
+                            <span style={{ color: 'var(--text-muted)', fontFamily: 'monospace' }}>#{id}</span>
+                            <span style={{ fontWeight: 600, color: mIdx === 0 ? '#10b981' : 'var(--text-main)' }}>
+                              [{dup.brands[mIdx]}] {dup.models[mIdx]} ({dup.types[mIdx]})
+                            </span>
+                            {mIdx === 0 && <span style={{ fontSize: '10px', padding: '1px 6px', backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981', borderRadius: '4px' }}>主要保留</span>}
+                          </div>
+                        ))}
+                      </div>
+                    </td>
+                    <td style={{ padding: '12px 16px', textAlign: 'center', fontWeight: 700, color: '#f59e0b' }}>
+                      {dup.duplicate_count} 筆
+                    </td>
+                    <td style={{ padding: '12px 16px', textAlign: 'center', fontWeight: 700, color: 'var(--primary-color)' }}>
+                      {dup.total_assets_count || 0} 台
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '12px', border: '1px dashed var(--border-color)', fontSize: '13px' }}>
+            點擊右上角「掃描大小寫重複主檔」即可檢測目前是否有因英文字母大小寫不同而分散的品項主檔。
+          </div>
+        )}
       </div>
 
       {/* 權限設定 Modal */}

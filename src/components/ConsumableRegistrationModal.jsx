@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Save, Settings2, Trash2, X, Package, Check } from 'lucide-react';
+import { Plus, Save, Settings2, Trash2, X, Package, Check, FileSpreadsheet } from 'lucide-react';
 import { logCreate } from '../utils/auditLogger';
+import ConsumableBatchImportModal from './ConsumableBatchImportModal';
 
 const ConsumableRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   const [types, setTypes] = useState([]);
   const [brands, setBrands] = useState([]);
+  const [showBatchImport, setShowBatchImport] = useState(false);
   const [showAddType, setShowAddType] = useState(false);
   const [showAddBrand, setShowAddBrand] = useState(false);
   const [showAddModel, setShowAddModel] = useState(false);
@@ -243,12 +245,34 @@ const ConsumableRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
             </h2>
             <p style={{ color: 'var(--text-muted)', fontSize: '13px', margin: '4px 0 0 0' }}>建立新的耗材品項分類、型號規格並設定安全庫存水準。</p>
           </div>
-          <button
-            onClick={onClose}
-            style={{ width: '36px', height: '36px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-          >
-            <X size={18} />
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <button
+              type="button"
+              onClick={() => setShowBatchImport(true)}
+              style={{
+                padding: '8px 14px',
+                borderRadius: '8px',
+                border: '1px solid #10b981',
+                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                color: '#10b981',
+                fontSize: '13px',
+                fontWeight: '700',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                cursor: 'pointer'
+              }}
+            >
+              <FileSpreadsheet size={16} /> 批次匯入 (Batch Import)
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              style={{ width: '36px', height: '36px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+            >
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Modal Body */}
@@ -394,6 +418,17 @@ const ConsumableRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
         </div>
 
       </div>
+      {showBatchImport && (
+        <ConsumableBatchImportModal
+          isOpen={showBatchImport}
+          onClose={() => setShowBatchImport(false)}
+          onSuccess={() => {
+            if (onSuccess) onSuccess();
+            setShowBatchImport(false);
+            onClose();
+          }}
+        />
+      )}
     </div>
   );
 };

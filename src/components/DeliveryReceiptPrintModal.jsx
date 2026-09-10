@@ -115,12 +115,20 @@ const DeliveryReceiptPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
       const endDate = isDevice ? formatDateSlash(item.customer_warranty_expire || item.warranty_expire) : '';
       const groupKey = `${item.item_id || devName}_${startDate}_${endDate}`;
 
-      const snVal = item.sn ? String(item.sn).trim() : (item.quantity ? `數量: ${item.quantity}` : '--');
+      // 耗材的數量不要寫在序號裡面，序號為空時純粹顯示 '--'
+      const snVal = item.sn ? String(item.sn).trim() : '--';
+      const itemQty = Number(item.quantity) > 0 ? Number(item.quantity) : 1;
 
       if (groupedMap.has(groupKey)) {
         const existing = groupedMap.get(groupKey);
-        if (!existing.sns.includes(snVal)) {
-          existing.sns.push(snVal);
+        if (snVal !== '--') {
+          if (!existing.sns.includes(snVal)) {
+            existing.sns.push(snVal);
+            existing.quantity = (Number(existing.quantity) || 0) + itemQty;
+          }
+        } else {
+          // 無序號項目（如耗材），累加數量
+          existing.quantity = (Number(existing.quantity) || 0) + itemQty;
         }
       } else {
         groupedMap.set(groupKey, {
@@ -128,6 +136,7 @@ const DeliveryReceiptPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
           category: item.category_name,
           deviceName: devName,
           sns: [snVal],
+          quantity: itemQty,
           startDate,
           endDate
         });
@@ -147,6 +156,7 @@ const DeliveryReceiptPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
         category: '',
         deviceName: '',
         sns: [''],
+        quantity: '',
         startDate: '',
         endDate: ''
       });
@@ -218,6 +228,7 @@ const DeliveryReceiptPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
         category: '',
         deviceName: '',
         sns: [''],
+        quantity: 1,
         startDate: '',
         endDate: ''
       }
@@ -694,15 +705,16 @@ const DeliveryReceiptPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
           <table className="dr-table">
             <thead>
               <tr>
-                <th style={{ width: '45px' }} rowSpan={2}>項次</th>
-                <th style={{ width: '230px' }} rowSpan={2}>設備</th>
-                <th style={{ width: '200px' }} rowSpan={2}>序號</th>
-                <th colSpan={2} style={{ width: '220px' }}>維護期間</th>
+                <th style={{ width: '40px' }} rowSpan={2}>項次</th>
+                <th style={{ width: '220px' }} rowSpan={2}>設備</th>
+                <th style={{ width: '180px' }} rowSpan={2}>序號</th>
+                <th style={{ width: '60px' }} rowSpan={2}>數量</th>
+                <th colSpan={2} style={{ width: '200px' }}>維護期間</th>
                 {isEditMode && <th style={{ width: '50px' }} rowSpan={2}>操作</th>}
               </tr>
               <tr>
-                <th style={{ width: '110px' }}>起始日</th>
-                <th style={{ width: '110px' }}>到期日</th>
+                <th style={{ width: '100px' }}>起始日</th>
+                <th style={{ width: '100px' }}>到期日</th>
               </tr>
             </thead>
             <tbody>
@@ -728,6 +740,17 @@ const DeliveryReceiptPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
                           onChange={(e) => handleRowChange(rIdx, 'snsText', e.target.value)}
                           placeholder="多組序號請換行輸入"
                           className="dr-table-textarea"
+                        />
+                      </td>
+                      <td>
+                        <input 
+                          type="number" 
+                          min="1"
+                          value={row.quantity ?? ''} 
+                          onChange={(e) => handleRowChange(rIdx, 'quantity', e.target.value)}
+                          placeholder="數量"
+                          className="dr-table-input"
+                          style={{ textAlign: 'center' }} 
                         />
                       </td>
                       <td>
@@ -772,7 +795,7 @@ const DeliveryReceiptPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
                         rowSpan={snCount} 
                         style={{ textAlign: 'center', fontWeight: 700 }}
                       >
-                        {row.deviceName || sn ? row.index : ''}
+                        {row.deviceName || (sn && sn !== '--') || row.quantity ? row.index : ''}
                       </td>
                     )}
                     {sIdx === 0 && (
@@ -786,6 +809,16 @@ const DeliveryReceiptPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
                     <td style={{ textAlign: 'center', fontFamily: 'monospace, sans-serif', fontSize: '12px' }}>
                       {sn || ''}
                     </td>
+                    {sIdx === 0 && (
+                      <td 
+                        rowSpan={snCount} 
+                        style={{ textAlign: 'center', fontWeight: 700, fontSize: '12px' }}
+                      >
+                        {row.quantity !== undefined && row.quantity !== null && row.quantity !== ''
+                          ? row.quantity 
+                          : (row.deviceName ? (snCount > 0 && sn !== '--' ? snCount : 1) : '')}
+                      </td>
+                    )}
                     {sIdx === 0 && (
                       <td 
                         rowSpan={snCount} 

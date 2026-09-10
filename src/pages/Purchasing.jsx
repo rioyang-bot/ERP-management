@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useContext } from 'react';
 import { Plus, Search, FileText, ShoppingCart, CheckCircle, Clock, AlertCircle, Trash2, DollarSign, Package, Tag, Filter, X, Save, Settings2, Trash } from 'lucide-react';
+import PurchaseItemSelectModal from '../components/PurchaseItemSelectModal';
 import { RoleContext } from '../context/RoleContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { logCreate, logUpdate } from '../utils/auditLogger';
@@ -32,6 +33,11 @@ const ProcurementRegistration = ({ editMode = false, isModalMode = false, initOr
     { id: 'initial-row', category_id: '', partner_id: '', item_type: '', brand: '', model: '', specification: '', unit: '個', unit_price: '', quantity: 1 }
   ]);
 
+  // 品項庫挑選彈窗狀態
+  const [availableItems, setAvailableItems] = useState([]);
+  const [showItemModal, setShowItemModal] = useState(false);
+  const [replaceRowId, setReplaceRowId] = useState(null);
+
   // Quick Add UI states
   const [quickAdd, setQuickAdd] = useState({ show: false, type: '', rowId: null, catId: null });
   const [newName, setNewName] = useState('');
@@ -55,14 +61,16 @@ const ProcurementRegistration = ({ editMode = false, isModalMode = false, initOr
   const fetchData = useCallback(async (forceNewOrderNo = false) => {
     setLoading(true);
     try {
-      const [recordsRes, partnersRes, catsRes] = await Promise.all([
+      const [recordsRes, partnersRes, catsRes, itemsRes] = await Promise.all([
         window.electronAPI.namedQuery('fetchPurchasingRecords'),
         window.electronAPI.namedQuery('fetchSuppliers'),
-        window.electronAPI.namedQuery('fetchCategories')
+        window.electronAPI.namedQuery('fetchCategories'),
+        window.electronAPI.namedQuery('fetchInboundItemMaster')
       ]);
 
       if (recordsRes.success) setPurchaseRecords(recordsRes.rows);
       if (partnersRes.success) setPartners(partnersRes.rows);
+      if (itemsRes && itemsRes.success) setAvailableItems(itemsRes.rows);
       if (catsRes.success) {
         setCategories(catsRes.rows);
         for (const cat of catsRes.rows) {
@@ -160,9 +168,80 @@ const ProcurementRegistration = ({ editMode = false, isModalMode = false, initOr
     ]);
   };
 
+  const handleBatchAddItems = (selectedList) => {
+    if (!selectedList || selectedList.length === 0) return;
+
+    setItems((prevItems) => {
+      // 若當前只有一筆初始空白列，則替換之；否則追加
+      const isInitialEmpty = prevItems.length === 1 && !prevItems[0].model && !prevItems[0].specification && !prevItems[0].brand;
+      const baseItems = isInitialEmpty ? [] : [...prevItems];
+
+      const newRows = selectedList.map((item, idx) => {
+        const catObj = categories.find(c => c.name === item.cat_name) || categories[0];
+        return {
+          id: Date.now() + idx,
+          category_id: (item.category_id || catObj?.id || '').toString(),
+          partner_id: '',
+          item_type: item.type || '',
+          brand: item.brand || '',
+          model: item.model || '',
+          specification: item.specification || '',
+          unit: item.unit || '個',
+          quantity: item.quantity || 1
+        };
+      });
+
+      return [...baseItems, ...newRows];
+    });
+  };
+
+  const handleSingleAddItem = (item, quantity) => {
+    if (replaceRowId) {
+      // 替換現有列
+      const catObj = categories.find(c => c.name === item.cat_name) || categories[0];
+      setItems((prevItems) => prevItems.map((r) => r.id === replaceRowId ? {
+        ...r,
+        category_id: (item.category_id || catObj?.id || r.category_id || '').toString(),
+        item_type: item.type || '',
+        brand: item.brand || '',
+        model: item.model || '',
+        specification: item.specification || '',
+        unit: item.unit || r.unit || '個',
+        quantity: quantity || r.quantity || 1
+      } : r));
+      setReplaceRowId(null);
+    } else {
+      handleBatchAddItems([{ ...item, quantity }]);
+    }
+  };
+
   const handleRemoveItem = (id) => {
-    if (items.length === 1) return;
+    if (items.length === 1) {
+      setItems([{
+        id: Date.now(),
+        category_id: categories[0]?.id?.toString() || '',
+        partner_id: '',
+        item_type: '',
+        brand: '',
+        model: '',
+        specification: '',
+        unit: '個',
+        quantity: 1
+      }]);
+      return;
+    }
     setItems(items.filter(item => item.id !== id));
+  };
+
+  const handleClearItem = (rowId) => {
+    setItems(items.map(row => row.id === rowId ? {
+      ...row,
+      brand: '',
+      model: '',
+      item_type: '',
+      specification: '',
+      unit: '個'
+    } : row));
   };
 
   const handleItemChange = (id, field, value) => {
@@ -178,17 +257,20 @@ const ProcurementRegistration = ({ editMode = false, isModalMode = false, initOr
           return { ...item, item_type: value, model: '' };
         }
         if (field === 'model' && value !== '') {
-          // Auto-fill from model data
+          // Auto-fill from model data or availableItems
           const catModels = options.models[item.category_id] || [];
-          const selectedModel = catModels.find(m => m.model === value);
+          let selectedModel = catModels.find(m => m.model === value);
+          if (!selectedModel) {
+            selectedModel = availableItems.find(i => i.model === value);
+          }
           if (selectedModel) {
             return { 
               ...item, 
               model: value, 
-              item_type: selectedModel.type || '', 
-              brand: selectedModel.brand || '', 
+              item_type: selectedModel.type || item.item_type || '', 
+              brand: selectedModel.brand || item.brand || '', 
               specification: selectedModel.specification || '',
-              unit: selectedModel.unit || item.unit
+              unit: selectedModel.unit || item.unit || '個'
             };
           }
         }
@@ -452,127 +534,216 @@ const ProcurementRegistration = ({ editMode = false, isModalMode = false, initOr
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ backgroundColor: 'var(--table-header-bg)', textAlign: 'left' }}>
-                  <th style={{ ...thStyle, width: '130px' }}>類別</th>
+                  <th style={thStyle}>採購品項項目</th>
+                  <th style={{ ...thStyle, width: '90px' }}>類別</th>
                   <th style={{ ...thStyle, width: '180px' }}>供應商</th>
-                  <th style={{ ...thStyle, width: '230px' }}>廠牌 / 類型</th>
-                  <th style={{ ...thStyle, width: '230px' }}>型號</th>
-                  <th style={{ ...thStyle, width: '220px' }}>規格 (Specification)</th>
-                  <th style={{ ...thStyle, width: '100px' }}>數量</th>
-                  <th style={{ ...thStyle, width: '60px', textAlign: 'center' }}></th>
+                  <th style={{ ...thStyle, width: '110px' }}>數量</th>
+                  <th style={{ ...thStyle, width: '60px', textAlign: 'center' }}>移除</th>
                 </tr>
               </thead>
               <tbody>
                 {items.map((row) => {
                   const isReadonly = row.status && row.status !== 'ORDERED';
+                  const hasItem = !!(row.model || row.specification || row.brand);
+                  const catObj = categories.find(c => c.id?.toString() === row.category_id?.toString());
+                  const catName = catObj?.name || row.cat_name || '';
+
                   return (
-                  <tr key={row.id} style={{ borderBottom: '1px solid var(--table-border)' }}>
-                    <td style={tdStyle}>
-                      <select 
-                        value={row.category_id} 
-                        onChange={e => handleItemChange(row.id, 'category_id', e.target.value)}
-                        style={inputStyle}
-                        disabled={isReadonly}
-                      >
-                        {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                      </select>
-                    </td>
-                    <td style={tdStyle}>
-                      <select 
-                        value={row.partner_id || ''} 
-                        onChange={e => handleItemChange(row.id, 'partner_id', e.target.value)}
-                        style={inputStyle}
-                        disabled={isReadonly}
-                      >
-                        <option value="">(選填供應商)</option>
-                        {partners.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                      </select>
-                    </td>
-                    <td style={tdStyle}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <tr key={row.id} style={{ borderBottom: '1px solid var(--table-border)' }}>
+                      {/* 採購品項項目 (與進貨單一致之卡片/選取按鈕) */}
+                      <td style={tdStyle}>
+                        {hasItem ? (
+                          <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '6px 12px',
+                            borderRadius: '8px',
+                            backgroundColor: 'rgba(37, 99, 235, 0.08)',
+                            border: '1px solid rgba(37, 99, 235, 0.3)',
+                            gap: '8px'
+                          }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontWeight: 800, fontSize: '13px', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                <span>{[row.brand, row.model].filter(Boolean).join(' ') || '(未指定型號)'}</span>
+                                {row.item_type && (
+                                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>
+                                    ({row.item_type})
+                                  </span>
+                                )}
+                              </div>
+                              {row.specification && (
+                                <div style={{ fontSize: '11px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: '2px' }} title={row.specification}>
+                                  {row.specification}
+                                </div>
+                              )}
+                            </div>
+                            {!isReadonly && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setReplaceRowId(row.id);
+                                    setShowItemModal(true);
+                                  }}
+                                  style={{
+                                    padding: '4px 8px',
+                                    borderRadius: '6px',
+                                    border: '1px solid var(--border-color)',
+                                    backgroundColor: 'var(--bg-surface)',
+                                    color: 'var(--primary-color)',
+                                    fontSize: '11px',
+                                    fontWeight: 700,
+                                    cursor: 'pointer'
+                                  }}
+                                  title="重新選擇品項"
+                                  data-testid={`change-item-btn-${row.id}`}
+                                >
+                                  更換
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleClearItem(row.id)}
+                                  style={{
+                                    padding: '4px 6px',
+                                    borderRadius: '6px',
+                                    border: 'none',
+                                    backgroundColor: 'transparent',
+                                    color: '#ef4444',
+                                    fontSize: '14px',
+                                    fontWeight: 700,
+                                    cursor: 'pointer'
+                                  }}
+                                  title="清除品項"
+                                  data-testid={`clear-item-btn-${row.id}`}
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setReplaceRowId(row.id);
+                              setShowItemModal(true);
+                            }}
+                            style={{
+                              width: '100%',
+                              padding: '10px 14px',
+                              borderRadius: '8px',
+                              border: '1.5px dashed var(--primary-color)',
+                              backgroundColor: 'rgba(37, 99, 235, 0.04)',
+                              color: 'var(--primary-color)',
+                              fontSize: '13px',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '8px',
+                              transition: 'all 0.15s ease'
+                            }}
+                            data-testid={`open-purchase-item-btn-${row.id}`}
+                          >
+                            <Search size={15} /> 🔍 點擊選取採購品項...
+                          </button>
+                        )}
+                      </td>
+
+                      {/* 類別徽章 */}
+                      <td style={tdStyle}>
+                        {catName ? (
+                          <span style={{ padding: '4px 10px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '6px', fontSize: '0.8rem', color: 'var(--text-main)', border: '1px solid var(--border-color)', fontWeight: 600 }}>
+                            {catName}
+                          </span>
+                        ) : (
+                          <span style={{ color: 'var(--text-subtle)', fontSize: '0.8rem' }}>--</span>
+                        )}
+                      </td>
+
+                      {/* 供應商下拉選單 */}
+                      <td style={tdStyle}>
                         <select 
-                          value={row.brand} 
-                          onChange={e => handleItemChange(row.id, 'brand', e.target.value)}
-                          style={{ ...inputStyle, fontSize: '0.8rem', padding: '6px' }}
-                          disabled={!!row.model || isReadonly}
+                          value={row.partner_id || ''} 
+                          onChange={e => handleItemChange(row.id, 'partner_id', e.target.value)}
+                          style={inputStyle}
+                          disabled={isReadonly}
                         >
-                          <option value="">(廠牌)</option>
-                          {(options.brands[row.category_id] || []).map(b => <option key={b} value={b}>{b}</option>)}
+                          <option value="">(選填供應商)</option>
+                          {partners.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                         </select>
-                        <select 
-                          value={row.item_type} 
-                          onChange={e => handleItemChange(row.id, 'item_type', e.target.value)}
-                          style={{ ...inputStyle, fontSize: '0.8rem', padding: '6px' }}
-                          disabled={!!row.model || isReadonly}
-                        >
-                          <option value="">(類型)</option>
-                          {Array.from(new Set(
-                            (options.types[row.category_id] || [])
-                              .filter(t => !row.brand || t.brand === row.brand)
-                              .map(t => t.name)
-                          )).map(typeName => <option key={typeName} value={typeName}>{typeName}</option>)}
-                        </select>
-                      </div>
-                    </td>
-                    <td style={tdStyle}>
-                      <select 
-                        value={row.model || ''} 
-                        onChange={e => handleItemChange(row.id, 'model', e.target.value)}
-                        style={inputStyle}
-                        disabled={isReadonly}
-                      >
-                        <option value="">(選擇型號)</option>
-                        {Array.from(new Set(
-                          (options.models[row.category_id] || [])
-                            .filter(m => (!row.brand || m.brand === row.brand) && (!row.item_type || m.type === row.item_type))
-                            .map(m => m.model)
-                        )).map(modelName => (
-                          <option key={modelName} value={modelName}>{modelName}</option>
-                        ))}
-                      </select>
-                    </td>
-                    <td style={tdStyle}>
-                      <input 
-                        value={row.specification} 
-                        onChange={e => handleItemChange(row.id, 'specification', e.target.value)}
-                        style={inputStyle}
-                        placeholder="詳細規格說明"
-                        disabled={isReadonly}
-                      />
-                    </td>
-                    <td style={tdStyle}>
-                      <input 
-                        type="number" 
-                        value={row.quantity} 
-                        onChange={e => handleItemChange(row.id, 'quantity', e.target.value)}
-                        style={inputStyle}
-                        min="1"
-                        disabled={isReadonly}
-                      />
-                    </td>
-                    <td style={{ ...tdStyle, textAlign: 'center' }}>
-                      {!isReadonly ? (
-                        <button type="button" onClick={() => handleRemoveItem(row.id)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#ff4d4f' }}>
-                          <Trash2 size={18} />
-                        </button>
-                      ) : (
-                        <span style={{ fontSize: '0.7rem', color: '#ccc', display: 'block', lineHeight: 1.2 }}>已入庫<br/>鎖定</span>
-                      )}
-                    </td>
-                  </tr>
-                )})}
+                      </td>
+
+                      {/* 數量 */}
+                      <td style={tdStyle}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <input 
+                            type="number" 
+                            value={row.quantity} 
+                            onChange={e => handleItemChange(row.id, 'quantity', e.target.value)}
+                            style={{ ...inputStyle, width: '65px', textAlign: 'center' }}
+                            min="1"
+                            disabled={isReadonly}
+                          />
+                          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{row.unit || '個'}</span>
+                        </div>
+                      </td>
+
+                      {/* 移除 */}
+                      <td style={{ ...tdStyle, textAlign: 'center' }}>
+                        {!isReadonly ? (
+                          <button 
+                            type="button" 
+                            onClick={() => handleRemoveItem(row.id)} 
+                            style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#ef4444', padding: '6px', opacity: 0.8 }} 
+                            title="刪除此項"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        ) : (
+                          <span style={{ fontSize: '0.7rem', color: '#ccc', display: 'block', lineHeight: 1.2 }}>已入庫<br/>鎖定</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
             
-            <div style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-surface-subtle)', borderTop: '1px solid var(--border-color)' }}>
-              <button type="button" onClick={handleAddItem} style={{ 
-                display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', 
-                backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, color: 'var(--primary-color)'
-              }}>
-                <Plus size={18} /> 增加採購品項
-              </button>
+            <div style={{ padding: '14px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-surface-subtle)', borderTop: '1px solid var(--border-color)', flexWrap: 'wrap', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <button 
+                  type="button" 
+                  onClick={() => {
+                    setReplaceRowId(null);
+                    setShowItemModal(true);
+                  }}
+                  style={{ 
+                    display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 18px', 
+                    backgroundColor: 'var(--primary-color)', color: '#ffffff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 800, fontSize: '13px',
+                    boxShadow: '0 4px 10px rgba(37, 99, 235, 0.25)'
+                  }}
+                  data-testid="open-purchase-item-modal-btn"
+                >
+                  <Package size={16} /> 📦 從品項庫挑選 (可批次勾選加入)
+                </button>
+                <button 
+                  type="button" 
+                  onClick={handleAddItem} 
+                  style={{ 
+                    display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', 
+                    backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '8px', cursor: 'pointer', fontWeight: 700, color: 'var(--text-main)', fontSize: '13px'
+                  }}
+                  data-testid="add-blank-row-btn"
+                >
+                  <Plus size={16} /> 新增空白列
+                </button>
+              </div>
               <div style={{ textAlign: 'right' }}>
-                <span style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--primary-color)' }}>
-                  採購項目: {items.length} 筆
+                <span style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--primary-color)' }}>
+                  採購品項: {items.length} 筆
                 </span>
               </div>
             </div>
@@ -709,6 +880,24 @@ const ProcurementRegistration = ({ editMode = false, isModalMode = false, initOr
           </div>
         </div>
       )}
+      {/* 採購品項庫挑選視窗 */}
+      <PurchaseItemSelectModal
+        isOpen={showItemModal}
+        onClose={() => {
+          setShowItemModal(false);
+          setReplaceRowId(null);
+        }}
+        items={availableItems}
+        isSingleSelect={!!replaceRowId}
+        onBatchAdd={handleBatchAddItems}
+        onSingleAdd={handleSingleAddItem}
+        onItemDeleted={(deletedId) => {
+          setAvailableItems((prev) => prev.filter((i) => i.id !== deletedId));
+        }}
+        onOpenQuickAdd={() => {
+          setQuickAdd({ show: true, type: 'type', rowId: null, catId: categories[0]?.id });
+        }}
+      />
     </div>
   );
 };

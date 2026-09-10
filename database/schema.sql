@@ -128,6 +128,7 @@ CREATE TABLE IF NOT EXISTS assets (
     system_date DATE,                -- 系統日期
     warranty_expire DATE,            -- 保固到期
     customer_warranty_expire DATE,   -- 客戶保固到期
+    shipping_date DATE,              -- 出貨日期 (確認出貨時自動寫入)
     os VARCHAR(255),                 -- 作業系統
     nic VARCHAR(255),                -- 網卡類型/IP
     custom_attributes JSONB DEFAULT '{}'::jsonb, -- 動態屬性 (例如MAC、其他外掛設備)
@@ -193,7 +194,9 @@ CREATE TABLE IF NOT EXISTS outbound_items (
     request_id INTEGER REFERENCES outbound_requests(id) ON DELETE CASCADE,
     item_id INTEGER REFERENCES item_master(id) ON DELETE CASCADE,
     sn VARCHAR(100), -- 記錄出貨的序號
-    quantity INTEGER NOT NULL DEFAULT 1
+    quantity INTEGER NOT NULL DEFAULT 1,
+    location VARCHAR(255),
+    purpose VARCHAR(255) DEFAULT '運作測試'
 );
 
 -- 採購紀錄表 (Purchase Records)

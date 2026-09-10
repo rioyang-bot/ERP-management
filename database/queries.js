@@ -162,7 +162,39 @@ export const queries = {
   insertDeviceBrand: `INSERT INTO item_brands (category_id, name) VALUES ((SELECT id FROM categories WHERE name = $1), $2) ON CONFLICT ON CONSTRAINT item_brands_category_id_name_key DO NOTHING`,
   deleteDeviceBrand: `DELETE FROM item_brands WHERE name = $1 AND category_id = (SELECT id FROM categories WHERE name = $2)`,
   
-  findItemMaster: `SELECT id FROM item_master WHERE specification = $1 AND type = $2 AND brand = $3 AND model = $4`,
+  findItemMaster: `
+    SELECT id, brand, type, model, specification 
+    FROM item_master 
+    WHERE LOWER(TRIM(COALESCE(specification, ''))) = LOWER(TRIM(COALESCE($1, ''))) 
+      AND LOWER(TRIM(COALESCE(type, ''))) = LOWER(TRIM(COALESCE($2, ''))) 
+      AND LOWER(TRIM(COALESCE(brand, ''))) = LOWER(TRIM(COALESCE($3, ''))) 
+      AND LOWER(TRIM(COALESCE(model, ''))) = LOWER(TRIM(COALESCE($4, '')))
+    ORDER BY id ASC
+    LIMIT 1
+  `,
+  scanDuplicateItemMasters: `
+    SELECT 
+      c.name as category_name,
+      LOWER(TRIM(i.brand)) as norm_brand,
+      LOWER(TRIM(i.type)) as norm_type,
+      LOWER(TRIM(i.model)) as norm_model,
+      LOWER(TRIM(COALESCE(i.specification, ''))) as norm_specification,
+      COUNT(*) as duplicate_count,
+      array_agg(i.id ORDER BY i.id ASC) as master_ids,
+      array_agg(i.brand ORDER BY i.id ASC) as brands,
+      array_agg(i.type ORDER BY i.id ASC) as types,
+      array_agg(i.model ORDER BY i.id ASC) as models,
+      array_agg(COALESCE(i.specification, '') ORDER BY i.id ASC) as specifications,
+      (
+        SELECT COUNT(*) FROM assets a WHERE a.item_master_id = ANY(array_agg(i.id))
+      ) as total_assets_count
+    FROM item_master i
+    JOIN categories c ON i.category_id = c.id
+    WHERE c.name IN ('設備', '硬體')
+    GROUP BY c.name, LOWER(TRIM(i.brand)), LOWER(TRIM(i.type)), LOWER(TRIM(i.model)), LOWER(TRIM(COALESCE(i.specification, '')))
+    HAVING COUNT(*) > 1
+    ORDER BY c.name ASC, norm_brand ASC, norm_model ASC
+  `,
   insertItemMaster: `INSERT INTO item_master (specification, type, brand, model, unit, category_id, purchase_price) VALUES ($1, $2, $3, $4, $5, (SELECT id FROM categories WHERE name = $6), 0) RETURNING id`,
   insertAssetRecord: `INSERT INTO assets (item_master_id, sn, client, hostname, location, installed_date, customer_warranty_expire, system_date, warranty_expire, os, nic, custom_attributes, ownership, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14, 'ACTIVE'))`,
 
@@ -210,13 +242,40 @@ export const queries = {
   deletePurchaseRecordById: `DELETE FROM purchase_records WHERE id = $1`,
   fetchSuppliers: `SELECT id, name, contact_person as contact, phone, address FROM partners WHERE partner_type = 'SUPPLIER' AND COALESCE(is_active, TRUE) = true ORDER BY name ASC, contact_person ASC`,
   fetchCategories: `SELECT id, name FROM categories`,
-  fetchBrandsByCategory: `SELECT name FROM item_brands WHERE category_id = $1 ORDER BY name ASC`,
+  fetchBrandsByCategory: `
+      SELECT DISTINCT name FROM (
+        SELECT name FROM item_brands WHERE category_id = $1
+        UNION
+        SELECT DISTINCT brand as name FROM item_master WHERE category_id = $1 AND brand IS NOT NULL AND TRIM(brand) != ''
+      ) sub ORDER BY name ASC`,
   updatePurchaseRecordFull: `UPDATE purchase_records SET partner_id = $1, category_id = $2, item_type = $3, brand = $4, model = $5, specification = $6, unit = $7, quantity = $8, remarks = $9, project_name = $10, attachments = $11::jsonb WHERE id = $12`,
-  fetchTypesByCategory: `SELECT name, (SELECT name FROM item_brands WHERE id = t.brand_id) as brand FROM item_types t WHERE category_id = $1 ORDER BY name ASC`,
+  fetchTypesByCategory: `
+      SELECT DISTINCT name, brand FROM (
+        SELECT t.name, (SELECT name FROM item_brands WHERE id = t.brand_id) as brand 
+        FROM item_types t 
+        WHERE t.category_id = $1
+        UNION
+        SELECT DISTINCT i.type as name, i.brand 
+        FROM item_master i 
+        WHERE i.category_id = $1 AND i.type IS NOT NULL AND TRIM(i.type) != ''
+        UNION
+        SELECT DISTINCT i.type as name, NULL as brand
+        FROM item_master i
+        WHERE i.category_id = $1 AND i.type IS NOT NULL AND TRIM(i.type) != ''
+      ) sub ORDER BY name ASC`,
   fetchModelsByCategory: `
-      SELECT m.name as model, t.name as type, b.name as brand, i.specification, i.unit
-      FROM item_models m JOIN item_types t ON m.type_id = t.id JOIN item_brands b ON t.brand_id = b.id LEFT JOIN item_master i ON (i.model = m.name AND i.type = t.name AND i.brand = b.name)
-      WHERE t.category_id = $1 ORDER BY m.name ASC`,
+      SELECT DISTINCT model, type, brand, specification, unit FROM (
+        SELECT m.name as model, t.name as type, b.name as brand, i.specification, i.unit
+        FROM item_models m 
+        JOIN item_types t ON m.type_id = t.id 
+        JOIN item_brands b ON t.brand_id = b.id 
+        LEFT JOIN item_master i ON (i.model = m.name AND i.type = t.name AND i.brand = b.name)
+        WHERE t.category_id = $1
+        UNION
+        SELECT i.model, i.type, i.brand, i.specification, i.unit
+        FROM item_master i
+        WHERE i.category_id = $1 AND i.model IS NOT NULL AND TRIM(i.model) != ''
+      ) sub ORDER BY model ASC`,
   countPurchaseOrders: `WITH seqs AS (SELECT CAST(SUBSTRING(order_no FROM '-([0-9]+)$') AS INTEGER) as sq FROM purchase_records WHERE order_no LIKE $1 || '%') SELECT s.val as count FROM generate_series(1, 1000) as s(val) WHERE NOT EXISTS (SELECT 1 FROM seqs WHERE seqs.sq = s.val) ORDER BY s.val ASC LIMIT 1`,
   insertItemBrand: `INSERT INTO item_brands (category_id, name) VALUES ($1, $2)`,
   insertItemType: `INSERT INTO item_types (category_id, name) VALUES ($1, $2)`,
@@ -231,9 +290,36 @@ export const queries = {
   deletePurchaseRecordList: `DELETE FROM purchase_records WHERE order_no = $1`,
   updatePurchaseRecordList: `UPDATE purchase_records SET quantity = $1, specification = $2, model = $3, item_type = $4, brand = $5 WHERE id = $6`,
 
-  // Inbound.jsx
-  fetchInboundItemMaster: `SELECT i.id, i.specification, i.type, i.brand, i.model, i.unit, c.name as cat_name FROM item_master i LEFT JOIN categories c ON i.category_id = c.id ORDER BY i.id DESC`,
+  fetchInboundItemMaster: `SELECT i.id, i.category_id, i.specification, i.type, i.brand, i.model, i.unit,
+      COALESCE(i.safety_stock, 0) as safety_stock,
+      CASE 
+        WHEN c.name = '耗材' THEN COALESCE(i.stock_qty, 0)
+        ELSE COALESCE((SELECT COUNT(*) FROM assets a WHERE a.item_master_id = i.id AND a.status = 'ACTIVE'), 0)
+      END as current_stock,
+      c.name as cat_name 
+      FROM item_master i LEFT JOIN categories c ON i.category_id = c.id ORDER BY i.id DESC`,
   fetchPendingPurchases: `SELECT pr.*, p.name as partner_name, c.name as category_name FROM purchase_records pr LEFT JOIN partners p ON pr.partner_id = p.id LEFT JOIN categories c ON pr.category_id = c.id WHERE pr.status != 'COMPLETED' ORDER BY pr.created_at DESC`,
+  deleteItemMasterIfOrphan: `
+      DELETE FROM item_master i
+      WHERE i.id = $1
+        AND NOT EXISTS (SELECT 1 FROM assets a WHERE a.item_master_id = i.id)
+        AND NOT EXISTS (SELECT 1 FROM inbound_items ii WHERE ii.item_id = i.id)
+        AND NOT EXISTS (SELECT 1 FROM outbound_items oi WHERE oi.item_id = i.id)
+        AND NOT EXISTS (SELECT 1 FROM item_lab_assignments la WHERE la.item_master_id = i.id)
+      RETURNING id
+  `,
+  cleanupOrphanItemMasters: `
+      DELETE FROM item_master i
+      WHERE i.id IN (
+        SELECT im.id FROM item_master im
+        JOIN categories c ON im.category_id = c.id
+        WHERE c.name IN ('設備', '硬體')
+          AND NOT EXISTS (SELECT 1 FROM assets a WHERE a.item_master_id = im.id)
+          AND NOT EXISTS (SELECT 1 FROM inbound_items ii WHERE ii.item_id = im.id)
+          AND NOT EXISTS (SELECT 1 FROM outbound_items oi WHERE oi.item_id = im.id)
+          AND NOT EXISTS (SELECT 1 FROM item_lab_assignments la WHERE la.item_master_id = im.id)
+      )
+  `,
   insertInboundItemMaster: `INSERT INTO item_master (specification, type, brand, unit, category_id, purchase_price) VALUES ($1, $2, $3, $4, (SELECT id FROM categories WHERE name = $5), 0) RETURNING id`,
   countInboundOrders: `WITH seqs AS (SELECT CAST(SUBSTRING(order_no FROM '-([0-9]+)$') AS INTEGER) as sq FROM inbound_orders WHERE order_no LIKE $1 || '%') SELECT s.val as count FROM generate_series(1, 1000) as s(val) WHERE NOT EXISTS (SELECT 1 FROM seqs WHERE seqs.sq = s.val) ORDER BY s.val ASC LIMIT 1`,
   insertInboundOrder: `INSERT INTO inbound_orders (order_no, partner_id, invoice_no, status, attachments) VALUES ($1, $2, $3, $4, $5::jsonb) RETURNING id`,
@@ -376,11 +462,12 @@ export const queries = {
   insertLendOutboundItem: `INSERT INTO outbound_items (request_id, item_id, sn, quantity, location, purpose) VALUES ($1, $2, $3, $4, $5, COALESCE($6, '運作測試'))`,
   migrateOutboundItemPurpose: `ALTER TABLE outbound_items ADD COLUMN IF NOT EXISTS purpose VARCHAR(255) DEFAULT '運作測試'`,
   searchActiveAssetSNs: `
-    SELECT a.sn, c.name as category_name, i.brand, i.model 
+    SELECT a.id, a.sn, a.location, a.status,
+           COALESCE(c.name, '硬體') as category_name, i.brand, i.model, i.type, i.specification, i.unit
     FROM assets a 
     JOIN item_master i ON a.item_master_id = i.id 
     LEFT JOIN categories c ON i.category_id = c.id 
-    WHERE a.status = 'ACTIVE' AND a.sn IS NOT NULL AND a.sn != '' 
+    WHERE UPPER(TRIM(COALESCE(a.status, 'ACTIVE'))) = 'ACTIVE' AND a.sn IS NOT NULL AND TRIM(a.sn) != '' 
     ORDER BY a.sn ASC
   `,
   fetchActiveProjects: `SELECT project_no, name as project_name FROM projects WHERE status = 'IN_PROGRESS' ORDER BY created_at DESC`,
@@ -441,10 +528,10 @@ export const queries = {
   `,
   fetchDNItems: `
     SELECT oi.*, i.brand, i.model, i.specification, i.type, i.unit, c.name as category_name,
-           a.system_date, a.customer_warranty_expire, a.warranty_expire, a.installed_date,
+           a.system_date, a.customer_warranty_expire, a.warranty_expire, a.installed_date, a.shipping_date,
            a.custom_attributes->>'project_name' as asset_project_name
     FROM outbound_items oi
-    JOIN item_master i ON oi.item_id = i.id
+    LEFT JOIN item_master i ON oi.item_id = i.id
     LEFT JOIN categories c ON i.category_id = c.id
     LEFT JOIN assets a ON oi.sn = a.sn
     WHERE oi.request_id = $1
@@ -454,6 +541,12 @@ export const queries = {
   checkAssetActive: `SELECT status FROM assets WHERE sn = $1`,
   updateStockQtyOnOutbound: `UPDATE item_master SET stock_qty = stock_qty - $1 WHERE id = $2 AND stock_qty >= $1`,
   updateAssetStatusAndLocationBySn: `UPDATE assets SET status = $1, location = $2 WHERE sn = $3`,
+  updateAssetStatusLocationAndShippingDateBySn: `UPDATE assets SET status = $1, location = $2, shipping_date = $3 WHERE sn = $4`,
+  updateAssetStatusLocationAndInstalledDateBySn: `UPDATE assets SET status = $1, location = $2, installed_date = $3, shipping_date = $3 WHERE sn = $4`,
+  updateMountedHardwareShippingDate: `UPDATE assets SET shipping_date = $1 WHERE custom_attributes->>'server_sn' = $2`,
+  updateMountedHardwareInstalledAndShippingDate: `UPDATE assets SET installed_date = $1, shipping_date = $1 WHERE custom_attributes->>'server_sn' = $2`,
+  updateAssetShippingDate: `UPDATE assets SET shipping_date = $1 WHERE id = $2`,
+  updateAssetShippingDateBySn: `UPDATE assets SET shipping_date = $1 WHERE sn = $2`,
   updateOutboundRequestStatus: `UPDATE outbound_requests SET status = $1 WHERE id = $2`,
   updateOutboundRequestReturned: `UPDATE outbound_requests SET status = 'RETURNED', actual_return_date = $2 WHERE id = $1`,
   deleteOutboundRequest: `DELETE FROM outbound_requests WHERE id = $1`,

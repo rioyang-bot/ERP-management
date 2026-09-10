@@ -77,12 +77,132 @@ const pool = new Pool({
       ALTER TABLE inbound_orders ADD COLUMN IF NOT EXISTS order_date DATE DEFAULT CURRENT_DATE;
       ALTER TABLE assets ADD COLUMN IF NOT EXISTS end_user VARCHAR(100);
       ALTER TABLE assets ADD COLUMN IF NOT EXISTS ownership VARCHAR(30) DEFAULT 'FOR_SALE';
+      ALTER TABLE assets ADD COLUMN IF NOT EXISTS shipping_date DATE;
+      ALTER TABLE outbound_items ADD COLUMN IF NOT EXISTS location VARCHAR(255);
+      ALTER TABLE outbound_items ADD COLUMN IF NOT EXISTS purpose VARCHAR(255) DEFAULT '運作測試';
+      ALTER TABLE outbound_requests ADD COLUMN IF NOT EXISTS location VARCHAR(255);
+      ALTER TABLE outbound_requests ADD COLUMN IF NOT EXISTS project_name VARCHAR(100);
+      ALTER TABLE outbound_requests ADD COLUMN IF NOT EXISTS signed_doc_url TEXT;
+      ALTER TABLE outbound_requests ADD COLUMN IF NOT EXISTS signed_doc_name TEXT;
+
+      -- 自動清理無任何資產與單據關聯之設備與硬體幽靈品項主檔 (當初匯入錯誤且資產已修改/刪除的殘留資料)
+      DELETE FROM item_master i
+      WHERE i.id IN (
+        SELECT im.id FROM item_master im
+        JOIN categories c ON im.category_id = c.id
+        WHERE c.name IN ('設備', '硬體')
+          AND NOT EXISTS (SELECT 1 FROM assets a WHERE a.item_master_id = im.id)
+          AND NOT EXISTS (SELECT 1 FROM inbound_items ii WHERE ii.item_id = im.id)
+          AND NOT EXISTS (SELECT 1 FROM outbound_items oi WHERE oi.item_id = im.id)
+          AND NOT EXISTS (SELECT 1 FROM item_lab_assignments la WHERE la.item_master_id = im.id)
+      );
+
+      -- 自動補齊 item_master 中的廠牌與類型至主檔表
+      INSERT INTO item_brands (category_id, name)
+      SELECT DISTINCT category_id, brand
+      FROM item_master
+      WHERE brand IS NOT NULL AND TRIM(brand) != '' AND category_id IS NOT NULL
+      ON CONFLICT DO NOTHING;
+
+      INSERT INTO item_types (category_id, name)
+      SELECT DISTINCT category_id, type
+      FROM item_master
+      WHERE type IS NOT NULL AND TRIM(type) != '' AND category_id IS NOT NULL
+      ON CONFLICT DO NOTHING;
     `);
+
+    // 自動偵測並整併大小寫與空白重複之品項主檔 (Case-Insensitive Master Merge)
+    await autoMergeDuplicateItemMasters(pool);
+
     console.log('✅ Repair Order Tables (RMA) & schema migrations checked & ready');
   } catch (e) {
     console.error('⚠️ Notice on auto-initializing tables / schema migration:', e.message);
   }
 })();
+
+// 大小寫與空白重複品項主檔安全整併核心函式
+async function autoMergeDuplicateItemMasters(clientPool) {
+  try {
+    const dupRes = await clientPool.query(`
+      SELECT 
+        c.name as cat_name,
+        LOWER(TRIM(i.brand)) as norm_brand,
+        LOWER(TRIM(i.type)) as norm_type,
+        LOWER(TRIM(i.model)) as norm_model,
+        LOWER(TRIM(COALESCE(i.specification, ''))) as norm_specification,
+        array_agg(i.id ORDER BY i.id ASC) as ids
+      FROM item_master i
+      JOIN categories c ON i.category_id = c.id
+      WHERE c.name IN ('設備', '硬體')
+      GROUP BY c.name, LOWER(TRIM(i.brand)), LOWER(TRIM(i.type)), LOWER(TRIM(i.model)), LOWER(TRIM(COALESCE(i.specification, '')))
+      HAVING COUNT(*) > 1
+    `);
+
+    if (dupRes.rows.length === 0) {
+      console.log('✅ Item Master check: No duplicate case-insensitive masters found.');
+      return { mergedGroups: 0, removedMasters: 0 };
+    }
+
+    console.log(`🔍 Found ${dupRes.rows.length} groups of case-insensitive duplicate item masters. Merging...`);
+    let totalRemoved = 0;
+
+    for (const group of dupRes.rows) {
+      const allIds = group.ids;
+      // 找出擁有最多資產關聯的主檔做為主要主檔 (primaryId)
+      const assetCounts = await clientPool.query(`
+        SELECT item_master_id, COUNT(*) as cnt
+        FROM assets
+        WHERE item_master_id = ANY($1)
+        GROUP BY item_master_id
+        ORDER BY cnt DESC, item_master_id ASC
+      `, [allIds]);
+
+      const primaryId = assetCounts.rows.length > 0 ? assetCounts.rows[0].item_master_id : allIds[0];
+      const secondaryIds = allIds.filter(id => id !== primaryId);
+
+      if (secondaryIds.length === 0) continue;
+
+      // 1. 轉移資產關聯 (assets)
+      await clientPool.query(`
+        UPDATE assets SET item_master_id = $1 WHERE item_master_id = ANY($2)
+      `, [primaryId, secondaryIds]);
+
+      // 2. 轉移進貨單項目 (inbound_items)
+      await clientPool.query(`
+        UPDATE inbound_items SET item_id = $1 WHERE item_id = ANY($2)
+      `, [primaryId, secondaryIds]);
+
+      // 3. 轉移出貨單項目 (outbound_items)
+      await clientPool.query(`
+        UPDATE outbound_items SET item_id = $1 WHERE item_id = ANY($2)
+      `, [primaryId, secondaryIds]);
+
+      // 4. 轉移 LAB 配置紀錄 (item_lab_assignments)
+      await clientPool.query(`
+        UPDATE item_lab_assignments SET item_master_id = $1 WHERE item_master_id = ANY($2)
+      `, [primaryId, secondaryIds]);
+
+      // 5. 轉移維修品項目 (repair_items)
+      await clientPool.query(`
+        UPDATE repair_items SET item_master_id = $1 WHERE item_master_id = ANY($2)
+      `, [primaryId, secondaryIds]);
+
+      // 6. 安全刪除次要重複主檔
+      await clientPool.query(`
+        DELETE FROM item_master WHERE id = ANY($1)
+      `, [secondaryIds]);
+
+      totalRemoved += secondaryIds.length;
+      console.log(`   ✨ Merged [${group.cat_name} ${group.norm_brand} ${group.norm_model}]: Kept ID ${primaryId}, merged ${secondaryIds.length} duplicate(s) (${secondaryIds.join(',')})`);
+    }
+
+    console.log(`✅ Item Master Auto-Merge finished: Merged ${dupRes.rows.length} groups, removed ${totalRemoved} duplicate masters.`);
+    return { mergedGroups: dupRes.rows.length, removedMasters: totalRemoved };
+  } catch (err) {
+    console.error('⚠️ Notice on auto-merging duplicate item masters:', err.message);
+    return { error: err.message };
+  }
+}
 
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
@@ -135,8 +255,7 @@ app.post('/api/namedQuery', async (req, res) => {
     res.json({ success: true, rows: result.rows });
   } catch (error) {
     console.error(`[DB Error] ${queryName}:`, error.message);
-    // 遵循規範 2：遮蔽原始錯誤碼，不將系統詳情洩漏給前端
-    res.status(500).json({ success: false, error: '資料庫執行異常，請聯絡管理員。' });
+    res.status(500).json({ success: false, error: `資料庫執行異常: ${error.message}` });
   }
 });
 
@@ -164,6 +283,29 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
   }
   
   res.json({ success: true, fileName: req.file.filename, url: fileUrl });
+});
+
+// 手動掃描大小寫重複品項主檔 API
+app.get('/api/item-master/scan-duplicates', async (req, res) => {
+  try {
+    const result = await pool.query(namedQueries.scanDuplicateItemMasters);
+    res.json({ success: true, rows: result.rows });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 手動執行大小寫重複品項主檔整併 API
+app.post('/api/item-master/merge-duplicates', async (req, res) => {
+  try {
+    const mergeResult = await autoMergeDuplicateItemMasters(pool);
+    if (mergeResult.error) {
+      return res.status(500).json({ success: false, error: mergeResult.error });
+    }
+    res.json({ success: true, ...mergeResult });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 // 正式環境：服務前端 React 打包檔（dist/）

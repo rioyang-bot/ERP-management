@@ -157,37 +157,37 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
     }
   };
 
-  // --- 序號查詢邏輯 ---
-  const handleSnSearch = async (e, type) => {
-    if (e) e.preventDefault();
-    const inputVal = type === 'device' ? deviceSnInput : hwSnInput;
-    if (!inputVal.trim()) return;
+  // --- 依序號直接加入資產 ---
+  const addAssetBySn = async (sn, type) => {
+    if (!sn || !sn.trim()) return false;
+    const cleanSn = sn.trim();
 
     setIsSearching(true);
     try {
-      const res = await window.electronAPI.namedQuery('fetchAssetDetailBySN', [inputVal.trim()]);
+      const res = await window.electronAPI.namedQuery('fetchAssetDetailBySN', [cleanSn]);
       if (res.success && res.rows.length > 0) {
         const item = res.rows[0];
         
-        const categoryMatch = (type === 'device' && item.category_name === '設備') || (type === 'hw' && item.category_name === '硬體');
+        const isDevice = item.category_name === '設備';
+        const categoryMatch = (type === 'device' && isDevice) || (type === 'hw' && !isDevice);
         
         if (!categoryMatch) {
-            alert(type === 'device' ? '此序號屬於「硬體」，請改用下方的硬體搜尋列！' : '此序號屬於「設備」，請改用上方的設備搜尋列！');
-            return;
+            alert(type === 'device' ? '此項目屬於「硬體」，請改用下方的硬體搜尋列！' : '此項目屬於「設備」，請改用上方的設備搜尋列！');
+            return false;
         }
 
         if (outboundItems.some(i => i.sn === item.sn)) {
-          alert('此序號已在借用清單中');
+          alert(`序號 [${item.sn}] 已在借用清單中`);
           if (type === 'device') setDeviceSnInput(''); else setHwSnInput('');
-          return;
+          return false;
         }
 
         const newItem = {
           ...item,
-          tempId: Date.now(),
+          tempId: Date.now() + Math.random(),
           qty: 1,
           isSerialized: true,
-          location: header.location,
+          location: item.location || header.location,
           purpose: header.purpose || '運作測試',
           components: item.components || []
         };
@@ -200,14 +200,50 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
           setHwSnInput('');
           setShowHwDropdown(false);
         }
+        return true;
       } else {
-        alert('找不到該序號的資產');
+        alert(`找不到序號為 [${cleanSn}] 的資產`);
+        return false;
       }
     } catch (err) {
       console.error('Search error:', err);
+      alert('查詢資產時發生非預期錯誤');
+      return false;
     } finally {
       setIsSearching(false);
     }
+  };
+
+  // --- 序號/規格模糊搜尋提交邏輯 ---
+  const handleSnSearch = async (e, type) => {
+    if (e) e.preventDefault();
+    const inputVal = (type === 'device' ? deviceSnInput : hwSnInput).trim();
+    if (!inputVal) return;
+
+    const suggestions = type === 'device' ? getDeviceSuggestions() : getHwSuggestions();
+
+    const exactSnMatch = activeAssets.find(a => 
+      ((type === 'device' && a.category_name === '設備') || (type === 'hw' && a.category_name !== '設備' && a.category_name !== '耗材')) &&
+      a.sn.toLowerCase() === inputVal.toLowerCase()
+    );
+
+    if (exactSnMatch) {
+      await addAssetBySn(exactSnMatch.sn, type);
+      return;
+    }
+
+    if (suggestions.length === 1) {
+      await addAssetBySn(suggestions[0].sn, type);
+      return;
+    }
+
+    if (suggestions.length > 1) {
+      if (type === 'device') setShowDeviceDropdown(true);
+      else setShowHwDropdown(true);
+      return;
+    }
+
+    await addAssetBySn(inputVal, type);
   };
 
   // --- 耗材快選邏輯 ---
@@ -299,9 +335,10 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
       const requestId = reqRes.rows[0].id;
 
       // 3. 建立借用明細 (Outbound Items)
+      let itemError = null;
       for (const item of outboundItems) {
         const itemPurpose = item.purpose || header.purpose || '運作測試';
-        await window.electronAPI.namedQuery('insertLendOutboundItem', [
+        const itemRes = await window.electronAPI.namedQuery('insertLendOutboundItem', [
           requestId,
           item.item_id || item.item_master_id,
           item.sn || null,
@@ -309,10 +346,14 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
           item.location || header.location,
           itemPurpose
         ]);
+        if (itemRes && !itemRes.success) {
+          itemError = itemRes.error || '寫入借用品項失敗';
+          console.error('Insert lend outbound item error:', itemError);
+        }
 
         if (item.components && item.components.length > 0) {
           for (const comp of item.components) {
-            await window.electronAPI.namedQuery('insertLendOutboundItem', [
+            const compRes = await window.electronAPI.namedQuery('insertLendOutboundItem', [
               requestId,
               comp.item_master_id, 
               comp.sn,
@@ -320,8 +361,15 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
               item.location || header.location,
               itemPurpose
             ]);
+            if (compRes && !compRes.success) {
+              console.error('Insert lend component error:', compRes.error);
+            }
           }
         }
+      }
+
+      if (itemError) {
+        alert(`⚠️ 注意：借用單已建立 [${dnNumber}]，但明細品項寫入時發生異常：${itemError}。請檢查明細！`);
       }
 
       logCreate(
@@ -377,19 +425,35 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
     }
   };
 
-  // 取得建議清單
+  // 多欄位多關鍵字模糊比對輔助函式
+  const matchAssetFuzzy = (asset, queryStr) => {
+    if (!queryStr || !queryStr.trim()) return false;
+    const tokens = queryStr.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const combined = [
+      asset.sn || '',
+      asset.brand || '',
+      asset.model || '',
+      asset.type || '',
+      asset.specification || '',
+      asset.location || ''
+    ].join(' ').toLowerCase();
+
+    return tokens.every(token => combined.includes(token));
+  };
+
+  // 取得建議清單 (支援序號、廠牌、型號、類型、規格、存放位置多維度模糊搜尋)
   const getDeviceSuggestions = () => {
     if (!deviceSnInput.trim()) return [];
     return activeAssets
-      .filter(a => a.category_name === '設備' && a.sn.toLowerCase().includes(deviceSnInput.toLowerCase()))
-      .slice(0, 5);
+      .filter(a => a.category_name === '設備' && matchAssetFuzzy(a, deviceSnInput))
+      .slice(0, 10);
   };
 
   const getHwSuggestions = () => {
     if (!hwSnInput.trim()) return [];
     return activeAssets
-      .filter(a => a.category_name === '硬體' && a.sn.toLowerCase().includes(hwSnInput.toLowerCase()))
-      .slice(0, 5);
+      .filter(a => a.category_name !== '設備' && a.category_name !== '耗材' && matchAssetFuzzy(a, hwSnInput))
+      .slice(0, 10);
   };
 
   // 耗材篩選邏輯
@@ -620,73 +684,117 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
               </div>
 
               {/* 資產序號搜尋 */}
-              <div className="dn-card">
+              <div className="dn-card sn-card">
                 <div className="dn-card-header">
                   <Cpu size={18} /> <span>資產序號匯入 (S/N Scan)</span>
                 </div>
                 
-                <form className="sn-search-box" style={{ marginBottom: '12px', position: 'relative' }} onSubmit={(e) => handleSnSearch(e, 'device')}>
+                <form className="sn-search-box device-box" style={{ marginBottom: '12px', position: 'relative' }} onSubmit={(e) => handleSnSearch(e, 'device')}>
                   <input 
                     type="text" 
-                    placeholder="輸入設備序號 (Device S/N)"
+                    placeholder="輸入設備序號、廠牌、型號或規格搜尋 (可點選直接加入)..."
                     value={deviceSnInput}
                     onChange={e => {
                       setDeviceSnInput(e.target.value);
                       setShowDeviceDropdown(true);
                     }}
                     onFocus={() => setShowDeviceDropdown(true)}
-                    onBlur={() => setTimeout(() => setShowDeviceDropdown(false), 200)}
+                    onBlur={() => setTimeout(() => setShowDeviceDropdown(false), 250)}
                   />
-                  <button type="submit" disabled={isSearching}>
+                  <button type="submit" disabled={isSearching} title="按 Enter 或點擊直接加入">
                     {isSearching ? <Loader2 className="spinner" size={14} /> : <Search size={14} />}
                     加入設備
                   </button>
                   
-                  {showDeviceDropdown && getDeviceSuggestions().length > 0 && (
+                  {showDeviceDropdown && (
                     <div className="autocomplete-dropdown">
-                      {getDeviceSuggestions().map(suggestion => (
-                        <div 
-                          key={suggestion.sn} 
-                          className="autocomplete-item"
-                          onClick={() => setDeviceSnInput(suggestion.sn)}
-                        >
-                          <span className="ac-sn">{suggestion.sn}</span>
-                          <span className="ac-desc">{suggestion.brand} {suggestion.model}</span>
+                      <div className="ac-dropdown-header">
+                        <span>{deviceSnInput.trim() ? `相符在庫設備 (${getDeviceSuggestions().length}) · 點擊直接加入` : `在庫設備清單 (前 ${getDeviceSuggestions().length} 筆) · 點擊直接加入或輸入關鍵字`}</span>
+                      </div>
+                      {getDeviceSuggestions().length === 0 ? (
+                        <div className="empty-hint" style={{ padding: '16px', fontSize: '13px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                          無符合「{deviceSnInput}」的在庫設備
                         </div>
-                      ))}
+                      ) : (
+                        getDeviceSuggestions().map(suggestion => (
+                          <div 
+                            key={suggestion.sn} 
+                            className="autocomplete-item"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              addAssetBySn(suggestion.sn, 'device');
+                            }}
+                          >
+                            <div className="ac-header">
+                              <span className="ac-badge ac-badge-device">{suggestion.type || '設備'}</span>
+                              <span className="ac-title">{suggestion.brand} {suggestion.model}</span>
+                              <span className="ac-add-hint"><Plus size={12} /> 加入</span>
+                            </div>
+                            {suggestion.specification && (
+                              <div className="ac-spec">{suggestion.specification}</div>
+                            )}
+                            <div className="ac-meta">
+                              <span className="ac-sn">S/N: <strong>{suggestion.sn}</strong></span>
+                              {suggestion.location && <span className="ac-loc">📍 {suggestion.location}</span>}
+                            </div>
+                          </div>
+                        ))
+                      )}
                     </div>
                   )}
                 </form>
 
-                <form className="sn-search-box" style={{ position: 'relative' }} onSubmit={(e) => handleSnSearch(e, 'hw')}>
+                <form className="sn-search-box hw-box" style={{ position: 'relative' }} onSubmit={(e) => handleSnSearch(e, 'hw')}>
                   <input 
                     type="text" 
-                    placeholder="輸入硬體序號 (Hardware S/N)"
+                    placeholder="輸入硬體序號、廠牌、類型或規格搜尋 (可點選直接加入)..."
                     value={hwSnInput}
                     onChange={e => {
                       setHwSnInput(e.target.value);
                       setShowHwDropdown(true);
                     }}
                     onFocus={() => setShowHwDropdown(true)}
-                    onBlur={() => setTimeout(() => setShowHwDropdown(false), 200)}
+                    onBlur={() => setTimeout(() => setShowHwDropdown(false), 250)}
                   />
-                  <button type="submit" disabled={isSearching}>
+                  <button type="submit" disabled={isSearching} title="按 Enter 或點擊直接加入">
                     {isSearching ? <Loader2 className="spinner" size={14} /> : <Search size={14} />}
                     加入硬體
                   </button>
                   
-                  {showHwDropdown && getHwSuggestions().length > 0 && (
+                  {showHwDropdown && (
                     <div className="autocomplete-dropdown">
-                      {getHwSuggestions().map(suggestion => (
-                        <div 
-                          key={suggestion.sn} 
-                          className="autocomplete-item"
-                          onClick={() => setHwSnInput(suggestion.sn)}
-                        >
-                          <span className="ac-sn">{suggestion.sn}</span>
-                          <span className="ac-desc">{suggestion.brand} {suggestion.model}</span>
+                      <div className="ac-dropdown-header">
+                        <span>{hwSnInput.trim() ? `相符在庫硬體 (${getHwSuggestions().length}) · 點擊直接加入` : `在庫硬體清單 (前 ${getHwSuggestions().length} 筆) · 點擊直接加入或輸入關鍵字`}</span>
+                      </div>
+                      {getHwSuggestions().length === 0 ? (
+                        <div className="empty-hint" style={{ padding: '16px', fontSize: '13px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                          無符合「{hwSnInput}」的在庫硬體
                         </div>
-                      ))}
+                      ) : (
+                        getHwSuggestions().map(suggestion => (
+                          <div 
+                            key={suggestion.sn} 
+                            className="autocomplete-item"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              addAssetBySn(suggestion.sn, 'hw');
+                            }}
+                          >
+                            <div className="ac-header">
+                              <span className="ac-badge ac-badge-hw">{suggestion.type || '硬體'}</span>
+                              <span className="ac-title">{suggestion.brand} {suggestion.model}</span>
+                              <span className="ac-add-hint"><Plus size={12} /> 加入</span>
+                            </div>
+                            {suggestion.specification && (
+                              <div className="ac-spec">{suggestion.specification}</div>
+                            )}
+                            <div className="ac-meta">
+                              <span className="ac-sn">S/N: <strong>{suggestion.sn}</strong></span>
+                              {suggestion.location && <span className="ac-loc">📍 {suggestion.location}</span>}
+                            </div>
+                          </div>
+                        ))
+                      )}
                     </div>
                   )}
                 </form>

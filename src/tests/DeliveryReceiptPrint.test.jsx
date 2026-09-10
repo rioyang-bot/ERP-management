@@ -231,4 +231,33 @@ describe('DeliveryReceiptPrintModal 交貨簽收單列印與預覽測試', () =>
     const downloadBtn = screen.getByText('下載圖檔');
     expect(downloadBtn).toBeInTheDocument();
   });
+
+  it('耗材數量應獨立顯示於數量欄位，且序號欄位不應包含「數量:」字樣', () => {
+    const { container } = render(
+      <DeliveryReceiptPrintModal
+        isOpen={true}
+        onClose={vi.fn()}
+        dnData={mockDnData}
+        items={mockItems}
+      />
+    );
+
+    // 表頭應有「數量」欄位
+    expect(screen.getByText('數量')).toBeInTheDocument();
+
+    // 耗材名稱為 Generic (Power Cable)
+    expect(screen.getByText('Generic (Power Cable)')).toBeInTheDocument();
+
+    // 序號欄位不可出現「數量: 5」
+    expect(screen.queryByText('數量: 5')).toBeNull();
+
+    // 數量欄位中應有「5」
+    expect(screen.getByText('5')).toBeInTheDocument();
+
+    // 驗證包含數量在內的表格儲存格內容
+    const allCells = Array.from(container.querySelectorAll('.dr-table tbody td')).map(td => td.textContent.trim());
+    expect(allCells).toContain('Generic (Power Cable)');
+    expect(allCells).toContain('5');
+    expect(allCells).toContain('--');
+  });
 });

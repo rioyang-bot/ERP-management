@@ -229,8 +229,16 @@ const DNList = ({ isSplitMode = false }) => {
         } else if (item.category_name === '硬體' || item.category_name === '設備') {
            const destLocation = item.location || selectedDN.location;
            const assetStatus = selectedDN.request_type === 'LEND' ? 'LENT' : 'SHIPPED';
-           const res = await window.electronAPI.namedQuery('updateAssetStatusAndLocationBySn', [assetStatus, destLocation, item.sn]);
-           if (!res.success) throw new Error(`變更序號 [${item.sn}] 狀態時發生錯誤。`);
+           const shipDate = selectedDN.shipping_date || new Date().toISOString().split('T')[0];
+           const res = await window.electronAPI.namedQuery('updateAssetStatusLocationAndInstalledDateBySn', [assetStatus, destLocation, shipDate, item.sn]);
+           if (!res.success) throw new Error(`變更序號 [${item.sn}] 狀態與安裝日期時發生錯誤。`);
+
+           // 同步將該設備掛載之硬體零組件更新安裝與出貨日期
+           try {
+             await window.electronAPI.namedQuery('updateMountedHardwareInstalledAndShippingDate', [shipDate, item.sn]);
+           } catch (err) {
+             console.error('Update mounted hardware installed date error:', err);
+           }
 
            // 若出貨單有專案，確保資產與搭載零組件之專案屬性完整寫入
            if (selectedDN.project_name && item.sn) {

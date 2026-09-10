@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Trash2, Save, FileText, ShoppingBag, Layers, AlertCircle, ArrowDownToLine } from 'lucide-react';
+import { Plus, Trash2, Save, FileText, ShoppingBag, Layers, AlertCircle, ArrowDownToLine, Search, Package } from 'lucide-react';
+import InboundItemSelectModal from '../components/InboundItemSelectModal';
 import { logCreate } from '../utils/auditLogger';
 
 const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) => {
@@ -19,6 +20,7 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
     custodian: '', spec: '', unit: '個' 
   });
   const [activeRowId, setActiveRowId] = useState(null);
+  const [showItemSelectModal, setShowItemSelectModal] = useState(false);
 
   const fetchNextOrderNo = useCallback(async (targetDate) => {
     try {
@@ -104,6 +106,65 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
       itemId: value, 
       cat_name: selected?.cat_name || '',
       unit: selected?.unit || '個'
+    } : row));
+  };
+
+  const handleBatchAddItems = (selectedList) => {
+    if (!selectedList || selectedList.length === 0) return;
+
+    // 若當前只有一筆尚未選取品項且未綁定採購單的空白列，則優先取代該空白列
+    const isSingleEmpty = items.length === 1 && !items[0].purchaseRecordId && !items[0].itemId;
+
+    const newRows = selectedList.map((item, idx) => ({
+      id: Date.now() + idx,
+      selectedOrderNo: '',
+      purchaseRecordId: '',
+      itemId: item.id,
+      cat_name: item.cat_name || '',
+      unit: item.unit || '個',
+      sn: '',
+      qty: item.quantity || 1
+    }));
+
+    if (isSingleEmpty) {
+      setItems(newRows);
+    } else {
+      setItems([...items, ...newRows]);
+    }
+  };
+
+  const handleSingleAddItem = (selectedItem, qty = 1) => {
+    if (!selectedItem) return;
+    if (activeRowId) {
+      setItems(items.map(row => row.id === activeRowId ? { 
+        ...row, 
+        itemId: selectedItem.id, 
+        cat_name: selectedItem.cat_name || '',
+        unit: selectedItem.unit || '個',
+        qty: qty || row.qty || 1
+      } : row));
+    } else {
+      handleBatchAddItems([{ ...selectedItem, quantity: qty }]);
+    }
+    setShowItemSelectModal(false);
+    setActiveRowId(null);
+  };
+
+  const handleModalItemSelect = (selectedItem) => {
+    handleSingleAddItem(selectedItem, 1);
+  };
+
+  const openItemSelectModal = (rowId = null) => {
+    setActiveRowId(rowId);
+    setShowItemSelectModal(true);
+  };
+
+  const handleClearItem = (rowId) => {
+    setItems(items.map(row => row.id === rowId ? {
+      ...row,
+      itemId: '',
+      cat_name: '',
+      unit: '個'
     } : row));
   };
 
@@ -450,13 +511,99 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
                     <option value="">-- 請選擇採購品項 --</option>
                     {pendingPurchases.filter(p => p.order_no === row.selectedOrderNo).map(p => <option key={p.id} value={p.id}>{[p.brand, p.model, p.specification].filter(Boolean).join(' ')} (未入庫 {p.quantity - (p.received_quantity || 0)})</option>)}
                   </select>
-                ) : (
-                  <select value={row.itemId} onChange={(e) => handleItemSelect(row.id, e.target.value)} style={{ ...inputStyle, backgroundColor: row.itemId ? 'rgba(16, 185, 129, 0.15)' : 'var(--input-bg)', color: 'var(--input-text)' }}>
-                    <option value="">選取庫存品項</option>
-                    {availableItems.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-                    <option value="NEW_ITEM" style={{ fontWeight: 800, color: 'var(--primary-color)' }}>+ 快速新增品項</option>
-                  </select>
-                )}
+                ) : (() => {
+                  const selected = availableItems.find(i => i.id?.toString() === row.itemId?.toString());
+                  return selected ? (
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '6px 12px',
+                      borderRadius: '8px',
+                      backgroundColor: 'rgba(37, 99, 235, 0.08)',
+                      border: '1px solid rgba(37, 99, 235, 0.3)',
+                      gap: '8px'
+                    }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 800, fontSize: '13px', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                          <span>{selected.brand} {selected.model}</span>
+                          {selected.current_stock !== undefined && (
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>
+                              (目前庫存: {selected.current_stock} {selected.unit || '個'})
+                            </span>
+                          )}
+                        </div>
+                        {selected.specification && (
+                          <div style={{ fontSize: '11px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={selected.specification}>
+                            {selected.specification}
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <button
+                          type="button"
+                          onClick={() => openItemSelectModal(row.id)}
+                          style={{
+                            padding: '4px 8px',
+                            borderRadius: '6px',
+                            border: '1px solid var(--border-color)',
+                            backgroundColor: 'var(--bg-surface)',
+                            color: 'var(--primary-color)',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            cursor: 'pointer'
+                          }}
+                          title="重新選擇品項"
+                          data-testid={`change-item-btn-${row.id}`}
+                        >
+                          更換
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleClearItem(row.id)}
+                          style={{
+                            padding: '4px 6px',
+                            borderRadius: '6px',
+                            border: 'none',
+                            backgroundColor: 'transparent',
+                            color: '#ef4444',
+                            fontSize: '14px',
+                            fontWeight: 700,
+                            cursor: 'pointer'
+                          }}
+                          title="清除品項"
+                          data-testid={`clear-item-btn-${row.id}`}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => openItemSelectModal(row.id)}
+                      style={{
+                        width: '100%',
+                        padding: '10px 14px',
+                        borderRadius: '8px',
+                        border: '1.5px dashed var(--primary-color)',
+                        backgroundColor: 'rgba(37, 99, 235, 0.04)',
+                        color: 'var(--primary-color)',
+                        fontSize: '13px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                        transition: 'all 0.15s ease'
+                      }}
+                      data-testid={`open-item-select-btn-${row.id}`}
+                    >
+                      <Search size={15} /> 🔍 點擊選取庫存品項...
+                    </button>
+                  );
+                })()}
               </td>
               <td style={tdStyle}>
                 {row.cat_name ? <span style={{ padding: '4px 10px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '6px', fontSize: '0.8rem', color: 'var(--text-main)', border: '1px solid var(--border-color)', fontWeight: 600 }}>{row.cat_name}</span> : <span style={{ color: 'var(--text-subtle)', fontSize: '0.8rem' }}>--</span>}
@@ -468,7 +615,33 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
           ))}
         </tbody>
       </table>
-      <button onClick={handleAddItem} style={addRowsButtonStyle}><Plus size={18} /> 增加品項明細</button>
+      <div style={{ padding: '14px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-surface-subtle)', borderTop: '1px solid var(--border-color)', flexWrap: 'wrap', gap: '12px', marginTop: '12px', borderRadius: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <button 
+            type="button" 
+            onClick={() => openItemSelectModal(null)}
+            style={{ 
+              display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 18px', 
+              backgroundColor: 'var(--primary-color)', color: '#ffffff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 800, fontSize: '13px',
+              boxShadow: '0 4px 10px rgba(37, 99, 235, 0.25)'
+            }}
+            data-testid="open-inbound-item-modal-btn"
+          >
+            <Package size={16} /> 📦 從品項庫挑選 (可批次勾選加入)
+          </button>
+          <button 
+            type="button" 
+            onClick={handleAddItem} 
+            style={{ 
+              display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 16px', 
+              backgroundColor: 'var(--bg-surface)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '8px', cursor: 'pointer', fontWeight: 700, fontSize: '13px' 
+            }}
+            data-testid="add-empty-inbound-row-btn"
+          >
+            <Plus size={16} /> ➕ 增加空白品項明細
+          </button>
+        </div>
+      </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '16px', borderTop: '1px solid var(--border-color)', paddingTop: '32px' }}>
         <button onClick={handleSubmit} style={submitButtonStyle}><ShoppingBag size={20} /> 確認入庫作業</button>
       </div>
@@ -513,6 +686,25 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
           </div>
         </div>
       )}
+      {/* 專屬品項庫選取 Modal */}
+      <InboundItemSelectModal
+        isOpen={showItemSelectModal}
+        onClose={() => {
+          setShowItemSelectModal(false);
+          setActiveRowId(null);
+        }}
+        items={availableItems}
+        isSingleSelect={!!activeRowId}
+        onSelect={(item) => handleSingleAddItem(item, item.quantity || 1)}
+        onBatchAdd={handleBatchAddItems}
+        onSingleAdd={handleSingleAddItem}
+        onItemDeleted={(deletedId) => {
+          setAvailableItems((prev) => prev.filter((i) => i.id !== deletedId));
+        }}
+        onOpenQuickAdd={() => {
+          setShowQuickAdd(true);
+        }}
+      />
     </div>
   );
 };

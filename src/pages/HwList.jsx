@@ -118,11 +118,16 @@ const HwList = ({ isSplitMode = false }) => {
   }, [loadData]);
 
   const handleEdit = (nic) => {
+    let shipDateStr = '';
+    if (nic.shipping_date) {
+      try { shipDateStr = new Date(nic.shipping_date).toISOString().split('T')[0]; } catch { shipDateStr = ''; }
+    }
     setEditItem({
       ...nic,
       _origModel: nic.model || '',
       _origSpec: nic.specification || '',
       ownership: nic.ownership || 'FOR_SALE',
+      shipping_date: shipDateStr,
       temp_server_sn: nic.custom_attributes?.server_sn || '',
       temp_order_source: nic.custom_attributes?.order_source !== undefined ? nic.custom_attributes?.order_source : (nic.custom_attributes?.order_date || ''),
       temp_project_name: nic.custom_attributes?.project_name || '',
@@ -191,6 +196,9 @@ const HwList = ({ isSplitMode = false }) => {
 
       if (targetMasterId && targetMasterId !== editItem.item_master_id) {
         await window.electronAPI.namedQuery('updateAssetMasterId', [targetMasterId, editItem.id]);
+        if (editItem.item_master_id) {
+          await window.electronAPI.namedQuery('deleteItemMasterIfOrphan', [editItem.item_master_id]);
+        }
       }
 
       await window.electronAPI.namedQuery('insertDeviceModel', [editItem.brand, newModel, '硬體']);
@@ -210,6 +218,11 @@ const HwList = ({ isSplitMode = false }) => {
       editItem.temp_end_user !== undefined ? editItem.temp_end_user : (editItem.end_user || editItem.custom_attributes?.end_user || null)
     ]);
     if (res.success) { 
+      try {
+        await window.electronAPI.namedQuery('updateAssetShippingDate', [editItem.shipping_date || null, parseInt(editItem.id, 10)]);
+      } catch (err) {
+        console.error('Failed to update hardware shipping_date:', err);
+      }
       logUpdate('HARDWARE', editItem.sn || editItem.id, `${editItem.brand || ''} ${editItem.model || ''}`, `編輯硬體詳細資訊 [${editItem.sn || editItem.id}]`, {
         sn: editItem.sn,
         client: editItem.client,
@@ -218,7 +231,8 @@ const HwList = ({ isSplitMode = false }) => {
         ownership: editItem.ownership,
         server_sn: editItem.temp_server_sn,
         project_name: editItem.temp_project_name,
-        order_source: editItem.temp_order_source
+        order_source: editItem.temp_order_source,
+        shipping_date: editItem.shipping_date
       });
       setShowEditModal(false); 
       window.dispatchEvent(new CustomEvent('db-update'));
@@ -735,6 +749,7 @@ const HwList = ({ isSplitMode = false }) => {
             <th style={{ ...thStyle, textAlign: 'left' }}>規格 (Spec)</th>
             <th style={{ ...thStyle, textAlign: 'left' }}>專案編號/名稱 (Project)</th>
             <th style={{ ...thStyle, textAlign: 'left' }}>訂單來源 (OrderSource)</th>
+            <th style={{ ...thStyle, textAlign: 'left' }}>出貨日期</th>
             <th style={{ ...thStyle, textAlign: 'left' }}>對應伺服器</th>
             {showServerDetails && <th style={{ ...thStyle, textAlign: 'left' }}>伺服器屬性</th>}
             <th style={{ ...thStyle, textAlign: 'left' }}>客戶</th>
@@ -783,6 +798,9 @@ const HwList = ({ isSplitMode = false }) => {
                   })()}
                 </td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{nic.custom_attributes?.order_source !== undefined ? (nic.custom_attributes?.order_source || '--') : (nic.custom_attributes?.order_date || '--')}</td>
+                <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontSize: '11px', color: nic.shipping_date ? '#8b5cf6' : 'var(--text-muted)', fontWeight: nic.shipping_date ? 700 : 'normal' }}>
+                  {nic.shipping_date ? new Date(nic.shipping_date).toLocaleDateString() : '--'}
+                </td>
                 <td style={tdStyle}>
                   <div style={{ color: '#818cf8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <Server size={12} /> {nic.custom_attributes?.server_sn || '--'}
@@ -1200,6 +1218,18 @@ const HwList = ({ isSplitMode = false }) => {
                     value={editItem.temp_order_source !== undefined ? editItem.temp_order_source : ''} 
                     onChange={(e) => setEditItem({ ...editItem, temp_order_source: e.target.value })} 
                     placeholder="請輸入訂單來源 (例: XeAU Nov2022)"
+                    style={editInputStyle} 
+                  />
+                </label>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px', borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
+                <label style={editLabelStyle}>
+                  出貨日期 (Shipping Date)
+                  <input 
+                    type="date" 
+                    value={editItem.shipping_date || ''} 
+                    onChange={(e) => setEditItem({ ...editItem, shipping_date: e.target.value })} 
                     style={editInputStyle} 
                   />
                 </label>
