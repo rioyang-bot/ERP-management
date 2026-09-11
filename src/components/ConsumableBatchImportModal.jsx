@@ -210,7 +210,7 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
       for (const [k, v] of entries) {
         const lk = k.toLowerCase().replace(/[\s_\(\)\-]/g, '');
         if (lk.includes('brand') || lk.includes('廠牌') || lk.includes('品牌')) brandVal = v;
-        else if (lk.includes('type') || lk.includes('類型')) typeVal = v;
+        else if (!lk.includes('os') && !lk.includes('作業系統') && (lk.includes('type') || lk.includes('類型'))) typeVal = v;
         else if (lk.includes('model') || lk.includes('型號')) modelVal = v;
         else if (lk.includes('remark') || lk.includes('備註') || lk.includes('note') || lk.includes('spec') || lk.includes('規格') || lk.includes('品項') || lk.includes('名稱')) specVal = v;
         else if (lk.includes('total') || lk.includes('總數') || lk.includes('數量') || lk.includes('stock') || lk.includes('庫存')) {

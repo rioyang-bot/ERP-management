@@ -37,19 +37,23 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
   const [customFieldDefs, setCustomFieldDefs] = useState([]);
   const [fileHeaders, setFileHeaders] = useState([]);
   const [customFieldMapping, setCustomFieldMapping] = useState({});
+  const [fileDuplicateHeaders, setFileDuplicateHeaders] = useState([]);
 
   const fileInputRef = useRef(null);
 
-  // 智慧比對自訂欄位與檔案表頭
+  // 智慧比對自訂欄位與檔案表頭 (嚴格隔離 OS Type，避免誤對應至硬體類型)
   const findMatchingHeader = (headers, field) => {
     if (!headers || headers.length === 0 || !field) return '';
     const normalize = (str) => String(str || '').trim().toLowerCase().replace(/[\s_\(\)\-\[\]\/\\:]/g, '');
     const normLabel = normalize(field.label);
     const normId = normalize(field.id);
+    const isTypeField = normLabel === 'type' || normLabel === '類型' || normId === 'type';
 
     // 1. 精準比對 (對應 label 或 id)
     for (const h of headers) {
       const nh = normalize(h);
+      // 若為硬體類型相關欄位，排除包含 os 或 作業系統 的表頭
+      if (isTypeField && (nh.includes('os') || nh.includes('作業系統'))) continue;
       if (nh && (nh === normLabel || nh === normId)) {
         return h;
       }
@@ -59,6 +63,7 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
     if (normLabel.length >= 2) {
       for (const h of headers) {
         const nh = normalize(h);
+        if (isTypeField && (nh.includes('os') || nh.includes('作業系統'))) continue;
         if (nh && (nh.includes(normLabel) || normLabel.includes(nh))) {
           return h;
         }
@@ -177,6 +182,7 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
     setRawJsonData([]);
     setFileHeaders([]);
     setCustomFieldMapping({});
+    setFileDuplicateHeaders([]);
     setIsProcessingFile(false);
     setIsImporting(false);
     setImportProgress(0);
@@ -254,11 +260,12 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
     return null;
   };
 
-  // 智慧比對欄位名稱
-  const findColumnValue = (rowObj, possibleKeys) => {
+  // 智慧比對欄位名稱 (支援排除指定關鍵字，如尋找 Type 時排除 OS Type)
+  const findColumnValue = (rowObj, possibleKeys, excludedKeywords = []) => {
     if (!rowObj) return '';
     for (const key of Object.keys(rowObj)) {
       const normalizedKey = key.trim().toLowerCase().replace(/[\s_\(\)\-\[\]\/\\:]/g, '');
+      if (excludedKeywords.some(ex => normalizedKey.includes(ex.toLowerCase()))) continue;
       for (const pk of possibleKeys) {
         const normalizedPk = pk.trim().toLowerCase().replace(/[\s_\(\)\-\[\]\/\\:]/g, '');
         if (normalizedKey === normalizedPk) {
@@ -270,6 +277,7 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
     }
     for (const key of Object.keys(rowObj)) {
       const normalizedKey = key.trim().toLowerCase().replace(/[\s_\(\)\-\[\]\/\\:]/g, '');
+      if (excludedKeywords.some(ex => normalizedKey.includes(ex.toLowerCase()))) continue;
       for (const pk of possibleKeys) {
         const normalizedPk = pk.trim().toLowerCase().replace(/[\s_\(\)\-\[\]\/\\:]/g, '');
         if (normalizedPk.length >= 2 && normalizedKey.includes(normalizedPk)) {
@@ -340,6 +348,13 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
       const headers = Object.keys(rawJson[0] || {});
       setFileHeaders(headers);
 
+      // 檢查上傳檔案中是否有相同名稱的表頭欄位
+      const dupHeaders = rawJson._duplicateHeaders || [];
+      setFileDuplicateHeaders(dupHeaders);
+      if (dupHeaders.length > 0) {
+        alert(`【欄位重複告警】上傳檔案中檢測到相同名稱的欄位表頭：「${dupHeaders.join('、')}」！\n同名欄位可能導致資料覆蓋或對應混淆，請確認檔案欄位名稱是否正確。`);
+      }
+
       // 自動匹配自訂欄位
       const initialMapping = {};
       customFieldDefs.forEach(field => {
@@ -404,7 +419,11 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
       const rowBrand = findColumnValue(row, ['Brand', '廠牌', '品牌']);
       const brand = (rowBrand || selectedBrand || '').trim();
 
-      const rowType = findColumnValue(row, ['Type', 'System Type', '類型', '硬體類型', '元件類型']);
+      const rowType = findColumnValue(
+        row,
+        ['Type', 'System Type', '類型', '硬體類型', '元件類型'],
+        ['os', 'ostype', '作業系統', 'operatingsystem']
+      );
       const type = (rowType || selectedType || '').trim();
 
       const rowModel = findColumnValue(row, ['Model', '型號', '硬體型號', 'Part Number', 'P/N']);
@@ -611,6 +630,32 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
     }
   };
 
+  // 檢查自訂欄位對應中是否有衝突（多個欄位同時對應至相同檔案欄位）
+  const duplicateMappings = useMemo(() => {
+    const counts = {};
+    Object.entries(customFieldMapping).forEach(([fieldId, colName]) => {
+      if (colName && colName.trim()) {
+        counts[colName] = (counts[colName] || []).concat(fieldId);
+      }
+    });
+    return Object.entries(counts)
+      .filter(([_, fieldIds]) => fieldIds.length > 1)
+      .map(([colName, fieldIds]) => ({
+        colName,
+        fieldIds,
+        fieldLabels: fieldIds.map(fid => customFieldDefs.find(d => d.id === fid)?.label || fid)
+      }));
+  }, [customFieldMapping, customFieldDefs]);
+
+  // 檢查檔案中是否同時包含 Type 與 OS Type
+  const hasTypeAndOsType = useMemo(() => {
+    if (!fileHeaders || fileHeaders.length === 0) return false;
+    const lower = fileHeaders.map(h => h.trim().toLowerCase().replace(/[\s_\(\)\-\[\]\/\\:]/g, ''));
+    const hasType = lower.some(h => h === 'type' || h === 'systemtype' || h === '類型' || h === '硬體類型');
+    const hasOsType = lower.some(h => h.includes('ostype') || h === 'os' || h.includes('作業系統'));
+    return hasType && hasOsType;
+  }, [fileHeaders]);
+
   // 統計數據
   const stats = useMemo(() => {
     const total = parsedRows.length;
@@ -631,11 +676,8 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
   // 下載硬體匯入範本 (動態包含自訂欄位)
   const handleDownloadTemplate = () => {
     const sampleRow = {
-      'SF2541 SN': '254100104110222867100882',
-      'Cusomter': 'Yuanta Ryan',
+      'Customer': '範例客戶',
       'End-user': '範例使用者',
-      'Hostname': 'Deliver to Hand',
-      'Server-SN': '',
       'Project Name': '專案A',
       'Order Source': 'XeAU Nov2022',
       'Status': 'ACTIVE'
@@ -672,6 +714,14 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
 
   // 執行批次寫入資料庫
   const executeImport = async () => {
+    if (duplicateMappings.length > 0) {
+      const details = duplicateMappings
+        .map(d => `• 檔案欄位「${d.colName}」被多個欄位同時對應：[${d.fieldLabels.join(' 與 ')}]`)
+        .join('\n');
+      alert(`【欄位對應衝突告警】\n檢測到有相同名稱的欄位對應！多個欄位不可同時對應至同一檔案欄位：\n\n${details}\n\n請調整對應設定為不同欄位後再執行匯入。`);
+      return;
+    }
+
     const validItems = parsedRows.filter(r => r.status === 'VALID');
     if (validItems.length === 0) {
       alert('目前沒有符合建立條件的硬體資料（請確認是否已填寫廠牌、類型、型號與序號，或檢查是否序號重複）。');
@@ -1352,13 +1402,56 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
             </div>
           )}
 
+          {/* 檔案欄位重複告警 */}
+          {!importResult && fileDuplicateHeaders.length > 0 && (
+            <div style={{
+              backgroundColor: 'rgba(239, 68, 68, 0.08)',
+              border: '1px solid #ef4444',
+              borderRadius: '8px',
+              padding: '8px 14px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              color: '#ef4444',
+              fontSize: '12px',
+              fontWeight: '700'
+            }}>
+              <AlertTriangle size={16} />
+              <span>
+                【檔案欄位重複告警】上傳檔案中檢測到相同名稱的欄位表頭：<strong>{fileDuplicateHeaders.join('、')}</strong>！
+                同名欄位可能導致資料覆蓋或對應混淆，請確認檔案格式。
+              </span>
+            </div>
+          )}
+
+          {/* Type 與 OS Type 同時存在之隔離提示 */}
+          {!importResult && hasTypeAndOsType && (
+            <div style={{
+              backgroundColor: 'rgba(59, 130, 246, 0.08)',
+              border: '1px solid #3b82f6',
+              borderRadius: '8px',
+              padding: '8px 14px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              color: 'var(--text-main)',
+              fontSize: '12px'
+            }}>
+              <Info size={16} color="#3b82f6" />
+              <span>
+                <strong>【欄位檢核通知】</strong>檢測到檔案同時包含「Type」與「OS Type」欄位。
+                系統已自動隔離防呆，「OS Type」<strong>不會被寫入</strong>為硬體類型 (Type)。
+              </span>
+            </div>
+          )}
+
           {/* 自訂欄位對應面板 - 專為 1080P 筆電最佳化緊湊高度 */}
           {!importResult && customFieldDefs.length > 0 && (
             <div style={{
               backgroundColor: 'var(--bg-surface-subtle)',
               padding: '8px 14px',
               borderRadius: '10px',
-              border: '1px solid var(--border-color)',
+              border: duplicateMappings.length > 0 ? '1.5px solid #ef4444' : '1px solid var(--border-color)',
               display: 'flex',
               flexDirection: 'column',
               gap: '6px'
@@ -1394,6 +1487,29 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
                 )}
               </div>
 
+              {/* 相同名稱的欄位對應衝突告警 */}
+              {duplicateMappings.length > 0 && (
+                <div style={{
+                  backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                  border: '1px solid #ef4444',
+                  borderRadius: '6px',
+                  padding: '6px 10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  color: '#ef4444',
+                  fontSize: '11px',
+                  fontWeight: '700'
+                }}>
+                  <AlertTriangle size={14} />
+                  <span>
+                    【欄位對應衝突告警】檢測到有相同名稱的欄位對應！
+                    {duplicateMappings.map(d => `檔案欄位「${d.colName}」同時被對應至 [${d.fieldLabels.join(' 與 ')}]`).join('；')}。
+                    多個欄位不可同時對應至相同欄位，請調整以避免資料覆蓋或誤寫入！
+                  </span>
+                </div>
+              )}
+
               <div style={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
@@ -1404,11 +1520,12 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
                 {customFieldDefs.map(field => {
                   const mappedCol = customFieldMapping[field.id] || '';
                   const isMatched = Boolean(mappedCol);
+                  const isDuplicate = isMatched && duplicateMappings.some(d => d.colName === mappedCol);
                   return (
                     <div key={field.id} style={{
                       padding: '6px 10px',
-                      backgroundColor: 'var(--bg-surface)',
-                      border: isMatched ? '1px solid #10b981' : '1px solid var(--border-color)',
+                      backgroundColor: isDuplicate ? 'rgba(239, 68, 68, 0.05)' : 'var(--bg-surface)',
+                      border: isDuplicate ? '1.5px solid #ef4444' : (isMatched ? '1px solid #10b981' : '1px solid var(--border-color)'),
                       borderRadius: '6px',
                       display: 'flex',
                       flexDirection: 'column',
@@ -1432,7 +1549,9 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
                           }} />
                           {field.label}
                         </span>
-                        {isMatched ? (
+                        {isDuplicate ? (
+                          <span style={{ fontSize: '10px', color: '#ef4444', fontWeight: '800' }}>⚠️ 重複對應衝突</span>
+                        ) : isMatched ? (
                           <span style={{ fontSize: '10px', color: '#10b981', fontWeight: '700' }}>✓ 已對應: {mappedCol}</span>
                         ) : (
                           <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>未對應</span>
@@ -1447,7 +1566,7 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
                           width: '100%',
                           padding: '4px 6px',
                           borderRadius: '5px',
-                          border: '1px solid var(--input-border)',
+                          border: isDuplicate ? '1.5px solid #ef4444' : '1px solid var(--input-border)',
                           backgroundColor: 'var(--input-bg)',
                           color: 'var(--input-text)',
                           fontSize: '11px',

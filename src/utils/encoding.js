@@ -87,10 +87,24 @@ export async function parseSpreadsheetFile(selectedFile) {
 
   const firstSheetName = workbook.SheetNames[0];
   const worksheet = workbook.Sheets[firstSheetName];
+  const raw2D = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '', raw: true });
+  const rawHeaderRow = (raw2D && raw2D[0] && Array.isArray(raw2D[0])) ? raw2D[0] : [];
+  const cleanRawHeaders = rawHeaderRow.map(h => fixMojibake(String(h || '').trim())).filter(Boolean);
+
+  const headerCounts = {};
+  const duplicateHeaders = [];
+  cleanRawHeaders.forEach(h => {
+    const norm = h.toLowerCase();
+    headerCounts[norm] = (headerCounts[norm] || 0) + 1;
+    if (headerCounts[norm] === 2) {
+      duplicateHeaders.push(h);
+    }
+  });
+
   const rawJson = XLSX.utils.sheet_to_json(worksheet, { defval: '', raw: true });
 
   // 對物件內所有 key 與 value 進行防禦性修復
-  return rawJson.map(row => {
+  const cleanedRows = rawJson.map(row => {
     const cleanedRow = {};
     for (const [k, v] of Object.entries(row)) {
       const cleanKey = fixMojibake(String(k).trim());
@@ -99,6 +113,10 @@ export async function parseSpreadsheetFile(selectedFile) {
     }
     return cleanedRow;
   });
+
+  cleanedRows._duplicateHeaders = duplicateHeaders;
+  cleanedRows._rawHeaders = cleanRawHeaders;
+  return cleanedRows;
 }
 
 /**

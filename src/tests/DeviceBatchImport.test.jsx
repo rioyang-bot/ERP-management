@@ -590,6 +590,143 @@ describe('DeviceBatchImportModal 設備批次匯入檢核與建立測試', () =>
       ]));
     });
   });
+
+  it('當匯入資料同時包含 Type 與 OS Type 欄位時，OS Type 不得被寫入為設備類型，且應呈現隔離提示', async () => {
+    const testData = [
+      {
+        'Brand': 'Dell',
+        'Type': 'Server',
+        'OS Type': 'RedHat Enterprise Linux 9.2',
+        'Model': 'PowerEdge R750',
+        'Serial Number': 'SN-TYPE-OSTYPE-001',
+        'Customer': '國泰世華',
+        'Status': 'ACTIVE'
+      }
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(testData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Devices');
+    const u8 = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+    const file = new File([u8], 'devices_os_type.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+    const { container } = render(<DeviceBatchImportModal isOpen={true} onClose={vi.fn()} />);
+
+    const fileInput = container.querySelector('input[type="file"]');
+    await userEvent.upload(fileInput, file);
+
+    // 驗證出現隔離提示
+    await waitFor(() => {
+      expect(screen.getByText(/【欄位檢核通知】/)).toBeInTheDocument();
+      expect(screen.getByText(/不會被寫入/)).toBeInTheDocument();
+    });
+
+    // 驗證解析出的類型為 Server，絕非 RedHat
+    expect(screen.getByText('Server')).toBeInTheDocument();
+    expect(screen.queryByText('RedHat Enterprise Linux 9.2')).not.toBeInTheDocument();
+
+    const importBtn = screen.getByText(/確認匯入/i);
+    await userEvent.click(importBtn);
+
+    await waitFor(() => {
+      // 驗證 item_master 查詢是以 'Server' 為類型，絕非 'RedHat Enterprise Linux 9.2'
+      expect(namedQueryMock).toHaveBeenCalledWith('findItemMaster', expect.arrayContaining(['Server', 'Dell', 'PowerEdge R750']));
+    });
+  });
+
+  it('當匯入資料僅有 OS Type 而無 Type 欄位時，不應將 OS Type 誤抓為設備類型', async () => {
+    const testData = [
+      {
+        'Brand': 'Supermicro',
+        'OS Type': 'CentOS 7.9',
+        'Model': 'SYS-1029P',
+        'Serial Number': 'SN-NO-TYPE-001',
+        'Customer': '富邦',
+        'Status': 'ACTIVE'
+      }
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(testData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Devices');
+    const u8 = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+    const file = new File([u8], 'devices_no_type.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+    const { container } = render(<DeviceBatchImportModal isOpen={true} onClose={vi.fn()} />);
+
+    const fileInput = container.querySelector('input[type="file"]');
+    await userEvent.upload(fileInput, file);
+
+    // 由於排除 OS Type，該列缺少 Type 應被列為 SKIPPED (缺少類型 (Type))，CentOS 不被當作 Type
+    await waitFor(() => {
+      expect(screen.getByText('缺少類型 (Type)')).toBeInTheDocument();
+    });
+  });
+
+  it('若檢測到有相同名稱的自訂欄位對應時，應提示告警並在匯入時阻擋', async () => {
+    window.alert = vi.fn();
+    window.confirm = vi.fn(() => true);
+
+    namedQueryMock.mockImplementation((query, params) => {
+      if (query === 'getSystemSetting' && params && params[0] === 'customFieldDefinitions') {
+        return Promise.resolve({
+          success: true,
+          rows: [{
+            value: [
+              { id: 'custom_field_1', label: '備註一' },
+              { id: 'custom_field_2', label: '備註二' }
+            ]
+          }]
+        });
+      }
+      return Promise.resolve({ success: true, rows: [] });
+    });
+
+    const testData = [
+      {
+        'Brand': 'Dell',
+        'Type': 'Server',
+        'Model': 'R750',
+        'Serial Number': 'SN-DUP-MAP-001',
+        'Customer': '測試客戶',
+        'CommonNote': '共用資料內容'
+      }
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(testData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Devices');
+    const u8 = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+    const file = new File([u8], 'devices_dup_mapping.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+    const { container } = render(<DeviceBatchImportModal isOpen={true} onClose={vi.fn()} />);
+
+    const fileInput = container.querySelector('input[type="file"]');
+    await userEvent.upload(fileInput, file);
+
+    await waitFor(() => {
+      expect(screen.getByText('自訂欄位對應 (Custom Fields Mapping)')).toBeInTheDocument();
+    });
+
+    // 將兩個自訂欄位同時手動選擇對應到相同的檔案欄位 'CommonNote'
+    const select1 = screen.getByLabelText('自訂欄位對應: 備註一');
+    const select2 = screen.getByLabelText('自訂欄位對應: 備註二');
+    await userEvent.selectOptions(select1, 'CommonNote');
+    await userEvent.selectOptions(select2, 'CommonNote');
+
+    // 驗證出現【欄位對應衝突告警】與【重複對應衝突】標記
+    await waitFor(() => {
+      expect(screen.getByText(/【欄位對應衝突告警】/)).toBeInTheDocument();
+      expect(screen.getAllByText(/⚠️ 重複對應衝突/).length).toBeGreaterThanOrEqual(1);
+    });
+
+    // 點擊匯入，應跳出 alert 告警並中斷阻止
+    const importBtn = screen.getByText(/確認匯入/i);
+    await userEvent.click(importBtn);
+
+    expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('【欄位對應衝突告警】'));
+    expect(namedQueryMock).not.toHaveBeenCalledWith('insertAssetRecord', expect.anything());
+  });
 });
 
 

@@ -363,5 +363,112 @@ describe('HwBatchImportModal 硬體批次匯入（自選/建立主檔與格式�
       ]));
     });
   });
+
+  it('當匯入硬體資料包含 Type 與 OS Type 欄位時，OS Type 不得被寫入為硬體類型，且應呈現隔離提示', async () => {
+    const testData = [
+      {
+        'Brand': 'Intel',
+        'Type': 'NIC',
+        'OS Type': 'Ubuntu 22.04 LTS',
+        'Model': 'E810-XXVDA2',
+        'Serial Number': 'HW-OSTYPE-001',
+        'Customer': '凱基',
+        'Status': 'ACTIVE'
+      }
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(testData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'NICs');
+    const u8 = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+    const file = new File([u8], 'hw_os_type.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+    const { container } = render(<HwBatchImportModal isOpen={true} onClose={vi.fn()} />);
+
+    const fileInput = container.querySelector('input[type="file"]');
+    await userEvent.upload(fileInput, file);
+
+    // 驗證出現【欄位檢核通知】
+    await waitFor(() => {
+      expect(screen.getByText(/【欄位檢核通知】/)).toBeInTheDocument();
+      expect(screen.getByText(/不會被寫入/)).toBeInTheDocument();
+    });
+
+    // 驗證解析出之硬體類型為 NIC，絕非 Ubuntu
+    expect(screen.getByText(/NIC/)).toBeInTheDocument();
+    expect(screen.queryByText('Ubuntu 22.04 LTS')).not.toBeInTheDocument();
+
+    const importBtn = screen.getByText(/確認批次匯入/i);
+    await userEvent.click(importBtn);
+
+    await waitFor(() => {
+      expect(namedQueryMock).toHaveBeenCalledWith('findItemMaster', expect.arrayContaining(['NIC', 'Intel', 'E810-XXVDA2']));
+    });
+  });
+
+  it('若檢測到有相同名稱的自訂欄位對應時，應提示告警並在匯入時阻擋', async () => {
+    window.alert = vi.fn();
+    window.confirm = vi.fn(() => true);
+
+    namedQueryMock.mockImplementation((query, params) => {
+      if (query === 'getSystemSetting' && params && params[0] === 'customFieldDefinitions') {
+        return Promise.resolve({
+          success: true,
+          rows: [{
+            value: [
+              { id: 'custom_hw_note1', label: '硬體備註一' },
+              { id: 'custom_hw_note2', label: '硬體備註二' }
+            ]
+          }]
+        });
+      }
+      return Promise.resolve({ success: true, rows: [] });
+    });
+
+    const testData = [
+      {
+        'Brand': 'Intel',
+        'Type': 'NIC',
+        'Model': 'E810',
+        'Serial Number': 'HW-DUP-001',
+        'Customer': '測試客戶',
+        'CommonField': '共用資料內容'
+      }
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(testData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'NICs');
+    const u8 = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+    const file = new File([u8], 'hw_dup_mapping.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+    const { container } = render(<HwBatchImportModal isOpen={true} onClose={vi.fn()} />);
+
+    const fileInput = container.querySelector('input[type="file"]');
+    await userEvent.upload(fileInput, file);
+
+    await waitFor(() => {
+      expect(screen.getByText('自訂欄位對應 (Custom Fields Mapping)')).toBeInTheDocument();
+    });
+
+    // 將兩個自訂欄位同時選擇對應到相同的檔案欄位 'CommonField'
+    const select1 = screen.getByLabelText('自訂欄位對應: 硬體備註一');
+    const select2 = screen.getByLabelText('自訂欄位對應: 硬體備註二');
+    await userEvent.selectOptions(select1, 'CommonField');
+    await userEvent.selectOptions(select2, 'CommonField');
+
+    // 驗證出現【欄位對應衝突告警】與【重複對應衝突】標記
+    await waitFor(() => {
+      expect(screen.getByText(/【欄位對應衝突告警】/)).toBeInTheDocument();
+      expect(screen.getAllByText(/⚠️ 重複對應衝突/).length).toBeGreaterThanOrEqual(1);
+    });
+
+    // 點擊批次匯入，應跳出 alert 告警並阻擋
+    const importBtn = screen.getByText(/確認批次匯入/i);
+    await userEvent.click(importBtn);
+
+    expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('【欄位對應衝突告警】'));
+    expect(namedQueryMock).not.toHaveBeenCalledWith('insertAssetRecord', expect.anything());
+  });
 });
 
