@@ -195,6 +195,7 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   const handleSave = async (continueAdd = false) => {
     const safeType = validateAndSanitize(formData.type, '類型');
     const safeBrand = validateAndSanitize(formData.brand, '廠牌');
+    const safeModel = validateAndSanitize(formData.model, '型號');
     const safeSpec = formData.specification ? (validateAndSanitize(formData.specification, '規格') || '') : '';
     const safeServerSn = validateAndSanitize(formData.server_sn, 'Server SN');
 
@@ -211,10 +212,23 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
         snList = Array.from(new Set(snList));
       }
     } else {
-      snList = [formData.sn.trim()];
+      const cleanSn = (formData.sn || '').trim();
+      snList = cleanSn ? [cleanSn] : [''];
+    }
+
+    // 檢查序號是否已存在
+    for (const sn of snList) {
+      if (sn) {
+        const checkRes = await window.electronAPI.namedQuery('checkAssetSnExists', [sn]);
+        if (checkRes.success && checkRes.rows?.length > 0) {
+          alert(`序號「${sn}」已存在於系統資產庫中，請勿重複使用！`);
+          return;
+        }
+      }
     }
 
     setIsSubmitting(true);
+    let lastError = '';
     try {
       let itemMasterId;
       const findRes = await window.electronAPI.namedQuery('findItemMaster', [safeSpec || '', safeType, safeBrand, safeModel]);
@@ -226,7 +240,7 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
         if (insMaster.success && insMaster.rows?.length > 0) {
           itemMasterId = insMaster.rows[0].id;
         } else {
-          throw new Error('建立硬體物料主檔失敗');
+          throw new Error('建立硬體物料主檔失敗：' + (insMaster?.error || '未知錯誤'));
         }
       }
 
@@ -256,13 +270,17 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
               console.error('appendMountedHwSnToDevice error:', err);
             }
           }
+        } else {
+          failCount++;
+          lastError = res.error || '';
         }
-        else failCount++;
       }
 
       if (successCount > 0) {
         logCreate(
-          'ASSET',
+          'HARDWARE',
+          isBulkMode ? `批次 ${snList.length} 件` : (formData.sn || '無序號'),
+          `${safeBrand} ${safeModel}`,
           `新增硬體 (${safeBrand} ${safeModel} x${successCount})`,
           { brand: safeBrand, type: safeType, model: safeModel, count: successCount, sns: snList }
         );
@@ -282,7 +300,7 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
           onClose();
         }
       } else {
-        alert('建檔失敗，請確認序號是否重複或連線異常。');
+        alert(`建檔失敗${lastError ? `：${lastError}` : '，請確認序號是否重複或連線異常。'}`);
       }
     } catch (err) {
       console.error(err);

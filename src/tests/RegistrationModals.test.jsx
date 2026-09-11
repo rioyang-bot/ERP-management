@@ -1,6 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import DeviceRegistrationModal from '../components/DeviceRegistrationModal';
 import HwRegistrationModal from '../components/HwRegistrationModal';
 import ConsumableRegistrationModal from '../components/ConsumableRegistrationModal';
@@ -123,6 +124,70 @@ describe('全模組彈窗建檔 (Registration Modals) 整合測試', () => {
 
     fireEvent.click(screen.getByText(/多筆連續建檔模式/i));
     expect(screen.getByText(/批次序號清單/i)).toBeInTheDocument();
+  });
+
+  it('HwRegistrationModal 填寫類型、廠牌、型號與序號後應能成功儲存建立硬體資產', async () => {
+    const user = userEvent.setup();
+    const handleClose = vi.fn();
+    const handleSuccess = vi.fn();
+
+    window.electronAPI.namedQuery.mockImplementation((query, params) => {
+      if (query === 'fetchHwBrands' || query === 'fetchNicBrands') {
+        return Promise.resolve({ success: true, rows: [{ id: 1, name: 'Intel' }] });
+      }
+      if (query === 'fetchHwTypes' || query === 'fetchNicTypesByBrand') {
+        return Promise.resolve({ success: true, rows: [{ name: 'NIC 網卡' }] });
+      }
+      if (query === 'fetchHwModelsByBrand' || query === 'fetchNicModelsByBrandType') {
+        return Promise.resolve({ success: true, rows: [{ name: 'E810-XXVDA2' }] });
+      }
+      if (query === 'findItemMaster') {
+        return Promise.resolve({ success: true, rows: [{ id: 101 }] });
+      }
+      if (query === 'insertAssetRecord') {
+        return Promise.resolve({ success: true });
+      }
+      if (query === 'checkAssetSnExists') {
+        return Promise.resolve({ success: true, rows: [] });
+      }
+      return Promise.resolve({ success: true, rows: [] });
+    });
+
+    render(
+      <HwRegistrationModal
+        isOpen={true}
+        onClose={handleClose}
+        onSuccess={handleSuccess}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'NIC 網卡' })).toBeInTheDocument();
+      expect(screen.getByRole('option', { name: 'Intel' })).toBeInTheDocument();
+    });
+
+    const selects = screen.getAllByRole('combobox');
+    await user.selectOptions(selects[0], 'NIC 網卡');
+    await user.selectOptions(selects[1], 'Intel');
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'E810-XXVDA2' })).toBeInTheDocument();
+    });
+    await user.selectOptions(selects[2], 'E810-XXVDA2');
+
+    const snInput = screen.getByPlaceholderText('請輸入或掃描序號');
+    await user.type(snInput, 'HW-INTEL-888');
+
+    const saveBtn = screen.getByRole('button', { name: /儲存並關閉/ });
+    await user.click(saveBtn);
+
+    await waitFor(() => {
+      expect(window.electronAPI.namedQuery).toHaveBeenCalledWith(
+        'insertAssetRecord',
+        expect.arrayContaining([101, 'HW-INTEL-888'])
+      );
+      expect(handleSuccess).toHaveBeenCalled();
+      expect(handleClose).toHaveBeenCalled();
+    });
   });
 
   it('ConsumableRegistrationModal 應能順利渲染並呈現規格必填提示', async () => {

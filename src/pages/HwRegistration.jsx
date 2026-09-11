@@ -215,9 +215,22 @@ const HwRegistration = ({ isSplitMode = false }) => {
         snList = Array.from(new Set(snList));
       }
     } else {
-      snList = [formData.sn.trim()];
+      const cleanSn = (formData.sn || '').trim();
+      snList = cleanSn ? [cleanSn] : [''];
     }
 
+    // 檢查序號是否已存在於系統資產庫
+    for (const sn of snList) {
+      if (sn) {
+        const checkRes = await window.electronAPI.namedQuery('checkAssetSnExists', [sn]);
+        if (checkRes.success && checkRes.rows?.length > 0) {
+          alert(`序號「${sn}」已存在於系統資產庫中，請勿重複使用！`);
+          return;
+        }
+      }
+    }
+
+    let lastError = '';
     try {
       // 1. 處理 Item Master
       let itemMasterId;
@@ -230,7 +243,7 @@ const HwRegistration = ({ isSplitMode = false }) => {
         if (insMaster.success && insMaster.rows?.length > 0) {
           itemMasterId = insMaster.rows[0].id;
         } else {
-          throw new Error('建立物料主檔失敗');
+          throw new Error('建立物料主檔失敗：' + (insMaster?.error || '未知錯誤'));
         }
       }
 
@@ -261,8 +274,10 @@ const HwRegistration = ({ isSplitMode = false }) => {
               console.error('appendMountedHwSnToDevice error:', err);
             }
           }
+        } else {
+          failCount++;
+          lastError = res.error || '';
         }
-        else failCount++;
       }
 
       if (successCount > 0) {
@@ -278,7 +293,7 @@ const HwRegistration = ({ isSplitMode = false }) => {
         setBulkSns('');
         window.dispatchEvent(new CustomEvent('db-update'));
       } else {
-        alert('建檔失敗。');
+        alert(`建檔失敗${lastError ? `：${lastError}` : '，請確認序號是否重複或系統連線異常。'}`);
       }
     } catch (err) {
       alert('作業錯誤：' + err.message);
