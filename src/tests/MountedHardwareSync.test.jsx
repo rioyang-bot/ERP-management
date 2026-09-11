@@ -3,6 +3,8 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import DeviceList from '../pages/DeviceList';
+import HwList from '../pages/HwList';
+import { queries } from '../../database/queries';
 import { MemoryRouter } from 'react-router-dom';
 
 describe('設備更新狀態同步至掛載硬體之整合測試', () => {
@@ -47,9 +49,20 @@ describe('設備更新狀態同步至掛載硬體之整合測試', () => {
         query === 'updateAssetDetails' || 
         query === 'updateMountedHardwareServerSn' ||
         query === 'updateRepairItemsSn' ||
-        query === 'updateOutboundItemsSn'
+        query === 'updateOutboundItemsSn' ||
+        query === 'bindHardwareToServerSn' ||
+        query === 'unbindHardwareServerSn'
       ) {
         return Promise.resolve({ success: true });
+      }
+      if (query === 'fetchAvailableHardwares') {
+        return Promise.resolve({
+          success: true,
+          rows: [
+            { id: 201, sn: 'HW-NIC-001', brand: 'Mellanox', model: 'MCX512A', type: '網路卡', server_sn: null },
+            { id: 202, sn: 'HW-NIC-002', brand: 'Intel', model: 'X520', type: '網路卡', server_sn: 'OTHER-SRV' }
+          ]
+        });
       }
       return Promise.resolve({ success: true, rows: [] });
     });
@@ -287,4 +300,349 @@ describe('設備更新狀態同步至掛載硬體之整合測試', () => {
 
     alertMock.mockRestore();
   });
+
+  it('在設備編輯彈窗中新增搭載硬體 SN，儲存時應呼叫 bindHardwareToServerSn 將硬體與伺服器 SN 綁定', async () => {
+    querySpy.mockClear();
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <DeviceList />
+      </MemoryRouter>
+    );
+
+    // 點選 Dell 卡片
+    const statsCard = await screen.findByText('Dell');
+    await user.click(statsCard);
+
+    // 找到目標設備 STG100385Y25
+    const targetCell = await screen.findByText('STG100385Y25');
+    expect(targetCell).toBeInTheDocument();
+
+    // 點擊功能選單
+    const moreHorizontalIcon = document.querySelector('.lucide-ellipsis');
+    const rowMenuBtn = moreHorizontalIcon.closest('button');
+    await user.click(rowMenuBtn);
+
+    // 點選「編輯詳細資訊」
+    const editBtn = await screen.findByText('編輯詳細資訊');
+    await user.click(editBtn);
+
+    // 等待編輯彈窗出現
+    expect(await screen.findByText('修改詳細設備資訊')).toBeInTheDocument();
+
+    // 找到搭載硬體 SN 輸入框
+    const hwInput = screen.getByLabelText(/搭載硬體 SN/i);
+    expect(hwInput).toBeInTheDocument();
+
+    // 輸入新的硬體序號
+    await user.type(hwInput, 'HW-NIC-001, HW-NIC-002');
+
+    // 驗證已解析標籤出現
+    expect(await screen.findByText(/已設定/i)).toBeInTheDocument();
+    expect(screen.getByText('HW-NIC-001')).toBeInTheDocument();
+    expect(screen.getByText('HW-NIC-002')).toBeInTheDocument();
+
+    // 點擊「儲存變更」
+    const saveBtn = screen.getByRole('button', { name: /儲存變更/i });
+    await user.click(saveBtn);
+
+    // 驗證 bindHardwareToServerSn 是否被正確呼叫，將兩個硬體綁定至 STG100385Y25
+    await waitFor(() => {
+      const calls = querySpy.mock.calls;
+      const bindCalls = calls.filter(call => call[0] === 'bindHardwareToServerSn');
+      expect(bindCalls.length).toBe(2);
+      expect(bindCalls[0][1].slice(0, 2)).toEqual(['STG100385Y25', 'HW-NIC-001']);
+      expect(bindCalls[1][1].slice(0, 2)).toEqual(['STG100385Y25', 'HW-NIC-002']);
+    });
+  });
+
+  it('在設備編輯彈窗中移除已掛載之硬體 SN，儲存時應呼叫 unbindHardwareServerSn 解除該硬體綁定', async () => {
+    // 讓設備原本就帶有掛載硬體 HW-ORIG-001 與 HW-ORIG-002
+    window.electronAPI.namedQuery.mockImplementation((query, params) => {
+      querySpy(query, params);
+      if (query === 'fetchAssetsList' || query === 'fetchAssetsListByBrand') {
+        return Promise.resolve({
+          success: true,
+          rows: [
+            {
+              id: 10,
+              sn: 'STG100385Y25',
+              brand: 'Dell',
+              model: 'PowerEdge R740',
+              status: 'ACTIVE',
+              components: [
+                { brand: 'Mellanox', model: 'MCX512A', sn: 'HW-ORIG-001' },
+                { brand: 'Intel', model: 'X520', sn: 'HW-ORIG-002' }
+              ],
+              custom_attributes: {}
+            }
+          ]
+        });
+      }
+      if (
+        query === 'updateAssetStatus' || 
+        query === 'updateMountedHardwareStatus' || 
+        query === 'updateAssetDetails' || 
+        query === 'updateMountedHardwareServerSn' ||
+        query === 'updateRepairItemsSn' ||
+        query === 'updateOutboundItemsSn' ||
+        query === 'bindHardwareToServerSn' ||
+        query === 'unbindHardwareServerSn'
+      ) {
+        return Promise.resolve({ success: true });
+      }
+      if (query === 'fetchAvailableHardwares') {
+        return Promise.resolve({ success: true, rows: [] });
+      }
+      return Promise.resolve({ success: true, rows: [] });
+    });
+
+    querySpy.mockClear();
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <DeviceList />
+      </MemoryRouter>
+    );
+
+    const statsCard = await screen.findByText('Dell');
+    await user.click(statsCard);
+
+    const targetCell = await screen.findByText('STG100385Y25');
+    expect(targetCell).toBeInTheDocument();
+
+    const moreHorizontalIcon = document.querySelector('.lucide-ellipsis');
+    const rowMenuBtn = moreHorizontalIcon.closest('button');
+    await user.click(rowMenuBtn);
+
+    const editBtn = await screen.findByText('編輯詳細資訊');
+    await user.click(editBtn);
+
+    expect(await screen.findByText('修改詳細設備資訊')).toBeInTheDocument();
+
+    // 檢查輸入框初始是否帶有原本的兩筆硬體序號
+    const hwInput = screen.getByLabelText(/搭載硬體 SN/i);
+    expect(hwInput.value).toContain('HW-ORIG-001');
+    expect(hwInput.value).toContain('HW-ORIG-002');
+
+    // 修改輸入框，只保留 HW-ORIG-001，移除 HW-ORIG-002
+    await user.clear(hwInput);
+    await user.type(hwInput, 'HW-ORIG-001');
+
+    const saveBtn = screen.getByRole('button', { name: /儲存變更/i });
+    await user.click(saveBtn);
+
+    // 驗證 unbindHardwareServerSn 是否被以 HW-ORIG-002 呼叫
+    await waitFor(() => {
+      const calls = querySpy.mock.calls;
+      const unbindCall = calls.find(call => call[0] === 'unbindHardwareServerSn');
+      expect(unbindCall).toBeDefined();
+      expect(unbindCall[1]).toEqual(['HW-ORIG-002']);
+
+      // HW-ORIG-001 依然保持綁定
+      const bindCall = calls.find(call => call[0] === 'bindHardwareToServerSn' && call[1][1] === 'HW-ORIG-001');
+      expect(bindCall).toBeDefined();
+      expect(bindCall[1].slice(0, 2)).toEqual(['STG100385Y25', 'HW-ORIG-001']);
+
+      // 驗證 updateAssetDetails 是否將 mounted_hw_sns 存入 custom_attributes
+      const updateDetailsCall = calls.find(call => call[0] === 'updateAssetDetails');
+      expect(updateDetailsCall).toBeDefined();
+      expect(updateDetailsCall[1][10]).toHaveProperty('mounted_hw_sns', 'HW-ORIG-001');
+    });
+  });
+
+  it('設備即使沒有 components，若 custom_attributes 內有 mounted_hw_sns，開啟編輯彈窗時應能正確載入該序號', async () => {
+    const user = userEvent.setup();
+    const querySpy = vi.fn((query, params) => {
+      if (query === 'fetchAssetsList' || query === 'fetchAssetsListByBrand') {
+        return Promise.resolve({
+          success: true,
+          rows: [
+            {
+              id: 99,
+              sn: 'SRV-CUSTOM-ATTR',
+              brand: 'Dell',
+              model: 'PowerEdge R740',
+              specification: 'Xeon 64GB',
+              category_name: '設備',
+              status: 'ACTIVE',
+              components: null,
+              custom_attributes: {
+                mounted_hw_sns: 'HW-CA-001, HW-CA-002'
+              }
+            }
+          ]
+        });
+      }
+      return Promise.resolve({ success: true, rows: [] });
+    });
+
+    window.electronAPI.namedQuery = querySpy;
+
+    render(
+      <MemoryRouter>
+        <DeviceList />
+      </MemoryRouter>
+    );
+
+    const statsCard = await screen.findByText('Dell');
+    await user.click(statsCard);
+
+    expect(await screen.findByText('SRV-CUSTOM-ATTR')).toBeInTheDocument();
+
+    const moreHorizontalIcon = document.querySelector('.lucide-ellipsis');
+    const rowMenuBtn = moreHorizontalIcon.closest('button');
+    await user.click(rowMenuBtn);
+
+    const editBtn = await screen.findByText('編輯詳細資訊');
+    await user.click(editBtn);
+
+    expect(await screen.findByText('修改詳細設備資訊')).toBeInTheDocument();
+
+    const hwInput = screen.getByLabelText(/搭載硬體 SN/i);
+    expect(hwInput.value).toContain('HW-CA-001');
+    expect(hwInput.value).toContain('HW-CA-002');
+  });
+
+  it('queries.js 中的硬體綁定與查詢語法應具備 JSONB 防呆、RETURNING 與 server_sn 欄位投影', () => {
+    // 驗證 bindHardwareToServerSn 具備 jsonb_typeof 防呆且有 RETURNING
+    expect(queries.bindHardwareToServerSn).toContain('jsonb_typeof');
+    expect(queries.bindHardwareToServerSn).toContain('RETURNING id, sn');
+
+    // 驗證 unbindHardwareServerSn 具備 jsonb_typeof 防呆
+    expect(queries.unbindHardwareServerSn).toContain('jsonb_typeof');
+
+    // 驗證 fetchNicList 與 fetchNicListByType 包含 server_sn 欄位投影與大小寫不敏感 JOIN
+    expect(queries.fetchNicList).toContain("a.custom_attributes->>'server_sn' as server_sn");
+    expect(queries.fetchNicList).toContain("TRIM(LOWER(a.custom_attributes->>'server_sn')) = TRIM(LOWER(s.sn))");
+    expect(queries.fetchNicListByType).toContain("a.custom_attributes->>'server_sn' as server_sn");
+  });
+
+  it('HwList 應相容解析字串型態 custom_attributes 並正確顯示對應伺服器 SN', async () => {
+    window.electronAPI.namedQuery.mockImplementation((query) => {
+      if (query === 'fetchNicList' || query === 'fetchNicListByType') {
+        return Promise.resolve({
+          success: true,
+          rows: [
+            {
+              id: 99,
+              sn: 'NIC-TEST-999',
+              brand: 'Intel',
+              type: 'NIC',
+              model: 'E810',
+              status: 'ACTIVE',
+              // 模擬後端回傳字串型態的 custom_attributes 與 server_sn
+              server_sn: 'SRV-STG-999',
+              custom_attributes: JSON.stringify({ server_sn: 'SRV-STG-999' })
+            }
+          ]
+        });
+      }
+      if (query === 'getSystemSetting' || query === 'fetchCustomers' || query === 'fetchActiveProjects') {
+        return Promise.resolve({ success: true, rows: [] });
+      }
+      return Promise.resolve({ success: true, rows: [] });
+    });
+
+    render(
+      <MemoryRouter>
+        <HwList />
+      </MemoryRouter>
+    );
+
+    // 等待卡片出現並點擊卡片以展開明細表格
+    const card = await screen.findByText('Intel');
+    fireEvent.click(card);
+
+    // 驗證表格中正確呈現對應伺服器 SN 與硬體序號
+    await waitFor(() => {
+      expect(screen.getByText('SRV-STG-999')).toBeInTheDocument();
+      expect(screen.getByText('NIC-TEST-999')).toBeInTheDocument();
+    });
+  });
+
+  it('在設備編輯彈窗輸入尚未建檔之硬體 SN 時，不可自動建立硬體資產，且應跳出警告告警並阻止儲存', async () => {
+    const user = userEvent.setup();
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+
+    const querySpy = vi.fn((query, params) => {
+      if (query === 'fetchAssetsList' || query === 'fetchAssetsListByBrand') {
+        return Promise.resolve({
+          success: true,
+          rows: [
+            {
+              id: 50,
+              sn: 'SRV-AUTO-001',
+              brand: 'Supermicro',
+              model: 'SYS-2029U',
+              status: 'ACTIVE',
+              client: 'MetaTech',
+              location: 'Room-A',
+              ownership: 'COMPANY',
+              custom_attributes: { project_name: 'PJ-ALPHA' }
+            }
+          ]
+        });
+      }
+      if (query === 'fetchAvailableHardwares') {
+        return Promise.resolve({ success: true, rows: [] });
+      }
+      if (query === 'checkHardwareSnExists') {
+        // 模擬該硬體在資料庫中查無紀錄
+        return Promise.resolve({ success: true, rows: [] });
+      }
+      if (query === 'bindHardwareToServerSn') {
+        return Promise.resolve({ success: true, rows: [] });
+      }
+      if (query === 'updateAssetDetails') {
+        return Promise.resolve({ success: true });
+      }
+      return Promise.resolve({ success: true, rows: [] });
+    });
+
+    window.electronAPI.namedQuery.mockImplementation(querySpy);
+
+    render(
+      <MemoryRouter>
+        <DeviceList />
+      </MemoryRouter>
+    );
+
+    const statsCard = await screen.findByText('Supermicro');
+    await user.click(statsCard);
+
+    const targetRow = await screen.findByText('SRV-AUTO-001');
+    expect(targetRow).toBeInTheDocument();
+
+    const moreHorizontalIcon = document.querySelector('.lucide-ellipsis');
+    const rowMenuBtn = moreHorizontalIcon.closest('button');
+    await user.click(rowMenuBtn);
+
+    const editBtn = await screen.findByText('編輯詳細資訊');
+    await user.click(editBtn);
+
+    const hwInput = screen.getByLabelText(/搭載硬體 SN/i);
+    await user.type(hwInput, 'NEW-UNREGISTERED-HW-888');
+
+    const saveBtn = screen.getByRole('button', { name: /儲存變更/i });
+    await user.click(saveBtn);
+
+    await waitFor(() => {
+      const calls = querySpy.mock.calls;
+      // 1. 驗證絕對不可呼叫 insertAssetRecord 自動建檔
+      const insertCall = calls.find(call => call[0] === 'insertAssetRecord');
+      expect(insertCall).toBeUndefined();
+
+      // 2. 驗證不可呼叫 updateAssetDetails 儲存無效資料
+      const updateCall = calls.find(call => call[0] === 'updateAssetDetails');
+      expect(updateCall).toBeUndefined();
+
+      // 3. 驗證跳出告警視窗提示使用者
+      expect(alertSpy).toHaveBeenCalledWith(expect.stringContaining('NEW-UNREGISTERED-HW-888'));
+    });
+
+    alertSpy.mockRestore();
+  });
 });
+
+

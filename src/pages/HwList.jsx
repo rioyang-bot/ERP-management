@@ -82,7 +82,28 @@ const HwList = ({ isSplitMode = false }) => {
       nicsRes = await window.electronAPI.namedQuery('fetchNicList');
     }
     
-    if (nicsRes.success) setNics(nicsRes.rows);
+    if (nicsRes.success) {
+      const formatted = (nicsRes.rows || []).map(row => {
+        let customAttrs = {};
+        try {
+          customAttrs = typeof row.custom_attributes === 'string'
+            ? JSON.parse(row.custom_attributes)
+            : (row.custom_attributes || {});
+        } catch {
+          customAttrs = {};
+        }
+        const serverSn = row.server_sn || customAttrs.server_sn || '';
+        return {
+          ...row,
+          custom_attributes: {
+            ...customAttrs,
+            server_sn: serverSn
+          },
+          server_sn: serverSn
+        };
+      });
+      setNics(formatted);
+    }
 
     // 抓取系統設定
     const defsRes = await window.electronAPI.namedQuery('getSystemSetting', ['customFieldDefinitions']);
@@ -128,7 +149,7 @@ const HwList = ({ isSplitMode = false }) => {
       _origSpec: nic.specification || '',
       ownership: nic.ownership || 'FOR_SALE',
       shipping_date: shipDateStr,
-      temp_server_sn: nic.custom_attributes?.server_sn || '',
+      temp_server_sn: nic.server_sn || nic.custom_attributes?.server_sn || '',
       temp_order_source: nic.custom_attributes?.order_source !== undefined ? nic.custom_attributes?.order_source : (nic.custom_attributes?.order_date || ''),
       temp_project_name: nic.custom_attributes?.project_name || '',
       temp_end_user: nic.end_user || nic.custom_attributes?.end_user || nic.server_end_user || ''
@@ -218,6 +239,28 @@ const HwList = ({ isSplitMode = false }) => {
       editItem.temp_end_user !== undefined ? editItem.temp_end_user : (editItem.end_user || editItem.custom_attributes?.end_user || null)
     ]);
     if (res.success) { 
+      // 雙向連動設備端的 mounted_hw_sns
+      const origServerSn = (editItem.server_sn || '').trim();
+      const newServerSn = (editItem.temp_server_sn || '').trim();
+      const currentHwSn = (editItem.sn || '').trim();
+
+      if (currentHwSn && origServerSn !== newServerSn) {
+        if (origServerSn) {
+          try {
+            await window.electronAPI.namedQuery('removeMountedHwSnFromDevice', [origServerSn, currentHwSn]);
+          } catch (e) {
+            console.error('removeMountedHwSnFromDevice error:', e);
+          }
+        }
+        if (newServerSn) {
+          try {
+            await window.electronAPI.namedQuery('appendMountedHwSnToDevice', [newServerSn, currentHwSn]);
+          } catch (e) {
+            console.error('appendMountedHwSnToDevice error:', e);
+          }
+        }
+      }
+
       try {
         await window.electronAPI.namedQuery('updateAssetShippingDate', [editItem.shipping_date || null, parseInt(editItem.id, 10)]);
       } catch (err) {
@@ -342,7 +385,7 @@ const HwList = ({ isSplitMode = false }) => {
         (n.client || n.server_client || '').toLowerCase().includes(term) ||
         (n.end_user || n.custom_attributes?.end_user || n.server_end_user || '').toLowerCase().includes(term) ||
         (n.custom_attributes?.order_source || '').toLowerCase().includes(term) ||
-        (n.custom_attributes?.server_sn || '').toLowerCase().includes(term)
+        (n.server_sn || n.custom_attributes?.server_sn || '').toLowerCase().includes(term)
       );
     })
     .sort((a, b) => (statusPriority[a.status] || 99) - (statusPriority[b.status] || 99));
@@ -591,6 +634,11 @@ const HwList = ({ isSplitMode = false }) => {
     if (filterType || searchTerm || selectedCardKey) {
       const searchTerms = searchTerm.toLowerCase().split(/\s+/).filter(t => t);
       const filterCard = (st) => {
+        if (selectedCardKey) {
+          const cardId = st.isRetired ? `${st.key}:::RETIRED` : st.key;
+          if (cardId !== selectedCardKey) return false;
+        }
+        if (filterType && st.type !== filterType) return false;
         if (searchTerms.length === 0) return true;
         const target = `${st.brand} ${st.type} ${st.model} ${st.specification}`.toLowerCase();
         return searchTerms.every(t => target.includes(t));
@@ -601,62 +649,64 @@ const HwList = ({ isSplitMode = false }) => {
 
       return (
         <div style={{ position: 'relative' }}>
-          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '24px', padding: '16px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '16px', border: '1px solid var(--border-color)' }}>
-            {activeMatches.map(st => {
-              const isSelected = selectedCardKey === st.key;
-              return (
-                <div 
-                  key={st.key}
-                  onClick={() => handleCardClick(st)}
-                  style={{ 
-                    backgroundColor: isSelected ? 'var(--primary-bg)' : 'var(--bg-surface)', 
-                    padding: '12px', 
-                    borderRadius: '12px', 
-                    border: isSelected ? '2px solid var(--primary-color)' : '1px solid var(--border-color)', 
-                    boxShadow: isSelected ? '0 4px 12px rgba(37, 99, 235, 0.2)' : 'var(--card-shadow)',
-                    cursor: 'pointer',
-                    minWidth: '220px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between',
-                    transition: 'all 0.2s',
-                    position: 'relative'
-                  }}
-                >
-                  <button onClick={(e) => toggleRetire(e, st.key, false)} style={{ position: 'absolute', top: '8px', right: '8px', border: 'none', background: 'none', color: 'var(--text-subtle)', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }} title="將此卡片移至汰舊區">
-                    <Archive size={14} />
-                  </button>
-                  <div style={{ marginBottom: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>
-                    <div style={{ fontSize: '13px', fontWeight: '900', color: isSelected ? 'var(--primary-color)' : 'var(--text-main)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <Monitor size={12} color={isSelected ? 'var(--primary-color)' : 'var(--text-muted)'} /> {st.brand}
-                      </span>
-                      <span style={{ fontSize: '10px', fontWeight: '800', color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', backgroundColor: 'var(--bg-surface-subtle)', padding: '1px 5px', borderRadius: '4px', marginRight: '22px' }}>
-                        共 {st.total} 個
-                      </span>
+          {activeMatches.length > 0 && (
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '24px', padding: '16px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '16px', border: '1px solid var(--border-color)' }}>
+              {activeMatches.map(st => {
+                const isSelected = selectedCardKey === st.key;
+                return (
+                  <div 
+                    key={st.key}
+                    onClick={() => handleCardClick(st)}
+                    style={{ 
+                      backgroundColor: isSelected ? 'var(--primary-bg)' : 'var(--bg-surface)', 
+                      padding: '12px', 
+                      borderRadius: '12px', 
+                      border: isSelected ? '2px solid var(--primary-color)' : '1px solid var(--border-color)', 
+                      boxShadow: isSelected ? '0 4px 12px rgba(37, 99, 235, 0.2)' : 'var(--card-shadow)',
+                      cursor: 'pointer',
+                      minWidth: '220px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      transition: 'all 0.2s',
+                      position: 'relative'
+                    }}
+                  >
+                    <button onClick={(e) => toggleRetire(e, st.key, false)} style={{ position: 'absolute', top: '8px', right: '8px', border: 'none', background: 'none', color: 'var(--text-subtle)', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }} title="將此卡片移至汰舊區">
+                      <Archive size={14} />
+                    </button>
+                    <div style={{ marginBottom: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: '900', color: isSelected ? 'var(--primary-color)' : 'var(--text-main)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <Monitor size={12} color={isSelected ? 'var(--primary-color)' : 'var(--text-muted)'} /> {st.brand}
+                        </span>
+                        <span style={{ fontSize: '10px', fontWeight: '800', color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', backgroundColor: 'var(--bg-surface-subtle)', padding: '1px 5px', borderRadius: '4px', marginRight: '22px' }}>
+                          共 {st.total} 個
+                        </span>
+                      </div>
+                      {aggregationMode !== 'BRAND' && (
+                        <div style={{ color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', fontSize: '10px', fontWeight: '700', marginTop: '2px', paddingLeft: '16px' }}>
+                          {st.type} - {st.model}
+                        </div>
+                      )}
+                      {aggregationMode === 'SPEC' && st.specification && (
+                        <div style={{ color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', fontSize: '9px', fontWeight: '500', marginTop: '2px', paddingLeft: '16px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }} title={st.specification}>
+                          {st.specification}
+                        </div>
+                      )}
                     </div>
-                    {aggregationMode !== 'BRAND' && (
-                      <div style={{ color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', fontSize: '10px', fontWeight: '700', marginTop: '2px', paddingLeft: '16px' }}>
-                        {st.type} - {st.model}
-                      </div>
-                    )}
-                    {aggregationMode === 'SPEC' && st.specification && (
-                      <div style={{ color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', fontSize: '9px', fontWeight: '500', marginTop: '2px', paddingLeft: '16px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }} title={st.specification}>
-                        {st.specification}
-                      </div>
-                    )}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '3px 6px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>在庫</span><span style={{ color: '#16a34a', fontWeight: '800' }}>{st.active}</span></div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>出貨</span><span style={{ color: '#3b82f6', fontWeight: '800' }}>{st.shipped}</span></div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>借出</span><span style={{ color: '#d97706', fontWeight: '800' }}>{st.lent || 0}</span></div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>故障</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
+                    </div>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '3px 6px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>在庫</span><span style={{ color: '#16a34a', fontWeight: '800' }}>{st.active}</span></div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>出貨</span><span style={{ color: '#3b82f6', fontWeight: '800' }}>{st.shipped}</span></div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>借出</span><span style={{ color: '#d97706', fontWeight: '800' }}>{st.lent || 0}</span></div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>故障</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
           {renderRetiredSection(retiredMatches)}
         </div>
       );
@@ -803,7 +853,7 @@ const HwList = ({ isSplitMode = false }) => {
                 </td>
                 <td style={tdStyle}>
                   <div style={{ color: '#818cf8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <Server size={12} /> {nic.custom_attributes?.server_sn || '--'}
+                    <Server size={12} /> {nic.server_sn || nic.custom_attributes?.server_sn || '--'}
                   </div>
                   {nic.server_hostname && (
                     <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', paddingLeft: '16px' }}>

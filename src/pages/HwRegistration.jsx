@@ -97,6 +97,24 @@ const HwRegistration = ({ isSplitMode = false }) => {
     }
   };
 
+  const handleSnBlur = async (snValue) => {
+    const cleanSn = (snValue || '').trim();
+    if (!cleanSn || formData.server_sn) return;
+    try {
+      const devRes = await window.electronAPI.namedQuery('findDeviceByMountedHwSn', [cleanSn]);
+      if (devRes.success && devRes.rows && devRes.rows.length > 0) {
+        const dev = devRes.rows[0];
+        setFormData(prev => ({
+          ...prev,
+          server_sn: prev.server_sn || dev.sn,
+          project_name: prev.project_name || dev.project_name || ''
+        }));
+      }
+    } catch (err) {
+      console.error('findDeviceByMountedHwSn error:', err);
+    }
+  };
+
   const handleAddBrand = async () => {
     const name = validateAndSanitize(newBrandName, '廠牌名稱');
     if (!name) return;
@@ -230,10 +248,20 @@ const HwRegistration = ({ isSplitMode = false }) => {
         const res = await window.electronAPI.namedQuery('insertAssetRecord', [
           itemMasterId, sn || null, '', '', '',
           null, null, null, null, '', '',
-          custom_attributes, formData.ownership || 'FOR_SALE'
+          custom_attributes, formData.ownership || 'FOR_SALE',
+          'ACTIVE'
         ]);
 
-        if (res.success) successCount++;
+        if (res.success) {
+          successCount++;
+          if (safeServerSn && sn) {
+            try {
+              await window.electronAPI.namedQuery('appendMountedHwSnToDevice', [safeServerSn, sn]);
+            } catch (err) {
+              console.error('appendMountedHwSnToDevice error:', err);
+            }
+          }
+        }
         else failCount++;
       }
 
@@ -433,7 +461,15 @@ const HwRegistration = ({ isSplitMode = false }) => {
                     placeholder="請在此處貼上或掃描多個序號..."
                   />
                 ) : (
-                  <input type="text" name="sn" value={formData.sn} onChange={handleChange} style={inputStyle} placeholder="請輸入硬體序號" />
+                  <input 
+                    type="text" 
+                    name="sn" 
+                    value={formData.sn} 
+                    onChange={handleChange} 
+                    onBlur={() => handleSnBlur(formData.sn)}
+                    style={inputStyle} 
+                    placeholder="請輸入硬體序號" 
+                  />
                 )}
                 {isBulkMode && <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '6px' }}>已輸入: <b>{bulkSns.split('\n').filter(s => s.trim()).length}</b> 個序號</div>}
               </div>

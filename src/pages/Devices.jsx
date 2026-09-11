@@ -248,9 +248,15 @@ const Devices = ({ isSplitMode = false }) => {
         const res = await window.electronAPI.namedQuery('insertAssetRecord', [
           masterId, sn || null, formData.client, formData.hostname, formData.location, formData.installed_date || null,
           formData.customer_warranty_expire || null, formData.system_date || null, formData.warranty_expire || null,
-          formData.os, formData.nic, updatedCustomAttributes, formData.ownership || 'FOR_SALE'
+          formData.os, formData.nic, updatedCustomAttributes, formData.ownership || 'FOR_SALE',
+          formData.status || 'ACTIVE'
         ]);
-        if (res.success) successCount++;
+        if (res.success) {
+          successCount++;
+        } else {
+          console.error('[insertAssetRecord error]:', res.error);
+          throw new Error(res.error || '新增設備資產失敗');
+        }
       }
 
       if (successCount > 0) {

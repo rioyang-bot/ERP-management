@@ -135,14 +135,29 @@ ipcMain.handle('dashboard:stats', async (event) => {
 });
 
 // 具名查詢 IPC
-ipcMain.handle('db:namedQuery', async (event, queryName, params) => {
+ipcMain.handle('db:namedQuery', async (event, queryName, params = []) => {
   if (!queryName || !namedQueries[queryName]) {
     return { success: false, error: '無效的查詢要求' };
   }
   try {
     const sql = namedQueries[queryName];
-    const safeParams = sanitizeParams(params);
-    const result = await query(sql, safeParams);
+    const safeParams = sanitizeParams(params || []);
+
+    // 處理 JSON 物件 (針對 JSONB 欄位)
+    const processedParams = (Array.isArray(safeParams) ? safeParams : []).map(p => 
+      (typeof p === 'object' && p !== null) ? JSON.stringify(p) : p
+    );
+
+    // 自動補齊 SQL 所需之最大參數數量，避免少傳選擇性參數時 pg prepared statement 報錯
+    const paramMatches = sql.match(/\$(\d+)/g);
+    if (paramMatches) {
+      const maxParamIdx = Math.max(...paramMatches.map(m => parseInt(m.substring(1), 10)));
+      while (processedParams.length < maxParamIdx) {
+        processedParams.push(null);
+      }
+    }
+
+    const result = await query(sql, processedParams);
     return { success: true, rows: result.rows };
   } catch (error) {
     console.error(`[DB] NamedQuery Error (${queryName}):`, error);

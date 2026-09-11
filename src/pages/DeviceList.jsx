@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Search, Edit2, X, Save, MoreHorizontal, MoreVertical, MapPin, User, Trash2, CheckCircle, ShoppingBag, Wrench, ShieldAlert, Cpu, Archive, RotateCcw, Server, Send, History, Building2, Info, RefreshCw } from 'lucide-react';
+import { Search, Edit2, X, Save, MoreHorizontal, MoreVertical, MapPin, User, Trash2, CheckCircle, ShoppingBag, Wrench, ShieldAlert, Cpu, Archive, RotateCcw, Server, Send, History, Building2, Info, RefreshCw, Plus } from 'lucide-react';
 import ItemLedgerModal from '../components/ItemLedgerModal';
 import DeviceRegistrationModal from '../components/DeviceRegistrationModal';
 import RmaReplacementModal from '../components/RmaReplacementModal';
@@ -80,6 +80,8 @@ const DeviceList = ({ isSplitMode = false }) => {
   const [expandedLabItems, setExpandedLabItems] = useState({}); // 控制 LAB 耗材摺疊
   const [ledgerItem, setLedgerItem] = useState(null); // 品項履歷 Modal
   const [rmaAsset, setRmaAsset] = useState(null); // 原廠換新 RMA Modal
+  const [availableHardwares, setAvailableHardwares] = useState([]); // 可供掛載之硬體清單
+  const [showHwDropdown, setShowHwDropdown] = useState(false); // 控制硬體下拉選單
 
   const statusConfig = {
     ACTIVE: { label: '在庫', color: '#047857', bgColor: '#dcfce7', borderColor: '#bbf7d0' },
@@ -137,21 +139,42 @@ const DeviceList = ({ isSplitMode = false }) => {
     f._origModel = f.model || '';
     f._origSpec = f.specification || '';
     f._origComponents = Array.isArray(f.components) ? f.components : [];
+    
+    let attrs = {};
+    try { attrs = typeof f.custom_attributes === 'string' ? JSON.parse(f.custom_attributes) : (f.custom_attributes || {}); } catch { attrs = {}; }
+    f.custom_attributes = attrs;
+
+    const compSns = f._origComponents.map(c => c.sn).filter(Boolean);
+    const attrSns = (attrs.mounted_hw_sns || '')
+      .split(/[,，\s\n]+/)
+      .map(s => s.trim())
+      .filter(Boolean);
+    const allHwSns = Array.from(new Set([...compSns, ...attrSns]));
+    f._origMountedHwSns = [...allHwSns];
+    f.mounted_hw_sns = allHwSns.join(', ');
+
     f.ownership = f.ownership || 'FOR_SALE';
     ['installed_date', 'customer_warranty_expire', 'system_date', 'warranty_expire'].forEach(k => {
       if (f[k]) {
         try { f[k] = new Date(f[k]).toISOString().split('T')[0]; } catch { f[k] = ''; }
       } else { f[k] = ''; }
     });
-    let attrs = {};
-    try { attrs = typeof f.custom_attributes === 'string' ? JSON.parse(f.custom_attributes) : (f.custom_attributes || {}); } catch { attrs = {}; }
-    f.custom_attributes = attrs;
     f.end_user = f.end_user || attrs.end_user || '';
     f.contact_person = attrs.contact_person || f.partner_contact || '';
     f.contact_phone = attrs.contact_phone || f.partner_phone || '';
     setEditItem(f);
     setShowEditModal(true);
+    setShowHwDropdown(false);
     setActiveMenuId(null);
+
+    // 取得可供掛載之硬體清單
+    if (window.electronAPI && typeof window.electronAPI.namedQuery === 'function') {
+      window.electronAPI.namedQuery('fetchAvailableHardwares').then(res => {
+        if (res && res.success && Array.isArray(res.rows)) {
+          setAvailableHardwares(res.rows);
+        }
+      }).catch(err => console.error('fetchAvailableHardwares error:', err));
+    }
   };
 
   const handleUpdateOwnership = async (id, sn, newOwnership, label) => {
@@ -221,6 +244,48 @@ const DeviceList = ({ isSplitMode = false }) => {
       }
     }
 
+    // 解析設定之搭載硬體序號
+    const origHwSns = editItem._origMountedHwSns || [];
+    const targetHwSns = (editItem.mounted_hw_sns || '')
+      .split(/[,，\s\n]+/)
+      .map(s => s.trim())
+      .filter(Boolean);
+    const uniqueTargetHwSns = Array.from(new Set(targetHwSns));
+
+    if (uniqueTargetHwSns.length > 0 && !newSn) {
+      alert('請先填寫設備序號 (SN)，方可綁定搭載硬體！');
+      return;
+    }
+
+    // 驗證填寫之搭載硬體 SN 是否皆已在系統中建檔
+    if (uniqueTargetHwSns.length > 0) {
+      const notFoundHwSns = [];
+      for (const hwSn of uniqueTargetHwSns) {
+        // 先檢查當前載入之可用硬體與原設備掛載硬體清單
+        const matchedHw = (availableHardwares || []).find(h => (h.sn || '').trim().toLowerCase() === hwSn.toLowerCase()) || 
+                          (editItem._origComponents || []).find(c => (c.sn || '').trim().toLowerCase() === hwSn.toLowerCase()) ||
+                          origHwSns.find(s => s.trim().toLowerCase() === hwSn.toLowerCase());
+        
+        if (!matchedHw) {
+          // 若快取/原掛載清單中查無，進一步向資料庫查詢確認
+          try {
+            const checkRes = await window.electronAPI.namedQuery('checkHardwareSnExists', [hwSn.trim()]);
+            if (!checkRes || !checkRes.success || !checkRes.rows || checkRes.rows.length === 0) {
+              notFoundHwSns.push(hwSn.trim());
+            }
+          } catch (err) {
+            console.error(`[checkHardwareSnExists error] ${hwSn}:`, err);
+            notFoundHwSns.push(hwSn.trim());
+          }
+        }
+      }
+
+      if (notFoundHwSns.length > 0) {
+        alert(`【警告】以下搭載硬體 SN 尚未在系統中建檔：\n[${notFoundHwSns.join(', ')}]\n\n系統不允許自動建立未登記之硬體 SN！\n請確認硬體序號是否正確，或先至「硬體清單」建立該硬體資產後再進行綁定。`);
+        return;
+      }
+    }
+
     // 若原設備有掛載硬體且序號發生變更，提示確認連動更新
     const mountedComponents = editItem._origComponents || [];
     if (isSnChanged && origSn && mountedComponents.length > 0) {
@@ -278,7 +343,8 @@ const DeviceList = ({ isSplitMode = false }) => {
       ...(editItem.custom_attributes || {}),
       end_user: editItem.end_user || '',
       contact_person: editItem.contact_person || '',
-      contact_phone: editItem.contact_phone || ''
+      contact_phone: editItem.contact_phone || '',
+      mounted_hw_sns: uniqueTargetHwSns.join(', ')
     };
     const res = await window.electronAPI.namedQuery('updateAssetDetails', [
         newSn || null, editItem.client, editItem.hostname, editItem.location, editItem.installed_date || null,
@@ -293,6 +359,42 @@ const DeviceList = ({ isSplitMode = false }) => {
         await window.electronAPI.namedQuery('updateOutboundItemsSn', [newSn, origSn]);
       }
 
+      // 處理搭載硬體 SN 的連動綁定與解綁
+      const toUnbind = origHwSns.filter(sn => !uniqueTargetHwSns.some(t => t.toLowerCase() === sn.toLowerCase()));
+      for (const hwSn of toUnbind) {
+        try {
+          await window.electronAPI.namedQuery('unbindHardwareServerSn', [hwSn.trim()]);
+        } catch (err) {
+          console.error(`[unbindHardwareServerSn] 解綁失敗 (${hwSn}):`, err);
+        }
+      }
+
+      const notFoundHwSns = [];
+      if (newSn) {
+        for (const hwSn of uniqueTargetHwSns) {
+          try {
+            const bindRes = await window.electronAPI.namedQuery('bindHardwareToServerSn', [
+              newSn, 
+              hwSn.trim(),
+              editItem.client || null,
+              editItem.location || null,
+              editItem.ownership || 'FOR_SALE'
+            ]);
+            if (!bindRes || !bindRes.success || (Array.isArray(bindRes.rows) && bindRes.rows.length === 0)) {
+              console.error(`[bindHardwareToServerSn] 綁定失敗或查無對應硬體 (${hwSn} -> ${newSn}):`, bindRes?.error);
+              notFoundHwSns.push(hwSn);
+            }
+          } catch (err) {
+            console.error(`[bindHardwareToServerSn] 執行異常 (${hwSn} -> ${newSn}):`, err);
+            notFoundHwSns.push(hwSn);
+          }
+        }
+      }
+
+      if (notFoundHwSns.length > 0) {
+        alert(`【警告】以下搭載硬體 SN 綁定異常（查無已建立之硬體資料）：\n[${notFoundHwSns.join(', ')}]\n\n系統未自動建立未登記之硬體，請確認硬體庫存資料。`);
+      }
+
       logUpdate(
         'DEVICE', 
         newSn || editItem.id, 
@@ -305,6 +407,7 @@ const DeviceList = ({ isSplitMode = false }) => {
           origSn: origSn,
           isSnChanged,
           syncedHardwareCount: mountedComponents.length,
+          mountedHwSns: uniqueTargetHwSns,
           client: editItem.client,
           hostname: editItem.hostname,
           location: editItem.location,
@@ -344,7 +447,11 @@ const DeviceList = ({ isSplitMode = false }) => {
           (item.location || '').toLowerCase().includes(term);
       });
     })
-    .sort((a, b) => (statusPriority[a.status] || 99) - (statusPriority[b.status] || 99));
+    .sort((a, b) => {
+      const priorityDiff = (statusPriority[a.status] || 99) - (statusPriority[b.status] || 99);
+      if (priorityDiff !== 0) return priorityDiff;
+      return (b.id || 0) - (a.id || 0);
+    });
 
   const totalPages = Math.ceil(sortedItems.length / itemsPerPage);
   const paginatedItems = sortedItems.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
@@ -410,6 +517,10 @@ const DeviceList = ({ isSplitMode = false }) => {
     if (brandFilter || searchTerm || selectedCardKey) {
       const searchTerms = searchTerm.toLowerCase().split(/\s+/).filter(t => t);
       const filterCard = (st) => {
+        if (selectedCardKey) {
+          const cardId = st.isRetired ? `${st.key}:::RETIRED` : st.key;
+          if (cardId !== selectedCardKey) return false;
+        }
         if (brandFilter && st.brand !== brandFilter) return false;
         if (searchTerms.length === 0) return true;
         const target = `${st.brand} ${st.type} ${st.model} ${st.specification}`.toLowerCase();
@@ -421,10 +532,11 @@ const DeviceList = ({ isSplitMode = false }) => {
 
       return (
         <div style={{ position: 'relative' }}>
-          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '24px', padding: '16px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '16px', border: '1px solid var(--border-color)' }}>
-            {activeMatches.map(st => {
-              const isSelected = selectedCardKey === st.key;
-              return (
+          {activeMatches.length > 0 && (
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '24px', padding: '16px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '16px', border: '1px solid var(--border-color)' }}>
+              {activeMatches.map(st => {
+                const isSelected = selectedCardKey === st.key;
+                return (
                 <div 
                   key={st.key}
                   onClick={() => handleCardClick(st)}
@@ -477,6 +589,7 @@ const DeviceList = ({ isSplitMode = false }) => {
               );
             })}
           </div>
+          )}
           {renderRetiredSection(retiredMatches)}
         </div>
       );
@@ -1241,6 +1354,186 @@ const DeviceList = ({ isSplitMode = false }) => {
                 </div>
                 <div><label style={editLabelStyle}>主機名稱 (HostName)</label><input type="text" value={editItem.hostname || ''} onChange={(e) => setEditItem({...editItem, hostname: e.target.value})} style={editInputStyle} /></div>
               </div>
+
+              <div style={{ position: 'relative' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label htmlFor="edit-mounted-hw-input" style={{ ...editLabelStyle, marginBottom: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Cpu size={14} style={{ color: 'var(--primary-color)' }} />
+                    <span>搭載硬體 SN (Mounted Hardware SN)</span>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 'normal' }}>
+                      (提供硬體序號，儲存時將自動同步對應此設備之伺服器 SN)
+                    </span>
+                  </label>
+                  {availableHardwares.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowHwDropdown(prev => !prev)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--primary-color)',
+                        fontSize: '12px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        fontWeight: '600'
+                      }}
+                    >
+                      <Plus size={13} /> {showHwDropdown ? '收起硬體選單' : '從硬體庫存挑選'}
+                    </button>
+                  )}
+                </div>
+                <input 
+                  id="edit-mounted-hw-input"
+                  type="text" 
+                  value={editItem.mounted_hw_sns || ''} 
+                  onChange={(e) => setEditItem({ ...editItem, mounted_hw_sns: e.target.value })} 
+                  onFocus={() => {
+                    if (availableHardwares.length > 0 && !showHwDropdown) {
+                      setShowHwDropdown(true);
+                    }
+                  }}
+                  placeholder="輸入或貼上硬體序號，多筆請用逗號或空格分隔 (例如: NIC-001, MEM-002)" 
+                  style={editInputStyle} 
+                />
+
+                {/* 下拉搜尋 / 挑選硬體清單 */}
+                {showHwDropdown && availableHardwares.length > 0 && (
+                  <div style={{
+                    position: 'absolute', top: '100%', left: 0, right: 0,
+                    backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)',
+                    borderRadius: '8px', marginTop: '4px', maxHeight: '220px',
+                    overflowY: 'auto', zIndex: 20, boxShadow: 'var(--modal-shadow)'
+                  }}>
+                    <div style={{ padding: '8px 12px', backgroundColor: 'var(--bg-surface-subtle)', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', fontWeight: 'bold' }}>
+                      <span>可掛載之硬體資產清單 (點擊加入/移除)</span>
+                      <span style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setShowHwDropdown(false)}>關閉 ✕</span>
+                    </div>
+                    {(() => {
+                      const curSns = (editItem.mounted_hw_sns || '')
+                        .split(/[,，\s\n]+/)
+                        .map(s => s.trim().toLowerCase())
+                        .filter(Boolean);
+                      return availableHardwares.map(hw => {
+                        const isSelected = curSns.includes((hw.sn || '').toLowerCase());
+                        const isMountedToOther = hw.server_sn && hw.server_sn.trim() !== (editItem.sn || '').trim();
+                        return (
+                          <div 
+                            key={hw.id || hw.sn}
+                            style={{
+                              padding: '8px 12px',
+                              cursor: 'pointer',
+                              borderBottom: '1px solid var(--border-color)',
+                              fontSize: '0.85rem',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              backgroundColor: isSelected ? 'rgba(99, 102, 241, 0.08)' : 'transparent'
+                            }}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              const currentList = (editItem.mounted_hw_sns || '')
+                                .split(/[,，\s\n]+/)
+                                .map(s => s.trim())
+                                .filter(Boolean);
+                              let newList;
+                              if (isSelected) {
+                                newList = currentList.filter(s => s.toLowerCase() !== (hw.sn || '').toLowerCase());
+                              } else {
+                                newList = [...currentList, hw.sn];
+                              }
+                              setEditItem({ ...editItem, mounted_hw_sns: Array.from(new Set(newList)).join(', ') });
+                            }}
+                          >
+                            <div>
+                              <span style={{ fontWeight: 'bold', color: 'var(--text-main)', marginRight: '8px' }}>
+                                {isSelected ? '✅ ' : '+ '} {hw.sn}
+                              </span>
+                              <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
+                                {hw.brand} {hw.model} {hw.type ? `(${hw.type})` : ''}
+                              </span>
+                            </div>
+                            <div>
+                              {isMountedToOther ? (
+                                <span style={{ fontSize: '11px', color: '#f59e0b', backgroundColor: 'rgba(245, 158, 11, 0.1)', padding: '2px 6px', borderRadius: '4px' }}>
+                                  已綁定: {hw.server_sn}
+                                </span>
+                              ) : isSelected ? (
+                                <span style={{ fontSize: '11px', color: 'var(--primary-color)', fontWeight: 'bold' }}>
+                                  已選取
+                                </span>
+                              ) : (
+                                <span style={{ fontSize: '11px', color: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)', padding: '2px 6px', borderRadius: '4px' }}>
+                                  在庫可用
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                )}
+
+                {/* 已解析之硬體序號徽章標籤 (Chips) */}
+                {(() => {
+                  const parsedSns = (editItem.mounted_hw_sns || '')
+                    .split(/[,，\s\n]+/)
+                    .map(s => s.trim())
+                    .filter(Boolean);
+                  const uniqueSns = Array.from(new Set(parsedSns));
+                  if (uniqueSns.length === 0) return null;
+
+                  return (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px', alignItems: 'center' }}>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 'bold' }}>已設定 ({uniqueSns.length}):</span>
+                      {uniqueSns.map(sn => {
+                        const matchedHw = (availableHardwares || []).find(h => (h.sn || '').toLowerCase() === sn.toLowerCase()) || 
+                          (editItem._origComponents || []).find(c => (c.sn || '').toLowerCase() === sn.toLowerCase()) ||
+                          (editItem._origMountedHwSns || []).find(s => s.toLowerCase() === sn.toLowerCase());
+                        return (
+                          <span
+                            key={sn}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                              backgroundColor: matchedHw ? 'rgba(99, 102, 241, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                              border: matchedHw ? '1px solid rgba(99, 102, 241, 0.25)' : '1px solid rgba(239, 68, 68, 0.4)',
+                              color: matchedHw ? 'var(--text-main)' : '#ef4444',
+                              borderRadius: '6px',
+                              padding: '2px 8px',
+                              fontSize: '11px',
+                              fontWeight: '600'
+                            }}
+                          >
+                            <Cpu size={11} style={{ color: matchedHw ? '#6366f1' : '#ef4444' }} />
+                            <span>{sn}</span>
+                            {matchedHw ? (
+                              <span style={{ color: 'var(--text-muted)', fontWeight: 'normal', fontSize: '10px' }}>
+                                {matchedHw.brand ? `(${matchedHw.brand} ${matchedHw.model || ''})` : ''}
+                              </span>
+                            ) : (
+                              <span style={{ color: '#ef4444', fontWeight: 'bold', fontSize: '10px' }}>
+                                (未建檔硬體)
+                              </span>
+                            )}
+                            <X 
+                              size={12} 
+                              style={{ cursor: 'pointer', color: 'var(--text-muted)', marginLeft: '2px' }}
+                              onClick={() => {
+                                const remain = uniqueSns.filter(s => s !== sn);
+                                setEditItem({ ...editItem, mounted_hw_sns: remain.join(', ') });
+                              }}
+                            />
+                          </span>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+              </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
                 <div>
                   <label htmlFor="edit-client-select" style={editLabelStyle}>客戶名稱</label>
@@ -1478,7 +1771,15 @@ const DeviceList = ({ isSplitMode = false }) => {
       <DeviceRegistrationModal
         isOpen={showAddModal}
         onClose={() => setShowAddModal(false)}
-        onSuccess={fetchAssets}
+        onSuccess={(createdInfo) => {
+          fetchAssets();
+          if (createdInfo?.sn) {
+            setSearchTerm(createdInfo.sn);
+          } else if (createdInfo?.brand) {
+            setSearchTerm(createdInfo.brand);
+          }
+          setCurrentPage(1);
+        }}
       />
 
       {/* 原廠換新 RMA Modal */}

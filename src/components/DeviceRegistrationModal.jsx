@@ -244,24 +244,51 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
       };
       for (const sn of snList) {
         const res = await window.electronAPI.namedQuery('insertAssetRecord', [
-          masterId, sn || null, formData.client, formData.hostname, formData.location, formData.installed_date || null,
-          formData.customer_warranty_expire || null, formData.system_date || null, formData.warranty_expire || null,
-          formData.os, formData.nic, updatedCustomAttributes, formData.ownership || 'FOR_SALE'
+          masterId,
+          sn || null,
+          formData.client || null,
+          formData.hostname || null,
+          formData.location || null,
+          formData.installed_date || null,
+          formData.customer_warranty_expire || null,
+          formData.system_date || null,
+          formData.warranty_expire || null,
+          formData.os || null,
+          formData.nic || null,
+          updatedCustomAttributes,
+          formData.ownership || 'FOR_SALE',
+          formData.status || 'ACTIVE'
         ]);
-        if (res.success) successCount++;
+        if (res.success) {
+          successCount++;
+        } else {
+          console.error('[insertAssetRecord error]:', res.error);
+          throw new Error(res.error || '新增資產紀錄失敗');
+        }
       }
 
-      if (successCount > 0) {
-        logCreate(
-          'DEVICE',
-          isBulkMode ? `批次 ${snList.length} 台` : (formData.sn || '無序號'),
-          `${formData.brand} ${formData.model}`,
-          `新增設備 [${formData.brand} ${formData.model}] ${isBulkMode ? `批次建立 ${successCount} 筆` : `序號: ${formData.sn || '未指定'}`}`,
-          { isBulkMode, count: successCount, brand: formData.brand, type: formData.type, model: formData.model, snList: isBulkMode ? snList : [formData.sn], client: formData.client, location: formData.location }
-        );
+      if (successCount === 0) {
+        throw new Error('未成功建立任何設備紀錄，請確認資料是否正確');
       }
 
-      if (onSuccess) onSuccess();
+      logCreate(
+        'DEVICE',
+        isBulkMode ? `批次 ${snList.length} 台` : (formData.sn || '無序號'),
+        `${formData.brand} ${formData.model}`,
+        `新增設備 [${formData.brand} ${formData.model}] ${isBulkMode ? `批次建立 ${successCount} 筆` : `序號: ${formData.sn || '未指定'}`}`,
+        { isBulkMode, count: successCount, brand: formData.brand, type: formData.type, model: formData.model, snList: isBulkMode ? snList : [formData.sn], client: formData.client, location: formData.location }
+      );
+
+      const createdInfo = {
+        brand: formData.brand,
+        model: formData.model,
+        type: formData.type,
+        specification: spec,
+        sn: isBulkMode ? (snList[0] || '') : (formData.sn ? formData.sn.trim() : '')
+      };
+
+      window.dispatchEvent(new CustomEvent('db-update'));
+      if (onSuccess) onSuccess(createdInfo);
 
       if (continueAdd) {
         alert(isBulkMode ? `批次建檔完成！成功建立 ${successCount} 筆。請繼續新增下一筆。` : '設備建檔成功！請繼續輸入。');
@@ -338,9 +365,9 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '16px' }}>
               {/* 類型 (Type) * */}
               <div>
-                <label style={labelStyle}>類型 (Type) *</label>
+                <label htmlFor="dev-reg-type" style={labelStyle}>類型 (Type) *</label>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <select name="type" value={formData.type} onChange={handleChange} style={inputStyle} required>
+                  <select id="dev-reg-type" name="type" value={formData.type} onChange={handleChange} style={inputStyle} required>
                     <option value="">選擇類型</option>
                     {types.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
@@ -367,9 +394,9 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
 
               {/* 廠牌 */}
               <div>
-                <label style={labelStyle}>廠牌 (Brand) *</label>
+                <label htmlFor="dev-reg-brand" style={labelStyle}>廠牌 (Brand) *</label>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <select name="brand" value={formData.brand} onChange={handleChange} style={inputStyle} required>
+                  <select id="dev-reg-brand" name="brand" value={formData.brand} onChange={handleChange} style={inputStyle} required>
                     <option value="">選擇廠牌</option>
                     {brands.map(b => <option key={b.name} value={b.name}>{b.name}</option>)}
                   </select>
@@ -396,9 +423,9 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
 
               {/* 型號 */}
               <div>
-                <label style={labelStyle}>型號 (Model) *</label>
+                <label htmlFor="dev-reg-model" style={labelStyle}>型號 (Model) *</label>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <select name="model" value={formData.model} onChange={handleChange} style={inputStyle} required>
+                  <select id="dev-reg-model" name="model" value={formData.model} onChange={handleChange} style={inputStyle} required>
                     <option value="">選擇型號</option>
                     {models.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>

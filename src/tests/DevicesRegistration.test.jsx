@@ -38,6 +38,9 @@ describe('設備建檔聯絡人連動整合測試', () => {
           ]
         });
       }
+      if (query === 'findItemMaster' || query === 'insertItemMaster') {
+        return Promise.resolve({ success: true, rows: [{ id: 101 }] });
+      }
       if (query === 'insertAssetRecord') {
         insertSpy(params);
         return Promise.resolve({ success: true });
@@ -118,5 +121,59 @@ describe('設備建檔聯絡人連動整合測試', () => {
 
     expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('廠牌、類型、型號、規格為必填'));
     expect(insertSpy).not.toHaveBeenCalled();
+  });
+
+  it('DeviceRegistrationModal 應傳入完整的 14 個參數至 insertAssetRecord 並將建立資訊回傳給 onSuccess', async () => {
+    const { default: DeviceRegistrationModal } = await import('../components/DeviceRegistrationModal');
+    const user = userEvent.setup();
+    const onSuccessSpy = vi.fn();
+    window.alert = vi.fn();
+
+    render(
+      <MemoryRouter>
+        <DeviceRegistrationModal isOpen={true} onClose={() => {}} onSuccess={onSuccessSpy} />
+      </MemoryRouter>
+    );
+
+    // 等待彈窗載入
+    await waitFor(() => {
+      expect(screen.getByText(/新增設備建檔/)).toBeInTheDocument();
+    });
+
+    // 填寫必填欄位
+    const brandSelect = screen.getByLabelText(/廠牌/i);
+    await user.selectOptions(brandSelect, 'BrandA');
+
+    const typeSelect = screen.getByLabelText(/類型/i);
+    await user.selectOptions(typeSelect, 'TypeA');
+
+    const modelSelect = screen.getByLabelText(/型號/i);
+    await user.selectOptions(modelSelect, 'ModelA');
+
+    const snInput = screen.getByPlaceholderText(/請輸入或掃描序號/);
+    await user.type(snInput, 'TEST-SRV-2026');
+
+    // 點擊確認建立按鈕
+    const saveBtn = screen.getByRole('button', { name: /儲存並關閉/ });
+    await user.click(saveBtn);
+
+    await waitFor(() => {
+      expect(insertSpy).toHaveBeenCalled();
+    });
+
+    const params = insertSpy.mock.calls[0][0];
+    // 驗證傳入 insertAssetRecord 的參數陣列至少有 14 個
+    expect(params.length).toBeGreaterThanOrEqual(14);
+    // 驗證序號是 TEST-SRV-2026
+    expect(params[1]).toBe('TEST-SRV-2026');
+    // 驗證第 14 個參數是 ACTIVE 狀態
+    expect(params[13]).toBe('ACTIVE');
+
+    // 驗證 onSuccess 接收到了 createdInfo
+    expect(onSuccessSpy).toHaveBeenCalledWith(expect.objectContaining({
+      brand: 'BrandA',
+      model: 'ModelA',
+      sn: 'TEST-SRV-2026'
+    }));
   });
 });

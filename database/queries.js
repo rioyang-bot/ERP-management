@@ -3,11 +3,26 @@ export const queries = {
   fetchAssetsList: `SELECT a.*, a.id as id, i.id as item_master_id, i.specification, i.type, i.brand, i.model, i.unit, c.name as category_name,
       COALESCE(a.custom_attributes->>'contact_person', p.contact_person) as partner_contact,
       COALESCE(a.custom_attributes->>'contact_phone', p.phone) as partner_phone,
-      (SELECT json_agg(json_build_object('brand', hi.brand, 'model', hi.model, 'sn', ha.sn)) 
-       FROM assets ha JOIN item_master hi ON ha.item_master_id = hi.id 
-       WHERE ha.custom_attributes->>'server_sn' IS NOT NULL AND ha.custom_attributes->>'server_sn' != '' 
-       AND a.sn IS NOT NULL AND a.sn != ''
-       AND TRIM(ha.custom_attributes->>'server_sn') = TRIM(a.sn)) as components,
+      (SELECT json_agg(json_build_object('brand', comp.brand, 'model', comp.model, 'sn', comp.sn)) 
+       FROM (
+         SELECT COALESCE(hi.brand, '') as brand, COALESCE(hi.model, '') as model, ha.sn
+         FROM assets ha 
+         LEFT JOIN item_master hi ON ha.item_master_id = hi.id 
+         WHERE ha.custom_attributes->>'server_sn' IS NOT NULL AND ha.custom_attributes->>'server_sn' != '' 
+           AND a.sn IS NOT NULL AND a.sn != ''
+           AND TRIM(LOWER(ha.custom_attributes->>'server_sn')) = TRIM(LOWER(a.sn))
+         UNION
+         SELECT '' as brand, '' as model, TRIM(elem) as sn
+         FROM regexp_split_to_table(COALESCE(a.custom_attributes->>'mounted_hw_sns', ''), '[,，\\s\\n]+') elem
+         WHERE TRIM(elem) != ''
+           AND NOT EXISTS (
+             SELECT 1 FROM assets ex 
+             WHERE ex.custom_attributes->>'server_sn' IS NOT NULL 
+               AND a.sn IS NOT NULL AND a.sn != ''
+               AND TRIM(LOWER(ex.custom_attributes->>'server_sn')) = TRIM(LOWER(a.sn))
+               AND TRIM(LOWER(ex.sn)) = TRIM(LOWER(elem))
+           )
+       ) comp) as components,
       (SELECT json_agg(json_build_object('specification', im.specification, 'brand', im.brand, 'model', im.model, 'quantity', la.sum_qty))
        FROM (SELECT item_master_id, asset_id, SUM(quantity) as sum_qty FROM item_lab_assignments GROUP BY item_master_id, asset_id) la 
        JOIN item_master im ON la.item_master_id = im.id 
@@ -21,15 +36,30 @@ export const queries = {
              SELECT MIN(id) FROM partners WHERE name = a.client
         ))
       )
-      WHERE c.name = '設備' ORDER BY i.id DESC`,
+      WHERE c.name = '設備' ORDER BY a.id DESC`,
   fetchAssetsListByBrand: `SELECT a.*, a.id as id, i.id as item_master_id, i.specification, i.type, i.brand, i.model, i.unit, c.name as category_name,
       COALESCE(a.custom_attributes->>'contact_person', p.contact_person) as partner_contact,
       COALESCE(a.custom_attributes->>'contact_phone', p.phone) as partner_phone,
-      (SELECT json_agg(json_build_object('brand', hi.brand, 'model', hi.model, 'sn', ha.sn)) 
-       FROM assets ha JOIN item_master hi ON ha.item_master_id = hi.id 
-       WHERE ha.custom_attributes->>'server_sn' IS NOT NULL AND ha.custom_attributes->>'server_sn' != '' 
-       AND a.sn IS NOT NULL AND a.sn != ''
-       AND TRIM(ha.custom_attributes->>'server_sn') = TRIM(a.sn)) as components,
+      (SELECT json_agg(json_build_object('brand', comp.brand, 'model', comp.model, 'sn', comp.sn)) 
+       FROM (
+         SELECT COALESCE(hi.brand, '') as brand, COALESCE(hi.model, '') as model, ha.sn
+         FROM assets ha 
+         LEFT JOIN item_master hi ON ha.item_master_id = hi.id 
+         WHERE ha.custom_attributes->>'server_sn' IS NOT NULL AND ha.custom_attributes->>'server_sn' != '' 
+           AND a.sn IS NOT NULL AND a.sn != ''
+           AND TRIM(LOWER(ha.custom_attributes->>'server_sn')) = TRIM(LOWER(a.sn))
+         UNION
+         SELECT '' as brand, '' as model, TRIM(elem) as sn
+         FROM regexp_split_to_table(COALESCE(a.custom_attributes->>'mounted_hw_sns', ''), '[,，\\s\\n]+') elem
+         WHERE TRIM(elem) != ''
+           AND NOT EXISTS (
+             SELECT 1 FROM assets ex 
+             WHERE ex.custom_attributes->>'server_sn' IS NOT NULL 
+               AND a.sn IS NOT NULL AND a.sn != ''
+               AND TRIM(LOWER(ex.custom_attributes->>'server_sn')) = TRIM(LOWER(a.sn))
+               AND TRIM(LOWER(ex.sn)) = TRIM(LOWER(elem))
+           )
+       ) comp) as components,
       (SELECT json_agg(json_build_object('specification', im.specification, 'brand', im.brand, 'model', im.model, 'quantity', la.sum_qty))
        FROM (SELECT item_master_id, asset_id, SUM(quantity) as sum_qty FROM item_lab_assignments GROUP BY item_master_id, asset_id) la 
        JOIN item_master im ON la.item_master_id = im.id 
@@ -43,7 +73,7 @@ export const queries = {
              SELECT MIN(id) FROM partners WHERE name = a.client
         ))
       )
-      WHERE c.name = '設備' AND i.brand = $1 ORDER BY i.id DESC`,
+      WHERE c.name = '設備' AND i.brand = $1 ORDER BY a.id DESC`,
   deleteAsset: `DELETE FROM assets WHERE id = $1`,
   updateAssetStatus: `UPDATE assets SET status = $1 WHERE id = $2`,
   updateAssetOwnership: `UPDATE assets SET ownership = $1 WHERE id = $2`,
@@ -68,7 +98,68 @@ export const queries = {
     ) RETURNING id, sn, status
   `,
   updateAssetStatusAndAttributes: `UPDATE assets SET status = $1, custom_attributes = $2 WHERE id = $3`,
-  updateMountedHardwareServerSn: `UPDATE assets SET custom_attributes = jsonb_set(COALESCE(custom_attributes, '{}'::jsonb), '{server_sn}', to_jsonb($1::text)) WHERE custom_attributes->>'server_sn' IS NOT NULL AND TRIM(custom_attributes->>'server_sn') = TRIM($2)`,
+  updateMountedHardwareServerSn: `UPDATE assets SET custom_attributes = (CASE WHEN custom_attributes IS NOT NULL AND jsonb_typeof(custom_attributes) = 'object' THEN custom_attributes ELSE '{}'::jsonb END) || jsonb_build_object('server_sn', $1::text) WHERE custom_attributes->>'server_sn' IS NOT NULL AND TRIM(LOWER(custom_attributes->>'server_sn')) = TRIM(LOWER($2))`,
+  bindHardwareToServerSn: `UPDATE assets SET custom_attributes = (CASE WHEN custom_attributes IS NOT NULL AND jsonb_typeof(custom_attributes) = 'object' THEN custom_attributes ELSE '{}'::jsonb END) || jsonb_build_object('server_sn', $1::text), client = COALESCE($3, client), location = COALESCE($4, location), ownership = COALESCE($5, ownership) WHERE sn IS NOT NULL AND TRIM(LOWER(sn)) = TRIM(LOWER($2)) RETURNING id, sn`,
+  unbindHardwareServerSn: `UPDATE assets SET custom_attributes = (CASE WHEN custom_attributes IS NOT NULL AND jsonb_typeof(custom_attributes) = 'object' THEN custom_attributes ELSE '{}'::jsonb END) - 'server_sn' WHERE sn IS NOT NULL AND TRIM(LOWER(sn)) = TRIM(LOWER($1)) RETURNING id, sn`,
+  findDeviceByMountedHwSn: `
+    SELECT a.id, a.sn, a.client, a.location, a.hostname, a.ownership, a.status,
+           COALESCE(a.custom_attributes->>'project_name', '') as project_name,
+           a.custom_attributes
+    FROM assets a
+    JOIN item_master i ON a.item_master_id = i.id
+    JOIN categories c ON i.category_id = c.id
+    WHERE c.name = '設備' 
+      AND a.sn IS NOT NULL AND a.sn != ''
+      AND (
+        (a.custom_attributes->>'mounted_hw_sns' IS NOT NULL AND $1::text = ANY(regexp_split_to_array(a.custom_attributes->>'mounted_hw_sns', '[,，\\s\\n]+')))
+        OR
+        (a.custom_attributes->>'mounted_hw_sns' ILIKE '%' || $1::text || '%')
+      )
+    LIMIT 1
+  `,
+  appendMountedHwSnToDevice: `
+    UPDATE assets 
+    SET custom_attributes = (CASE WHEN custom_attributes IS NOT NULL AND jsonb_typeof(custom_attributes) = 'object' THEN custom_attributes ELSE '{}'::jsonb END) || 
+        jsonb_build_object('mounted_hw_sns', 
+          CASE 
+            WHEN custom_attributes->>'mounted_hw_sns' IS NULL OR TRIM(custom_attributes->>'mounted_hw_sns') = '' THEN $2::text
+            WHEN $2::text = ANY(regexp_split_to_array(custom_attributes->>'mounted_hw_sns', '[,，\\s\\n]+')) THEN custom_attributes->>'mounted_hw_sns'
+            ELSE (custom_attributes->>'mounted_hw_sns') || ', ' || $2::text
+          END
+        )
+    WHERE sn IS NOT NULL AND TRIM(LOWER(sn)) = TRIM(LOWER($1)) 
+    RETURNING id, sn
+  `,
+  removeMountedHwSnFromDevice: `
+    UPDATE assets
+    SET custom_attributes = (CASE WHEN custom_attributes IS NOT NULL AND jsonb_typeof(custom_attributes) = 'object' THEN custom_attributes ELSE '{}'::jsonb END) ||
+        jsonb_build_object('mounted_hw_sns', 
+          COALESCE((
+            SELECT string_agg(TRIM(elem), ', ')
+            FROM regexp_split_to_table(COALESCE(custom_attributes->>'mounted_hw_sns', ''), '[,，\\s\\n]+') elem
+            WHERE TRIM(elem) != '' AND LOWER(TRIM(elem)) != LOWER(TRIM($2::text))
+          ), '')
+        )
+    WHERE sn IS NOT NULL AND TRIM(LOWER(sn)) = TRIM(LOWER($1))
+    RETURNING id, sn
+  `,
+  fetchAvailableHardwares: `
+    SELECT a.id, a.sn, a.status, a.custom_attributes->>'server_sn' as server_sn,
+           i.brand, i.model, i.type, i.specification
+    FROM assets a
+    JOIN item_master i ON a.item_master_id = i.id
+    JOIN categories c ON i.category_id = c.id
+    WHERE c.name = '硬體' AND a.sn IS NOT NULL AND TRIM(a.sn) != ''
+    ORDER BY a.sn ASC
+  `,
+  checkHardwareSnExists: `
+    SELECT a.id, a.sn
+    FROM assets a
+    JOIN item_master i ON a.item_master_id = i.id
+    JOIN categories c ON i.category_id = c.id
+    WHERE c.name = '硬體' AND a.sn IS NOT NULL AND TRIM(LOWER(a.sn)) = TRIM(LOWER($1))
+    LIMIT 1
+  `,
   updateRepairItemsSn: `UPDATE repair_items SET sn = $1 WHERE sn IS NOT NULL AND TRIM(sn) = TRIM($2)`,
   updateOutboundItemsSn: `UPDATE outbound_items SET sn = $1 WHERE sn IS NOT NULL AND TRIM(sn) = TRIM($2)`,
   updateItemMasterSpecs: `UPDATE item_master SET specification = $1, model = $2 WHERE id = $3`,
@@ -387,8 +478,9 @@ export const queries = {
       ORDER BY m.name ASC`,
   fetchNicSpecByBrandTypeModel: `
       SELECT specification FROM item_master WHERE brand = $1 AND type = $2 AND model = $3 AND category_id = (SELECT id FROM categories WHERE name = '硬體') LIMIT 1`,
-  fetchNicListByType: `
+    fetchNicListByType: `
       SELECT a.*, i.specification, i.type, i.brand, i.model, i.unit, 
+             a.custom_attributes->>'server_sn' as server_sn,
              s.client as server_client, s.location as server_location,
              s.hostname as server_hostname, s.os as server_os, s.nic as server_nic,
              s.custom_attributes as server_custom_attributes,
@@ -397,7 +489,7 @@ export const queries = {
              COALESCE(a.custom_attributes->>'contact_phone', p.phone) as partner_phone
       FROM assets a 
       JOIN item_master i ON a.item_master_id = i.id 
-      LEFT JOIN assets s ON (a.custom_attributes->>'server_sn' = s.sn AND s.sn IS NOT NULL AND s.sn != '')
+      LEFT JOIN assets s ON (TRIM(LOWER(a.custom_attributes->>'server_sn')) = TRIM(LOWER(s.sn)) AND s.sn IS NOT NULL AND s.sn != '')
       LEFT JOIN partners p ON a.client = p.name AND (
         (a.custom_attributes->>'contact_person' IS NOT NULL AND p.contact_person = a.custom_attributes->>'contact_person') OR
         (a.custom_attributes->>'contact_person' IS NULL AND p.id = (
@@ -408,6 +500,7 @@ export const queries = {
       ORDER BY a.id DESC`,
   fetchNicList: `
       SELECT a.*, i.specification, i.type, i.brand, i.model, i.unit, 
+             a.custom_attributes->>'server_sn' as server_sn,
              s.client as server_client, s.location as server_location,
              s.hostname as server_hostname, s.os as server_os, s.nic as server_nic,
              s.custom_attributes as server_custom_attributes,
@@ -416,7 +509,7 @@ export const queries = {
              COALESCE(a.custom_attributes->>'contact_phone', p.phone) as partner_phone
       FROM assets a 
       JOIN item_master i ON a.item_master_id = i.id 
-      LEFT JOIN assets s ON (a.custom_attributes->>'server_sn' = s.sn AND s.sn IS NOT NULL AND s.sn != '')
+      LEFT JOIN assets s ON (TRIM(LOWER(a.custom_attributes->>'server_sn')) = TRIM(LOWER(s.sn)) AND s.sn IS NOT NULL AND s.sn != '')
       LEFT JOIN partners p ON a.client = p.name AND (
         (a.custom_attributes->>'contact_person' IS NOT NULL AND p.contact_person = a.custom_attributes->>'contact_person') OR
         (a.custom_attributes->>'contact_person' IS NULL AND p.id = (
@@ -425,7 +518,7 @@ export const queries = {
       )
       WHERE i.category_id = (SELECT id FROM categories WHERE name = '硬體')
       ORDER BY a.id DESC`,
-  updateNicDetails: `UPDATE assets SET sn = $1, client = $2, location = $3, custom_attributes = COALESCE(custom_attributes, '{}'::jsonb) || jsonb_build_object('server_sn', $4::text, 'order_source', $5::text, 'project_name', $8::text, 'end_user', $10::text), hostname = $6, ownership = COALESCE($9, 'FOR_SALE') WHERE id = $7`,
+  updateNicDetails: `UPDATE assets SET sn = $1, client = $2, location = $3, custom_attributes = (CASE WHEN custom_attributes IS NOT NULL AND jsonb_typeof(custom_attributes) = 'object' THEN custom_attributes ELSE '{}'::jsonb END) || jsonb_build_object('server_sn', $4::text, 'order_source', $5::text, 'project_name', $8::text, 'end_user', $10::text), hostname = $6, ownership = COALESCE($9, 'FOR_SALE') WHERE id = $7`,
   updateAssetProjectName: `UPDATE assets SET custom_attributes = COALESCE(custom_attributes, '{}'::jsonb) || jsonb_build_object('project_name', $1::text) WHERE id = $2`,
   updateNicSn: `UPDATE assets SET sn = $1 WHERE id = $2`,
   findAssetBySn: `SELECT id FROM assets WHERE TRIM(LOWER(sn)) = TRIM(LOWER($1))`,
@@ -433,16 +526,32 @@ export const queries = {
   fetchAssetDetailBySN: `
     SELECT a.*, i.specification, i.type, i.brand, i.model, i.unit, c.name as category_name,
     (SELECT json_agg(json_build_object(
-        'item_master_id', ha.item_master_id, 
-        'brand', hi.brand, 
-        'model', hi.model, 
-        'sn', ha.sn, 
-        'type', hi.type, 
-        'specification', hi.specification
+        'item_master_id', comp.item_master_id, 
+        'brand', comp.brand, 
+        'model', comp.model, 
+        'sn', comp.sn, 
+        'type', comp.type, 
+        'specification', comp.specification
       )) 
-     FROM assets ha JOIN item_master hi ON ha.item_master_id = hi.id 
-     WHERE ha.custom_attributes->>'server_sn' IS NOT NULL 
-     AND TRIM(ha.custom_attributes->>'server_sn') = TRIM(a.sn)) as components
+     FROM (
+       SELECT ha.item_master_id, COALESCE(hi.brand, '') as brand, COALESCE(hi.model, '') as model, ha.sn, COALESCE(hi.type, '') as type, COALESCE(hi.specification, '') as specification
+       FROM assets ha 
+       LEFT JOIN item_master hi ON ha.item_master_id = hi.id 
+       WHERE ha.custom_attributes->>'server_sn' IS NOT NULL 
+         AND a.sn IS NOT NULL AND a.sn != ''
+         AND TRIM(LOWER(ha.custom_attributes->>'server_sn')) = TRIM(LOWER(a.sn))
+       UNION
+       SELECT NULL::integer as item_master_id, '' as brand, '' as model, TRIM(elem) as sn, '硬體' as type, '' as specification
+       FROM regexp_split_to_table(COALESCE(a.custom_attributes->>'mounted_hw_sns', ''), '[,，\\s\\n]+') elem
+       WHERE TRIM(elem) != ''
+         AND NOT EXISTS (
+           SELECT 1 FROM assets ex 
+           WHERE ex.custom_attributes->>'server_sn' IS NOT NULL 
+             AND a.sn IS NOT NULL AND a.sn != ''
+             AND TRIM(LOWER(ex.custom_attributes->>'server_sn')) = TRIM(LOWER(a.sn))
+             AND TRIM(LOWER(ex.sn)) = TRIM(LOWER(elem))
+         )
+     ) comp) as components
     FROM assets a 
     JOIN item_master i ON a.item_master_id = i.id 
     LEFT JOIN categories c ON i.category_id = c.id 

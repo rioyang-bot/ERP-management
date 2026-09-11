@@ -251,6 +251,15 @@ app.post('/api/namedQuery', async (req, res) => {
       (typeof p === 'object' && p !== null) ? JSON.stringify(p) : p
     );
     
+    // 3. 自動補齊 SQL 所需之最大參數數量，避免少傳選擇性參數時 pg prepared statement 報錯
+    const paramMatches = sql.match(/\$(\d+)/g);
+    if (paramMatches) {
+      const maxParamIdx = Math.max(...paramMatches.map(m => parseInt(m.substring(1), 10)));
+      while (processedParams.length < maxParamIdx) {
+        processedParams.push(null);
+      }
+    }
+    
     const result = await pool.query(sql, processedParams);
     res.json({ success: true, rows: result.rows });
   } catch (error) {

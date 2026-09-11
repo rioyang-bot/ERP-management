@@ -189,4 +189,56 @@ describe('卡片聚合規則與汰舊區聯動測試 (Card Aggregation & Retire 
       expect(screen.queryByText('HW-001')).not.toBeInTheDocument();
     });
   });
+
+  it('DeviceList & HwList: 點選卡片時其他卡片會被隱藏，再點選同一張卡片才會出現全部卡片', async () => {
+    mockElectronAPI.namedQuery.mockImplementation((queryName) => {
+      if (queryName === 'fetchAssetsList' || queryName === 'fetchAssetsListByBrand') {
+        return Promise.resolve({ success: true, rows: mockDevices });
+      }
+      return Promise.resolve({ success: true, rows: [] });
+    });
+
+    localStorage.setItem('device_aggregation_mode', 'BRAND');
+    localStorage.removeItem('device_list_retired_keys');
+
+    const { unmount } = render(
+      <MemoryRouter>
+        <DeviceList />
+      </MemoryRouter>
+    );
+
+    // 初始狀態：應同時看到 ASUS 與 DELL 卡片
+    await waitFor(() => {
+      expect(screen.getByText('ASUS')).toBeInTheDocument();
+      expect(screen.getByText('DELL')).toBeInTheDocument();
+    });
+
+    // 點選 ASUS 卡片
+    const asusCard = screen.getByText('ASUS');
+    fireEvent.click(asusCard);
+
+    // 驗證：ASUS 卡片仍存在，但 DELL 卡片應被隱藏
+    await waitFor(() => {
+      const dellEls = screen.queryAllByText((content, element) => {
+        return content && content.includes('DELL') && element.tagName !== 'BUTTON';
+      });
+      expect(screen.getAllByText(/ASUS/).length).toBeGreaterThan(0);
+      expect(dellEls.length).toBe(0);
+    });
+
+    // 再次點選 ASUS 卡片（點擊卡片頂部的 ASUS 文字）
+    fireEvent.click(screen.getAllByText(/ASUS/)[0]);
+
+    // 驗證：取消選取後，全部卡片（ASUS 與 DELL）重新出現
+    await waitFor(() => {
+      const dellEls = screen.queryAllByText((content, element) => {
+        return content && content.includes('DELL') && element.tagName !== 'BUTTON';
+      });
+      expect(screen.getAllByText(/ASUS/).length).toBeGreaterThan(0);
+      expect(dellEls.length).toBeGreaterThan(0);
+    });
+
+    unmount();
+  });
 });
+

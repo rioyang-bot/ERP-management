@@ -97,6 +97,24 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
     }
   };
 
+  const handleSnBlur = async (snValue) => {
+    const cleanSn = (snValue || '').trim();
+    if (!cleanSn || formData.server_sn) return;
+    try {
+      const devRes = await window.electronAPI.namedQuery('findDeviceByMountedHwSn', [cleanSn]);
+      if (devRes.success && devRes.rows && devRes.rows.length > 0) {
+        const dev = devRes.rows[0];
+        setFormData(prev => ({
+          ...prev,
+          server_sn: prev.server_sn || dev.sn,
+          project_name: prev.project_name || dev.project_name || ''
+        }));
+      }
+    } catch (err) {
+      console.error('findDeviceByMountedHwSn error:', err);
+    }
+  };
+
   const handleAddBrand = async () => {
     const name = validateAndSanitize(newBrandName, '廠牌名稱');
     if (!name) return;
@@ -225,10 +243,20 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
         const res = await window.electronAPI.namedQuery('insertAssetRecord', [
           itemMasterId, sn || null, '', '', '',
           null, null, null, null, '', '',
-          custom_attributes, formData.ownership || 'FOR_SALE'
+          custom_attributes, formData.ownership || 'FOR_SALE',
+          'ACTIVE'
         ]);
 
-        if (res.success) successCount++;
+        if (res.success) {
+          successCount++;
+          if (safeServerSn && sn) {
+            try {
+              await window.electronAPI.namedQuery('appendMountedHwSnToDevice', [safeServerSn, sn]);
+            } catch (err) {
+              console.error('appendMountedHwSnToDevice error:', err);
+            }
+          }
+        }
         else failCount++;
       }
 
@@ -480,7 +508,14 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}>
                 <div>
                   <label style={labelStyle}>硬體序號 (S/N)</label>
-                  <input name="sn" value={formData.sn} onChange={handleChange} style={inputStyle} placeholder="請輸入或掃描序號" />
+                  <input 
+                    name="sn" 
+                    value={formData.sn} 
+                    onChange={handleChange} 
+                    onBlur={() => handleSnBlur(formData.sn)}
+                    style={inputStyle} 
+                    placeholder="請輸入或掃描序號" 
+                  />
                 </div>
                 <div>
                   <label style={labelStyle}>搭載設備序號 (Server S/N)</label>
