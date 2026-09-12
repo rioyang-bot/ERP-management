@@ -28,6 +28,8 @@ uploads/
 # 環境變數與 SSL 憑證（不可提交）
 .env
 .env.*
+# 範本檔不含實際密碼，需進版控
+!.env.example
 ssl/ca.key
 ssl/server.key
 ssl/*.srl
