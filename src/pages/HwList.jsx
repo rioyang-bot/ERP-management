@@ -99,7 +99,10 @@ const HwList = ({ isSplitMode = false }) => {
             ...customAttrs,
             server_sn: serverSn
           },
-          server_sn: serverSn
+          server_sn: serverSn,
+          // 有填伺服器序號，但該序號在系統中查無對應資產。
+          // 由查詢即時計算，之後掛到存在的設備就會自動恢復正常。
+          serverMissing: !!serverSn.trim() && row.server_exists === false
         };
       });
       setNics(formatted);
@@ -878,9 +881,24 @@ const HwList = ({ isSplitMode = false }) => {
                   {nic.shipping_date ? new Date(nic.shipping_date).toLocaleDateString() : '--'}
                 </td>
                 <td style={tdStyle}>
-                  <div style={{ color: '#818cf8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <Server size={12} /> {nic.server_sn || nic.custom_attributes?.server_sn || '--'}
+                  {/* 掛載於系統中不存在的設備時以琥珀色標示；之後掛到存在的設備即自動恢復 */}
+                  <div
+                    style={{
+                      color: nic.serverMissing ? '#f59e0b' : '#818cf8',
+                      fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px',
+                    }}
+                    title={nic.serverMissing
+                      ? `查無此設備：系統中找不到序號 ${nic.server_sn} 的資產。可能是該設備尚未建檔，或序號輸入有誤。`
+                      : undefined}
+                  >
+                    {nic.serverMissing ? <AlertTriangle size={12} /> : <Server size={12} />}
+                    {nic.server_sn || nic.custom_attributes?.server_sn || '--'}
                   </div>
+                  {nic.serverMissing && (
+                    <div style={{ fontSize: '11px', color: '#f59e0b', marginTop: '2px', paddingLeft: '16px' }}>
+                      查無此設備
+                    </div>
+                  )}
                   {nic.server_hostname && (
                     <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', paddingLeft: '16px' }}>
                       HostName: <b style={{ color: 'var(--text-main)' }}>{nic.server_hostname}</b>

@@ -517,6 +517,9 @@ export const queries = {
              s.hostname as server_hostname, s.os as server_os, s.nic as server_nic,
              s.custom_attributes as server_custom_attributes,
              s.custom_attributes->>'end_user' as server_end_user,
+             -- 掛載的伺服器序號是否真的對應到系統中的資產。
+             -- 供清單標示「掛載於不存在的設備」；之後掛到存在的設備即自動恢復。
+             (s.id IS NOT NULL) as server_exists,
              COALESCE(a.custom_attributes->>'contact_person', p.contact_person) as partner_contact,
              COALESCE(a.custom_attributes->>'contact_phone', p.phone) as partner_phone
       FROM assets a 
@@ -537,6 +540,9 @@ export const queries = {
              s.hostname as server_hostname, s.os as server_os, s.nic as server_nic,
              s.custom_attributes as server_custom_attributes,
              s.custom_attributes->>'end_user' as server_end_user,
+             -- 掛載的伺服器序號是否真的對應到系統中的資產。
+             -- 供清單標示「掛載於不存在的設備」；之後掛到存在的設備即自動恢復。
+             (s.id IS NOT NULL) as server_exists,
              COALESCE(a.custom_attributes->>'contact_person', p.contact_person) as partner_contact,
              COALESCE(a.custom_attributes->>'contact_phone', p.phone) as partner_phone
       FROM assets a 
