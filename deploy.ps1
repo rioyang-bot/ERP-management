@@ -39,7 +39,12 @@ Invoke-Step "[1/6] 建置前端 (npm run build)..." { npm run build }
 # --- 2. 備份遠端資料庫 -------------------------------------------------------
 Write-Host "[2/6] 備份伺服器資料庫..." -ForegroundColor Yellow
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-$backupCmd = "mkdir -p $RemoteDir/backups && sudo -u postgres pg_dump -F c -d ERP_db -f $RemoteDir/backups/ERP_db-$stamp.backup && ls -lh $RemoteDir/backups/ERP_db-$stamp.backup"
+# pg_dump 以 postgres 身分執行，但 backups/ 由 root 建立，postgres 無權寫入該目錄。
+# 因此讓 pg_dump 輸出到標準輸出，由 root 的 shell 轉寫成檔案 ——
+# postgres 只需要能輸出，不必變更任何目錄權限。
+# set -o pipefail 確保 pg_dump 失敗時整條指令的離開代碼不為 0。
+$backupFile = "$RemoteDir/backups/ERP_db-$stamp.backup"
+$backupCmd = "set -o pipefail; mkdir -p $RemoteDir/backups && sudo -u postgres pg_dump -F c -d ERP_db > $backupFile && ls -lh $backupFile"
 ssh $RemoteHost $backupCmd
 if ($LASTEXITCODE -ne 0) {
     Write-Host "資料庫備份失敗，為安全起見中止部署。" -ForegroundColor Red
