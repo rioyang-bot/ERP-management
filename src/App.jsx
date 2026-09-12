@@ -35,6 +35,7 @@ import ProcessFlow from './pages/ProcessFlow';
 import Overview from './pages/Overview';
 import RepairList from './pages/RepairList';
 import './index.css';
+import ErrorBoundary from './components/ErrorBoundary';
 
 function App() {
   const [authUser, setAuthUser] = useState(() => {
@@ -61,6 +62,7 @@ function App() {
   const role = authUser?.role;
 
   return (
+    <ErrorBoundary>
     <ThemeProvider>
       <RoleContext.Provider value={{ role, authUser, setAuthUser }}>
         <Router>
@@ -103,6 +105,7 @@ function App() {
         </Router>
       </RoleContext.Provider>
     </ThemeProvider>
+    </ErrorBoundary>
   );
 }
 
