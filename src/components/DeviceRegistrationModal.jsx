@@ -30,7 +30,6 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   });
   const [isBulkMode, setIsBulkMode] = useState(false);
   const [bulkSns, setBulkSns] = useState('');
-  const [brandFieldConfigs, setBrandFieldConfigs] = useState({});
   const [customFieldDefs, setCustomFieldDefs] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -89,8 +88,6 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   }, []);
 
   const fetchSettings = useCallback(async () => {
-    const res = await window.electronAPI.namedQuery('getSystemSetting', ['brandFieldConfigs']);
-    if (res.success && res.rows.length > 0) setBrandFieldConfigs(res.rows[0].value || {});
     const defsRes = await window.electronAPI.namedQuery('getSystemSetting', ['customFieldDefinitions']);
     if (defsRes.success && defsRes.rows.length > 0) setCustomFieldDefs(defsRes.rows[0].value || []);
   }, []);
@@ -112,11 +109,6 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
 
   if (!isOpen) return null;
 
-  const isFieldVisible = (brand, fieldName) => {
-    if (!brand) return true;
-    const config = brandFieldConfigs[brand] || {};
-    return config[fieldName] !== undefined ? config[fieldName] : true;
-  };
 
   const handleAddType = async () => {
     const name = normalizeMasterName(validateAndSanitize(newTypeName, '類型名稱'));

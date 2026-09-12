@@ -73,7 +73,6 @@ const DeviceList = ({ isSplitMode = false }) => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [confirmModal, setConfirmModal] = useState({ show: false, msg: '', onConfirm: null });
-  const [brandFieldConfigs, setBrandFieldConfigs] = useState({});
   const [customFieldDefs, setCustomFieldDefs] = useState([]);
   const [originalFieldIds, setOriginalFieldIds] = useState([]);
   const [expandedItems, setExpandedItems] = useState({}); // 控制摺疊狀態
@@ -108,8 +107,6 @@ const DeviceList = ({ isSplitMode = false }) => {
   }, []);
 
   const fetchSettings = useCallback(async () => {
-    const res = await window.electronAPI.namedQuery('getSystemSetting', ['brandFieldConfigs']);
-    if (res.success && res.rows.length > 0) setBrandFieldConfigs(res.rows[0].value || {});
     const defsRes = await window.electronAPI.namedQuery('getSystemSetting', ['customFieldDefinitions']);
     if (defsRes.success && defsRes.rows.length > 0) setCustomFieldDefs(defsRes.rows[0].value || []);
   }, []);
@@ -127,11 +124,6 @@ const DeviceList = ({ isSplitMode = false }) => {
     initPage();
   }, [fetchAssets, fetchCustomers, fetchSettings, fetchProjects]);
 
-  const isFieldVisible = (brand, fieldId) => {
-    if (!brand) return true;
-    const config = brandFieldConfigs[brand] || {};
-    return config[fieldId] !== undefined ? config[fieldId] : true;
-  };
 
   const handleEditClick = (item) => {
     const f = { ...item };
@@ -989,7 +981,7 @@ const DeviceList = ({ isSplitMode = false }) => {
                               </td>
                               <td style={tdStyle}>{item.hostname || '--'}</td>
                               <td style={{ ...tdStyle, fontSize: '11px', minWidth: '120px' }}>
-                                {customFieldDefs.filter(f => isFieldVisible(brandFilter, f.id)).map(f => {
+                                {customFieldDefs.map(f => {
                                   const val = f.isNative ? item[f.id] : attrs[f.id];
                                   if (!val) return null;
                                   return (
@@ -999,7 +991,7 @@ const DeviceList = ({ isSplitMode = false }) => {
                                     </div>
                                   );
                                 })}
-                                {customFieldDefs.filter(f => isFieldVisible(brandFilter, f.id)).every(f => !(f.isNative ? item[f.id] : attrs[f.id])) && '--'}
+                                {customFieldDefs.every(f => !(f.isNative ? item[f.id] : attrs[f.id])) && '--'}
                               </td>
 
                               <td style={tdStyle}>
@@ -1652,12 +1644,12 @@ const DeviceList = ({ isSplitMode = false }) => {
                 <div><label style={editLabelStyle}>原廠保固到期 (Warranty Expire)</label><input type="date" value={editItem.warranty_expire || ''} onChange={(e) => setEditItem({...editItem, warranty_expire: e.target.value})} style={editInputStyle} /></div>
                 <div><label style={editLabelStyle}>客戶保固到期 (Cust Warranty)</label><input type="date" value={editItem.customer_warranty_expire || ''} onChange={(e) => setEditItem({...editItem, customer_warranty_expire: e.target.value})} style={editInputStyle} /></div>
               </div>
-              {customFieldDefs.filter(f => isFieldVisible(editItem.brand, f.id)).length > 0 && (
+              {customFieldDefs.length > 0 && (
                 <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '20px' }}>
                   <div style={{ fontSize: '15px', fontWeight: '900', color: 'var(--primary-color)', marginBottom: '16px' }}>自訂設備屬性</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                     {customFieldDefs
-                      .filter(f => isFieldVisible(editItem.brand, f.id))
+                      
                       .filter(f => !['sn', 'hostname', 'specification', 'client', 'location', 'installed_date', 'system_date', 'warranty_expire', 'customer_warranty_expire'].includes(f.id))
                       .map(f => {
                       let attrs = {};
@@ -1697,7 +1689,7 @@ const DeviceList = ({ isSplitMode = false }) => {
             </div>
             
             <div style={{ marginBottom: '32px' }}>
-               <h3 style={{ fontSize: '16px', color: 'var(--primary-color)', marginBottom: '16px', fontWeight: '900' }}>1. 欄位管理</h3>
+               <h3 style={{ fontSize: '16px', color: 'var(--primary-color)', marginBottom: '16px', fontWeight: '900' }}>欄位管理</h3>
                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                  {customFieldDefs
                    .filter(def => !['hostname', 'sn', 'specification', 'client', 'location', 'installed_date', 'system_date', 'warranty_expire', 'customer_warranty_expire'].includes(def.id))
@@ -1721,30 +1713,6 @@ const DeviceList = ({ isSplitMode = false }) => {
                </div>
             </div>
 
-            <div style={{ marginBottom: '32px' }}>
-              <h3 style={{ fontSize: '16px', color: 'var(--primary-color)', marginBottom: '16px', fontWeight: '900' }}>2. 顯示欄位</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {Array.from(new Set(items.map(i => i.brand).filter(Boolean))).map(brand => (
-                  <div key={brand} style={{ padding: '16px', border: '1px solid var(--border-color)', borderRadius: '12px', backgroundColor: 'var(--bg-surface-subtle)' }}>
-                    <div style={{ fontWeight: 900, marginBottom: '8px', color: 'var(--text-main)' }}>{brand}</div>
-                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                      {customFieldDefs
-                        .filter(def => !['hostname', 'sn', 'specification', 'client', 'location', 'installed_date', 'system_date', 'warranty_expire', 'customer_warranty_expire'].includes(def.id))
-                        .map(def => (
-                        <label key={def.id} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px', color: 'var(--text-muted)', cursor: 'pointer' }}>
-                          <input type="checkbox" checked={isFieldVisible(brand, def.id)} onChange={(e) => {
-                            const newConfig = { ...brandFieldConfigs };
-                            if (!newConfig[brand]) newConfig[brand] = {};
-                            newConfig[brand][def.id] = e.target.checked;
-                            setBrandFieldConfigs(newConfig);
-                          }} /> {def.label}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
 
             <div style={{ display: 'flex', gap: '12px' }}>
               <button onClick={async () => {
@@ -1758,7 +1726,6 @@ const DeviceList = ({ isSplitMode = false }) => {
                 }
 
                 await window.electronAPI.namedQuery('upsertSystemSetting', ['customFieldDefinitions', customFieldDefs]);
-                await window.electronAPI.namedQuery('upsertSystemSetting', ['brandFieldConfigs', brandFieldConfigs]);
                 alert('設定已儲存 (已同步清理被刪除的屬性資料)'); 
                 setShowConfigModal(false); 
                 fetchSettings();

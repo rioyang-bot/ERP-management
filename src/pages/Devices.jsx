@@ -32,7 +32,6 @@ const Devices = ({ isSplitMode = false }) => {
   });
   const [isBulkMode, setIsBulkMode] = useState(false);
   const [bulkSns, setBulkSns] = useState('');
-  const [brandFieldConfigs, setBrandFieldConfigs] = useState({});
   const [customFieldDefs, setCustomFieldDefs] = useState([]);
   const [formKey, setFormKey] = useState(0); // 用於強制重整表單區域
 
@@ -91,17 +90,10 @@ const Devices = ({ isSplitMode = false }) => {
   }, []);
 
   const fetchSettings = useCallback(async () => {
-    const res = await window.electronAPI.namedQuery('getSystemSetting', ['brandFieldConfigs']);
-    if (res.success && res.rows.length > 0) setBrandFieldConfigs(res.rows[0].value || {});
     const defsRes = await window.electronAPI.namedQuery('getSystemSetting', ['customFieldDefinitions']);
     if (defsRes.success && defsRes.rows.length > 0) setCustomFieldDefs(defsRes.rows[0].value || []);
   }, []);
 
-  const isFieldVisible = (brand, fieldName) => {
-    if (!brand) return true;
-    const config = brandFieldConfigs[brand] || {};
-    return config[fieldName] !== undefined ? config[fieldName] : true;
-  };
 
   const fetchProjects = useCallback(async () => {
     const res = await window.electronAPI.namedQuery('fetchActiveProjects');
@@ -557,11 +549,11 @@ const Devices = ({ isSplitMode = false }) => {
             </div>
 
             {/* Custom attributes section if visible */}
-            {customFieldDefs.filter(f => isFieldVisible(formData.brand, f.id)).length > 0 && (
+            {customFieldDefs.length > 0 && (
               <div style={{ padding: '16px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                   {customFieldDefs
-                    .filter(f => isFieldVisible(formData.brand, f.id))
+                    
                     .filter(f => !['sn', 'hostname', 'specification', 'client', 'location', 'installed_date', 'system_date', 'warranty_expire', 'customer_warranty_expire'].includes(f.id))
                     .map(f => (
                       <div key={f.id}><label style={labelStyle}>{f.label}</label><input type="text" value={f.isNative ? formData[f.id] : (formData.custom_attributes[f.id] || '')} onChange={e => { if (f.isNative) setFormData({ ...formData, [f.id]: e.target.value }); else setFormData({ ...formData, custom_attributes: { ...formData.custom_attributes, [f.id]: e.target.value } }); }} style={inputStyle} /></div>
