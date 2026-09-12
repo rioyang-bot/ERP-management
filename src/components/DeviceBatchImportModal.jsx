@@ -136,9 +136,9 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
     if (isPureNum) {
       const numVal = Number(rawVal);
       if (!isNaN(numVal) && numVal >= 1000 && numVal <= 100000) {
-        // 原本使用 XLSX.SSF.parse_date_code，但 SSF 只掛在 xlsx 的 default export，
-        // 以 import * as XLSX 取用會是 undefined，例外又被吞掉，
-        // 導致序號日期長期都轉不出來。改用不依賴該套件的純運算轉換。
+        // 改用不依賴 xlsx 匯出形式的純運算轉換。
+        // 原本的 XLSX.SSF.parse_date_code 在 Vite 打包下可用，但 SSF 是否掛在
+        // 命名空間取決於 CJS interop，換打包方式就可能變成 undefined 而靜默失效。
         const converted = excelSerialToDate(numVal);
         if (converted) return converted;
       }

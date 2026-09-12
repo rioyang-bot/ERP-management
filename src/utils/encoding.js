@@ -31,9 +31,9 @@ export function asText(value) {
 /**
  * 判斷 Excel 的數值格式字串是否為日期格式。
  *
- * 不使用 XLSX.SSF.is_date：SSF 只掛在 xlsx 的 default export 上，
- * 以 `import * as XLSX` 取用會是 undefined，這也正是原本序號日期轉換
- * 長期失效的原因（錯誤被 try/catch 吞掉）。此處自行判斷，不依賴匯出形式。
+ * 不使用 XLSX.SSF.is_date：SSF 是否掛在命名空間上取決於打包工具的 CJS interop。
+ * Vite 會把它帶進來，Node 原生 ESM 則不會（`import * as XLSX` 取到 undefined）。
+ * 此處自行判斷，不受打包方式影響。
  *
  * @param {string} fmt Excel 數值格式，例如 mmm-yy、yyyy-mm-dd、#,##0.00
  * @returns {boolean}
