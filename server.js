@@ -112,6 +112,18 @@ const pool = new Pool({
       FROM item_master
       WHERE type IS NOT NULL AND TRIM(type) != '' AND category_id IS NOT NULL
       ON CONFLICT DO NOTHING;
+
+      -- 型號同樣自品項主檔補齊。原本只補廠牌與類型，型號因新增功能長期失效
+      -- 而從未寫入 item_models，導致「型號」下拉選單一直是空的。
+      -- 型號隸屬於廠牌，以名稱與類別對應回 item_brands。
+      INSERT INTO item_models (brand_id, name)
+      SELECT DISTINCT b.id, UPPER(TRIM(i.model))
+      FROM item_master i
+      JOIN item_brands b
+        ON UPPER(TRIM(b.name)) = UPPER(TRIM(i.brand))
+       AND b.category_id = i.category_id
+      WHERE i.model IS NOT NULL AND TRIM(i.model) != ''
+      ON CONFLICT DO NOTHING;
     `);
 
     // 自動偵測並整併大小寫與空白重複之品項主檔 (Case-Insensitive Master Merge)

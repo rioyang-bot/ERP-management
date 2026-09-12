@@ -36,7 +36,7 @@ const Consumables = ({ isSplitMode = false }) => {
 
   const fetchTypes = useCallback(async (brandName, currentType = '') => {
     if (!brandName) { setTypes([]); return { typeNames: [], nextType: '' }; }
-    const res = await window.electronAPI.namedQuery('fetchConsumableTypesByBrand', [brandName]);
+    const res = await window.electronAPI.namedQuery('fetchConsumableTypes', []);
     if (res.success) {
       const typeNames = res.rows.map(r => r.name);
       setTypes(typeNames);
@@ -49,7 +49,7 @@ const Consumables = ({ isSplitMode = false }) => {
 
   const fetchModels = useCallback(async (brandName, typeName) => {
     if (!brandName || !typeName) { setModels([]); return { modelNames: [] }; }
-    const res = await window.electronAPI.namedQuery('fetchConsumableModelsByBrandType', [brandName, typeName]);
+    const res = await window.electronAPI.namedQuery('fetchConsumableModelsByBrand', [brandName]);
     if (res.success) {
       const modelNames = res.rows.map(r => r.name);
       setModels(modelNames);

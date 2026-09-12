@@ -47,10 +47,10 @@ describe('全模組彈窗建檔 (Registration Modals) 整合測試', () => {
         if (queryName === 'fetchConsumableBrands') {
           return { success: true, rows: [{ name: 'Cisco' }] };
         }
-        if (queryName === 'fetchConsumableTypesByBrand') {
+        if (queryName === 'fetchConsumableTypes') {
           return { success: true, rows: [{ name: 'Cable' }] };
         }
-        if (queryName === 'fetchConsumableModelsByBrandType') {
+        if (queryName === 'fetchConsumableModelsByBrand') {
           return { success: true, rows: [{ name: 'DAC-10G' }] };
         }
         if (queryName === 'checkDuplicateConsumable') {

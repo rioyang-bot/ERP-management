@@ -37,13 +37,13 @@ describe('耗材模組移除單位 (Unit Removal) 測試', () => {
             rows: [{ id: 1, name: 'Cisco' }]
           });
         }
-        if (query === 'fetchConsumableTypesByBrand') {
+        if (query === 'fetchConsumableTypes') {
           return Promise.resolve({
             success: true,
             rows: [{ name: '線材' }]
           });
         }
-        if (query === 'fetchConsumableModelsByBrandType') {
+        if (query === 'fetchConsumableModelsByBrand') {
           return Promise.resolve({
             success: true,
             rows: [{ name: 'SFP-10G-SR' }]

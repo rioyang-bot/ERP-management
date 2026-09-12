@@ -328,11 +328,24 @@ export const queries = {
   incrementConsumableStockQtyOnImport: `UPDATE item_master SET stock_qty = COALESCE(stock_qty, 0) + $1 WHERE id = $2 RETURNING id`,
   fetchRecentConsumables: `SELECT i.* FROM item_master i LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '耗材' ORDER BY i.id DESC LIMIT 10`,
   insertConsumableMaster: `INSERT INTO item_master (specification, type, brand, model, unit, safety_stock, stock_qty, category_id, purchase_price) VALUES ($1, UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g'))), UPPER(TRIM(REGEXP_REPLACE(COALESCE($3, ''), '[[:space:]]+', ' ', 'g'))), UPPER(TRIM(REGEXP_REPLACE(COALESCE($4, ''), '[[:space:]]+', ' ', 'g'))), $5, $6, $7, (SELECT id FROM categories WHERE name = $8), 0) RETURNING id`,
-  fetchConsumableModelsByBrandType: `
-      SELECT m.name FROM item_models m JOIN item_types t ON m.type_id = t.id JOIN item_brands b ON t.brand_id = b.id
-      WHERE b.name = $1 AND t.name = $2 AND b.category_id = (SELECT id FROM categories WHERE name = '耗材') AND t.category_id = (SELECT id FROM categories WHERE name = '耗材') ORDER BY m.name ASC`,
-  fetchConsumableTypesByBrand: `
-      SELECT name FROM item_types WHERE category_id = (SELECT id FROM categories WHERE name = '耗材') AND brand_id = (SELECT id FROM item_brands WHERE name = $1 AND category_id = (SELECT id FROM categories WHERE name = '耗材')) ORDER BY name ASC`,
+  // 型號隸屬於廠牌（item_models.brand_id）。舊版以 INNER JOIN 串接 item_models.type_id
+  // 與 item_types.brand_id，但這兩個欄位是相容用的舊欄位、實際從未寫入，
+  // 導致此下拉選單永遠是空的。改用與 fetchHwModelsByBrand 相同的 LEFT JOIN 寫法。
+  fetchConsumableModelsByBrand: `
+      SELECT DISTINCT m.name FROM item_models m
+      LEFT JOIN item_brands b ON m.brand_id = b.id
+      LEFT JOIN item_types t ON m.type_id = t.id
+      LEFT JOIN item_brands tb ON t.brand_id = tb.id
+      WHERE (LOWER(b.name) = LOWER($1) OR LOWER(tb.name) = LOWER($1))
+        AND (b.category_id = (SELECT id FROM categories WHERE name = '耗材')
+             OR t.category_id = (SELECT id FROM categories WHERE name = '耗材'))
+      ORDER BY m.name ASC`,
+  // 類型屬於各類別共用的通用庫，不綁定特定廠牌（與 fetchDeviceTypes / fetchHwTypes 一致）。
+  // 舊版以 brand_id 過濾，但新增類型時並不會寫入 brand_id，導致此下拉選單永遠是空的。
+  fetchConsumableTypes: `
+      SELECT name FROM item_types
+      WHERE category_id = (SELECT id FROM categories WHERE name = '耗材')
+      ORDER BY name ASC`,
   fetchConsumableBrands: `SELECT id, name FROM item_brands WHERE category_id = (SELECT id FROM categories WHERE name = '耗材') ORDER BY name ASC`,
 
   // Purchasing.jsx

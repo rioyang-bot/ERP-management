@@ -16,10 +16,10 @@ describe('耗材列表與新增耗材彈窗批次匯入整合測試', () => {
         if (query === 'fetchConsumableBrands') {
           return { success: true, rows: [{ id: 1, name: 'METECH' }] };
         }
-        if (query === 'fetchConsumableTypesByBrand') {
+        if (query === 'fetchConsumableTypes') {
           return { success: true, rows: [{ name: '線材' }] };
         }
-        if (query === 'fetchConsumableModelsByBrandType') {
+        if (query === 'fetchConsumableModelsByBrand') {
           return { success: true, rows: [{ name: 'CAT6-2M' }] };
         }
         return { success: true, rows: [] };
