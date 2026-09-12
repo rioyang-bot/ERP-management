@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import pool, { query } from './db.js';
 import { registerAuthHandlers } from './authHandlers.js';
+import { registerPreferenceHandlers } from './preferenceHandlers.js';
 import { prepareQueryParams } from '../server/queryParams.js';
 import { runTransaction } from '../server/transaction.js';
 import fs from 'fs/promises';
@@ -100,7 +101,10 @@ ipcMain.handle('db:query', async (event, sql, params) => {
 });
 
 // 認證 API IPC：密碼於主行程驗證，password_hash 不回傳給畫面層
-registerAuthHandlers(ipcMain, query);
+const { getCurrentUser } = registerAuthHandlers(ipcMain, query);
+
+// 使用者個人偏好設定 IPC（對象取自目前登入者）
+registerPreferenceHandlers(ipcMain, query, getCurrentUser);
 
 // 儀表板 API IPC
 ipcMain.handle('dashboard:stats', async (event) => {

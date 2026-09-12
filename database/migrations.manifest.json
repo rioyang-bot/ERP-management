@@ -83,6 +83,11 @@
       "file": "migration_asset_remarks.sql",
       "type": "schema",
       "note": "資產備註欄位，供設備/硬體列表與匯入使用"
+    },
+    {
+      "file": "migration_user_preferences.sql",
+      "type": "schema",
+      "note": "使用者個人偏好設定表，供自訂顯示欄位使用"
     }
   ]
 }

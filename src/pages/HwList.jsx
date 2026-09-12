@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Search, Edit2, X, Server, User, MapPin, MoreHorizontal, Trash2, ShoppingBag, AlertTriangle, CheckCircle, Save, Monitor, Settings, ShieldAlert, Archive, RotateCcw, Cpu, Send, History, Building2, Info, RefreshCw } from 'lucide-react';
+import { Search, Columns3, Edit2, X, Server, User, MapPin, MoreHorizontal, Trash2, ShoppingBag, AlertTriangle, CheckCircle, Save, Monitor, Settings, ShieldAlert, Archive, RotateCcw, Cpu, Send, History, Building2, Info, RefreshCw } from 'lucide-react';
 import ItemLedgerModal from '../components/ItemLedgerModal';
 import HwRegistrationModal from '../components/HwRegistrationModal';
 import RmaReplacementModal from '../components/RmaReplacementModal';
@@ -8,6 +8,25 @@ import { logUpdate, logDelete, logStatusChange } from '../utils/auditLogger';
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 import { isItemRetired, getItemAggregationKey, aggregateCards, computeNewRetiredKeys } from '../utils/cardAggregation';
+import ColumnVisibilityModal from '../components/ColumnVisibilityModal';
+import { useColumnPreferences } from '../hooks/useColumnPreferences';
+
+// 硬體列表的欄位清單：id 對應表格的每一欄，always 代表不可隱藏
+const HW_COLUMNS = [
+  { id: 'brand', label: '廠牌 / 型號 / 類型', always: true },
+  { id: 'sn', label: '序號 (SN)' },
+  { id: 'spec', label: '規格 (Spec)' },
+  { id: 'project', label: '專案編號/名稱 (Project)' },
+  { id: 'order_source', label: '訂單來源 (OrderSource)' },
+  { id: 'shipping_date', label: '出貨日期' },
+  { id: 'server', label: '對應伺服器' },
+  { id: 'client', label: '客戶' },
+  { id: 'end_user', label: 'End-user' },
+  { id: 'location', label: '位置' },
+  { id: 'remarks', label: '備註' },
+  { id: 'status', label: '狀態' },
+  { id: 'actions', label: '功能', always: true },
+];
 
 const HwList = ({ isSplitMode = false }) => {
   const location = useLocation();
@@ -370,6 +389,12 @@ const HwList = ({ isSplitMode = false }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = usePageSize('hw_list', 10);
 
+  // 自訂顯示欄位（每位使用者各自儲存）
+  const [showColumnModal, setShowColumnModal] = useState(false);
+  const { isVisible, toggle: toggleColumn, showAll: showAllColumns, hiddenCount } = useColumnPreferences('hwListColumns', HW_COLUMNS);
+  // 隱藏的欄位直接不佔版面，表格就會變窄、不必左右捲動
+  const hideCol = (id) => (isVisible(id) ? null : { display: 'none' });
+
   const statusPriority = { 'REPAIR': 1, 'LENT': 2, 'ACTIVE': 3, 'SHIPPED': 4, 'SCRAPPED': 5 };
 
   const filteredNics = nics
@@ -564,9 +589,29 @@ const HwList = ({ isSplitMode = false }) => {
           </div>
         </div>
 
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <button
+          type="button"
+          onClick={() => setShowColumnModal(true)}
+          title="自訂這個列表要顯示哪些欄位"
+          style={{
+            display: 'flex', alignItems: 'center', gap: '6px',
+            padding: '9px 14px', borderRadius: '30px',
+            border: '1.5px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)',
+            color: 'var(--text-main)', fontSize: '13px', fontWeight: 700, cursor: 'pointer',
+          }}
+        >
+          <Columns3 size={15} /> 自訂顯示欄位
+          {hiddenCount > 0 && (
+            <span style={{ fontSize: '11px', fontWeight: 800, color: '#fff', backgroundColor: 'var(--primary-color)', borderRadius: '10px', padding: '1px 7px' }}>
+              已隱藏 {hiddenCount}
+            </span>
+          )}
+        </button>
         <div style={{ position: 'relative' }}>
           <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-subtle)' }} />
           <input type="text" placeholder="搜尋..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ padding: '10px 12px 10px 42px', borderRadius: '30px', border: '1.5px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', width: '200px', outline: 'none' }} />
+        </div>
         </div>
       </div>
     </div>
@@ -794,17 +839,17 @@ const HwList = ({ isSplitMode = false }) => {
         <thead style={{ position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)' }}>
           <tr style={{ borderBottom: '2px solid var(--border-color)', backgroundColor: 'var(--table-header-bg)' }}>
             <th style={{ ...thStyle, textAlign: 'left', width: '200px' }}>廠牌 / 型號 / 類型</th>
-            <th style={{ ...thStyle, textAlign: 'left' }}>序號 (SN)</th>
-            <th style={{ ...thStyle, textAlign: 'left' }}>規格 (Spec)</th>
-            <th style={{ ...thStyle, textAlign: 'left' }}>專案編號/名稱 (Project)</th>
-            <th style={{ ...thStyle, textAlign: 'left' }}>訂單來源 (OrderSource)</th>
-            <th style={{ ...thStyle, textAlign: 'left' }}>出貨日期</th>
-            <th style={{ ...thStyle, textAlign: 'left' }}>對應伺服器</th>
-            <th style={{ ...thStyle, textAlign: 'left' }}>客戶</th>
-            <th style={{ ...thStyle, textAlign: 'left' }}>End-user</th>
-            <th style={{ ...thStyle, textAlign: 'left' }}>位置</th>
-            <th style={{ ...thStyle, textAlign: 'left' }}>備註</th>
-            <th style={{ ...thStyle, textAlign: 'left', width: '100px' }}>狀態</th>
+            <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('sn') }}>序號 (SN)</th>
+            <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('spec') }}>規格 (Spec)</th>
+            <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('project') }}>專案編號/名稱 (Project)</th>
+            <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('order_source') }}>訂單來源 (OrderSource)</th>
+            <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('shipping_date') }}>出貨日期</th>
+            <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('server') }}>對應伺服器</th>
+            <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('client') }}>客戶</th>
+            <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('end_user') }}>End-user</th>
+            <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('location') }}>位置</th>
+            <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('remarks') }}>備註</th>
+            <th style={{ ...thStyle, textAlign: 'left', width: '100px' , ...hideCol('status') }}>狀態</th>
             <th style={{ ...thStyle, textAlign: 'center', width: '80px' }}>功能</th>
           </tr>
         </thead>
@@ -831,9 +876,9 @@ const HwList = ({ isSplitMode = false }) => {
                   </div>
                   <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{nic.type} - {nic.model}</div>
                 </td>
-                <td style={{ ...tdStyle, fontWeight: 800, fontFamily: 'monospace', color: 'var(--primary-color)', whiteSpace: 'nowrap' }}>{nic.sn || '(未設定)'}</td>
-                <td style={{ ...tdStyle, fontSize: '11px', color: 'var(--text-muted)' }}>{nic.specification || '--'}</td>
-                <td style={{ ...tdStyle, fontWeight: 700, color: 'var(--text-main)' }}>
+                <td style={{ ...tdStyle, fontWeight: 800, fontFamily: 'monospace', color: 'var(--primary-color)', whiteSpace: 'nowrap', ...hideCol('sn') }}>{nic.sn || '(未設定)'}</td>
+                <td style={{ ...tdStyle, fontSize: '11px', color: 'var(--text-muted)', ...hideCol('spec') }}>{nic.specification || '--'}</td>
+                <td style={{ ...tdStyle, fontWeight: 700, color: 'var(--text-main)', ...hideCol('project') }}>
                   {(() => {
                     const pName = nic.custom_attributes?.project_name;
                     if (!pName) return '--';
@@ -846,11 +891,11 @@ const HwList = ({ isSplitMode = false }) => {
                     );
                   })()}
                 </td>
-                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{nic.custom_attributes?.order_source !== undefined ? (nic.custom_attributes?.order_source || '--') : (nic.custom_attributes?.order_date || '--')}</td>
-                <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontSize: '11px', color: nic.shipping_date ? '#8b5cf6' : 'var(--text-muted)', fontWeight: nic.shipping_date ? 700 : 'normal' }}>
+                <td style={{ ...tdStyle, whiteSpace: 'nowrap', ...hideCol('order_source') }}>{nic.custom_attributes?.order_source !== undefined ? (nic.custom_attributes?.order_source || '--') : (nic.custom_attributes?.order_date || '--')}</td>
+                <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontSize: '11px', color: nic.shipping_date ? '#8b5cf6' : 'var(--text-muted)', fontWeight: nic.shipping_date ? 700 : 'normal', ...hideCol('shipping_date') }}>
                   {nic.shipping_date ? new Date(nic.shipping_date).toLocaleDateString() : '--'}
                 </td>
-                <td style={tdStyle}>
+                <td style={{ ...tdStyle, ...hideCol('server') }}>
                   {/* 掛載於系統中不存在的設備時以琥珀色標示；之後掛到存在的設備即自動恢復 */}
                   <div
                     style={{
@@ -875,7 +920,7 @@ const HwList = ({ isSplitMode = false }) => {
                     </div>
                   )}
                 </td>
-                <td style={tdStyle}>
+                <td style={{ ...tdStyle, ...hideCol('client') }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 700, color: 'var(--text-main)' }}>
                       <User size={14} color="var(--text-muted)" /> {nic.server_client || nic.client || '--'}
@@ -887,17 +932,17 @@ const HwList = ({ isSplitMode = false }) => {
                     )}
                   </div>
                 </td>
-                <td style={tdStyle}>
+                <td style={{ ...tdStyle, ...hideCol('end_user') }}>
                   <div style={{ fontWeight: 700, color: 'var(--text-main)' }}>
                     {nic.server_end_user || serverAttrs.end_user || nic.end_user || nic.custom_attributes?.end_user || '--'}
                   </div>
                 </td>
-                <td style={tdStyle}>
+                <td style={{ ...tdStyle, ...hideCol('location') }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-main)' }}>
                     <MapPin size={14} color="var(--text-muted)" /> {nic.server_location || '--'}
                   </div>
                 </td>
-                <td style={{ ...tdStyle, maxWidth: '200px' }}>
+                <td style={{ ...tdStyle, maxWidth: '200px', ...hideCol('remarks') }}>
                   <div
                     style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text-main)' }}
                     title={nic.remarks || ''}
@@ -905,7 +950,7 @@ const HwList = ({ isSplitMode = false }) => {
                     {nic.remarks || '--'}
                   </div>
                 </td>
-                <td style={{ ...tdStyle, width: '100px' }}><span style={{ padding: '4px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: '800', backgroundColor: cfg.bgColor, color: cfg.color, border: `1px solid ${cfg.borderColor}`, whiteSpace: 'nowrap' }}>{cfg.label}</span></td>
+                <td style={{ ...tdStyle, width: '100px', ...hideCol('status') }}><span style={{ padding: '4px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: '800', backgroundColor: cfg.bgColor, color: cfg.color, border: `1px solid ${cfg.borderColor}`, whiteSpace: 'nowrap' }}>{cfg.label}</span></td>
                 <td style={{ ...tdStyle, textAlign: 'center', width: '80px', position: 'relative' }}>
                   <button 
                     className="action-menu-btn"
@@ -1021,6 +1066,15 @@ const HwList = ({ isSplitMode = false }) => {
 
   return (
     <div style={containerStyle}>
+      <ColumnVisibilityModal
+        isOpen={showColumnModal}
+        onClose={() => setShowColumnModal(false)}
+        title="硬體列表 - 自訂顯示欄位"
+        columns={HW_COLUMNS}
+        isVisible={isVisible}
+        onToggle={toggleColumn}
+        onShowAll={showAllColumns}
+      />
       <div style={cardStyle}>
         {renderHeader()}
         {renderStats()}

@@ -10,6 +10,7 @@ import pg from 'pg';
 import { queries as namedQueries } from './database/queries.js';
 import { createAuth } from './server/auth.js';
 import { createAuthRoutes } from './server/authRoutes.js';
+import { createPreferenceRoutes } from './server/preferenceRoutes.js';
 import { prepareQueryParams } from './server/queryParams.js';
 import { runTransaction } from './server/transaction.js';
 
@@ -315,6 +316,9 @@ app.post('/api/transaction', auth.requireAuth, async (req, res) => {
 // 身分驗證路由：密碼一律於伺服器端驗證，password_hash 絕不回傳給用戶端。
 // 登入成功後發給連線代碼，其餘 /api 端點皆需附上該代碼（見 auth.requireAuth）。
 app.use('/api/auth', createAuthRoutes(pool, auth));
+
+// 使用者個人偏好設定（例如各列表的顯示欄位），對象取自連線階段
+app.use('/api/preferences', createPreferenceRoutes(pool, auth));
 
 
 app.post('/api/upload', auth.requireAuth, upload.single('file'), (req, res) => {

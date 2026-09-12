@@ -73,6 +73,32 @@ if (!window.electronAPI) {
       }
     },
 
+    // 使用者個人偏好設定（例如各列表的顯示欄位、每頁筆數）。
+    // 對象由伺服器依連線階段判定，前端不需也不能指定使用者。
+    getUserPreference: async (key) => {
+      try {
+        const response = await authFetch(`${API_BASE}/api/preferences/${encodeURIComponent(key)}`);
+        const data = await response.json();
+        return response.ok ? data : { success: false, error: data.error };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+
+    setUserPreference: async (key, value) => {
+      try {
+        const response = await authFetch(`${API_BASE}/api/preferences/${encodeURIComponent(key)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ value }),
+        });
+        const data = await response.json();
+        return response.ok ? data : { success: false, error: data.error };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+
     // 登入：送出帳號與密碼，由伺服器端驗證並回傳連線代碼。
     // 密碼不在前端做任何雜湊或比對。
     authLogin: async (username, password) => {

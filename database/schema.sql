@@ -410,3 +410,12 @@ CREATE INDEX IF NOT EXISTS idx_repair_items_repair_id ON repair_items(repair_id)
 CREATE INDEX IF NOT EXISTS idx_repair_items_sn ON repair_items(sn);
 
 
+
+-- 使用者個人偏好設定（例如各列表的顯示欄位）
+CREATE TABLE IF NOT EXISTS user_preferences (
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    pref_key   VARCHAR(100) NOT NULL,
+    value      JSONB NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, pref_key)
+);

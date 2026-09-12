@@ -18,6 +18,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('auth:resetPassword', userId, newPassword),
   authCreateUser: (payload) => ipcRenderer.invoke('auth:createUser', payload),
 
+  // 使用者個人偏好設定（各列表的顯示欄位、每頁筆數等）
+  getUserPreference: (key) => ipcRenderer.invoke('pref:get', key),
+  setUserPreference: (key, value) => ipcRenderer.invoke('pref:set', key, value),
+
   getDashboardStats: () => ipcRenderer.invoke('dashboard:stats'),
   saveFile: (fileName, arrayBuffer) => ipcRenderer.invoke('file:save', { fileName, arrayBuffer }),
 });

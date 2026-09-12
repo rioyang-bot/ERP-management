@@ -139,4 +139,7 @@ export const registerAuthHandlers = (ipcMain, query) => {
       return { success: false, error: '建立帳號失敗，請稍後再試。' };
     }
   });
+
+  // 供偏好設定等其他模組取得目前登入者
+  return { getCurrentUser: () => currentUser };
 };
