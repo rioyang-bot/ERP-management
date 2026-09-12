@@ -249,11 +249,22 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
   .split(',').map(o => o.trim()).filter(Boolean);
 app.use(cors({
   origin: (origin, cb) => {
-    // 無 origin：同源請求、Electron 或伺服器間呼叫
+    // 無 origin：一般同源請求、Electron 或伺服器間呼叫
     if (!origin) return cb(null, true);
     if (allowedOrigins.includes(origin)) return cb(null, true);
     if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return cb(null, true);
-    return cb(new Error('不允許的來源'));
+
+    // 不在允許清單時「不回傳 CORS 標頭」，但仍讓請求正常完成。
+    //
+    // 這裡不可以回傳 Error：那會讓 Express 走錯誤處理直接回 500，把同源請求
+    // 一起打死。index.html 裡的 <script crossorigin> 與 <link crossorigin>
+    // 即使是同源也會送出 Origin 標頭，因此以伺服器 IP 開啟時
+    // （例如 https://192.168.100.249:5566）JS 與 CSS 全數變成 500，畫面空白。
+    //
+    // 回傳 false 才是正確作法：同源請求不受 CORS 檢查限制，可正常載入；
+    // 真正跨來源的請求因為拿不到 Access-Control-Allow-Origin，
+    // 仍會被瀏覽器擋下讀取，安全性目的不變。
+    return cb(null, false);
   },
   credentials: true,
 }));
