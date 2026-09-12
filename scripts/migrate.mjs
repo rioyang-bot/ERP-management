@@ -61,6 +61,27 @@ const pool = new pg.Pool({
 
 const sha256 = (text) => crypto.createHash('sha256').update(text, 'utf8').digest('hex');
 
+/**
+ * 移除腳本中「頂層」的 BEGIN; 與 COMMIT;，交易一律改由本執行器控制。
+ *
+ * 清單中的腳本寫法不一：有些自帶 BEGIN/COMMIT，有些沒有。若直接把自帶交易的
+ * 腳本放進外層交易執行，PostgreSQL 會忽略巢狀的 BEGIN，而腳本內的 COMMIT 會
+ * 提早結束外層交易 —— 後續寫入 schema_migrations 的紀錄就失去保護，可能出現
+ * 「腳本已套用但沒有紀錄」而下次重複執行的情況。
+ *
+ * $$ ... $$ 區塊（PL/pgSQL 的 DO 或函式主體）內的 BEGIN/END 屬於語法的一部分，
+ * 必須原樣保留，因此先把這些區塊切開再處理。
+ */
+const stripTopLevelTransaction = (sql) => {
+  // 以 dollar-quoted 區塊切分；捕捉群組使區塊本身留在結果陣列的奇數索引
+  const parts = sql.split(/(\$[A-Za-z_]*\$[\s\S]*?\$[A-Za-z_]*\$)/g);
+  return parts
+    .map((part, i) => (i % 2 === 1
+      ? part // dollar-quoted 區塊，原樣保留
+      : part.replace(/^[ \t]*(BEGIN|COMMIT)[ \t]*;[ \t]*$/gim, '')))
+    .join('');
+};
+
 const loadManifest = () => {
   if (!fs.existsSync(MANIFEST)) {
     throw new Error(`找不到執行清單：${MANIFEST}`);
@@ -172,10 +193,10 @@ const run = async () => {
     const client = await pool.connect();
     const started = Date.now();
     try {
-      // 腳本本身多半已含 BEGIN/COMMIT；外層再包一層交易可確保
-      // 未含交易的腳本失敗時也能完整回滾。
+      // 交易一律由此處控制：腳本內的頂層 BEGIN/COMMIT 已被移除，
+      // 確保「腳本內容」與「已套用紀錄」在同一個交易中一起成立或一起回滾。
       await client.query('BEGIN');
-      await client.query(m.sql);
+      await client.query(stripTopLevelTransaction(m.sql));
       await client.query(
         `INSERT INTO schema_migrations (filename, checksum, duration_ms) VALUES ($1, $2, $3)`,
         [m.file, m.checksum, Date.now() - started]
