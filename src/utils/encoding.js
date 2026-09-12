@@ -28,6 +28,70 @@ export function asText(value) {
   return String(value).trim();
 }
 
+/**
+ * 判斷 Excel 的數值格式字串是否為日期格式。
+ *
+ * 不使用 XLSX.SSF.is_date：SSF 只掛在 xlsx 的 default export 上，
+ * 以 `import * as XLSX` 取用會是 undefined，這也正是原本序號日期轉換
+ * 長期失效的原因（錯誤被 try/catch 吞掉）。此處自行判斷，不依賴匯出形式。
+ *
+ * @param {string} fmt Excel 數值格式，例如 mmm-yy、yyyy-mm-dd、#,##0.00
+ * @returns {boolean}
+ */
+export function isDateFormat(fmt) {
+  if (!fmt || typeof fmt !== 'string') return false;
+  // 先移除引號包住的字面文字與 [紅色]、[$-409] 這類區段，避免誤判
+  const stripped = fmt.replace(/"[^"]*"/g, '').replace(/\[[^\]]*\]/g, '');
+  return /[ymdhs]/i.test(stripped);
+}
+
+/**
+ * 將 Excel 日期序號轉為 YYYY-MM-DD。
+ *
+ * Excel 的序號基準為 1899-12-30（含其著名的 1900 閏年錯誤）。
+ * 以純運算實作，不依賴 XLSX.SSF，因此在任何打包方式下都可用。
+ *
+ * @param {number|string} serial
+ * @returns {string|null} 無法轉換時回傳 null
+ */
+export function excelSerialToDate(serial) {
+  const n = Number(serial);
+  if (!Number.isFinite(n) || n < 1 || n > 2958465) return null; // 上限為 9999-12-31
+  const d = new Date(Date.UTC(1899, 11, 30) + Math.floor(n) * 86400000);
+  if (Number.isNaN(d.getTime())) return null;
+  const y = String(d.getUTCFullYear()).padStart(4, '0');
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * 將「日期格式」儲存格改為 Excel 實際顯示的文字。
+ *
+ * Excel 會把使用者輸入的「Jan-26」自動判讀成日期（2026 年 1 月），
+ * 以序號 46023 儲存、再依格式 mmm-yy 顯示為 Jan-26。
+ * 讀取時若取原始值，純文字欄位（例如「訂單來源」）就會變成 46023。
+ *
+ * 這裡改取儲存格的顯示文字 w，讓匯入結果與使用者在 Excel 中看到的一致：
+ *   - 文字性質的欄位保留原樣（Jan-26）
+ *   - 真正的日期欄位會拿到可讀的日期字串，仍由各匯入畫面的日期解析處理
+ *
+ * @param {object} worksheet XLSX 工作表物件（就地修改）
+ */
+export function preserveDisplayedDateText(worksheet) {
+  if (!worksheet || typeof worksheet !== 'object') return worksheet;
+  for (const addr of Object.keys(worksheet)) {
+    if (addr.startsWith('!')) continue; // !ref、!margins 等中繼資料
+    const cell = worksheet[addr];
+    if (!cell || cell.t !== 'n') continue;          // 只處理數值型儲存格
+    if (!isDateFormat(cell.z)) continue;            // 且格式必須是日期
+    if (typeof cell.w !== 'string' || !cell.w) continue; // 需有顯示文字
+    cell.t = 's';
+    cell.v = cell.w;
+  }
+  return worksheet;
+}
+
 export function fixMojibake(str) {
   if (!str || typeof str !== 'string') return str;
   // 若包含典型的 UTF-8 -> Latin1 誤解碼字元 (如 æ, é, ‡, –, °, œ, ™ 等)
@@ -98,11 +162,15 @@ export async function parseSpreadsheetFile(selectedFile) {
     const decodedText = decodeTextBuffer(arrayBuffer);
     workbook = XLSX.read(decodedText, { type: 'string', raw: true });
   } else {
-    workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array', cellDates: false, codepage: 65001 });
+    // cellNF 取得每格的數值格式，用以辨識日期格式的儲存格
+    workbook = XLSX.read(new Uint8Array(arrayBuffer), {
+      type: 'array', cellDates: false, codepage: 65001, cellNF: true,
+    });
   }
 
   const firstSheetName = workbook.SheetNames[0];
   const worksheet = workbook.Sheets[firstSheetName];
+  preserveDisplayedDateText(worksheet);
   const raw2D = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '', raw: true });
   const rawHeaderRow = (raw2D && raw2D[0] && Array.isArray(raw2D[0])) ? raw2D[0] : [];
   const cleanRawHeaders = rawHeaderRow.map(h => fixMojibake(String(h || '').trim())).filter(Boolean);
@@ -150,11 +218,15 @@ export async function parseSpreadsheet2D(selectedFile) {
     const decodedText = decodeTextBuffer(arrayBuffer);
     workbook = XLSX.read(decodedText, { type: 'string', raw: true });
   } else {
-    workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array', cellDates: false, codepage: 65001 });
+    // cellNF 取得每格的數值格式，用以辨識日期格式的儲存格
+    workbook = XLSX.read(new Uint8Array(arrayBuffer), {
+      type: 'array', cellDates: false, codepage: 65001, cellNF: true,
+    });
   }
 
   const firstSheetName = workbook.SheetNames[0];
   const worksheet = workbook.Sheets[firstSheetName];
+  preserveDisplayedDateText(worksheet);
   const raw2D = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '', raw: true });
 
   return raw2D.map(row => {

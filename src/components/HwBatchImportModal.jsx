@@ -5,7 +5,7 @@ import {
   XCircle, Filter, Layers, Database, ArrowRight, RefreshCw, Info, Download, Cpu, Server, Plus, Check
 } from 'lucide-react';
 import { logEvent, ACTION_TYPES, MODULE_MAP } from '../utils/auditLogger';
-import { parseSpreadsheetFile, fixMojibake, asText } from '../utils/encoding';
+import { parseSpreadsheetFile, fixMojibake, asText, excelSerialToDate } from '../utils/encoding';
 import { matchPartnerContact } from '../utils/partnerMatcher';
 import { normalizeMasterName } from '../utils/normalizeMasterData';
 
@@ -209,17 +209,11 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
     if (isPureNum) {
       const numVal = Number(rawVal);
       if (!isNaN(numVal) && numVal >= 1000 && numVal <= 100000) {
-        try {
-          const dateObj = XLSX.SSF.parse_date_code(numVal);
-          if (dateObj && dateObj.y && dateObj.m && dateObj.d) {
-            const y = String(dateObj.y).padStart(4, '0');
-            const m = String(dateObj.m).padStart(2, '0');
-            const d = String(dateObj.d).padStart(2, '0');
-            return `${y}-${m}-${d}`;
-          }
-        } catch (e) {
-          console.warn('Excel date parsing error:', e);
-        }
+        // 原本使用 XLSX.SSF.parse_date_code，但 SSF 只掛在 xlsx 的 default export，
+        // 以 import * as XLSX 取用會是 undefined，例外又被吞掉，
+        // 導致序號日期長期都轉不出來。改用不依賴該套件的純運算轉換。
+        const converted = excelSerialToDate(numVal);
+        if (converted) return converted;
       }
     }
 
@@ -231,8 +225,12 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
     // 3. 如果是 DD/MM/YYYY 或 D/M/YYYY
     const dmyMatch = dateStr.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
     if (dmyMatch) {
-      const d = String(dmyMatch[1]).padStart(2, '0');
-      const m = String(dmyMatch[2]).padStart(2, '0');
+      // 預設為 DD/MM/YYYY；若第二段大於 12，代表其實是美式 M/D/YYYY，對調兩者
+      let first = Number(dmyMatch[1]);
+      let second = Number(dmyMatch[2]);
+      if (second > 12 && first <= 12) { const t = first; first = second; second = t; }
+      const d = String(first).padStart(2, '0');
+      const m = String(second).padStart(2, '0');
       let y = dmyMatch[3];
       if (y.length === 2) {
         y = Number(y) > 50 ? '19' + y : '20' + y;
