@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, protocol, net } from 'electron';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { query } from './db.js';
+import { registerAuthHandlers } from './authHandlers.js';
 import fs from 'fs/promises';
 import { queries as namedQueries } from '../database/queries.js';
 
@@ -96,20 +97,8 @@ ipcMain.handle('db:query', async (event, sql, params) => {
   }
 });
 
-// 認證 API IPC
-ipcMain.handle('auth:login', async (event, username) => {
-  try {
-    const safeParams = sanitizeParams([username]);
-    const result = await query(
-      'SELECT id, username, role, full_name, password_hash, menu_access FROM users WHERE username = $1 AND is_active = TRUE',
-      safeParams
-    );
-    return { success: true, rows: result.rows };
-  } catch (error) {
-    console.error('[DB] Auth Error:', error);
-    return { success: false, error: '資料庫連線或查詢失敗，請聯絡系統管理員。' };
-  }
-});
+// 認證 API IPC：密碼於主行程驗證，password_hash 不回傳給畫面層
+registerAuthHandlers(ipcMain, query);
 
 // 儀表板 API IPC
 ipcMain.handle('dashboard:stats', async (event) => {

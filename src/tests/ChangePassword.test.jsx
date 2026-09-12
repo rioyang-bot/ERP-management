@@ -1,25 +1,26 @@
 import React from 'react';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import MainLayout from '../components/layout/MainLayout';
 import { RoleContext } from '../context/RoleContext';
-import { hashPassword } from '../utils/auth';
 
 import { ThemeProvider } from '../context/ThemeContext';
 
+// 變更密碼已改為伺服器端驗證：
+// 前端只負責把「目前密碼」與「新密碼」送給 authChangePassword，
+// 不再取得 password_hash、也不再自行計算或比對雜湊。
 describe('使用者變更密碼功能 (Change Password) 測試', () => {
   let mockAuthUser;
   let namedQuerySpy;
+  let changePasswordSpy;
   let alertSpy;
 
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.clearAllMocks();
     alertSpy = vi.fn();
     window.alert = alertSpy;
-
-    const oldHashed = await hashPassword('oldPassword123');
 
     mockAuthUser = {
       id: 5,
@@ -29,34 +30,13 @@ describe('使用者變更密碼功能 (Change Password) 測試', () => {
       menu_access: { overview: true }
     };
 
-    namedQuerySpy = vi.fn((query, params) => {
-      if (query === 'getSystemSetting') {
-        return Promise.resolve({ success: true, rows: [] });
-      }
-      if (query === 'fetchUserById') {
-        return Promise.resolve({
-          success: true,
-          rows: [
-            {
-              id: 5,
-              username: 'testuser',
-              password_hash: oldHashed,
-              role: 'IT',
-              full_name: '測試同仁',
-              is_active: true
-            }
-          ]
-        });
-      }
-      if (query === 'updateUserPassword') {
-        return Promise.resolve({ success: true });
-      }
-      return Promise.resolve({ success: true, rows: [] });
-    });
+    namedQuerySpy = vi.fn(() => Promise.resolve({ success: true, rows: [] }));
+    changePasswordSpy = vi.fn(() => Promise.resolve({ success: true }));
 
     window.electronAPI = {
       namedQuery: namedQuerySpy,
       authLogin: vi.fn(),
+      authChangePassword: changePasswordSpy,
       getDashboardStats: vi.fn()
     };
   });
@@ -85,8 +65,9 @@ describe('使用者變更密碼功能 (Change Password) 測試', () => {
     expect(screen.getByPlaceholderText('請再次輸入新密碼')).toBeInTheDocument();
   });
 
-  it('原密碼輸入錯誤時應提示「原密碼錯誤」並阻擋更新', async () => {
+  it('伺服器回報原密碼不正確時應顯示錯誤且不視為成功', async () => {
     const user = userEvent.setup();
+    changePasswordSpy.mockResolvedValue({ success: false, error: '目前密碼不正確。' });
     renderComponent();
 
     await user.click(screen.getByText('變更密碼'));
@@ -98,14 +79,13 @@ describe('使用者變更密碼功能 (Change Password) 測試', () => {
     await user.click(screen.getByText('確認變更'));
 
     await waitFor(() => {
-      expect(screen.getByText('原密碼錯誤')).toBeInTheDocument();
+      expect(screen.getByText('目前密碼不正確。')).toBeInTheDocument();
     });
 
-    expect(namedQuerySpy).toHaveBeenCalledWith('fetchUserById', [5]);
-    expect(namedQuerySpy).not.toHaveBeenCalledWith('updateUserPassword', expect.anything());
+    expect(alertSpy).not.toHaveBeenCalled();
   });
 
-  it('原密碼正確且新密碼一致時應成功呼叫 updateUserPassword 並完成變更', async () => {
+  it('應把明文密碼交給伺服器驗證，且不得外洩密碼雜湊相關查詢', async () => {
     const user = userEvent.setup();
     renderComponent();
 
@@ -118,17 +98,20 @@ describe('使用者變更密碼功能 (Change Password) 測試', () => {
     await user.click(screen.getByText('確認變更'));
 
     await waitFor(() => {
-      expect(namedQuerySpy).toHaveBeenCalledWith('fetchUserById', [5]);
+      expect(changePasswordSpy).toHaveBeenCalledWith('oldPassword123', 'newSecurePass456');
     });
 
-    const expectedNewHash = await hashPassword('newSecurePass456');
+    // 舊流程會先撈出 password_hash 再於前端比對，這些查詢必須已完全消失
+    expect(namedQuerySpy).not.toHaveBeenCalledWith('fetchUserById', expect.anything());
+    expect(namedQuerySpy).not.toHaveBeenCalledWith('fetchUserByUsername', expect.anything());
+    expect(namedQuerySpy).not.toHaveBeenCalledWith('updateUserPassword', expect.anything());
+
     await waitFor(() => {
-      expect(namedQuerySpy).toHaveBeenCalledWith('updateUserPassword', [expectedNewHash, 5]);
-      expect(alertSpy).toHaveBeenCalledWith('密碼變更成功，下次登入請使用新密碼。');
+      expect(alertSpy).toHaveBeenCalledWith('密碼變更成功，其他裝置的登入狀態已一併登出。');
     });
   });
 
-  it('新密碼與確認密碼不一致時應提示錯誤且不送出查詢', async () => {
+  it('新密碼與確認密碼不一致時應提示錯誤且不送出請求', async () => {
     const user = userEvent.setup();
     renderComponent();
 
@@ -141,25 +124,12 @@ describe('使用者變更密碼功能 (Change Password) 測試', () => {
     await user.click(screen.getByText('確認變更'));
 
     expect(screen.getByText('新密碼與確認密碼不一致')).toBeInTheDocument();
-    expect(namedQuerySpy).not.toHaveBeenCalledWith('fetchUserById', expect.anything());
+    expect(changePasswordSpy).not.toHaveBeenCalled();
   });
 
-  it('當 authUser 缺少 id 時，應能 fallback 透過 fetchUserByUsername 驗證並完成變更', async () => {
+  it('伺服器連線失敗時應顯示錯誤訊息', async () => {
     const user = userEvent.setup();
-    mockAuthUser = { username: 'testuser', full_name: '測試同仁', role: 'IT' };
-
-    const oldHashed = await hashPassword('oldPassword123');
-    namedQuerySpy.mockImplementation((query, params) => {
-      if (query === 'fetchUserByUsername') {
-        return Promise.resolve({
-          success: true,
-          rows: [{ id: 5, username: 'testuser', password_hash: oldHashed }]
-        });
-      }
-      if (query === 'updateUserPassword') return Promise.resolve({ success: true });
-      return Promise.resolve({ success: true, rows: [] });
-    });
-
+    changePasswordSpy.mockResolvedValue({ success: false, error: '連線階段已失效，請重新登入。' });
     renderComponent();
 
     await user.click(screen.getByText('變更密碼'));
@@ -170,11 +140,8 @@ describe('使用者變更密碼功能 (Change Password) 測試', () => {
     await user.click(screen.getByText('確認變更'));
 
     await waitFor(() => {
-      expect(namedQuerySpy).toHaveBeenCalledWith('fetchUserByUsername', ['testuser']);
+      expect(screen.getByText('連線階段已失效，請重新登入。')).toBeInTheDocument();
     });
-    const expectedNewHash = await hashPassword('fallbackPass789');
-    await waitFor(() => {
-      expect(namedQuerySpy).toHaveBeenCalledWith('updateUserPassword', [expectedNewHash, 5]);
-    });
+    expect(alertSpy).not.toHaveBeenCalled();
   });
 });

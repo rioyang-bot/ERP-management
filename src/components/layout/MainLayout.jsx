@@ -4,7 +4,7 @@ import { RoleContext } from '../../context/RoleContext';
 import { useTheme } from '../../context/ThemeContext';
 import logo from '../../assets/logo.png';
 import { ChevronRight, Key, X, Sun, Moon, LogOut, Plus } from 'lucide-react';
-import { hashPassword, validatePassword } from '../../utils/auth';
+import { validatePassword } from '../../utils/auth';
 import LiveEventDrawer from './LiveEventDrawer';
 import './MainLayout.css';
 
@@ -19,9 +19,16 @@ const MainLayout = () => {
   // --- 登出確認 (Logout Confirmation) ---
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     setShowLogoutConfirm(false);
+    // 通知伺服器撤銷這組連線代碼，避免代碼在伺服器端仍然有效
+    try {
+      await window.electronAPI?.authLogout?.();
+    } catch {
+      // 即使伺服器端撤銷失敗，本機仍必須清除登入狀態
+    }
     localStorage.removeItem('erp_session');
+    localStorage.removeItem('erp_token');
     setAuthUser(null);
   };
 
@@ -60,41 +67,17 @@ const MainLayout = () => {
         }
       }
 
-      // 1. 驗證原密碼
-      const hashedOld = await hashPassword(pwdOld);
-      let res = null;
-      if (authUser?.id) {
-        res = await window.electronAPI.namedQuery('fetchUserById', [authUser.id]);
-      } else if (authUser?.username) {
-        res = await window.electronAPI.namedQuery('fetchUserByUsername', [authUser.username]);
+      // 原密碼驗證與新密碼雜湊皆在伺服器端完成。
+      // 前端不再取得 password_hash，也不再自行計算雜湊。
+      const updateRes = await window.electronAPI.authChangePassword(pwdOld, pwdNew);
+      if (updateRes.success) {
+        alert('密碼變更成功，其他裝置的登入狀態已一併登出。');
+        setShowPasswordModal(false);
+        setPwdOld('');
+        setPwdNew('');
+        setPwdConfirm('');
       } else {
-        setPwdError('無法識別當前登入使用者，請重新登入');
-        setIsPwdUpdating(false);
-        return;
-      }
-
-      if (res && res.success && res.rows.length > 0) {
-        const user = res.rows[0];
-        if (user.password_hash !== hashedOld) {
-          setPwdError('原密碼錯誤');
-          setIsPwdUpdating(false);
-          return;
-        }
-
-        // 2. 更新為新密碼
-        const hashedNew = await hashPassword(pwdNew);
-        const updateRes = await window.electronAPI.namedQuery('updateUserPassword', [hashedNew, user.id]);
-        if (updateRes.success) {
-          alert('密碼變更成功，下次登入請使用新密碼。');
-          setShowPasswordModal(false);
-          setPwdOld('');
-          setPwdNew('');
-          setPwdConfirm('');
-        } else {
-          setPwdError('變更密碼失敗：' + (updateRes.error || '資料庫更新失敗'));
-        }
-      } else {
-        setPwdError('無法驗證原密碼：' + (res?.error || '查無使用者帳號資料'));
+        setPwdError(updateRes.error || '變更密碼失敗');
         setIsPwdUpdating(false);
         return;
       }

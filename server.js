@@ -9,6 +9,8 @@ import { fileURLToPath } from 'url';
 import pg from 'pg';
 import { queries as namedQueries } from './database/queries.js';
 import { sanitizeParams } from './src/utils/security.js';
+import { createAuth } from './server/auth.js';
+import { createAuthRoutes } from './server/authRoutes.js';
 
 const { Pool } = pg;
 const __filename = fileURLToPath(import.meta.url);
@@ -228,12 +230,33 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-app.use(cors());
+// CORS：僅允許自家前端來源，避免任意網站透過瀏覽器讀取本系統資料。
+// 以環境變數 ALLOWED_ORIGINS 設定（逗號分隔），未設定時僅允許同源與本機。
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+  .split(',').map(o => o.trim()).filter(Boolean);
+app.use(cors({
+  origin: (origin, cb) => {
+    // 無 origin：同源請求、Electron 或伺服器間呼叫
+    if (!origin) return cb(null, true);
+    if (allowedOrigins.includes(origin)) return cb(null, true);
+    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return cb(null, true);
+    return cb(new Error('不允許的來源'));
+  },
+  credentials: true,
+}));
 app.use(express.json());
-app.use('/uploads', express.static(uploadsDir));
+
+const auth = createAuth(pool);
+
+// 逾期連線階段清理：啟動時執行一次，之後每小時一次
+auth.purgeExpired().catch(() => {});
+setInterval(() => { auth.purgeExpired().catch(() => {}); }, 3600 * 1000).unref?.();
+
+// 上傳檔案需登入後才能取用
+app.use('/uploads', auth.requireAuth, express.static(uploadsDir));
 
 // Named Query API
-app.post('/api/namedQuery', async (req, res) => {
+app.post('/api/namedQuery', auth.requireAuth, async (req, res) => {
   const { queryName, params = [] } = req.body;
   
   if (!queryName || !namedQueries[queryName]) {
@@ -269,21 +292,12 @@ app.post('/api/namedQuery', async (req, res) => {
 });
 
 // 其他 API 簡化 (維持原有功能)...
-app.post('/api/auth/login', async (req, res) => {
-  const { username } = req.body;
-  try {
-    const result = await pool.query(
-      'SELECT id, username, role, full_name, password_hash, menu_access FROM users WHERE LOWER(username) = LOWER($1) AND is_active = TRUE',
-      [username]
-    );
-    res.json({ success: true, rows: result.rows });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
+// 身分驗證路由：密碼一律於伺服器端驗證，password_hash 絕不回傳給用戶端。
+// 登入成功後發給連線代碼，其餘 /api 端點皆需附上該代碼（見 auth.requireAuth）。
+app.use('/api/auth', createAuthRoutes(pool, auth));
 
 
-app.post('/api/upload', upload.single('file'), (req, res) => {
+app.post('/api/upload', auth.requireAuth, upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ success: false, error: 'No file uploaded' });
   
   let fileUrl = req.file.path.replace(/\\/g, '/');
@@ -295,7 +309,7 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
 });
 
 // 手動掃描大小寫重複品項主檔 API
-app.get('/api/item-master/scan-duplicates', async (req, res) => {
+app.get('/api/item-master/scan-duplicates', auth.requireAuth, async (req, res) => {
   try {
     const result = await pool.query(namedQueries.scanDuplicateItemMasters);
     res.json({ success: true, rows: result.rows });
@@ -305,7 +319,7 @@ app.get('/api/item-master/scan-duplicates', async (req, res) => {
 });
 
 // 手動執行大小寫重複品項主檔整併 API
-app.post('/api/item-master/merge-duplicates', async (req, res) => {
+app.post('/api/item-master/merge-duplicates', auth.requireAuth, auth.requireRole('ADMIN'), async (req, res) => {
   try {
     const mergeResult = await autoMergeDuplicateItemMasters(pool);
     if (mergeResult.error) {

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { LockKeyhole } from 'lucide-react';
 import logo from '../assets/logo.png';
 import './Login.css';
-import { hashPassword } from '../utils/auth';
+
 
 const Login = ({ setAuthUser }) => {
   const navigate = useNavigate();
@@ -23,27 +23,12 @@ const Login = ({ setAuthUser }) => {
     setError('');
 
     try {
-      // 0. 環境檢查
-      if (!window.electronAPI) {
-        throw new Error('請使用 Electron 桌面程式運行此應用（不可使用一般瀏覽器登入）');
-      }
+      // 密碼一律送到伺服器端驗證。前端不再取得 password_hash，也不做任何比對。
+      const res = await window.electronAPI.authLogin(username, password);
 
-      // 1. 將輸入的密碼進行 SHA-256 雜湊
-      const hashedContent = await hashPassword(password);
-
-      // 2. 呼叫後端專屬的登入 API，不再使用前端動態 SQL
-      const res = await window.electronAPI.authLogin(username);
-
-      if (res.success && res.rows.length > 0) {
-        const user = res.rows[0];
-        // 3. 比對雜湊值
-        if (user.password_hash === hashedContent) {
-          const { password_hash: _password_hash, ...sessionUser } = user;
-          setAuthUser(sessionUser);
-          navigate('/device-list');
-        } else {
-          setError('帳號或密碼錯誤');
-        }
+      if (res.success && res.user) {
+        setAuthUser(res.user);
+        navigate('/device-list');
       } else {
         setError(res.error || '帳號或密碼錯誤');
       }

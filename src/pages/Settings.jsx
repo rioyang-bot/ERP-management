@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useContext } from 'react';
 import { RoleContext } from '../context/RoleContext';
-import { hashPassword, validatePassword } from '../utils/auth';
+import { validatePassword } from '../utils/auth';
 import { Shield, User, Settings as SettingsIcon, CheckSquare, Square, X, Save, Key, Lock, Trash2, Power, GitMerge, RefreshCw, Database, CheckCircle2 } from 'lucide-react';
 import { logCreate, logUpdate, logDelete, logStatusChange, logEvent } from '../utils/auditLogger';
 
@@ -143,7 +143,6 @@ const Settings = () => {
     }
 
     try {
-      const hashedPassword = await hashPassword(newUser.password);
       
       // 根據角色給予預設權限
       let defaultAccess = { overview: true };
@@ -159,10 +158,14 @@ const Settings = () => {
         defaultAccess = { overview: true, procurementList: true, partners: true, reports: true };
       }
 
-      const res = await window.electronAPI.namedQuery(
-        'insertUser',
-        [newUser.username, hashedPassword, newUser.role, newUser.full_name, defaultAccess]
-      );
+      // 密碼送到伺服器端雜湊後寫入，前端不再計算或傳送雜湊值
+      const res = await window.electronAPI.authCreateUser({
+        username: newUser.username,
+        password: newUser.password,
+        role: newUser.role,
+        fullName: newUser.full_name,
+        menuAccess: defaultAccess,
+      });
 
       if (res.success) {
         logCreate('USER', newUser.username, newUser.full_name || newUser.username, `建立使用者帳號 [${newUser.username}] (${newUser.role})`, {
@@ -286,8 +289,7 @@ const Settings = () => {
     
     setIsResetting(true);
     try {
-      const hashedNew = await hashPassword(adminResetPwd);
-      const updateRes = await window.electronAPI.namedQuery('updateUserPassword', [hashedNew, resetUser.id]);
+      const updateRes = await window.electronAPI.authResetPassword(resetUser.id, adminResetPwd);
       if (updateRes.success) {
         logUpdate('USER', resetUser.username, '重設密碼', `管理員重設使用者 [${resetUser.username}] 登入密碼`, { username: resetUser.username });
         alert(`已經成功將使用者 [${resetUser.username}] 的密碼重設！`);

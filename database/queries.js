@@ -465,13 +465,11 @@ export const queries = {
 
   // Settings.jsx
   fetchUsers: `SELECT id, username, role, full_name, is_active, menu_access FROM users ORDER BY id ASC`,
-  insertUser: `INSERT INTO users (username, password_hash, role, full_name, menu_access) VALUES ($1, $2, $3, $4, $5::jsonb)`,
   updateUserActive: `UPDATE users SET is_active = $1 WHERE id = $2`,
   deleteUser: `DELETE FROM users WHERE id = $1`,
   updateUserAccess: `UPDATE users SET menu_access = $1::jsonb WHERE id = $2`,
-  updateUserPassword: `UPDATE users SET password_hash = $1 WHERE id = $2`,
-  fetchUserById: `SELECT id, username, password_hash, role, full_name, is_active FROM users WHERE id = $1`,
-  fetchUserByUsername: `SELECT id, username, password_hash, role, full_name, is_active FROM users WHERE LOWER(username) = LOWER($1)`,
+  fetchUserById: `SELECT id, username, role, full_name, is_active FROM users WHERE id = $1`,
+  fetchUserByUsername: `SELECT id, username, role, full_name, is_active FROM users WHERE LOWER(username) = LOWER($1)`,
 
   // Hardware / NIC Registration & List
   fetchNicBrands: `SELECT id, name FROM item_brands WHERE category_id = (SELECT id FROM categories WHERE name = '硬體') ORDER BY name ASC`,
