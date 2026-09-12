@@ -191,12 +191,43 @@ const DeviceList = ({ isSplitMode = false }) => {
   };
 
   const handleDelete = async (id, sn) => {
-    if (!window.confirm(`確定要刪除設備 [${sn}] 嗎？`)) return;
+    const targetItem = items.find(i => i.id === id);
+    const displayName = sn || (targetItem ? `${targetItem.brand || ''} ${targetItem.model || ''}`.trim() : id);
+    
+    // 檢查是否有搭載硬體
+    let mountedSns = [];
+    if (targetItem) {
+      let attrs = {};
+      try { attrs = typeof targetItem.custom_attributes === 'string' ? JSON.parse(targetItem.custom_attributes) : (targetItem.custom_attributes || {}); } catch {}
+      const attrSns = (attrs.mounted_hw_sns || '').split(/[,，\s\n]+/).map(s => s.trim()).filter(Boolean);
+      const compSns = (targetItem.components || []).map(c => c.sn).filter(Boolean);
+      mountedSns = Array.from(new Set([...attrSns, ...compSns]));
+    }
+
+    const confirmMsg = mountedSns.length > 0
+      ? `【提醒】設備 [${displayName}] 目前搭載有 ${mountedSns.length} 件硬體零組件 [${mountedSns.join(', ')}]！\n確認刪除將會一併解除這些硬體的伺服器綁定記錄。確定要刪除此設備嗎？`
+      : `確定要刪除設備 [${displayName}] 嗎？`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    // 解除搭載硬體對此伺服器的綁定
+    if (mountedSns.length > 0) {
+      for (const hwSn of mountedSns) {
+        try {
+          await window.electronAPI.namedQuery('unbindHardwareServerSn', [hwSn]);
+        } catch (e) {
+          console.error(`[unbindHardwareServerSn] 刪除設備時解除硬體綁定失敗 (${hwSn}):`, e);
+        }
+      }
+    }
+
     const res = await window.electronAPI.namedQuery('deleteAsset', [id]);
-    if (res.success) {
-      logDelete('DEVICE', sn || id, '設備', `刪除設備紀錄 [${sn || id}]`, { id, sn });
+    if (res && res.success) {
+      logDelete('DEVICE', sn || id, '設備', `刪除設備紀錄 [${displayName}]`, { id, sn, unmountedHardwares: mountedSns });
       setActiveMenuId(null);
       fetchAssets();
+    } else {
+      alert('刪除設備失敗：' + (res?.error || '未知錯誤'));
     }
   };
 

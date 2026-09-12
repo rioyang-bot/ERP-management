@@ -210,8 +210,8 @@ const Devices = ({ isSplitMode = false }) => {
   };
 
   const handleAddAsset = async () => {
-    if (!formData.brand || !formData.type || !formData.model || !formData.specification?.trim()) {
-      return alert('請填寫必填欄位 (廠牌、類型、型號、規格為必填)');
+    if (!formData.brand || !formData.type || !formData.model) {
+      return alert('請填寫必填欄位 (廠牌、類型、型號為必填)');
     }
 
     // 解析序號清單
@@ -223,16 +223,17 @@ const Devices = ({ isSplitMode = false }) => {
         if (!confirm('偵測到重複的序號，是否要繼續（重複的紀錄會被分別建立）？')) return;
       }
     } else {
-      snList = [formData.sn.trim()];
+      snList = [formData.sn ? formData.sn.trim() : ''];
     }
 
     try {
+      const spec = (formData.specification || '').trim();
       let masterId;
-      const findRes = await window.electronAPI.namedQuery('findItemMaster', [formData.specification.trim(), formData.type, formData.brand, formData.model]);
+      const findRes = await window.electronAPI.namedQuery('findItemMaster', [spec, formData.type, formData.brand, formData.model]);
       if (findRes.success && findRes.rows.length > 0) {
         masterId = findRes.rows[0].id;
       } else {
-        const res = await window.electronAPI.namedQuery('insertItemMaster', [formData.specification.trim(), formData.type, formData.brand, formData.model, '台', '設備']);
+        const res = await window.electronAPI.namedQuery('insertItemMaster', [spec, formData.type, formData.brand, formData.model, '台', '設備']);
         if (res.success) masterId = res.rows[0].id;
       }
       if (!masterId) throw new Error('建立物料主檔失敗');
@@ -409,6 +410,18 @@ const Devices = ({ isSplitMode = false }) => {
                 </div>
                 {showAddModel && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newModelName} onChange={e => setNewModelName(e.target.value)} style={inputStyle} /><button onClick={handleAddModel} style={{ ...iconButtonStyle, background: 'var(--primary-color)', color: '#fff' }}><Plus size={18} /></button></div>}
                 {showManageModel && <div style={{ marginTop: '8px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-surface-subtle)' }}>{models.map(m => (<div key={m} style={manageItemStyle}><span>{m}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteModel(m)} /></div>))}</div>}
+              </div>
+
+              <div>
+                <label style={labelStyle}>規格 (Specification) <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>(選填)</span></label>
+                <input 
+                  type="text" 
+                  name="specification" 
+                  value={formData.specification || ''} 
+                  onChange={handleChange} 
+                  style={inputStyle} 
+                  placeholder="選填，可輸入硬體核心規格" 
+                />
               </div>
             </div>
 

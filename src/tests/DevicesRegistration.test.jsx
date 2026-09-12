@@ -103,7 +103,7 @@ describe('設備建檔聯絡人連動整合測試', () => {
     expect(contactSelect.value).toBe('趙六');
   });
 
-  it('設備建檔未填寫規格 (Specification) 時應彈出警示並阻止建立', async () => {
+  it('設備建檔未填寫必填欄位 (廠牌、類型、型號) 時應彈出警示並阻止建立，規格為選填', async () => {
     const user = userEvent.setup();
     window.alert = vi.fn();
     render(
@@ -119,7 +119,7 @@ describe('設備建檔聯絡人連動整合測試', () => {
     const submitBtn = screen.getByRole('button', { name: /儲存設備資料/ });
     await user.click(submitBtn);
 
-    expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('廠牌、類型、型號、規格為必填'));
+    expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('廠牌、類型、型號為必填'));
     expect(insertSpy).not.toHaveBeenCalled();
   });
 

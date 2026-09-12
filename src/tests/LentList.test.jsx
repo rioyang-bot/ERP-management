@@ -163,6 +163,10 @@ describe('設備/硬體借用清單 (LentList) 流程、簽收單上傳與新增
     });
 
     // 選擇客戶 (第一個 select)
+    await waitFor(() => {
+      const selects = container.querySelectorAll('select');
+      expect(selects[0].options.length).toBeGreaterThan(1);
+    });
     const selects = container.querySelectorAll('select');
     const customerSelect = selects[0];
     await user.selectOptions(customerSelect, '1');

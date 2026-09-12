@@ -303,11 +303,37 @@ const HwList = ({ isSplitMode = false }) => {
 
   const handleDelete = async (nic) => {
     const displayName = `${nic.brand} - ${nic.model} [${nic.sn || '未設定序號'}]`;
-    if (!confirm(`確定要刪除硬體 [${displayName}] 嗎？`)) return;
-    await window.electronAPI.namedQuery('deleteAsset', [nic.id]);
-    logDelete('HARDWARE', nic.sn || nic.id, `${nic.brand} ${nic.model}`, `刪除硬體紀錄 [${nic.sn || nic.id}]`, { id: nic.id, sn: nic.sn, brand: nic.brand, model: nic.model });
-    window.dispatchEvent(new CustomEvent('db-update'));
-    setActiveMenuId(null);
+    const isMounted = nic.server_sn && String(nic.server_sn).trim();
+    const confirmMsg = isMounted 
+      ? `【提醒】硬體 [${displayName}] 目前已掛載於伺服器 [${nic.server_sn}]！\n確認刪除將會一併解除該伺服器之掛載記錄。確定要刪除嗎？`
+      : `確定要刪除硬體 [${displayName}] 嗎？`;
+
+    if (!confirm(confirmMsg)) return;
+
+    // 若有掛載伺服器，先解除伺服器上的搭載序號
+    if (isMounted && nic.sn) {
+      try {
+        await window.electronAPI.namedQuery('removeMountedHwSnFromDevice', [nic.server_sn.trim(), nic.sn.trim()]);
+      } catch (e) {
+        console.error('removeMountedHwSnFromDevice error:', e);
+      }
+    }
+
+    const res = await window.electronAPI.namedQuery('deleteAsset', [nic.id]);
+    if (res && res.success) {
+      logDelete('HARDWARE', nic.sn || nic.id, `${nic.brand} ${nic.model}`, `刪除硬體紀錄 [${nic.sn || nic.id}]`, { 
+        id: nic.id, 
+        sn: nic.sn, 
+        brand: nic.brand, 
+        model: nic.model,
+        unmountedFromServer: isMounted ? nic.server_sn : null 
+      });
+      window.dispatchEvent(new CustomEvent('db-update'));
+      setActiveMenuId(null);
+      loadData();
+    } else {
+      alert('刪除硬體失敗：' + (res?.error || '未知錯誤'));
+    }
   };
 
   const getStatusConfig = (status) => {
