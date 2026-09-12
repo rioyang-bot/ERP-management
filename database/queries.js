@@ -162,7 +162,7 @@ export const queries = {
   `,
   updateRepairItemsSn: `UPDATE repair_items SET sn = $1 WHERE sn IS NOT NULL AND TRIM(sn) = TRIM($2)`,
   updateOutboundItemsSn: `UPDATE outbound_items SET sn = $1 WHERE sn IS NOT NULL AND TRIM(sn) = TRIM($2)`,
-  updateItemMasterSpecs: `UPDATE item_master SET specification = $1, model = $2 WHERE id = $3`,
+  updateItemMasterSpecs: `UPDATE item_master SET specification = $1, model = UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g'))) WHERE id = $3`,
   countAssetsByMasterId: `SELECT COUNT(*) as count FROM assets WHERE item_master_id = $1`,
   updateAssetMasterId: `UPDATE assets SET item_master_id = $1 WHERE id = $2`,
   updateAssetDetails: `UPDATE assets SET sn = $1, client = $2, hostname = $3, location = $4, installed_date = $5, customer_warranty_expire = $6, system_date = $7, warranty_expire = $8, os = $9, nic = $10, custom_attributes = $11, ownership = COALESCE($12, 'FOR_SALE') WHERE id = $13`,
@@ -237,11 +237,11 @@ export const queries = {
       WHERE (LOWER(b.name) = LOWER($1) OR LOWER(tb.name) = LOWER($1))
         AND (b.category_id = (SELECT id FROM categories WHERE name = '設備') OR t.category_id = (SELECT id FROM categories WHERE name = '設備'))
       ORDER BY m.name ASC`,
-  insertDeviceType: `INSERT INTO item_types (category_id, name) VALUES ((SELECT id FROM categories WHERE name = $1), $2) ON CONFLICT DO NOTHING`,
+  insertDeviceType: `INSERT INTO item_types (category_id, name) VALUES ((SELECT id FROM categories WHERE name = $1), UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g')))) ON CONFLICT DO NOTHING`,
   deleteDeviceType: `DELETE FROM item_types WHERE name = $1 AND category_id = (SELECT id FROM categories WHERE name = $2)`,
   insertDeviceModel: `
       INSERT INTO item_models (brand_id, name) 
-      SELECT b.id, $2 FROM item_brands b 
+      SELECT b.id, UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g'))) FROM item_brands b 
       WHERE LOWER(b.name) = LOWER($1) AND b.category_id = (SELECT id FROM categories WHERE name = $3) 
       ON CONFLICT DO NOTHING`,
   deleteDeviceModel: `
@@ -250,7 +250,7 @@ export const queries = {
         brand_id IN (SELECT id FROM item_brands WHERE LOWER(name) = LOWER($2) AND category_id = (SELECT id FROM categories WHERE name = $3))
         OR type_id IN (SELECT t.id FROM item_types t JOIN item_brands b ON t.brand_id = b.id WHERE LOWER(b.name) = LOWER($2) AND b.category_id = (SELECT id FROM categories WHERE name = $3))
       )`,
-  insertDeviceBrand: `INSERT INTO item_brands (category_id, name) VALUES ((SELECT id FROM categories WHERE name = $1), $2) ON CONFLICT ON CONSTRAINT item_brands_category_id_name_key DO NOTHING`,
+  insertDeviceBrand: `INSERT INTO item_brands (category_id, name) VALUES ((SELECT id FROM categories WHERE name = $1), UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g')))) ON CONFLICT ON CONSTRAINT item_brands_category_id_name_key DO NOTHING`,
   deleteDeviceBrand: `DELETE FROM item_brands WHERE name = $1 AND category_id = (SELECT id FROM categories WHERE name = $2)`,
   
   findItemMaster: `
@@ -286,7 +286,7 @@ export const queries = {
     HAVING COUNT(*) > 1
     ORDER BY c.name ASC, norm_brand ASC, norm_model ASC
   `,
-  insertItemMaster: `INSERT INTO item_master (specification, type, brand, model, unit, category_id, purchase_price) VALUES ($1, $2, $3, $4, $5, (SELECT id FROM categories WHERE name = $6), 0) RETURNING id`,
+  insertItemMaster: `INSERT INTO item_master (specification, type, brand, model, unit, category_id, purchase_price) VALUES ($1, UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g'))), UPPER(TRIM(REGEXP_REPLACE(COALESCE($3, ''), '[[:space:]]+', ' ', 'g'))), UPPER(TRIM(REGEXP_REPLACE(COALESCE($4, ''), '[[:space:]]+', ' ', 'g'))), $5, (SELECT id FROM categories WHERE name = $6), 0) RETURNING id`,
   insertAssetRecord: `INSERT INTO assets (item_master_id, sn, client, hostname, location, installed_date, customer_warranty_expire, system_date, warranty_expire, os, nic, custom_attributes, ownership, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14, 'ACTIVE'))`,
 
   // ConsumableList.jsx
@@ -303,7 +303,7 @@ export const queries = {
         AND NOT EXISTS (SELECT 1 FROM item_lab_assignments la WHERE la.item_master_id = i.id)
       RETURNING id
   `,
-  updateConsumableMaster: `UPDATE item_master SET brand = $1, type = $2, model = $3, specification = $4, unit = $5, safety_stock = $6 WHERE id = $7`,
+  updateConsumableMaster: `UPDATE item_master SET brand = UPPER(TRIM(REGEXP_REPLACE(COALESCE($1, ''), '[[:space:]]+', ' ', 'g'))), type = UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g'))), model = UPPER(TRIM(REGEXP_REPLACE(COALESCE($3, ''), '[[:space:]]+', ' ', 'g'))), specification = $4, unit = $5, safety_stock = $6 WHERE id = $7`,
   transferStockToLab: `UPDATE item_master SET stock_qty = stock_qty - $1, lab_qty = lab_qty + $1 WHERE id = $2`,
   transferLabToStock: `UPDATE item_master SET stock_qty = stock_qty + $1, lab_qty = lab_qty - $1 WHERE id = $2`,
   insertLabAssignment: `INSERT INTO item_lab_assignments (item_master_id, asset_id, quantity, note) VALUES ($1, $2, $3, $4)`,
@@ -320,11 +320,11 @@ export const queries = {
   fetchAllAssetsForSelect: `SELECT a.id, a.sn, a.hostname, i.brand, i.model FROM assets a JOIN item_master i ON a.item_master_id = i.id ORDER BY a.hostname ASC, a.sn ASC`,
 
   // Consumables.jsx & ConsumableBatchImportModal.jsx
-  checkDuplicateConsumable: `SELECT id, specification, stock_qty, lab_qty FROM item_master WHERE brand = $1 AND type = $2 AND model = $3 AND specification = $4 AND category_id = (SELECT id FROM categories WHERE name = '耗材')`,
+  checkDuplicateConsumable: `SELECT id, specification, stock_qty, lab_qty FROM item_master WHERE UPPER(TRIM(REGEXP_REPLACE(COALESCE(brand, ''), '[[:space:]]+', ' ', 'g'))) = UPPER(TRIM(REGEXP_REPLACE(COALESCE($1, ''), '[[:space:]]+', ' ', 'g'))) AND UPPER(TRIM(REGEXP_REPLACE(COALESCE(type, ''), '[[:space:]]+', ' ', 'g'))) = UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g'))) AND UPPER(TRIM(REGEXP_REPLACE(COALESCE(model, ''), '[[:space:]]+', ' ', 'g'))) = UPPER(TRIM(REGEXP_REPLACE(COALESCE($3, ''), '[[:space:]]+', ' ', 'g'))) AND LOWER(TRIM(COALESCE(specification, ''))) = LOWER(TRIM(COALESCE($4, ''))) AND category_id = (SELECT id FROM categories WHERE name = '耗材')`,
   findConsumableMaster: `SELECT id, stock_qty, lab_qty, safety_stock FROM item_master WHERE LOWER(brand) = LOWER($1) AND LOWER(type) = LOWER($2) AND LOWER(model) = LOWER($3) AND LOWER(specification) = LOWER($4) AND category_id = (SELECT id FROM categories WHERE name = '耗材')`,
   updateConsumableStockQtyOnImport: `UPDATE item_master SET stock_qty = $1 WHERE id = $2`,
   fetchRecentConsumables: `SELECT i.* FROM item_master i LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '耗材' ORDER BY i.id DESC LIMIT 10`,
-  insertConsumableMaster: `INSERT INTO item_master (specification, type, brand, model, unit, safety_stock, stock_qty, category_id, purchase_price) VALUES ($1, $2, $3, $4, $5, $6, $7, (SELECT id FROM categories WHERE name = $8), 0) RETURNING id`,
+  insertConsumableMaster: `INSERT INTO item_master (specification, type, brand, model, unit, safety_stock, stock_qty, category_id, purchase_price) VALUES ($1, UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g'))), UPPER(TRIM(REGEXP_REPLACE(COALESCE($3, ''), '[[:space:]]+', ' ', 'g'))), UPPER(TRIM(REGEXP_REPLACE(COALESCE($4, ''), '[[:space:]]+', ' ', 'g'))), $5, $6, $7, (SELECT id FROM categories WHERE name = $8), 0) RETURNING id`,
   fetchConsumableModelsByBrandType: `
       SELECT m.name FROM item_models m JOIN item_types t ON m.type_id = t.id JOIN item_brands b ON t.brand_id = b.id
       WHERE b.name = $1 AND t.name = $2 AND b.category_id = (SELECT id FROM categories WHERE name = '耗材') AND t.category_id = (SELECT id FROM categories WHERE name = '耗材') ORDER BY m.name ASC`,
@@ -378,8 +378,8 @@ export const queries = {
         WHERE i.category_id = $1 AND i.model IS NOT NULL AND TRIM(i.model) != ''
       ) sub ORDER BY model ASC`,
   countPurchaseOrders: `WITH seqs AS (SELECT CAST(SUBSTRING(order_no FROM '-([0-9]+)$') AS INTEGER) as sq FROM purchase_records WHERE order_no LIKE $1 || '%') SELECT s.val as count FROM generate_series(1, 1000) as s(val) WHERE NOT EXISTS (SELECT 1 FROM seqs WHERE seqs.sq = s.val) ORDER BY s.val ASC LIMIT 1`,
-  insertItemBrand: `INSERT INTO item_brands (category_id, name) VALUES ($1, $2)`,
-  insertItemType: `INSERT INTO item_types (category_id, name) VALUES ($1, $2)`,
+  insertItemBrand: `INSERT INTO item_brands (category_id, name) VALUES ($1, UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g'))))`,
+  insertItemType: `INSERT INTO item_types (category_id, name) VALUES ($1, UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g'))))`,
   insertPurchaseRecord: `
       INSERT INTO purchase_records (order_no, partner_id, category_id, item_type, brand, model, specification, unit, quantity, purchaser_id, status, remarks, project_name, unit_price, attachments) 
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 0, $14::jsonb)`,
@@ -429,7 +429,7 @@ export const queries = {
           AND NOT EXISTS (SELECT 1 FROM item_lab_assignments la WHERE la.item_master_id = im.id)
       )
   `,
-  insertInboundItemMaster: `INSERT INTO item_master (specification, type, brand, unit, category_id, purchase_price) VALUES ($1, $2, $3, $4, (SELECT id FROM categories WHERE name = $5), 0) RETURNING id`,
+  insertInboundItemMaster: `INSERT INTO item_master (specification, type, brand, unit, category_id, purchase_price) VALUES ($1, UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g'))), UPPER(TRIM(REGEXP_REPLACE(COALESCE($3, ''), '[[:space:]]+', ' ', 'g'))), $4, (SELECT id FROM categories WHERE name = $5), 0) RETURNING id`,
   countInboundOrders: `WITH seqs AS (SELECT CAST(SUBSTRING(order_no FROM '-([0-9]+)$') AS INTEGER) as sq FROM inbound_orders WHERE order_no LIKE $1 || '%') SELECT s.val as count FROM generate_series(1, 1000) as s(val) WHERE NOT EXISTS (SELECT 1 FROM seqs WHERE seqs.sq = s.val) ORDER BY s.val ASC LIMIT 1`,
   insertInboundOrder: `INSERT INTO inbound_orders (order_no, partner_id, invoice_no, status, attachments) VALUES ($1, $2, $3, $4, $5::jsonb) RETURNING id`,
   updateInboundOrderHeader: `UPDATE inbound_orders SET partner_id = $1, invoice_no = $2, attachments = $3::jsonb WHERE id = $4`,
@@ -495,7 +495,7 @@ export const queries = {
         AND (b.category_id = (SELECT id FROM categories WHERE name = '硬體') OR t.category_id = (SELECT id FROM categories WHERE name = '硬體'))
       ORDER BY m.name ASC`,
   fetchNicSpecByBrandTypeModel: `
-      SELECT specification FROM item_master WHERE brand = $1 AND type = $2 AND model = $3 AND category_id = (SELECT id FROM categories WHERE name = '硬體') LIMIT 1`,
+      SELECT specification FROM item_master WHERE UPPER(TRIM(REGEXP_REPLACE(COALESCE(brand, ''), '[[:space:]]+', ' ', 'g'))) = UPPER(TRIM(REGEXP_REPLACE(COALESCE($1, ''), '[[:space:]]+', ' ', 'g'))) AND UPPER(TRIM(REGEXP_REPLACE(COALESCE(type, ''), '[[:space:]]+', ' ', 'g'))) = UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g'))) AND UPPER(TRIM(REGEXP_REPLACE(COALESCE(model, ''), '[[:space:]]+', ' ', 'g'))) = UPPER(TRIM(REGEXP_REPLACE(COALESCE($3, ''), '[[:space:]]+', ' ', 'g'))) AND category_id = (SELECT id FROM categories WHERE name = '硬體') LIMIT 1`,
     fetchNicListByType: `
       SELECT a.*, i.specification, i.type, i.brand, i.model, i.unit, 
              a.custom_attributes->>'server_sn' as server_sn,

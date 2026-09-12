@@ -3,6 +3,7 @@ import { Plus, Save, Settings2, Trash2, X, Monitor, User, MapPin, ListFilter, La
 import { useNavigate } from 'react-router-dom';
 import { logCreate } from '../utils/auditLogger';
 import DeviceBatchImportModal from '../components/DeviceBatchImportModal';
+import { normalizeMasterName } from '../utils/normalizeMasterData';
 
 const Devices = ({ isSplitMode = false }) => {
   const navigate = useNavigate();
@@ -121,7 +122,7 @@ const Devices = ({ isSplitMode = false }) => {
   }, [fetchCustomers, fetchSettings, fetchTypes, fetchBrands, fetchProjects]);
 
   const handleAddType = async () => {
-    const name = validateAndSanitize(newTypeName, '類型名稱');
+    const name = normalizeMasterName(validateAndSanitize(newTypeName, '類型名稱'));
     if (!name) return;
     const res = await window.electronAPI.namedQuery('insertDeviceType', ['設備', name]);
     if (res.success) {
@@ -141,7 +142,7 @@ const Devices = ({ isSplitMode = false }) => {
   };
 
   const handleAddModel = async () => {
-    const name = validateAndSanitize(newModelName, '型號名稱');
+    const name = normalizeMasterName(validateAndSanitize(newModelName, '型號名稱'));
     if (!name || !formData.brand) return alert('請先選擇或輸入廠牌');
     const res = await window.electronAPI.namedQuery('insertDeviceModel', [formData.brand, name, '設備']);
     if (res.success) {
@@ -161,7 +162,7 @@ const Devices = ({ isSplitMode = false }) => {
   };
 
   const handleAddBrand = async () => {
-    const name = validateAndSanitize(newBrandName, '廠牌名稱');
+    const name = normalizeMasterName(validateAndSanitize(newBrandName, '廠牌名稱'));
     if (!name) return;
     const res = await window.electronAPI.namedQuery('insertDeviceBrand', ['設備', name]);
     if (res.success) {

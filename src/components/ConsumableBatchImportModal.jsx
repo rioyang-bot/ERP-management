@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { logEvent, ACTION_TYPES, MODULE_MAP } from '../utils/auditLogger';
 import { parseSpreadsheetFile, fixMojibake } from '../utils/encoding';
+import { normalizeMasterName } from '../utils/normalizeMasterData';
 
 // 常見廠牌關鍵字特徵表，用於智慧推導
 const KNOWN_BRANDS = [
@@ -445,21 +446,21 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
 
       // 自動補齊 廠牌 (Brand)
       for (const brand of brandSet) {
-        await window.electronAPI.namedQuery('insertDeviceBrand', ['耗材', brand]);
+        await window.electronAPI.namedQuery('insertDeviceBrand', ['耗材', normalizeMasterName(brand)]);
       }
 
       // 自動補齊 類型 (Type)
-      for (const [brand, types] of typeMap.entries()) {
+      for (const types of typeMap.values()) {
         for (const type of types) {
-          await window.electronAPI.namedQuery('insertDeviceType', ['耗材', brand, type]);
+          await window.electronAPI.namedQuery('insertDeviceType', ['耗材', normalizeMasterName(type)]);
         }
       }
 
       // 自動補齊 型號 (Model)
       for (const [key, models] of modelMap.entries()) {
-        const [brand, type] = key.split('___');
+        const [brand] = key.split('___');
         for (const model of models) {
-          await window.electronAPI.namedQuery('insertDeviceModel', [brand, type, '耗材', model]);
+          await window.electronAPI.namedQuery('insertDeviceModel', [normalizeMasterName(brand), normalizeMasterName(model), '耗材']);
         }
       }
 

@@ -3,6 +3,7 @@ import { Plus, Save, Settings2, Trash2, X, Package, UploadCloud } from 'lucide-r
 import { useNavigate } from 'react-router-dom';
 import { logCreate } from '../utils/auditLogger';
 import ConsumableBatchImportModal from '../components/ConsumableBatchImportModal';
+import { normalizeMasterName } from '../utils/normalizeMasterData';
 
 const Consumables = ({ isSplitMode = false }) => {
   const navigate = useNavigate();
@@ -81,9 +82,9 @@ const Consumables = ({ isSplitMode = false }) => {
   }, [fetchBrands]);
 
   const handleAddType = async () => {
-    const name = validateAndSanitize(newTypeName, '類型名稱');
+    const name = normalizeMasterName(validateAndSanitize(newTypeName, '類型名稱'));
     if (!name || !formData.brand) return;
-    const res = await window.electronAPI.namedQuery('insertDeviceType', ['耗材', formData.brand, name]);
+    const res = await window.electronAPI.namedQuery('insertDeviceType', ['耗材', name]);
     if (res.success) {
       await fetchTypes(formData.brand);
       setFormData(prev => ({ ...prev, type: name }));
@@ -94,7 +95,7 @@ const Consumables = ({ isSplitMode = false }) => {
 
   const handleDeleteType = async (typeName) => {
     if (!confirm(`確定要刪除「${typeName}」嗎？`)) return;
-    const res = await window.electronAPI.namedQuery('deleteDeviceType', [typeName, '耗材', formData.brand]);
+    const res = await window.electronAPI.namedQuery('deleteDeviceType', [typeName, '耗材']);
     if (res.success) {
       await fetchTypes(formData.brand);
       if (formData.type === typeName) setFormData(prev => ({ ...prev, type: '' }));
@@ -102,7 +103,7 @@ const Consumables = ({ isSplitMode = false }) => {
   };
 
   const handleAddBrand = async () => {
-    const name = validateAndSanitize(newBrandName, '廠牌名稱');
+    const name = normalizeMasterName(validateAndSanitize(newBrandName, '廠牌名稱'));
     if (!name) return;
     const res = await window.electronAPI.namedQuery('insertDeviceBrand', ['耗材', name]);
     if (res.success) {
@@ -114,9 +115,9 @@ const Consumables = ({ isSplitMode = false }) => {
   };
 
   const handleAddModel = async () => {
-    const name = validateAndSanitize(newModelName, '型號名稱');
+    const name = normalizeMasterName(validateAndSanitize(newModelName, '型號名稱'));
     if (!name || !formData.brand || !formData.type) return;
-    const res = await window.electronAPI.namedQuery('insertDeviceModel', [formData.brand, formData.type, '耗材', name]);
+    const res = await window.electronAPI.namedQuery('insertDeviceModel', [formData.brand, name, '耗材']);
     if (res.success) {
       if (res.rowCount === 0) return alert('失敗：關聯錯誤');
       setFormData(prev => ({ ...prev, model: name }));
@@ -128,7 +129,7 @@ const Consumables = ({ isSplitMode = false }) => {
 
   const handleDeleteModel = async (modelName) => {
     if (!confirm(`確定要刪除「${modelName}」嗎？`)) return;
-    const res = await window.electronAPI.namedQuery('deleteDeviceModel', [modelName, formData.brand, formData.type, '耗材']);
+    const res = await window.electronAPI.namedQuery('deleteDeviceModel', [modelName, formData.brand, '耗材']);
     if (res.success) {
       await fetchModels(formData.brand, formData.type);
       if (formData.model === modelName) setFormData(prev => ({ ...prev, model: '' }));

@@ -4,6 +4,7 @@ import { Plus, Save, Trash2, Cpu, Settings2, X, Server, Layers, ListFilter, File
 import { sanitizeInput, sanitizeSearchInput } from '../utils/security';
 import { logCreate } from '../utils/auditLogger';
 import HwBatchImportModal from '../components/HwBatchImportModal';
+import { normalizeMasterName } from '../utils/normalizeMasterData';
 
 const HwRegistration = ({ isSplitMode = false }) => {
   const navigate = useNavigate();
@@ -116,7 +117,7 @@ const HwRegistration = ({ isSplitMode = false }) => {
   };
 
   const handleAddBrand = async () => {
-    const name = validateAndSanitize(newBrandName, '廠牌名稱');
+    const name = normalizeMasterName(validateAndSanitize(newBrandName, '廠牌名稱'));
     if (!name) return;
     const res = await window.electronAPI.namedQuery('insertDeviceBrand', ['硬體', name]);
     if (res.success) { 
@@ -130,7 +131,7 @@ const HwRegistration = ({ isSplitMode = false }) => {
   };
 
   const handleAddType = async () => {
-    const name = validateAndSanitize(newTypeName, '類型名稱');
+    const name = normalizeMasterName(validateAndSanitize(newTypeName, '類型名稱'));
     if (!name) return;
     const res = await window.electronAPI.namedQuery('insertDeviceType', ['硬體', name]);
     if (res.success) { 
@@ -143,7 +144,7 @@ const HwRegistration = ({ isSplitMode = false }) => {
   };
 
   const handleAddModel = async () => {
-    const name = validateAndSanitize(newModelName, '型號名稱');
+    const name = normalizeMasterName(validateAndSanitize(newModelName, '型號名稱'));
     if (!name || !formData.brand) return alert('請先選擇廠牌後再新增型號');
     const res = await window.electronAPI.namedQuery('insertDeviceModel', [formData.brand, name, '硬體']);
     if (res.success) { 

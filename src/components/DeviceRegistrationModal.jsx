@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Save, Settings2, Trash2, X, Monitor, User, MapPin, ListFilter, Server, FileSpreadsheet, Check } from 'lucide-react';
 import { logCreate } from '../utils/auditLogger';
 import DeviceBatchImportModal from './DeviceBatchImportModal';
+import { normalizeMasterName } from '../utils/normalizeMasterData';
 
 const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   const [types, setTypes] = useState([]);
@@ -118,7 +119,7 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   };
 
   const handleAddType = async () => {
-    const name = validateAndSanitize(newTypeName, '類型名稱');
+    const name = normalizeMasterName(validateAndSanitize(newTypeName, '類型名稱'));
     if (!name) return;
     const res = await window.electronAPI.namedQuery('insertDeviceType', ['設備', name]);
     if (res.success) {
@@ -138,7 +139,7 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   };
 
   const handleAddModel = async () => {
-    const name = validateAndSanitize(newModelName, '型號名稱');
+    const name = normalizeMasterName(validateAndSanitize(newModelName, '型號名稱'));
     if (!name || !formData.brand) return alert('請先選擇或輸入廠牌');
     const res = await window.electronAPI.namedQuery('insertDeviceModel', [formData.brand, name, '設備']);
     if (res.success) {
@@ -158,7 +159,7 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   };
 
   const handleAddBrand = async () => {
-    const name = validateAndSanitize(newBrandName, '廠牌名稱');
+    const name = normalizeMasterName(validateAndSanitize(newBrandName, '廠牌名稱'));
     if (!name) return;
     const res = await window.electronAPI.namedQuery('insertDeviceBrand', ['設備', name]);
     if (res.success) {

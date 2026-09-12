@@ -7,6 +7,7 @@ import {
 import { logEvent, ACTION_TYPES, MODULE_MAP } from '../utils/auditLogger';
 import { parseSpreadsheetFile, fixMojibake } from '../utils/encoding';
 import { matchPartnerContact } from '../utils/partnerMatcher';
+import { normalizeMasterName } from '../utils/normalizeMasterData';
 
 const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] }) => {
   const [file, setFile] = useState(null);
@@ -638,18 +639,18 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
 
       // 自動補齊 廠牌 (Brand)
       for (const brand of brandSet) {
-        await window.electronAPI.namedQuery('insertDeviceBrand', ['設備', brand]);
+        await window.electronAPI.namedQuery('insertDeviceBrand', ['設備', normalizeMasterName(brand)]);
       }
 
       // 自動補齊 類型 (Type) - 通用庫
       for (const type of typeSet) {
-        await window.electronAPI.namedQuery('insertDeviceType', ['設備', type]);
+        await window.electronAPI.namedQuery('insertDeviceType', ['設備', normalizeMasterName(type)]);
       }
 
       // 自動補齊 型號 (Model) - 隸屬於廠牌
       for (const bm of modelSet) {
         const [brand, model] = bm.split('___');
-        await window.electronAPI.namedQuery('insertDeviceModel', [brand, model, '設備']);
+        await window.electronAPI.namedQuery('insertDeviceModel', [normalizeMasterName(brand), normalizeMasterName(model), '設備']);
       }
 
       // 自動補齊 客戶 (Partner)

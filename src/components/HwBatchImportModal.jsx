@@ -7,6 +7,7 @@ import {
 import { logEvent, ACTION_TYPES, MODULE_MAP } from '../utils/auditLogger';
 import { parseSpreadsheetFile, fixMojibake } from '../utils/encoding';
 import { matchPartnerContact } from '../utils/partnerMatcher';
+import { normalizeMasterName } from '../utils/normalizeMasterData';
 
 const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] }) => {
   const [file, setFile] = useState(null);
@@ -123,7 +124,7 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
 
     if (brandVal && brandVal.trim()) {
       try {
-        const res = await window.electronAPI.namedQuery('fetchNicTypesByBrand', [brandVal.trim()]);
+        const res = await window.electronAPI.namedQuery('fetchNicTypesByBrand', []);
         if (res.success && res.rows) {
           setTypeList(res.rows.map(r => r.name));
         }
@@ -142,7 +143,7 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
 
     if (selectedBrand && typeVal && typeVal.trim()) {
       try {
-        const res = await window.electronAPI.namedQuery('fetchNicModelsByBrandType', [selectedBrand.trim(), typeVal.trim()]);
+        const res = await window.electronAPI.namedQuery('fetchNicModelsByBrandType', [selectedBrand.trim()]);
         if (res.success && res.rows) {
           setModelList(res.rows.map(r => r.name));
         }
@@ -761,21 +762,21 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
 
       // 自動補齊 廠牌 (Brand)
       for (const brand of brandSet) {
-        await window.electronAPI.namedQuery('insertDeviceBrand', ['硬體', brand]);
+        await window.electronAPI.namedQuery('insertDeviceBrand', ['硬體', normalizeMasterName(brand)]);
       }
 
       // 自動補齊 類型 (Type)
-      for (const [brand, types] of typeMap.entries()) {
+      for (const types of typeMap.values()) {
         for (const type of types) {
-          await window.electronAPI.namedQuery('insertDeviceType', ['硬體', brand, type]);
+          await window.electronAPI.namedQuery('insertDeviceType', ['硬體', normalizeMasterName(type)]);
         }
       }
 
       // 自動補齊 型號 (Model)
       for (const [key, models] of modelMap.entries()) {
-        const [brand, type] = key.split('___');
+        const [brand] = key.split('___');
         for (const model of models) {
-          await window.electronAPI.namedQuery('insertDeviceModel', [brand, type, '硬體', model]);
+          await window.electronAPI.namedQuery('insertDeviceModel', [normalizeMasterName(brand), normalizeMasterName(model), '硬體']);
         }
       }
 

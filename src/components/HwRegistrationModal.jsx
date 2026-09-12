@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Save, Trash2, Cpu, Settings2, X, Server, FileSpreadsheet, Check } from 'lucide-react';
 import { logCreate } from '../utils/auditLogger';
 import HwBatchImportModal from './HwBatchImportModal';
+import { normalizeMasterName } from '../utils/normalizeMasterData';
 
 const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   const [brands, setBrands] = useState([]);
@@ -116,7 +117,7 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   };
 
   const handleAddBrand = async () => {
-    const name = validateAndSanitize(newBrandName, '廠牌名稱');
+    const name = normalizeMasterName(validateAndSanitize(newBrandName, '廠牌名稱'));
     if (!name) return;
     const res = await window.electronAPI.namedQuery('insertDeviceBrand', ['硬體', name]);
     if (res.success) { 
@@ -130,7 +131,7 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   };
 
   const handleAddType = async () => {
-    const name = validateAndSanitize(newTypeName, '類型名稱');
+    const name = normalizeMasterName(validateAndSanitize(newTypeName, '類型名稱'));
     if (!name) return;
     const res = await window.electronAPI.namedQuery('insertDeviceType', ['硬體', name]);
     if (res.success) { 
@@ -143,7 +144,7 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   };
 
   const handleAddModel = async () => {
-    const name = validateAndSanitize(newModelName, '型號名稱');
+    const name = normalizeMasterName(validateAndSanitize(newModelName, '型號名稱'));
     if (!name || !formData.brand) return alert('請先選擇廠牌後再新增型號');
     const res = await window.electronAPI.namedQuery('insertDeviceModel', [formData.brand, name, '硬體']);
     if (res.success) { 
