@@ -12,6 +12,22 @@ const win1252ToByte = {
  * 智慧修復 UTF-8 誤以 Windows-1252 / Latin-1 解碼產生的亂碼字串
  * 例如: "Yuanta æ–°é‡‘" -> "Yuanta 新金"
  */
+/**
+ * 將試算表的儲存格值安全地轉為去除前後空白的字串。
+ *
+ * XLSX 讀取時，純數字的儲存格會回傳 number 而非 string（例如型號 12345、
+ * 序號 007）。若直接對它呼叫 (val || '').trim() 會丟出
+ * 「.trim is not a function」，在正式版建置中會讓整個畫面卸載成空白頁。
+ * 另外 (val || '') 遇到數字 0 會被當成空值，此處一併避免。
+ *
+ * @param {unknown} value
+ * @returns {string}
+ */
+export function asText(value) {
+  if (value === null || value === undefined) return '';
+  return String(value).trim();
+}
+
 export function fixMojibake(str) {
   if (!str || typeof str !== 'string') return str;
   // 若包含典型的 UTF-8 -> Latin1 誤解碼字元 (如 æ, é, ‡, –, °, œ, ™ 等)
@@ -148,6 +164,7 @@ export async function parseSpreadsheet2D(selectedFile) {
 }
 
 export default {
+  asText,
   fixMojibake,
   decodeTextBuffer,
   parseSpreadsheetFile,

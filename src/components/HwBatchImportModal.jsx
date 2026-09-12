@@ -5,7 +5,7 @@ import {
   XCircle, Filter, Layers, Database, ArrowRight, RefreshCw, Info, Download, Cpu, Server, Plus, Check
 } from 'lucide-react';
 import { logEvent, ACTION_TYPES, MODULE_MAP } from '../utils/auditLogger';
-import { parseSpreadsheetFile, fixMojibake } from '../utils/encoding';
+import { parseSpreadsheetFile, fixMojibake, asText } from '../utils/encoding';
 import { matchPartnerContact } from '../utils/partnerMatcher';
 import { normalizeMasterName } from '../utils/normalizeMasterData';
 
@@ -45,7 +45,7 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
   // 智慧比對自訂欄位與檔案表頭 (嚴格隔離 OS Type，避免誤對應至硬體類型)
   const findMatchingHeader = (headers, field) => {
     if (!headers || headers.length === 0 || !field) return '';
-    const normalize = (str) => String(str || '').trim().toLowerCase().replace(/[\s_\(\)\-\[\]\/\\:]/g, '');
+    const normalize = (str) => asText(str).toLowerCase().replace(/[\s_\(\)\-\[\]\/\\:]/g, '');
     const normLabel = normalize(field.label);
     const normId = normalize(field.id);
     const isTypeField = normLabel === 'type' || normLabel === '類型' || normId === 'type';
@@ -88,7 +88,7 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
         setBrandList(brandRes.rows);
       }
       if (snRes.success && snRes.rows) {
-        const snSet = new Set(snRes.rows.map(r => (r.sn || '').trim().toUpperCase()).filter(Boolean));
+        const snSet = new Set(snRes.rows.map(r => asText(r.sn).toUpperCase()).filter(Boolean));
         setExistingSns(snSet);
       }
       if (partnersRes && partnersRes.success && partnersRes.rows) {
@@ -321,7 +321,7 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
       const firstKey = keys[0];
       const k = firstKey.trim().toLowerCase();
       if (!k.includes('server') && !k.includes('host') && !k.includes('customer') && !k.includes('cusomter')) {
-        const firstVal = String(rowObj[firstKey] || '').trim();
+        const firstVal = asText(rowObj[firstKey]);
         if (firstVal) return fixMojibake(firstVal);
       }
     }
@@ -418,20 +418,20 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
 
       // 欄位匹配（支援使用者圖片中的 SF2541 SN, Cusomter, Hostname, Server-SN, Order Source）
       const rowBrand = findColumnValue(row, ['Brand', '廠牌', '品牌']);
-      const brand = (rowBrand || selectedBrand || '').trim();
+      const brand = asText(rowBrand || selectedBrand);
 
       const rowType = findColumnValue(
         row,
         ['Type', 'System Type', '類型', '硬體類型', '元件類型'],
         ['os', 'ostype', '作業系統', 'operatingsystem']
       );
-      const type = (rowType || selectedType || '').trim();
+      const type = asText(rowType || selectedType);
 
       const rowModel = findColumnValue(row, ['Model', '型號', '硬體型號', 'Part Number', 'P/N']);
-      const model = (rowModel || selectedModel || '').trim();
+      const model = asText(rowModel || selectedModel);
 
       const rowSpec = findColumnValue(row, ['Specification', 'Spec', '規格', '硬體規格', '設備規格', '規格內容', '產品規格', '規格描述', '詳細規格', '規格說明']);
-      const spec = (rowSpec || specification || '').trim();
+      const spec = asText(rowSpec || specification);
 
       const sn = findSnValue(row);
       const customer = findColumnValue(row, ['Customer', 'Cusomter', '客戶', 'Client', '客戶名稱']);
@@ -454,7 +454,7 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
       const rowStatusRaw = findColumnValue(row, ['Status', '狀態', '資產狀態', '出貨狀態', '硬體狀態']);
       let itemStatus = 'ACTIVE';
       if (rowStatusRaw) {
-        const s = rowStatusRaw.trim().toUpperCase();
+        const s = asText(rowStatusRaw).toUpperCase();
         if (s === 'SHIPPED' || s.includes('出貨') || s.includes('已出貨')) {
           itemStatus = 'SHIPPED';
         } else if (s === 'ACTIVE' || s.includes('在庫') || s.includes('庫存')) {
@@ -484,7 +484,7 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
       }
 
       // 規則 2：序號防重複檢核
-      const cleanSn = sn ? sn.trim().toUpperCase() : '';
+      const cleanSn = asText(sn).toUpperCase();
       if (cleanSn) {
         fileSnCounts[cleanSn] = (fileSnCounts[cleanSn] || 0) + 1;
         if (fileSnCounts[cleanSn] > 1) {
@@ -513,11 +513,11 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
       });
 
       // 智慧客戶與聯絡人比對 (支援模糊分詞比對，例如 Niky imc -> Niky)
-      const inputContact = (rawContact || customContactVal || '').trim();
+      const inputContact = asText(rawContact || customContactVal);
       const contactMatch = matchPartnerContact(inputContact, customer, partners);
       const finalContact = contactMatch.contact_person;
       const finalPhone = contactMatch.contact_phone;
-      const finalClient = (customer || '').trim() || contactMatch.client;
+      const finalClient = asText(customer) || contactMatch.client;
 
       if (finalContact) {
         rowCustomAttrs.contact_person = finalContact;
@@ -589,17 +589,17 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
         type,
         model,
         specification: spec,
-        sn: (sn || '').trim(),
-        server_sn: (serverSn || '').trim(),
+        sn: asText(sn),
+        server_sn: asText(serverSn),
         client: finalClient,
-        end_user: (endUser || '').trim(),
+        end_user: asText(endUser),
         contact_person: finalContact,
         contact_phone: finalPhone,
         contactMatch,
-        hostname: (hostname || '').trim(),
-        location: (location || '').trim(),
-        order_source: (orderSource || '').trim(),
-        project_name: (projectName || '').trim(),
+        hostname: asText(hostname),
+        location: asText(location),
+        order_source: asText(orderSource),
+        project_name: asText(projectName),
         installed_date: installedDate,
         customer_warranty_expire: customerWarrantyExpire,
         system_date: systemDate,
@@ -794,10 +794,10 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
 
       for (let i = 0; i < validItems.length; i++) {
         const item = validItems[i];
-        const safeBrand = (item.brand || '').trim();
-        const safeType = (item.type || '').trim();
-        const safeModel = (item.model || '').trim();
-        const safeSpec = (item.specification || '').trim();
+        const safeBrand = asText(item.brand);
+        const safeType = asText(item.type);
+        const safeModel = asText(item.model);
+        const safeSpec = asText(item.specification);
         const masterKey = `${safeBrand.toLowerCase()}___${safeType.toLowerCase()}___${safeModel.toLowerCase()}___${safeSpec.toLowerCase()}`;
 
         try {

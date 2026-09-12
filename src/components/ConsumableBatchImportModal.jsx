@@ -5,7 +5,7 @@ import {
   XCircle, Filter, Layers, Database, ArrowRight, RefreshCw, Info, Download, Package, Plus, Check, Edit3
 } from 'lucide-react';
 import { logEvent, ACTION_TYPES, MODULE_MAP } from '../utils/auditLogger';
-import { parseSpreadsheetFile, fixMojibake } from '../utils/encoding';
+import { parseSpreadsheetFile, fixMojibake, asText } from '../utils/encoding';
 import { normalizeMasterName } from '../utils/normalizeMasterData';
 
 // 常見廠牌關鍵字特徵表，用於智慧推導
@@ -20,7 +20,7 @@ const KNOWN_BRANDS = [
  * 智慧從品項字串推導 (Brand, Model, Spec)
  */
 function parseItemInfo(rawName, defaultType = '') {
-  const cleanName = (rawName || '').trim();
+  const cleanName = asText(rawName);
   if (!cleanName) return { brand: '', model: '', spec: cleanName };
 
   let brand = '';
@@ -114,7 +114,7 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
       if (res.success && res.rows) {
         const itemMap = new Map();
         res.rows.forEach(r => {
-          const key = `${(r.brand || '').trim().toLowerCase()}___${(r.type || '').trim().toLowerCase()}___${(r.model || '').trim().toLowerCase()}___${(r.specification || '').trim().toLowerCase()}`;
+          const key = `${asText(r.brand).toLowerCase()}___${asText(r.type).toLowerCase()}___${asText(r.model).toLowerCase()}___${asText(r.specification).toLowerCase()}`;
           itemMap.set(key, r);
         });
         setExistingItemsMap(itemMap);
@@ -249,8 +249,8 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
 
       // 智慧推導廠牌與型號
       const derived = parseItemInfo(rawItemName, activeType);
-      const brand = (brandVal || overrideBrand || derived.brand || '').trim();
-      const model = (modelVal || derived.model || '').trim();
+      const brand = asText(brandVal || overrideBrand || derived.brand);
+      const model = asText(modelVal || derived.model);
       const spec = specVal !== undefined && specVal !== '' ? specVal : (rawItemName || '');
       const unit = unitVal || getSuggestedUnit(activeType);
 
@@ -290,10 +290,10 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
     return processed.map((item, idx) => {
       const edit = customEdits[idx];
       if (edit) {
-        const brand = (edit.brand !== undefined ? edit.brand : item.brand).trim();
-        const type = (edit.type !== undefined ? edit.type : item.type).trim();
-        const model = (edit.model !== undefined ? edit.model : item.model).trim();
-        const specification = (edit.specification !== undefined ? edit.specification : item.specification).trim();
+        const brand = asText(edit.brand !== undefined ? edit.brand : item.brand);
+        const type = asText(edit.type !== undefined ? edit.type : item.type);
+        const model = asText(edit.model !== undefined ? edit.model : item.model);
+        const specification = asText(edit.specification !== undefined ? edit.specification : item.specification);
         const quantity = edit.quantity !== undefined ? edit.quantity : item.quantity;
         const unit = edit.unit !== undefined ? edit.unit : item.unit;
 

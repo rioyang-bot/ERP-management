@@ -5,7 +5,7 @@ import {
   XCircle, Filter, Layers, Database, ArrowRight, RefreshCw, Info, Download
 } from 'lucide-react';
 import { logEvent, ACTION_TYPES, MODULE_MAP } from '../utils/auditLogger';
-import { parseSpreadsheetFile, fixMojibake } from '../utils/encoding';
+import { parseSpreadsheetFile, fixMojibake, asText } from '../utils/encoding';
 import { matchPartnerContact } from '../utils/partnerMatcher';
 import { normalizeMasterName } from '../utils/normalizeMasterData';
 
@@ -48,7 +48,7 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
           window.electronAPI.namedQuery('fetchPartners')
         ]);
         if (snsRes.success && snsRes.rows) {
-          const snSet = new Set(snsRes.rows.map(r => (r.sn || '').trim().toUpperCase()).filter(Boolean));
+          const snSet = new Set(snsRes.rows.map(r => asText(r.sn).toUpperCase()).filter(Boolean));
           setExistingSns(snSet);
         }
         if (typesRes && typesRes.success && typesRes.rows) {
@@ -89,7 +89,7 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
   // 智慧比對自訂欄位與檔案表頭 (嚴格隔離 OS Type，避免誤對應至設備類型)
   const findMatchingHeader = (headers, field) => {
     if (!headers || headers.length === 0 || !field) return '';
-    const normalize = (str) => String(str || '').trim().toLowerCase().replace(/[\s_\(\)\-\[\]\/\\:]/g, '');
+    const normalize = (str) => asText(str).toLowerCase().replace(/[\s_\(\)\-\[\]\/\\:]/g, '');
     const normLabel = normalize(field.label);
     const normId = normalize(field.id);
     const isTypeField = normLabel === 'type' || normLabel === '類型' || normId === 'type';
@@ -366,15 +366,15 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
         ['System Type', 'Type', '類型', '系統類型', 'SystemType'],
         ['os', 'ostype', '作業系統', 'operatingsystem']
       );
-      const systemType = (rawSystemType || typeInput || '').trim();
+      const systemType = asText(rawSystemType || typeInput);
       const model = findColumnValue(row, ['Model', '型號', '設備型號']);
       const location = findColumnValue(row, ['Location', '地點', '位置', '機房']);
       const sn = findColumnValue(row, ['Serial Number ( Current )', 'Serial Number (Current)', 'Serial Number', 'SerialNumber', '序號', 'SN', 'S/N']);
       const rawBrand = findColumnValue(row, ['Brand', '廠牌', '品牌']);
-      const brand = (rawBrand || brandInput || '').trim();
+      const brand = asText(rawBrand || brandInput);
 
       const rawSpec = findColumnValue(row, ['Specification', 'Spec', '規格', '設備規格', '規格內容', '產品規格', '硬體規格', '規格描述', '詳細規格', '規格說明']);
-      const spec = (rawSpec || '').trim();
+      const spec = asText(rawSpec);
 
       // 智慧匹配 4 種日期欄位 (支援各種別名、空格與英文字母拼寫)
       const installedDateRaw = 
@@ -424,7 +424,7 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
       const rowStatusRaw = findColumnValue(row, ['Status', '狀態', '資產狀態', '出貨狀態', '設備狀態']);
       let itemStatus = 'ACTIVE';
       if (rowStatusRaw) {
-        const s = rowStatusRaw.trim().toUpperCase();
+        const s = asText(rowStatusRaw).toUpperCase();
         if (s === 'SHIPPED' || s.includes('出貨') || s.includes('已出貨')) {
           itemStatus = 'SHIPPED';
         } else if (s === 'ACTIVE' || s.includes('在庫') || s.includes('庫存')) {
@@ -445,13 +445,13 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
       } else if (!brand) {
         status = 'SKIPPED';
         skipReason = '缺少廠牌 (Brand)';
-      } else if (!model || !model.trim()) {
+      } else if (!asText(model)) {
         status = 'SKIPPED';
         skipReason = '缺少型號 (Model)';
       }
 
       // 規則 2：序號防重複檢核
-      const cleanSn = sn ? sn.trim().toUpperCase() : '';
+      const cleanSn = asText(sn).toUpperCase();
       if (cleanSn) {
         fileSnCounts[cleanSn] = (fileSnCounts[cleanSn] || 0) + 1;
         if (fileSnCounts[cleanSn] > 1) {
@@ -480,11 +480,11 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
       });
 
       // 智慧客戶與聯絡人比對 (支援模糊比對，如 Niky imc -> Niky)
-      const inputContact = (rawContact || customContactVal || '').trim();
+      const inputContact = asText(rawContact || customContactVal);
       const contactMatch = matchPartnerContact(inputContact, customer, partners);
       const finalContact = contactMatch.contact_person;
       const finalPhone = contactMatch.contact_phone;
-      const finalClient = (customer || '').trim() || contactMatch.client;
+      const finalClient = asText(customer) || contactMatch.client;
 
       if (finalContact) {
         rowCustomAttrs.contact_person = finalContact;
@@ -509,17 +509,17 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
       processed.push({
         rowIndex: index + 2, // 包含標題列的行號 (Excel 1-based)
         brand,
-        type: (systemType || '').trim(),
-        model: (model || '').trim(),
+        type: asText(systemType),
+        model: asText(model),
         specification: spec,
-        sn: (sn || '').trim(),
+        sn: asText(sn),
         client: finalClient,
-        end_user: (endUser || '').trim(),
+        end_user: asText(endUser),
         contact_person: finalContact,
         contact_phone: finalPhone,
         contactMatch,
-        hostname: (hostname || '').trim(),
-        location: (location || '').trim(),
+        hostname: asText(hostname),
+        location: asText(location),
         installed_date: installedDate,
         customer_warranty_expire: customerWarrantyExpire,
         system_date: systemDate,
@@ -667,10 +667,10 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
 
       for (let i = 0; i < validItems.length; i++) {
         const item = validItems[i];
-        const safeBrand = (item.brand || '').trim();
-        const safeType = (item.type || '').trim();
-        const safeModel = (item.model || '').trim();
-        const safeSpec = (item.specification || '').trim();
+        const safeBrand = asText(item.brand);
+        const safeType = asText(item.type);
+        const safeModel = asText(item.model);
+        const safeSpec = asText(item.specification);
         const masterKey = `${safeBrand.toLowerCase()}___${safeType.toLowerCase()}___${safeModel.toLowerCase()}___${safeSpec.toLowerCase()}`;
 
         try {
