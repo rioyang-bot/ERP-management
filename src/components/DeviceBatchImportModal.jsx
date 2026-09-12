@@ -674,25 +674,18 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
         const masterKey = `${safeBrand.toLowerCase()}___${safeType.toLowerCase()}___${safeModel.toLowerCase()}___${safeSpec.toLowerCase()}`;
 
         try {
+          // 每一列各自一個交易：品項主檔與資產實體同進同退。
+          // 先前是分開送出，主檔建立成功但資產寫入失敗時會留下孤立的主檔。
+          // 匯入本身維持「可部分成功」的設計，逐列統計成功與失敗。
           let masterId = masterCache.get(masterKey);
           if (!masterId) {
             const findRes = await window.electronAPI.namedQuery('findItemMaster', [item.specification || '', item.type, item.brand, item.model]);
             if (findRes.success && findRes.rows.length > 0) {
               masterId = findRes.rows[0].id;
-            } else {
-              const createMasterRes = await window.electronAPI.namedQuery('insertItemMaster', [item.specification || '', item.type, item.brand, item.model, '台', '設備']);
-              if (createMasterRes.success && createMasterRes.rows.length > 0) {
-                masterId = createMasterRes.rows[0].id;
-              }
+              masterCache.set(masterKey, masterId);
             }
-            if (masterId) masterCache.set(masterKey, masterId);
           }
 
-          if (!masterId) {
-            throw new Error(`無法建立或找到物料主檔 [${item.brand} ${item.model}]`);
-          }
-
-          // 寫入 Asset 實體
           const customAttributes = {
             batch_imported: true,
             import_file: fileName,
@@ -703,28 +696,45 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
             ...(item.custom_attributes || {})
           };
 
-          const insertAssetRes = await window.electronAPI.namedQuery('insertAssetRecord', [
-            masterId,
-            item.sn || null,
-            item.client || null,
-            item.hostname || null,
-            item.location || null,
-            item.installed_date,
-            item.customer_warranty_expire,
-            item.system_date,
-            item.warranty_expire,
-            null, // os
-            null, // nic
-            customAttributes,
-            'FOR_SALE',
-            item.itemStatus || 'ACTIVE'
-          ]);
+          const steps = [];
+          // 主檔不存在時於同一交易內建立，其 id 以 $ref 供資產步驟取用
+          if (!masterId) {
+            steps.push({
+              id: 'master',
+              queryName: 'insertItemMaster',
+              params: [item.specification || '', item.type, item.brand, item.model, '台', '設備'],
+            });
+          }
+          steps.push({
+            queryName: 'insertAssetRecord',
+            params: [
+              masterId || { $ref: 'master.rows.0.id' },
+              item.sn || null,
+              item.client || null,
+              item.hostname || null,
+              item.location || null,
+              item.installed_date,
+              item.customer_warranty_expire,
+              item.system_date,
+              item.warranty_expire,
+              null, // os
+              null, // nic
+              customAttributes,
+              'FOR_SALE',
+              item.itemStatus || 'ACTIVE'
+            ],
+          });
 
-          if (insertAssetRes.success) {
+          const txRes = await window.electronAPI.runTransaction(steps);
+
+          if (txRes.success) {
+            if (!masterId && txRes.results?.master?.rows?.[0]?.id) {
+              masterCache.set(masterKey, txRes.results.master.rows[0].id);
+            }
             successCount++;
           } else {
             failCount++;
-            errors.push(`序號 [${item.sn || '無'}] 寫入失敗：${insertAssetRes.error}`);
+            errors.push(`序號 [${item.sn || '無'}] 寫入失敗，該列已取消：${txRes.error}`);
           }
         } catch (itemErr) {
           failCount++;

@@ -1,8 +1,10 @@
 import { app, BrowserWindow, ipcMain, protocol, net } from 'electron';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
-import { query } from './db.js';
+import pool, { query } from './db.js';
 import { registerAuthHandlers } from './authHandlers.js';
+import { prepareQueryParams } from '../server/queryParams.js';
+import { runTransaction } from '../server/transaction.js';
 import fs from 'fs/promises';
 import { queries as namedQueries } from '../database/queries.js';
 
@@ -123,6 +125,11 @@ ipcMain.handle('dashboard:stats', async (event) => {
   }
 });
 
+// 多步驟交易 IPC：整串步驟在單一交易中執行，全成功才提交。
+// 與網頁版的 /api/transaction 共用同一份實作，確保兩邊行為一致。
+ipcMain.handle('db:transaction', async (event, steps) =>
+  runTransaction({ pool, namedQueries, prepareParams: prepareQueryParams }, steps));
+
 // 具名查詢 IPC
 ipcMain.handle('db:namedQuery', async (event, queryName, params = []) => {
   if (!queryName || !namedQueries[queryName]) {
@@ -130,23 +137,8 @@ ipcMain.handle('db:namedQuery', async (event, queryName, params = []) => {
   }
   try {
     const sql = namedQueries[queryName];
-    const safeParams = sanitizeParams(params || []);
-
-    // 處理 JSON 物件 (針對 JSONB 欄位)
-    const processedParams = (Array.isArray(safeParams) ? safeParams : []).map(p => 
-      (typeof p === 'object' && p !== null) ? JSON.stringify(p) : p
-    );
-
-    // 自動補齊 SQL 所需之最大參數數量，避免少傳選擇性參數時 pg prepared statement 報錯
-    const paramMatches = sql.match(/\$(\d+)/g);
-    if (paramMatches) {
-      const maxParamIdx = Math.max(...paramMatches.map(m => parseInt(m.substring(1), 10)));
-      while (processedParams.length < maxParamIdx) {
-        processedParams.push(null);
-      }
-    }
-
-    const result = await query(sql, processedParams);
+    // 參數前處理與網頁版共用
+    const result = await query(sql, prepareQueryParams(params, sql));
     return { success: true, rows: result.rows };
   } catch (error) {
     console.error(`[DB] NamedQuery Error (${queryName}):`, error);

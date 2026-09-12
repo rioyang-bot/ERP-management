@@ -8,9 +8,10 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import pg from 'pg';
 import { queries as namedQueries } from './database/queries.js';
-import { sanitizeParams } from './src/utils/security.js';
 import { createAuth } from './server/auth.js';
 import { createAuthRoutes } from './server/authRoutes.js';
+import { prepareQueryParams } from './server/queryParams.js';
+import { runTransaction } from './server/transaction.js';
 
 const { Pool } = pg;
 const __filename = fileURLToPath(import.meta.url);
@@ -264,31 +265,27 @@ app.post('/api/namedQuery', auth.requireAuth, async (req, res) => {
   }
   
   const sql = namedQueries[queryName];
-  
+
   try {
-    // 1. 安全性過濾 (符合 SECURITY_GUIDELINES)
-    const sanitized = sanitizeParams(params);
-    
-    // 2. 處理 JSON 物件 (針對 JSONB 欄位)
-    const processedParams = sanitized.map(p => 
-      (typeof p === 'object' && p !== null) ? JSON.stringify(p) : p
-    );
-    
-    // 3. 自動補齊 SQL 所需之最大參數數量，避免少傳選擇性參數時 pg prepared statement 報錯
-    const paramMatches = sql.match(/\$(\d+)/g);
-    if (paramMatches) {
-      const maxParamIdx = Math.max(...paramMatches.map(m => parseInt(m.substring(1), 10)));
-      while (processedParams.length < maxParamIdx) {
-        processedParams.push(null);
-      }
-    }
-    
-    const result = await pool.query(sql, processedParams);
+    // 參數前處理與 /api/transaction、Electron IPC 共用同一份實作
+    const result = await pool.query(sql, prepareQueryParams(params, sql));
     res.json({ success: true, rows: result.rows });
   } catch (error) {
     console.error(`[DB Error] ${queryName}:`, error.message);
     res.status(500).json({ success: false, error: `資料庫執行異常: ${error.message}` });
   }
+});
+
+// 多步驟交易：整串步驟在單一連線的單一交易中執行，全成功才提交。
+// 用於進貨、出庫、匯入、採購單編輯等需要連續寫入多筆的流程，
+// 避免中途失敗留下「單據建立了但明細不全」這類半套資料。
+app.post('/api/transaction', auth.requireAuth, async (req, res) => {
+  const { steps } = req.body || {};
+  const result = await runTransaction(
+    { pool, namedQueries, prepareParams: prepareQueryParams },
+    steps
+  );
+  res.status(result.success ? 200 : 500).json(result);
 });
 
 // 其他 API 簡化 (維持原有功能)...

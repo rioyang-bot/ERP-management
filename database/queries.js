@@ -322,7 +322,10 @@ export const queries = {
   // Consumables.jsx & ConsumableBatchImportModal.jsx
   checkDuplicateConsumable: `SELECT id, specification, stock_qty, lab_qty FROM item_master WHERE UPPER(TRIM(REGEXP_REPLACE(COALESCE(brand, ''), '[[:space:]]+', ' ', 'g'))) = UPPER(TRIM(REGEXP_REPLACE(COALESCE($1, ''), '[[:space:]]+', ' ', 'g'))) AND UPPER(TRIM(REGEXP_REPLACE(COALESCE(type, ''), '[[:space:]]+', ' ', 'g'))) = UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g'))) AND UPPER(TRIM(REGEXP_REPLACE(COALESCE(model, ''), '[[:space:]]+', ' ', 'g'))) = UPPER(TRIM(REGEXP_REPLACE(COALESCE($3, ''), '[[:space:]]+', ' ', 'g'))) AND LOWER(TRIM(COALESCE(specification, ''))) = LOWER(TRIM(COALESCE($4, ''))) AND category_id = (SELECT id FROM categories WHERE name = '耗材')`,
   findConsumableMaster: `SELECT id, stock_qty, lab_qty, safety_stock FROM item_master WHERE LOWER(brand) = LOWER($1) AND LOWER(type) = LOWER($2) AND LOWER(model) = LOWER($3) AND LOWER(specification) = LOWER($4) AND category_id = (SELECT id FROM categories WHERE name = '耗材')`,
-  updateConsumableStockQtyOnImport: `UPDATE item_master SET stock_qty = $1 WHERE id = $2`,
+  // 直接指定庫存值（覆蓋模式）。回傳 id 以便呼叫端確認確實更新到。
+  updateConsumableStockQtyOnImport: `UPDATE item_master SET stock_qty = $1 WHERE id = $2 RETURNING id`,
+  // 累加模式改由資料庫自行加總，避免「先讀出再算好寫回」在同時匯入時互相覆蓋。
+  incrementConsumableStockQtyOnImport: `UPDATE item_master SET stock_qty = COALESCE(stock_qty, 0) + $1 WHERE id = $2 RETURNING id`,
   fetchRecentConsumables: `SELECT i.* FROM item_master i LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '耗材' ORDER BY i.id DESC LIMIT 10`,
   insertConsumableMaster: `INSERT INTO item_master (specification, type, brand, model, unit, safety_stock, stock_qty, category_id, purchase_price) VALUES ($1, UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g'))), UPPER(TRIM(REGEXP_REPLACE(COALESCE($3, ''), '[[:space:]]+', ' ', 'g'))), UPPER(TRIM(REGEXP_REPLACE(COALESCE($4, ''), '[[:space:]]+', ' ', 'g'))), $5, $6, $7, (SELECT id FROM categories WHERE name = $8), 0) RETURNING id`,
   fetchConsumableModelsByBrandType: `

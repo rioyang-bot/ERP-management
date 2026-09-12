@@ -298,45 +298,51 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
     }
 
     if (window.confirm('確認將此單據入庫？')) {
-      const orderRes = await window.electronAPI.namedQuery('insertInboundOrder', [orderNo, partnerId, invoiceNo, 'COMPLETED', JSON.stringify(attachments)]);
-      if (orderRes.success) {
-        const orderId = orderRes.rows[0].id;
-        for (const item of items) {
-          let finalItemId = item.itemId;
+      // 整張進貨單的所有寫入集中成一個交易送出。
+      // 先前是一筆一筆分別送出，中途任何一筆失敗都會留下半套資料：
+      // 進貨單建立了但明細不全、庫存加了但採購單的已到貨數量沒更新。
+      const steps = [];
+      steps.push({
+        id: 'order',
+        queryName: 'insertInboundOrder',
+        params: [orderNo, partnerId, invoiceNo, 'COMPLETED', JSON.stringify(attachments)],
+      });
 
-          if (!finalItemId && item.purchaseRecordId) {
-             const po = pendingPurchases.find(p => p.id.toString() === item.purchaseRecordId.toString());
-             if (po) {
-                const fullSpec = [po.brand, po.model, po.specification].filter(Boolean).join(' ') || po.specification || '未命名';
-                const created = await window.electronAPI.namedQuery('insertInboundItemMaster', [
-                   fullSpec, po.item_type || '', po.brand || '', po.unit || '個', po.category_name
-                ]);
-                if (created.success) finalItemId = created.rows[0].id;
-             }
-          }
+      items.forEach((item, idx) => {
+        // 品項主檔可能需要即時建立，其 id 以 $ref 供後續步驟取用
+        let itemIdRef = item.itemId;
+        if (!itemIdRef && item.purchaseRecordId) {
+          const po = pendingPurchases.find(p => p.id.toString() === item.purchaseRecordId.toString());
+          if (!po) return; // 找不到對應採購項目，略過此列（與原行為一致）
+          const fullSpec = [po.brand, po.model, po.specification].filter(Boolean).join(' ') || po.specification || '未命名';
+          const masterStepId = `master_${idx}`;
+          steps.push({
+            id: masterStepId,
+            queryName: 'insertInboundItemMaster',
+            params: [fullSpec, po.item_type || '', po.brand || '', po.unit || '個', po.category_name],
+          });
+          itemIdRef = { $ref: `${masterStepId}.rows.0.id` };
+        }
+        if (!itemIdRef) return; // 無品項可寫入，略過此列
 
-          if (!finalItemId) continue;
-
-          if (item.cat_name === '設備' || item.cat_name === '硬體') {
-            const qty = parseInt(item.qty, 10) || 1;
-            for (let i = 0; i < qty; i++) {
-              await window.electronAPI.namedQuery(
-                'insertInboundAssets', 
-                [item.sn || null, finalItemId, null]
-              );
-            }
-          }
-          await window.electronAPI.namedQuery(
-            'insertInboundItems', 
-            [orderId, finalItemId, item.sn || null, item.qty, item.purchaseRecordId || null]
-          );
-          // Update manual stock_qty in item_master
-          await window.electronAPI.namedQuery('updateStockQtyOnInbound', [item.qty, finalItemId]);
-
-          if (item.purchaseRecordId) {
-            await window.electronAPI.namedQuery('updatePurchaseRecordStatus', [item.qty, item.purchaseRecordId]);
+        if (item.cat_name === '設備' || item.cat_name === '硬體') {
+          const qty = parseInt(item.qty, 10) || 1;
+          for (let n = 0; n < qty; n++) {
+            steps.push({ queryName: 'insertInboundAssets', params: [item.sn || null, itemIdRef, null] });
           }
         }
+        steps.push({
+          queryName: 'insertInboundItems',
+          params: [{ $ref: 'order.rows.0.id' }, itemIdRef, item.sn || null, item.qty, item.purchaseRecordId || null],
+        });
+        steps.push({ queryName: 'updateStockQtyOnInbound', params: [item.qty, itemIdRef] });
+        if (item.purchaseRecordId) {
+          steps.push({ queryName: 'updatePurchaseRecordStatus', params: [item.qty, item.purchaseRecordId] });
+        }
+      });
+
+      const txRes = await window.electronAPI.runTransaction(steps);
+      if (txRes.success) {
         const partner = partners.find(p => p.id.toString() === partnerId.toString());
         logCreate(
           'INBOUND',
@@ -352,7 +358,9 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
         setOrderNo(''); // Reset to generate new order no
         fetchData();
         if (onClose) onClose();
-      } else { alert('入庫失敗：' + orderRes.error); }
+      } else {
+        alert('入庫失敗，所有變更已取消：\n' + (txRes.error || '未知錯誤'));
+      }
     }
   };
 

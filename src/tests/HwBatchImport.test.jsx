@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import HwBatchImportModal from '../components/HwBatchImportModal';
 import * as XLSX from 'xlsx';
+import { createRunTransactionMock } from './helpers/mockTransaction';
 
 describe('HwBatchImportModal 硬體批次匯入（自選/建立主檔與格式解析）測試', () => {
   const namedQueryMock = vi.fn();
@@ -14,6 +15,7 @@ describe('HwBatchImportModal 硬體批次匯入（自選/建立主檔與格式�
 
     window.electronAPI = {
       namedQuery: namedQueryMock,
+      runTransaction: createRunTransactionMock(namedQueryMock),
       authLogin: vi.fn(),
       getDashboardStats: vi.fn(),
       saveFile: vi.fn()

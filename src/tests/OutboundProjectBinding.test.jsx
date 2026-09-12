@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { BrowserRouter } from 'react-router-dom';
 import Outbound from '../pages/Outbound';
 import { RoleContext } from '../context/RoleContext';
+import { createRunTransactionMock } from './helpers/mockTransaction';
 
 describe('Outbound 出貨時自動立案與設備專案屬性回寫功能測試', () => {
   const mockCustomers = [
@@ -28,8 +29,7 @@ describe('Outbound 出貨時自動立案與設備專案屬性回寫功能測試'
     queriesCalled = [];
     localStorage.clear();
 
-    window.electronAPI = {
-      namedQuery: vi.fn((query, params) => {
+    const namedQueryMock = vi.fn((query, params) => {
         queriesCalled.push({ query, params });
 
         if (query === 'fetchCustomers') {
@@ -103,7 +103,10 @@ describe('Outbound 出貨時自動立案與設備專案屬性回寫功能測試'
           return Promise.resolve({ success: true });
         }
         return Promise.resolve({ success: true, rows: [] });
-      }),
+    });
+    window.electronAPI = {
+      namedQuery: namedQueryMock,
+      runTransaction: createRunTransactionMock(namedQueryMock),
       authLogin: vi.fn(),
       getDashboardStats: vi.fn()
     };

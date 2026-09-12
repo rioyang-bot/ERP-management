@@ -331,25 +331,34 @@ const ProcurementRegistration = ({ editMode = false, isModalMode = false, initOr
            }
          }
 
+         // 刪除、新增、更新併為單一交易：任一步失敗即全部回滾，
+         // 避免出現「舊明細已刪但新明細沒寫進去」這類半套結果。
+         const steps = [];
          for (const exId of removedIds) {
-            const delRes = await window.electronAPI.namedQuery('deletePurchaseRecordById', [exId]);
-            if (!delRes.success) throw new Error(`移除採購明細失敗: ${delRes.error}`);
-            if (!delRes.rows || delRes.rows.length === 0) {
-              throw new Error('移除採購明細失敗：該明細已有到貨紀錄，請重新整理後再試。');
-            }
+           steps.push({ id: `del_${exId}`, queryName: 'deletePurchaseRecordById', params: [exId] });
          }
-         
          for (const item of items) {
            if (item.id > 1000000000000) {
-             const res = await window.electronAPI.namedQuery('insertPurchaseRecord',
-               [initOrderNo, item.partner_id ? parseInt(item.partner_id) : null, parseInt(item.category_id), item.item_type, item.brand, item.model, item.specification || null, item.unit, parseInt(item.quantity), authUser?.id, 'ORDERED', remarks, null, attachmentsJson]
-             );
-             if (!res.success) throw new Error(`新增品項失敗: ${res.error}`);
+             steps.push({
+               queryName: 'insertPurchaseRecord',
+               params: [initOrderNo, item.partner_id ? parseInt(item.partner_id) : null, parseInt(item.category_id), item.item_type, item.brand, item.model, item.specification || null, item.unit, parseInt(item.quantity), authUser?.id, 'ORDERED', remarks, null, attachmentsJson],
+             });
            } else {
-             const res = await window.electronAPI.namedQuery('updatePurchaseRecordFull',
-               [item.partner_id ? parseInt(item.partner_id) : null, parseInt(item.category_id), item.item_type, item.brand, item.model, item.specification || null, item.unit, parseInt(item.quantity), remarks, null, attachmentsJson, item.id]
-             );
-             if (!res.success) throw new Error(`更新品項失敗: ${res.error}`);
+             steps.push({
+               queryName: 'updatePurchaseRecordFull',
+               params: [item.partner_id ? parseInt(item.partner_id) : null, parseInt(item.category_id), item.item_type, item.brand, item.model, item.specification || null, item.unit, parseInt(item.quantity), remarks, null, attachmentsJson, item.id],
+             });
+           }
+         }
+
+         const txRes = await window.electronAPI.runTransaction(steps);
+         if (!txRes.success) throw new Error(`修改失敗，所有變更已取消：${txRes.error || '未知錯誤'}`);
+
+         // 刪除步驟若沒有實際刪到列，代表該明細在此期間已產生到貨紀錄（由伺服器端守衛擋下）
+         for (const exId of removedIds) {
+           const delOutcome = txRes.results?.[`del_${exId}`];
+           if (!delOutcome || !delOutcome.rows || delOutcome.rows.length === 0) {
+             throw new Error('移除採購明細失敗：該明細已有到貨紀錄，請重新整理後再試。');
            }
          }
          logUpdate(
@@ -362,15 +371,16 @@ const ProcurementRegistration = ({ editMode = false, isModalMode = false, initOr
          alert('採購單修改成功！');
          if (onClose) onClose();
       } else {
-         for (const item of items) {
-           const res = await window.electronAPI.namedQuery('insertPurchaseRecord',
-             [
-               orderNo, item.partner_id ? parseInt(item.partner_id) : null, item.category_id, item.item_type, item.brand, item.model,
-               item.specification || null, item.unit, item.quantity, authUser?.id, 'ORDERED', remarks, null, attachmentsJson
-             ]
-           );
-           if (!res.success) throw new Error(`品項 ${item.model || '未指定型號'} 儲存失敗: ${res.error}`);
-         }
+         // 整張採購單的所有品項併為單一交易，避免只寫入一半的品項
+         const createSteps = items.map((item) => ({
+           queryName: 'insertPurchaseRecord',
+           params: [
+             orderNo, item.partner_id ? parseInt(item.partner_id) : null, item.category_id, item.item_type, item.brand, item.model,
+             item.specification || null, item.unit, item.quantity, authUser?.id, 'ORDERED', remarks, null, attachmentsJson,
+           ],
+         }));
+         const createRes = await window.electronAPI.runTransaction(createSteps);
+         if (!createRes.success) throw new Error(`儲存失敗，所有變更已取消：${createRes.error || '未知錯誤'}`);
          logCreate(
            'PURCHASE',
            orderNo,

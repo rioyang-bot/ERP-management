@@ -349,88 +349,56 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) 
         }
       }
 
-      // 3. 建立出貨單標頭 (Outbound Request) - 寫入 project_name 欄位
-      const reqRes = await window.electronAPI.namedQuery('insertOutboundRequestWithProject', [
-        dnNumber,
-        header.customer,
-        header.location,
-        header.date,
-        authUser?.id || null,
-        header.contact_info,
-        'SALE',
-        null,
-        cleanProject || null
-      ]);
+      // 3+4. 出貨單標頭、明細與資產專案屬性回寫，全部併為單一交易。
+      // 先前是逐筆送出：明細失敗時只會跳出「出貨單已建立，但明細寫入異常，
+      // 請檢查出貨單明細」的提示，留下一張明細不全的出貨單。
+      const steps = [{
+        id: 'request',
+        queryName: 'insertOutboundRequestWithProject',
+        params: [
+          dnNumber,
+          header.customer,
+          header.location,
+          header.date,
+          authUser?.id || null,
+          header.contact_info,
+          'SALE',
+          null,
+          cleanProject || null,
+        ],
+      }];
+      const requestIdRef = { $ref: 'request.rows.0.id' };
 
-      if (reqRes.success) {
-        const requestId = reqRes.rows[0].id;
+      for (const item of outboundItems) {
+        steps.push({
+          queryName: 'insertOutboundItem',
+          params: [requestIdRef, item.item_id || item.item_master_id, item.sn, item.qty, item.location || header.location],
+        });
 
-        // 4. 建立出貨明細 (Outbound Items) 並自動回寫設備/硬體專案與客戶屬性
-        let itemError = null;
-        for (const item of outboundItems) {
-          // 加入主項
-          const itemRes = await window.electronAPI.namedQuery('insertOutboundItem', [
-            requestId,
-            item.item_id || item.item_master_id,
-            item.sn,
-            item.qty,
-            item.location || header.location
-          ]);
-          if (itemRes && !itemRes.success) {
-            itemError = itemRes.error || '寫入品項明細失敗';
-            console.error('Insert outbound item error:', itemError);
-          }
+        // 自動回寫主資產的專案屬性與客戶
+        if (cleanProject && item.sn) {
+          steps.push({ queryName: 'updateAssetProjectAndClientBySn', params: [cleanProject, header.customer, item.sn] });
+          steps.push({ queryName: 'updateMountedHardwareProjectAndClient', params: [cleanProject, header.customer, item.sn] });
+        }
 
-          // 自動回寫主資產之專案屬性與客戶
-          if (cleanProject && item.sn) {
-            try {
-              await window.electronAPI.namedQuery('updateAssetProjectAndClientBySn', [
-                cleanProject,
-                header.customer,
-                item.sn
-              ]);
-              await window.electronAPI.namedQuery('updateMountedHardwareProjectAndClient', [
-                cleanProject,
-                header.customer,
-                item.sn
-              ]);
-            } catch (err) {
-              console.error(`Failed to auto-bind project to asset ${item.sn}:`, err);
-            }
-          }
-
-          // 如果有搭載硬體，也要一併加入明細並回寫專案屬性
-          if (item.components && item.components.length > 0) {
-            for (const comp of item.components) {
-              const compRes = await window.electronAPI.namedQuery('insertOutboundItem', [
-                requestId,
-                comp.item_master_id, 
-                comp.sn,
-                1,
-                item.location || header.location
-              ]);
-              if (compRes && !compRes.success) {
-                console.error('Insert component error:', compRes.error);
-              }
-
-              if (cleanProject && comp.sn) {
-                try {
-                  await window.electronAPI.namedQuery('updateAssetProjectAndClientBySn', [
-                    cleanProject,
-                    header.customer,
-                    comp.sn
-                  ]);
-                } catch (err) {
-                  console.error(`Failed to auto-bind project to component ${comp.sn}:`, err);
-                }
-              }
+        // 搭載的硬體一併寫入明細並回寫專案屬性
+        if (item.components && item.components.length > 0) {
+          for (const comp of item.components) {
+            steps.push({
+              queryName: 'insertOutboundItem',
+              params: [requestIdRef, comp.item_master_id, comp.sn, 1, item.location || header.location],
+            });
+            if (cleanProject && comp.sn) {
+              steps.push({ queryName: 'updateAssetProjectAndClientBySn', params: [cleanProject, header.customer, comp.sn] });
             }
           }
         }
+      }
 
-        if (itemError) {
-          alert(`⚠️ 注意：出貨單已建立 [${dnNumber}]，但明細品項寫入時發生異常：${itemError}。請檢查出貨單明細！`);
-        }
+      const txRes = await window.electronAPI.runTransaction(steps);
+
+      if (txRes.success) {
+        const requestId = txRes.results.request.rows[0].id;
 
         logCreate(
           'OUTBOUND',
@@ -466,7 +434,7 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) 
 
         setDeliveryReceiptModal({ show: true, dn: dnData, items: currentItems });
       } else {
-        alert('建立出貨單失敗: ' + reqRes.error);
+        alert('建立出貨單失敗，所有變更已取消：\n' + (txRes.error || '未知錯誤'));
       }
     } catch (err) {
       console.error('Submit error:', err);

@@ -55,6 +55,24 @@ if (!window.electronAPI) {
       }
     },
 
+    // 多步驟交易：整串步驟在伺服器端的單一交易中執行，全成功才提交。
+    // steps 為 [{ id?, queryName, params }]，params 內可用 { $ref: '步驟名.rows.0.id' }
+    // 取用先前步驟的結果。
+    runTransaction: async (steps) => {
+      try {
+        const response = await authFetch(`${API_BASE}/api/transaction`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ steps }),
+        });
+        const data = await response.json();
+        return response.ok ? data : { success: false, error: data.error || `HTTP ${response.status}` };
+      } catch (error) {
+        console.error('[WebShim Error] runTransaction:', error);
+        return { success: false, error: error.message || '連線至後端 API 發生異常' };
+      }
+    },
+
     // 登入：送出帳號與密碼，由伺服器端驗證並回傳連線代碼。
     // 密碼不在前端做任何雜湊或比對。
     authLogin: async (username, password) => {

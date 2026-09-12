@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import DeviceBatchImportModal from '../components/DeviceBatchImportModal';
 import * as XLSX from 'xlsx';
+import { createRunTransactionMock } from './helpers/mockTransaction';
 
 describe('DeviceBatchImportModal 設備批次匯入檢核與建立測試', () => {
   const namedQueryMock = vi.fn();
@@ -14,6 +15,7 @@ describe('DeviceBatchImportModal 設備批次匯入檢核與建立測試', () =>
 
     window.electronAPI = {
       namedQuery: namedQueryMock,
+      runTransaction: createRunTransactionMock(namedQueryMock),
       authLogin: vi.fn(),
       getDashboardStats: vi.fn(),
       saveFile: vi.fn()

@@ -477,14 +477,24 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
           ]);
 
           if (findRes.success && findRes.rows && findRes.rows.length > 0) {
-            // 品項已存在 -> 依重複模式處理
+            // 品項已存在 -> 依重複模式處理。
+            // 累加模式交由資料庫自行加總（stock_qty = stock_qty + 數量），
+            // 不再「先讀出目前庫存、前端算好再寫回」—— 那種寫法在兩份匯入
+            // 同時進行時會互相覆蓋，後寫入的會把前一筆的加總結果蓋掉。
             const existingId = findRes.rows[0].id;
-            const currentStock = Number(findRes.rows[0].stock_qty || 0);
-            const newStock = duplicateMode === 'ADD' ? (currentStock + item.quantity) : item.quantity;
+            const isAddMode = duplicateMode === 'ADD';
+            const stockRes = await window.electronAPI.namedQuery(
+              isAddMode ? 'incrementConsumableStockQtyOnImport' : 'updateConsumableStockQtyOnImport',
+              [Number(item.quantity || 0), existingId]
+            );
 
-            await window.electronAPI.namedQuery('updateConsumableStockQtyOnImport', [newStock, existingId]);
-            updatedCount++;
-            successCount++;
+            if (stockRes.success && stockRes.rows && stockRes.rows.length > 0) {
+              updatedCount++;
+              successCount++;
+            } else {
+              failCount++;
+              errors.push(`[第 ${item.rowIndex} 行] ${item.specification} 庫存更新失敗: ${stockRes.error || '查無此品項'}`);
+            }
           } else {
             // 全新品項 -> 建立新主檔
             const insertRes = await window.electronAPI.namedQuery('insertConsumableMaster', [
