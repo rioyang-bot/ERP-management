@@ -5,7 +5,7 @@
 // 確保無論走哪條路徑，同一組參數的處理方式完全一致。
 // ============================================================================
 
-import { sanitizeParams } from '../src/utils/security.js';
+import { sanitizeParams } from './sanitize.js';
 
 /**
  * @param {unknown[]} params 原始參數
