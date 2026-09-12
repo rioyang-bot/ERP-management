@@ -78,6 +78,11 @@
       "file": "migration_fix_panduit_typo.sql",
       "type": "data",
       "note": "耗材廠牌拼字修正 PANDUTI -> PANDUIT，合併為單一廠牌"
+    },
+    {
+      "file": "migration_asset_remarks.sql",
+      "type": "schema",
+      "note": "資產備註欄位，供設備/硬體列表與匯入使用"
     }
   ]
 }

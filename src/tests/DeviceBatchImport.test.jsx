@@ -528,7 +528,8 @@ describe('DeviceBatchImportModal 設備批次匯入檢核與建立測試', () =>
         null,
         expect.any(Object),
         'FOR_SALE',
-        'ACTIVE'
+        'ACTIVE',
+        null // remarks（此測試檔未提供備註欄）
       ]);
 
       // 驗證第二筆
@@ -546,7 +547,8 @@ describe('DeviceBatchImportModal 設備批次匯入檢核與建立測試', () =>
         null,
         expect.any(Object),
         'FOR_SALE',
-        'ACTIVE'
+        'ACTIVE',
+        null // remarks（此測試檔未提供備註欄）
       ]);
     });
   });

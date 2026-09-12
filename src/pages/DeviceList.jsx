@@ -364,7 +364,8 @@ const DeviceList = ({ isSplitMode = false }) => {
     const res = await window.electronAPI.namedQuery('updateAssetDetails', [
         newSn || null, editItem.client, editItem.hostname, editItem.location, editItem.installed_date || null,
         editItem.customer_warranty_expire || null, editItem.system_date || null, editItem.warranty_expire || null,
-        editItem.os, editItem.nic, updatedCustomAttributes, editItem.ownership || 'FOR_SALE', editItem.id
+        editItem.os, editItem.nic, updatedCustomAttributes, editItem.ownership || 'FOR_SALE', editItem.id,
+        editItem.remarks || null
     ]);
     if (res.success) {
       // 若序號有變更，連動更新掛載硬體以及相關明細
@@ -925,6 +926,7 @@ const DeviceList = ({ isSplitMode = false }) => {
                           <th style={{ ...thStyle, textAlign: 'left' }}>客戶</th>
                           <th style={{ ...thStyle, textAlign: 'left' }}>End-user</th>
                           <th style={{ ...thStyle, textAlign: 'left' }}>位置</th>
+                          <th style={{ ...thStyle, textAlign: 'left' }}>備註</th>
                           <th style={{ ...thStyle, textAlign: 'left' }}>保固資訊 (P/S/W/C)</th>
                           <th style={{ ...thStyle, textAlign: 'left', width: '100px' }}>狀態</th>
                           <th style={{ ...thStyle, textAlign: 'center', width: '80px' }}>功能</th>
@@ -1026,6 +1028,14 @@ const DeviceList = ({ isSplitMode = false }) => {
                               <td style={tdStyle}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-main)' }}>
                                   <MapPin size={14} color="var(--text-muted)" /> {item.location || '--'}
+                                </div>
+                              </td>
+                              <td style={{ ...tdStyle, maxWidth: '200px' }}>
+                                <div
+                                  style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text-main)' }}
+                                  title={item.remarks || ''}
+                                >
+                                  {item.remarks || '--'}
                                 </div>
                               </td>
                                <td style={{ ...tdStyle, fontSize: '10px', whiteSpace: 'nowrap', minWidth: '150px' }}>
@@ -1615,6 +1625,16 @@ const DeviceList = ({ isSplitMode = false }) => {
                 <div><label style={editLabelStyle}>系統日期 (System Date)</label><input type="date" value={editItem.system_date || ''} onChange={(e) => setEditItem({...editItem, system_date: e.target.value})} style={editInputStyle} /></div>
                 <div><label style={editLabelStyle}>原廠保固到期 (Warranty Expire)</label><input type="date" value={editItem.warranty_expire || ''} onChange={(e) => setEditItem({...editItem, warranty_expire: e.target.value})} style={editInputStyle} /></div>
                 <div><label style={editLabelStyle}>客戶保固到期 (Cust Warranty)</label><input type="date" value={editItem.customer_warranty_expire || ''} onChange={(e) => setEditItem({...editItem, customer_warranty_expire: e.target.value})} style={editInputStyle} /></div>
+              </div>
+              <div style={{ marginTop: '16px' }}>
+                <label style={editLabelStyle}>備註 (Remarks)</label>
+                <textarea
+                  value={editItem.remarks || ''}
+                  onChange={(e) => setEditItem({ ...editItem, remarks: e.target.value })}
+                  placeholder="選填，可記錄此設備的補充說明"
+                  rows={3}
+                  style={{ ...editInputStyle, resize: 'vertical', minHeight: '72px', fontFamily: 'inherit' }}
+                />
               </div>
               <div style={{ display: 'flex', gap: '12px', marginTop: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '24px' }}>
                 <button onClick={handleUpdate} style={{ flex: 1, padding: '14px', backgroundColor: 'var(--primary-color)', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}><Save size={18}/> 儲存變更</button>

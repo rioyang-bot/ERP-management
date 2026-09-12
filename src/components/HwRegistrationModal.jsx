@@ -259,7 +259,8 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
           itemMasterId, sn || null, '', '', '',
           null, null, null, null, '', '',
           custom_attributes, formData.ownership || 'FOR_SALE',
-          'ACTIVE'
+          'ACTIVE',
+          formData.remarks || null
         ]);
 
         if (res.success) {

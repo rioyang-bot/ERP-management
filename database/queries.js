@@ -165,7 +165,7 @@ export const queries = {
   updateItemMasterSpecs: `UPDATE item_master SET specification = $1, model = UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g'))) WHERE id = $3`,
   countAssetsByMasterId: `SELECT COUNT(*) as count FROM assets WHERE item_master_id = $1`,
   updateAssetMasterId: `UPDATE assets SET item_master_id = $1 WHERE id = $2`,
-  updateAssetDetails: `UPDATE assets SET sn = $1, client = $2, hostname = $3, location = $4, installed_date = $5, customer_warranty_expire = $6, system_date = $7, warranty_expire = $8, os = $9, nic = $10, custom_attributes = $11, ownership = COALESCE($12, 'FOR_SALE') WHERE id = $13`,
+  updateAssetDetails: `UPDATE assets SET sn = $1, client = $2, hostname = $3, location = $4, installed_date = $5, customer_warranty_expire = $6, system_date = $7, warranty_expire = $8, os = $9, nic = $10, custom_attributes = $11, ownership = COALESCE($12, 'FOR_SALE'), remarks = $14 WHERE id = $13`,
   
   fetchCompanyAssets: `
     SELECT 
@@ -287,7 +287,7 @@ export const queries = {
     ORDER BY c.name ASC, norm_brand ASC, norm_model ASC
   `,
   insertItemMaster: `INSERT INTO item_master (specification, type, brand, model, unit, category_id, purchase_price) VALUES ($1, UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g'))), UPPER(TRIM(REGEXP_REPLACE(COALESCE($3, ''), '[[:space:]]+', ' ', 'g'))), UPPER(TRIM(REGEXP_REPLACE(COALESCE($4, ''), '[[:space:]]+', ' ', 'g'))), $5, (SELECT id FROM categories WHERE name = $6), 0) RETURNING id`,
-  insertAssetRecord: `INSERT INTO assets (item_master_id, sn, client, hostname, location, installed_date, customer_warranty_expire, system_date, warranty_expire, os, nic, custom_attributes, ownership, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14, 'ACTIVE'))`,
+  insertAssetRecord: `INSERT INTO assets (item_master_id, sn, client, hostname, location, installed_date, customer_warranty_expire, system_date, warranty_expire, os, nic, custom_attributes, ownership, status, remarks) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14, 'ACTIVE'), $15)`,
 
   // ConsumableList.jsx
   fetchConsumablesList: `SELECT v.*, i.id as id, i.stock_qty, i.lab_qty, c.name as category_name FROM v_inventory_summary v JOIN item_master i ON v.item_id = i.id LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '耗材' ORDER BY i.id DESC`,
@@ -556,7 +556,7 @@ export const queries = {
       )
       WHERE i.category_id = (SELECT id FROM categories WHERE name = '硬體')
       ORDER BY a.id DESC`,
-  updateNicDetails: `UPDATE assets SET sn = $1, client = $2, location = $3, custom_attributes = (CASE WHEN custom_attributes IS NOT NULL AND jsonb_typeof(custom_attributes) = 'object' THEN custom_attributes ELSE '{}'::jsonb END) || jsonb_build_object('server_sn', $4::text, 'order_source', $5::text, 'project_name', $8::text, 'end_user', $10::text), hostname = $6, ownership = COALESCE($9, 'FOR_SALE') WHERE id = $7`,
+  updateNicDetails: `UPDATE assets SET sn = $1, client = $2, location = $3, custom_attributes = (CASE WHEN custom_attributes IS NOT NULL AND jsonb_typeof(custom_attributes) = 'object' THEN custom_attributes ELSE '{}'::jsonb END) || jsonb_build_object('server_sn', $4::text, 'order_source', $5::text, 'project_name', $8::text, 'end_user', $10::text), hostname = $6, ownership = COALESCE($9, 'FOR_SALE'), remarks = $11 WHERE id = $7`,
   updateAssetProjectName: `UPDATE assets SET custom_attributes = COALESCE(custom_attributes, '{}'::jsonb) || jsonb_build_object('project_name', $1::text) WHERE id = $2`,
   updateNicSn: `UPDATE assets SET sn = $1 WHERE id = $2`,
   findAssetBySn: `SELECT id FROM assets WHERE TRIM(LOWER(sn)) = TRIM(LOWER($1))`,

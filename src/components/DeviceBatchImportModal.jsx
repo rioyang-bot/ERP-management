@@ -367,6 +367,7 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
       const systemType = asText(rawSystemType || typeInput);
       const model = findColumnValue(row, ['Model', '型號', '設備型號']);
       const location = findColumnValue(row, ['Location', '地點', '位置', '機房']);
+      const remarks = findColumnValue(row, ['Remarks', 'Remark', '備註', '備注', 'Note', 'Notes', 'Memo', '說明', '附註']);
       const sn = findColumnValue(row, ['Serial Number ( Current )', 'Serial Number (Current)', 'Serial Number', 'SerialNumber', '序號', 'SN', 'S/N']);
       const rawBrand = findColumnValue(row, ['Brand', '廠牌', '品牌']);
       const brand = asText(rawBrand || brandInput);
@@ -518,6 +519,7 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
         contactMatch,
         hostname: asText(hostname),
         location: asText(location),
+        remarks: asText(remarks),
         installed_date: installedDate,
         customer_warranty_expire: customerWarrantyExpire,
         system_date: systemDate,
@@ -719,7 +721,8 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
               null, // nic
               customAttributes,
               'FOR_SALE',
-              item.itemStatus || 'ACTIVE'
+              item.itemStatus || 'ACTIVE',
+              item.remarks || null
             ],
           });
 

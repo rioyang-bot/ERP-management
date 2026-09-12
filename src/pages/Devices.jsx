@@ -240,7 +240,8 @@ const Devices = ({ isSplitMode = false }) => {
           masterId, sn || null, formData.client, formData.hostname, formData.location, formData.installed_date || null,
           formData.customer_warranty_expire || null, formData.system_date || null, formData.warranty_expire || null,
           formData.os, formData.nic, updatedCustomAttributes, formData.ownership || 'FOR_SALE',
-          formData.status || 'ACTIVE'
+          formData.status || 'ACTIVE',
+          formData.remarks || null
         ]);
         if (res.success) {
           successCount++;

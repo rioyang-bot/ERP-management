@@ -446,6 +446,7 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
       const serverSn = findColumnValue(row, ['Server-SN', 'Server SN', 'Server_SN', 'ServerSN', '對應伺服器', '對應伺服器 SN', '對應設備序號', 'Host SN']);
       const location = findColumnValue(row, ['Location', '地點', '位置', '機房', '放置位置']);
       const orderSource = findColumnValue(row, ['Order Source', 'OrderSource', '訂單來源', 'Source', '來源']);
+      const remarks = findColumnValue(row, ['Remarks', 'Remark', '備註', '備注', 'Note', 'Notes', 'Memo', '說明', '附註']);
       const projectName = findColumnValue(row, ['Project Name', 'ProjectName', 'Project', '專案名稱', '專案', 'Project No', '專案編號']);
 
       // 出貨狀態判定：直接依據上傳 Excel/CSV 內 Status/狀態 欄位判定（預設為 ACTIVE）
@@ -597,6 +598,7 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
         hostname: asText(hostname),
         location: asText(location),
         order_source: asText(orderSource),
+        remarks: asText(remarks),
         project_name: asText(projectName),
         installed_date: installedDate,
         customer_warranty_expire: customerWarrantyExpire,
@@ -854,7 +856,8 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
               null, // nic
               customAttributes,
               'FOR_SALE',
-              item.itemStatus || 'ACTIVE'
+              item.itemStatus || 'ACTIVE',
+              item.remarks || null
             ],
           });
 

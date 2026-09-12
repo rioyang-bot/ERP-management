@@ -93,7 +93,8 @@ export async function performInPlaceReplacement(asset, newSn, rmaDetails = {}) {
     asset.nic || null,
     updatedCustomAttrs,
     asset.ownership || 'FOR_SALE',
-    asset.id
+    asset.id,
+    asset.remarks ?? null
   ]);
 
   if (!updateRes.success) {

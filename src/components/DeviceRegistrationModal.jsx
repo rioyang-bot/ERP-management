@@ -247,7 +247,8 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
           formData.nic || null,
           updatedCustomAttributes,
           formData.ownership || 'FOR_SALE',
-          formData.status || 'ACTIVE'
+          formData.status || 'ACTIVE',
+          formData.remarks || null
         ]);
         if (res.success) {
           successCount++;

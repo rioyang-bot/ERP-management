@@ -225,7 +225,8 @@ const HwList = ({ isSplitMode = false }) => {
       parseInt(editItem.id, 10),
       editItem.temp_project_name || null,
       editItem.ownership || 'FOR_SALE',
-      editItem.temp_end_user !== undefined ? editItem.temp_end_user : (editItem.end_user || editItem.custom_attributes?.end_user || null)
+      editItem.temp_end_user !== undefined ? editItem.temp_end_user : (editItem.end_user || editItem.custom_attributes?.end_user || null),
+      editItem.remarks ?? null
     ]);
     if (res.success) { 
       // 雙向連動設備端的 mounted_hw_sns
@@ -802,6 +803,7 @@ const HwList = ({ isSplitMode = false }) => {
             <th style={{ ...thStyle, textAlign: 'left' }}>客戶</th>
             <th style={{ ...thStyle, textAlign: 'left' }}>End-user</th>
             <th style={{ ...thStyle, textAlign: 'left' }}>位置</th>
+            <th style={{ ...thStyle, textAlign: 'left' }}>備註</th>
             <th style={{ ...thStyle, textAlign: 'left', width: '100px' }}>狀態</th>
             <th style={{ ...thStyle, textAlign: 'center', width: '80px' }}>功能</th>
           </tr>
@@ -893,6 +895,14 @@ const HwList = ({ isSplitMode = false }) => {
                 <td style={tdStyle}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-main)' }}>
                     <MapPin size={14} color="var(--text-muted)" /> {nic.server_location || '--'}
+                  </div>
+                </td>
+                <td style={{ ...tdStyle, maxWidth: '200px' }}>
+                  <div
+                    style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text-main)' }}
+                    title={nic.remarks || ''}
+                  >
+                    {nic.remarks || '--'}
                   </div>
                 </td>
                 <td style={{ ...tdStyle, width: '100px' }}><span style={{ padding: '4px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: '800', backgroundColor: cfg.bgColor, color: cfg.color, border: `1px solid ${cfg.borderColor}`, whiteSpace: 'nowrap' }}>{cfg.label}</span></td>
@@ -1168,6 +1178,15 @@ const HwList = ({ isSplitMode = false }) => {
 
               <div style={{ display: 'grid', gridTemplateColumns: 'minmax(150px, 1fr) 1fr 1fr', gap: '16px' }}>
                 <label style={editLabelStyle}>對應伺服器 SN<input type="text" value={editItem.temp_server_sn || ''} onChange={(e) => setEditItem({ ...editItem, temp_server_sn: e.target.value })} style={editInputStyle} /></label>
+                <label style={editLabelStyle}>備註 (Remarks)
+                  <textarea
+                    value={editItem.remarks || ''}
+                    onChange={(e) => setEditItem({ ...editItem, remarks: e.target.value })}
+                    placeholder="選填，可記錄此硬體的補充說明"
+                    rows={3}
+                    style={{ ...editInputStyle, resize: 'vertical', minHeight: '72px', fontFamily: 'inherit' }}
+                  />
+                </label>
                 <div style={{ position: 'relative' }}>
                   <label style={editLabelStyle}>專案名稱 (Project)</label>
                   <input 
