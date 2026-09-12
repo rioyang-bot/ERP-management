@@ -14,17 +14,70 @@
     "  data   — 一次性資料修正，會改動既有營運資料，套用前請先備份"
   ],
   "migrations": [
-    { "file": "migration_brand_models_types.sql", "type": "schema", "note": "廠牌/類型/型號主檔結構與唯一鍵" },
-    { "file": "migration_spec_optional.sql", "type": "schema", "note": "規格欄位改為可不填" },
-    { "file": "migration_partners_project_info.sql", "type": "schema", "note": "往來對象專案資訊欄位" },
-    { "file": "migration_outbound_project_name.sql", "type": "schema", "note": "出庫單專案名稱欄位" },
-    { "file": "migration_add_end_user.sql", "type": "schema", "note": "資產最終使用者欄位" },
-    { "file": "migration_inbound_history.sql", "type": "schema", "note": "進貨歷史相關欄位" },
-    { "file": "migration_outbound_items_columns.sql", "type": "schema", "note": "出庫明細欄位" },
-    { "file": "migration_asset_shipping_date.sql", "type": "schema", "note": "資產出貨日期欄位" },
-    { "file": "update_consumable_brand_metech.sql", "type": "data", "note": "耗材廠牌 METech/MEtech 統一為 METECH" },
-    { "file": "clean_device_types.sql", "type": "data", "note": "清理設備誤匯入的 OS 類型，僅保留 SERVER/SWITCH；會改寫設備類型並刪除其餘類型，套用前務必確認" },
-    { "file": "migration_normalize_master_names.sql", "type": "schema", "note": "類型/廠牌/型號正規化為大寫、合併重複、修正失效的唯一鍵" },
-    { "file": "migration_auth_hardening.sql", "type": "schema", "note": "連線階段資料表與密碼演算法欄位" }
+    {
+      "file": "migration_brand_models_types.sql",
+      "type": "schema",
+      "note": "廠牌/類型/型號主檔結構與唯一鍵"
+    },
+    {
+      "file": "migration_spec_optional.sql",
+      "type": "schema",
+      "note": "規格欄位改為可不填"
+    },
+    {
+      "file": "migration_partners_project_info.sql",
+      "type": "schema",
+      "note": "往來對象專案資訊欄位"
+    },
+    {
+      "file": "migration_outbound_project_name.sql",
+      "type": "schema",
+      "note": "出庫單專案名稱欄位"
+    },
+    {
+      "file": "migration_add_end_user.sql",
+      "type": "schema",
+      "note": "資產最終使用者欄位"
+    },
+    {
+      "file": "migration_inbound_history.sql",
+      "type": "schema",
+      "note": "進貨歷史相關欄位"
+    },
+    {
+      "file": "migration_outbound_items_columns.sql",
+      "type": "schema",
+      "note": "出庫明細欄位"
+    },
+    {
+      "file": "migration_asset_shipping_date.sql",
+      "type": "schema",
+      "note": "資產出貨日期欄位"
+    },
+    {
+      "file": "update_consumable_brand_metech.sql",
+      "type": "data",
+      "note": "耗材廠牌 METech/MEtech 統一為 METECH"
+    },
+    {
+      "file": "clean_device_types.sql",
+      "type": "data",
+      "note": "清理設備誤匯入的 OS 類型，僅保留 SERVER/SWITCH；會改寫設備類型並刪除其餘類型，套用前務必確認"
+    },
+    {
+      "file": "migration_normalize_master_names.sql",
+      "type": "schema",
+      "note": "類型/廠牌/型號正規化為大寫、合併重複、修正失效的唯一鍵"
+    },
+    {
+      "file": "migration_auth_hardening.sql",
+      "type": "schema",
+      "note": "連線階段資料表與密碼演算法欄位"
+    },
+    {
+      "file": "migration_fix_panduit_typo.sql",
+      "type": "data",
+      "note": "耗材廠牌拼字修正 PANDUTI -> PANDUIT，合併為單一廠牌"
+    }
   ]
 }

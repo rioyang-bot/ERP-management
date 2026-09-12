@@ -41,8 +41,9 @@ const markIdx = args.indexOf('--mark');
 const MARK_FILE = markIdx >= 0 ? args[markIdx + 1] : null;
 const MODE = args.includes('--status') ? 'status'
   : args.includes('--baseline') ? 'baseline'
-    : MARK_FILE ? 'mark'
-      : 'apply';
+    : args.includes('--refresh-checksums') ? 'refresh'
+      : MARK_FILE ? 'mark'
+        : 'apply';
 
 const required = ['DB_USER', 'DB_HOST', 'DB_NAME', 'DB_PASSWORD'];
 const missing = required.filter((k) => !process.env[k]);
@@ -59,7 +60,11 @@ const pool = new pg.Pool({
   port: parseInt(process.env.DB_PORT || '5432', 10),
 });
 
-const sha256 = (text) => crypto.createHash('sha256').update(text, 'utf8').digest('hex');
+// 計算校驗碼前先把 CRLF 統一為 LF。
+// 開發在 Windows、伺服器在 Linux，git 會依平台轉換行尾，同一份未經修改的
+// 腳本在兩邊會算出不同的雜湊值，導致「內容已變更」的誤報。
+const sha256 = (text) => crypto.createHash('sha256')
+  .update(String(text).replace(/\r\n/g, '\n'), 'utf8').digest('hex');
 
 /**
  * 移除腳本中「頂層」的 BEGIN; 與 COMMIT;，交易一律改由本執行器控制。
@@ -150,6 +155,20 @@ const run = async () => {
   }
 
   if (MODE === 'status') return { applied: 0, changed: changed.length };
+
+  // --- 重算校驗碼：已套用的項目一律更新為目前檔案的雜湊值 ----------------------
+  // 僅用於「校驗碼計算方式改變」或「行尾被 git 轉換」等情形，不會執行任何腳本。
+  if (MODE === 'refresh') {
+    let n = 0;
+    for (const m of migrations) {
+      if (!applied.has(m.file)) continue;
+      await pool.query(`UPDATE schema_migrations SET checksum = $1 WHERE filename = $2`,
+        [m.checksum, m.file]);
+      n++;
+    }
+    console.log(`\n已重算 ${n} 筆已套用項目的校驗碼（未執行任何腳本）。`);
+    return { applied: 0, changed: 0 };
+  }
 
   // --- 單支標記：用於已在資料庫外手動套用過的腳本 ----------------------------
   if (MODE === 'mark') {
