@@ -56,7 +56,15 @@ const ProcurementList = ({ isSplitMode = false }) => {
     });
   };
 
-  const handleDeleteOrder = async (orderNo) => {
+  const handleDeleteOrder = async (order) => {
+    const orderNo = typeof order === 'string' ? order : order.order_no;
+    const targetOrder = typeof order === 'object' ? order : orders.find(o => o.order_no === orderNo);
+
+    if (targetOrder && (targetOrder.receivedQty > 0 || targetOrder.status === 'PARTIAL')) {
+      alert(`⚠️ 無法刪除採購單 [${orderNo}]！\n\n該採購單已有品項到貨入庫 (已到貨: ${targetOrder.receivedQty} / 總量: ${targetOrder.totalQty})。\n如需終止後續未交貨品項，請進行結案或註記，不可直接刪除以維護帳務與進貨來源一致性。`);
+      return;
+    }
+
     try {
       if (!window.confirm(`確定要刪除整個採購單 ${orderNo} 嗎？此操作不可還原。`)) return;
       
@@ -65,12 +73,12 @@ const ProcurementList = ({ isSplitMode = false }) => {
         [orderNo]
       );
       
-      if (res.success) {
+      if (res && res.success) {
         logDelete('PURCHASE', orderNo, '採購單', `刪除整筆採購單 [${orderNo}]`, { orderNo });
         alert('刪除成功');
         fetchRecords();
       } else {
-        alert('刪除失敗：' + res.error);
+        alert('刪除失敗：' + (res?.error || '未知錯誤'));
       }
     } catch (err) {
       console.error(err);
@@ -375,7 +383,7 @@ const ProcurementList = ({ isSplitMode = false }) => {
                                   <Edit2 size={16} />
                                 </button>
                                 <button 
-                                  onClick={(e) => { e.stopPropagation(); handleDeleteOrder(order.order_no); }} 
+                                  onClick={(e) => { e.stopPropagation(); handleDeleteOrder(order); }} 
                                   style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', padding: 0, backgroundColor: 'rgba(239, 68, 68, 0.12)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '6px', cursor: 'pointer', flexShrink: 0 }}
                                   title="刪除採購單"
                                   aria-label="刪除採購單"

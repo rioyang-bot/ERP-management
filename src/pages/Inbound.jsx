@@ -269,6 +269,15 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
     if (!partnerId) return alert('請先選擇對應的採購單以帶入供應商資訊');
     if (items.some(i => !i.itemId && !i.purchaseRecordId)) return alert('請確認所有明細均已選擇入庫品項');
     
+    // 檢查入庫數量是否皆為大於 0 的正整數
+    for (let idx = 0; idx < items.length; idx++) {
+      const item = items[idx];
+      const parsedQty = parseInt(item.qty, 10);
+      if (isNaN(parsedQty) || parsedQty <= 0) {
+        return alert(`⚠️ 數量異常：第 ${idx + 1} 列入庫數量必須大於 0！`);
+      }
+    }
+
     // 檢查進貨數量是否超過採購單剩餘數量 (Aggregate by PO to prevent duplicate row bypassing)
     const qtyByPO = {};
     for (const item of items) {

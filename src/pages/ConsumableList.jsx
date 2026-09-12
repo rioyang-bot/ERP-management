@@ -127,12 +127,24 @@ const ConsumableList = ({ isSplitMode = false }) => {
     setCurrentPage(1);
   }, [fetchConsumables, searchTerm, typeFilter]);
 
-  const handleDelete = async (id, specification) => {
-    if (!window.confirm(`確定要刪除耗材 [${specification}] 嗎？`)) return;
+  const handleDelete = async (targetItem) => {
+    const id = targetItem.item_id || targetItem.id;
+    const specification = targetItem.specification || `${targetItem.brand || ''} ${targetItem.model || ''}`.trim();
+    const stockQty = Number(targetItem.stock_qty || 0);
+    const labQty = Number(targetItem.lab_qty || 0);
+
+    if (stockQty > 0 || labQty > 0) {
+      alert(`⚠️ 無法刪除耗材品項 [${specification}]！\n\n目前尚有在席庫存 (${stockQty}) 或借測數量 (${labQty})。\n請先進行出庫或庫存歸零後，方可執行刪除。`);
+      return;
+    }
+
+    if (!window.confirm(`確定要刪除耗材 [${specification}] 嗎？此操作不可還原。`)) return;
     const res = await window.electronAPI.namedQuery('deleteConsumableMaster', [id]);
-    if (res.success) {
+    if (res && res.success) {
       logDelete('CONSUMABLE', id, specification, `刪除耗材品項 [${specification}]`, { id, specification });
       fetchConsumables();
+    } else {
+      alert('刪除失敗：' + (res?.error || '資料庫連線或關聯約束錯誤'));
     }
   };
 
@@ -868,7 +880,7 @@ const ConsumableList = ({ isSplitMode = false }) => {
                             </button>
                             <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); setTransferData({ itemId: item.id, direction: 'TO_LAB', quantity: 1, deviceSn: '', note: '' }); setShowTransferModal(true); }} style={{ ...menuButtonStyle, color: 'var(--primary-color)' }}><ArrowLeftRight size={14} /> 庫存異動 (Stock↔LAB)</button>
                             <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '4px 0' }} />
-                            <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); handleDelete(item.item_id || item.id, item.specification); }} style={{ ...menuButtonStyle, color: '#f43f5e', backgroundColor: 'rgba(244,63,94,0.1)' }}><Trash2 size={14} /> 刪除耗材</button>
+                            <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); handleDelete(item); }} style={{ ...menuButtonStyle, color: '#f43f5e', backgroundColor: 'rgba(244,63,94,0.1)' }}><Trash2 size={14} /> 刪除耗材</button>
                           </div>
                         )}
                       </td>
