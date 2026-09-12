@@ -139,12 +139,17 @@ const ConsumableList = ({ isSplitMode = false }) => {
     }
 
     if (!window.confirm(`確定要刪除耗材 [${specification}] 嗎？此操作不可還原。`)) return;
-    const res = await window.electronAPI.namedQuery('deleteConsumableMaster', [id]);
-    if (res && res.success) {
+    // item_master 為 inbound_items / outbound_items / item_lab_assignments / assets 的 ON DELETE CASCADE 母表，
+    // 因此改由 SQL 端一併驗證庫存與關聯單據，避免歷史帳務被連鎖刪除
+    const res = await window.electronAPI.namedQuery('deleteConsumableMasterIfSafe', [id]);
+    if (res && res.success && res.rows && res.rows.length > 0) {
       logDelete('CONSUMABLE', id, specification, `刪除耗材品項 [${specification}]`, { id, specification });
       fetchConsumables();
+    } else if (res && res.success) {
+      alert(`⚠️ 無法刪除耗材品項 [${specification}]！\n\n該品項仍有庫存，或已存在進出庫、借測、資產等關聯紀錄。\n直接刪除會一併抹除這些歷史帳務；如需停用請改以庫存歸零保留紀錄。`);
+      fetchConsumables();
     } else {
-      alert('刪除失敗：' + (res?.error || '資料庫連線或關聯約束錯誤'));
+      alert('刪除失敗：' + (res?.error || '資料庫連線或查詢失敗'));
     }
   };
 

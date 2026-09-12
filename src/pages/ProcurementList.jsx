@@ -73,9 +73,13 @@ const ProcurementList = ({ isSplitMode = false }) => {
         [orderNo]
       );
       
-      if (res && res.success) {
+      if (res && res.success && res.rows && res.rows.length > 0) {
         logDelete('PURCHASE', orderNo, '採購單', `刪除整筆採購單 [${orderNo}]`, { orderNo });
         alert('刪除成功');
+        fetchRecords();
+      } else if (res && res.success) {
+        // SQL 端為 all-or-nothing：任一明細已到貨即整張不刪，回傳 0 筆
+        alert(`⚠️ 無法刪除採購單 [${orderNo}]！\n\n資料庫端偵測到該採購單已有品項到貨入庫（畫面資料可能不是最新）。\n請重新整理後確認，如需終止未交貨品項請改以結案或註記處理。`);
         fetchRecords();
       } else {
         alert('刪除失敗：' + (res?.error || '未知錯誤'));

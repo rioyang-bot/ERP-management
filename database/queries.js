@@ -292,7 +292,17 @@ export const queries = {
   // ConsumableList.jsx
   fetchConsumablesList: `SELECT v.*, i.id as id, i.stock_qty, i.lab_qty, c.name as category_name FROM v_inventory_summary v JOIN item_master i ON v.item_id = i.id LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '耗材' ORDER BY i.id DESC`,
   fetchConsumablesListByType: `SELECT v.*, i.id as id, i.stock_qty, i.lab_qty, c.name as category_name FROM v_inventory_summary v JOIN item_master i ON v.item_id = i.id LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '耗材' AND v.type = $1 ORDER BY i.id DESC`,
-  deleteConsumableMaster: `DELETE FROM item_master WHERE id = $1`,
+  deleteConsumableMasterIfSafe: `
+      DELETE FROM item_master i
+      WHERE i.id = $1
+        AND COALESCE(i.stock_qty, 0) = 0
+        AND COALESCE(i.lab_qty, 0) = 0
+        AND NOT EXISTS (SELECT 1 FROM assets a WHERE a.item_master_id = i.id)
+        AND NOT EXISTS (SELECT 1 FROM inbound_items ii WHERE ii.item_id = i.id)
+        AND NOT EXISTS (SELECT 1 FROM outbound_items oi WHERE oi.item_id = i.id)
+        AND NOT EXISTS (SELECT 1 FROM item_lab_assignments la WHERE la.item_master_id = i.id)
+      RETURNING id
+  `,
   updateConsumableMaster: `UPDATE item_master SET brand = $1, type = $2, model = $3, specification = $4, unit = $5, safety_stock = $6 WHERE id = $7`,
   transferStockToLab: `UPDATE item_master SET stock_qty = stock_qty - $1, lab_qty = lab_qty + $1 WHERE id = $2`,
   transferLabToStock: `UPDATE item_master SET stock_qty = stock_qty + $1, lab_qty = lab_qty - $1 WHERE id = $2`,
@@ -330,7 +340,7 @@ export const queries = {
       SELECT pr.*, p.name as partner_name, c.name as category_name, u.full_name as purchaser_name
       FROM purchase_records pr LEFT JOIN partners p ON pr.partner_id = p.id LEFT JOIN categories c ON pr.category_id = c.id LEFT JOIN users u ON pr.purchaser_id = u.id 
       WHERE pr.order_no = $1 ORDER BY pr.id ASC`,
-  deletePurchaseRecordById: `DELETE FROM purchase_records WHERE id = $1`,
+  deletePurchaseRecordById: `DELETE FROM purchase_records WHERE id = $1 AND COALESCE(received_quantity, 0) = 0 RETURNING id`,
   fetchSuppliers: `SELECT id, name, contact_person as contact, phone, address FROM partners WHERE partner_type = 'SUPPLIER' AND COALESCE(is_active, TRUE) = true ORDER BY name ASC, contact_person ASC`,
   fetchCategories: `SELECT id, name FROM categories`,
   fetchBrandsByCategory: `
@@ -378,7 +388,15 @@ export const queries = {
   fetchProcurementList: `
       SELECT pr.*, p.name as partner_name, c.name as category_name, u.full_name as purchaser_name
       FROM purchase_records pr LEFT JOIN partners p ON pr.partner_id = p.id LEFT JOIN categories c ON pr.category_id = c.id LEFT JOIN users u ON pr.purchaser_id = u.id ORDER BY pr.created_at DESC`,
-  deletePurchaseRecordList: `DELETE FROM purchase_records WHERE order_no = $1`,
+  deletePurchaseRecordList: `
+      DELETE FROM purchase_records
+      WHERE order_no = $1
+        AND NOT EXISTS (
+          SELECT 1 FROM purchase_records pr2
+          WHERE pr2.order_no = $1 AND COALESCE(pr2.received_quantity, 0) > 0
+        )
+      RETURNING id
+  `,
   updatePurchaseRecordList: `UPDATE purchase_records SET quantity = $1, specification = $2, model = $3, item_type = $4, brand = $5 WHERE id = $6`,
 
   fetchInboundItemMaster: `SELECT i.id, i.category_id, i.specification, i.type, i.brand, i.model, i.unit,

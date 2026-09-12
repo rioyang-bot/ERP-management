@@ -316,12 +316,27 @@ const ProcurementRegistration = ({ editMode = false, isModalMode = false, initOr
          if (!existRes.success) throw new Error('獲取原始訂單失敗');
          
          const existingIds = existRes.rows.map(r => r.id);
+         const existingById = new Map(existRes.rows.map(r => [r.id, r]));
          const currentIds = items.map(i => i.id).filter(id => id < 1000000000000); 
-         
-         for (const exId of existingIds) {
-           if (!currentIds.includes(exId)) {
-              await window.electronAPI.namedQuery('deletePurchaseRecordById', [exId]);
+         const removedIds = existingIds.filter(exId => !currentIds.includes(exId));
+
+         // 已到貨的明細不得經編輯流程移除，否則 inbound_items.purchase_record_id 會失去對應；
+         // 先全數檢查再執行刪除，避免中途失敗留下半套資料
+         for (const exId of removedIds) {
+           const exRow = existingById.get(exId);
+           const receivedQty = Number(exRow?.received_quantity || 0);
+           if (receivedQty > 0) {
+             const specLabel = [exRow.brand, exRow.model, exRow.specification].filter(Boolean).join(' ') || '未命名項目';
+             throw new Error(`採購明細 [${specLabel}] 已到貨 ${receivedQty} 件，無法移除；如需終止未交貨數量請改以結案或註記處理。`);
            }
+         }
+
+         for (const exId of removedIds) {
+            const delRes = await window.electronAPI.namedQuery('deletePurchaseRecordById', [exId]);
+            if (!delRes.success) throw new Error(`移除採購明細失敗: ${delRes.error}`);
+            if (!delRes.rows || delRes.rows.length === 0) {
+              throw new Error('移除採購明細失敗：該明細已有到貨紀錄，請重新整理後再試。');
+            }
          }
          
          for (const item of items) {
