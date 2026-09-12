@@ -71,10 +71,7 @@ const DeviceList = ({ isSplitMode = false }) => {
 
   const [editItem, setEditItem] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [showConfigModal, setShowConfigModal] = useState(false);
   const [confirmModal, setConfirmModal] = useState({ show: false, msg: '', onConfirm: null });
-  const [customFieldDefs, setCustomFieldDefs] = useState([]);
-  const [originalFieldIds, setOriginalFieldIds] = useState([]);
   const [expandedItems, setExpandedItems] = useState({}); // 控制摺疊狀態
   const [expandedLabItems, setExpandedLabItems] = useState({}); // 控制 LAB 耗材摺疊
   const [ledgerItem, setLedgerItem] = useState(null); // 品項履歷 Modal
@@ -106,11 +103,6 @@ const DeviceList = ({ isSplitMode = false }) => {
     if (res.success) setCustomers(res.rows);
   }, []);
 
-  const fetchSettings = useCallback(async () => {
-    const defsRes = await window.electronAPI.namedQuery('getSystemSetting', ['customFieldDefinitions']);
-    if (defsRes.success && defsRes.rows.length > 0) setCustomFieldDefs(defsRes.rows[0].value || []);
-  }, []);
-
   const fetchProjects = useCallback(async () => {
     const res = await window.electronAPI.namedQuery('fetchActiveProjects');
     if (res.success) setProjects(res.rows);
@@ -119,10 +111,10 @@ const DeviceList = ({ isSplitMode = false }) => {
   useEffect(() => {
     const initPage = async () => {
       setCurrentPage(1);
-      await Promise.all([fetchAssets(), fetchCustomers(), fetchSettings(), fetchProjects()]);
+      await Promise.all([fetchAssets(), fetchCustomers(), fetchProjects()]);
     };
     initPage();
-  }, [fetchAssets, fetchCustomers, fetchSettings, fetchProjects]);
+  }, [fetchAssets, fetchCustomers, fetchProjects]);
 
 
   const handleEditClick = (item) => {
@@ -904,12 +896,6 @@ const DeviceList = ({ isSplitMode = false }) => {
               </div>
             </div>
 
-            <button onClick={() => {
-              setOriginalFieldIds(customFieldDefs.map(d => d.id));
-              setShowConfigModal(true);
-            }} style={{ padding: '10px 16px', backgroundColor: 'var(--bg-surface-subtle)', border: '1px solid var(--border-color)', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', fontWeight: '700', color: 'var(--text-main)', gap: '6px' }}>
-               <Wrench size={16} style={{ marginRight: '6px' }} /> 自訂欄位
-            </button>
             <div style={{ position: 'relative' }}>
               <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-subtle)' }} />
               <input type="text" placeholder="快速搜尋..." value={searchTerm} onChange={(e) => {setSearchTerm(e.target.value); setCurrentPage(1);}} style={{ padding: '10px 12px 10px 42px', borderRadius: '30px', border: '1.5px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', width: '220px', outline: 'none' }} />
@@ -935,7 +921,6 @@ const DeviceList = ({ isSplitMode = false }) => {
                           <th style={{ ...thStyle, textAlign: 'left' }}>規格 (Spec)</th>
                           <th style={{ ...thStyle, textAlign: 'left' }}>專案編號/名稱 (Project)</th>
                           <th style={{ ...thStyle, textAlign: 'left' }}>主機名稱</th>
-                          <th style={{ ...thStyle, textAlign: 'left' }}>自訂設備屬性</th>
                           <th style={{ ...thStyle, textAlign: 'left' }}>搭載硬體</th>
                           <th style={{ ...thStyle, textAlign: 'left' }}>客戶</th>
                           <th style={{ ...thStyle, textAlign: 'left' }}>End-user</th>
@@ -980,19 +965,6 @@ const DeviceList = ({ isSplitMode = false }) => {
                                 })()}
                               </td>
                               <td style={tdStyle}>{item.hostname || '--'}</td>
-                              <td style={{ ...tdStyle, fontSize: '11px', minWidth: '120px' }}>
-                                {customFieldDefs.map(f => {
-                                  const val = f.isNative ? item[f.id] : attrs[f.id];
-                                  if (!val) return null;
-                                  return (
-                                    <div key={f.id} style={{ marginBottom: '2px', display: 'flex', gap: '4px' }}>
-                                      <span style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{f.label}:</span>
-                                      <span style={{ fontWeight: 600, color: f.color || 'inherit' }}>{val}</span>
-                                    </div>
-                                  );
-                                })}
-                                {customFieldDefs.every(f => !(f.isNative ? item[f.id] : attrs[f.id])) && '--'}
-                              </td>
 
                               <td style={tdStyle}>
                                 {item.components && item.components.length > 0 ? (
@@ -1644,33 +1616,6 @@ const DeviceList = ({ isSplitMode = false }) => {
                 <div><label style={editLabelStyle}>原廠保固到期 (Warranty Expire)</label><input type="date" value={editItem.warranty_expire || ''} onChange={(e) => setEditItem({...editItem, warranty_expire: e.target.value})} style={editInputStyle} /></div>
                 <div><label style={editLabelStyle}>客戶保固到期 (Cust Warranty)</label><input type="date" value={editItem.customer_warranty_expire || ''} onChange={(e) => setEditItem({...editItem, customer_warranty_expire: e.target.value})} style={editInputStyle} /></div>
               </div>
-              {customFieldDefs.length > 0 && (
-                <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '20px' }}>
-                  <div style={{ fontSize: '15px', fontWeight: '900', color: 'var(--primary-color)', marginBottom: '16px' }}>自訂設備屬性</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                    {customFieldDefs
-                      
-                      .filter(f => !['sn', 'hostname', 'specification', 'client', 'location', 'installed_date', 'system_date', 'warranty_expire', 'customer_warranty_expire'].includes(f.id))
-                      .map(f => {
-                      let attrs = {};
-                      try { attrs = typeof editItem.custom_attributes === 'string' ? JSON.parse(editItem.custom_attributes) : (editItem.custom_attributes || {}); } catch { attrs = {}; }
-                      const val = f.isNative ? editItem[f.id] : attrs[f.id];
-                      return (
-                        <div key={f.id}>
-                          <label style={{ ...editLabelStyle, color: f.color || 'var(--text-muted)' }}>{f.label}</label>
-                          <input type="text" value={val || ''} onChange={(e) => {
-                            if (f.isNative) setEditItem({...editItem, [f.id]: e.target.value});
-                            else {
-                               const na = { ...attrs, [f.id]: e.target.value };
-                               setEditItem({...editItem, custom_attributes: na });
-                            }
-                          }} style={editInputStyle} />
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
               <div style={{ display: 'flex', gap: '12px', marginTop: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '24px' }}>
                 <button onClick={handleUpdate} style={{ flex: 1, padding: '14px', backgroundColor: 'var(--primary-color)', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}><Save size={18}/> 儲存變更</button>
                 <button onClick={() => setShowEditModal(false)} style={{ padding: '14px 24px', backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '10px', cursor: 'pointer' }}>取消</button>
@@ -1679,63 +1624,6 @@ const DeviceList = ({ isSplitMode = false }) => {
           </div>
         </div>
       )}
-
-      {showConfigModal && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'var(--bg-modal-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
-          <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-main)', width: '600px', padding: '32px', borderRadius: '16px', maxHeight: '90vh', overflowY: 'auto', boxShadow: 'var(--modal-shadow)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-              <h2 style={{ fontSize: '20px', fontWeight: '900', color: 'var(--text-main)' }}>自訂欄位設定</h2>
-              <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setShowConfigModal(false)} />
-            </div>
-            
-            <div style={{ marginBottom: '32px' }}>
-               <h3 style={{ fontSize: '16px', color: 'var(--primary-color)', marginBottom: '16px', fontWeight: '900' }}>欄位管理</h3>
-               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                 {customFieldDefs
-                   .filter(def => !['hostname', 'sn', 'specification', 'client', 'location', 'installed_date', 'system_date', 'warranty_expire', 'customer_warranty_expire'].includes(def.id))
-                   .map((def) => {
-                    const originalIdx = customFieldDefs.findIndex(d => d.id === def.id);
-                    return (
-                      <div key={def.id} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                        <input type="color" value={def.color || '#1890ff'} onChange={(e) => {
-                          const newDefs = [...customFieldDefs]; newDefs[originalIdx].color = e.target.value; setCustomFieldDefs(newDefs);
-                        }} style={{ width: '36px', height: '36px', border: '1px solid var(--border-color)', cursor: 'pointer', backgroundColor: 'transparent' }} />
-                        <input type="text" value={def.label} onChange={(e) => {
-                          const newDefs = [...customFieldDefs]; newDefs[originalIdx].label = e.target.value; setCustomFieldDefs(newDefs);
-                        }} style={{ ...editInputStyle, flex: 1 }} />
-                        {!def.isNative && (
-                          <button onClick={() => setCustomFieldDefs(customFieldDefs.filter(d => d.id !== def.id))} style={{ color: '#ef4444', border: 'none', background: 'none', cursor: 'pointer' }}><Trash2 size={18}/></button>
-                        )}
-                      </div>
-                    );
-                  })}
-                 <button onClick={() => setCustomFieldDefs([...customFieldDefs, { id: 'custom_'+Date.now(), label: '新欄位', isNative: false }])} style={{ padding: '10px', border: '2px dashed var(--border-color)', borderRadius: '10px', color: 'var(--primary-color)', backgroundColor: 'var(--bg-surface-subtle)', cursor: 'pointer' }}>+ 新增欄位</button>
-               </div>
-            </div>
-
-
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <button onClick={async () => {
-                // 找出被刪除的欄位 ID (原本有但現在沒了)
-                const currentIds = customFieldDefs.map(d => d.id);
-                const deletedIds = originalFieldIds.filter(id => !currentIds.includes(id));
-                
-                // 執行徹底刪除：從資料庫 custom_attributes 中移除這些 Key
-                for (const id of deletedIds) {
-                  await window.electronAPI.namedQuery('deleteCustomAttributeKey', [id]);
-                }
-
-                await window.electronAPI.namedQuery('upsertSystemSetting', ['customFieldDefinitions', customFieldDefs]);
-                alert('設定已儲存 (已同步清理被刪除的屬性資料)'); 
-                setShowConfigModal(false); 
-                fetchSettings();
-              }} style={{ flex: 1, padding: '14px', backgroundColor: 'var(--primary-color)', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 700, cursor: 'pointer' }}>儲存設定</button>
-              <button onClick={() => setShowConfigModal(false)} style={{ padding: '14px 24px', backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '10px', cursor: 'pointer' }}>取消</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {confirmModal.show && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'var(--bg-modal-overlay)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 11000, animation: 'fadeIn 0.2s' }}>
           <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-main)', width: '320px', padding: '24px', borderRadius: '20px', boxShadow: 'var(--modal-shadow)', textAlign: 'center' }}>

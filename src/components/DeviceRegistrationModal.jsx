@@ -30,7 +30,6 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   });
   const [isBulkMode, setIsBulkMode] = useState(false);
   const [bulkSns, setBulkSns] = useState('');
-  const [customFieldDefs, setCustomFieldDefs] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const validateAndSanitize = (val, fieldName = '欄位') => {
@@ -88,8 +87,6 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   }, []);
 
   const fetchSettings = useCallback(async () => {
-    const defsRes = await window.electronAPI.namedQuery('getSystemSetting', ['customFieldDefinitions']);
-    if (defsRes.success && defsRes.rows.length > 0) setCustomFieldDefs(defsRes.rows[0].value || []);
   }, []);
 
   const fetchProjects = useCallback(async () => {

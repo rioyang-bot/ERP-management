@@ -21,7 +21,6 @@ const HwList = ({ isSplitMode = false }) => {
   const [projects, setProjects] = useState([]);
   const [activeMenuId, setActiveMenuId] = useState(null);
   const [menuPosition, setMenuPosition] = useState(null);
-  const [showServerDetails, setShowServerDetails] = useState(true);
   const [ledgerItem, setLedgerItem] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [rmaAsset, setRmaAsset] = useState(null);
@@ -65,9 +64,6 @@ const HwList = ({ isSplitMode = false }) => {
     };
   }, [activeMenuId]);
 
-  const [showSyncConfig, setShowSyncConfig] = useState(false);
-  const [availableFieldDefs, setAvailableFieldDefs] = useState([]);
-  const [selectedSyncFields, setSelectedSyncFields] = useState(['hostname', 'os']);
 
   const [showEditModal, setShowEditModal] = useState(false);
   const [editItem, setEditItem] = useState(null);
@@ -109,16 +105,6 @@ const HwList = ({ isSplitMode = false }) => {
     }
 
     // 抓取系統設定
-    const defsRes = await window.electronAPI.namedQuery('getSystemSetting', ['customFieldDefinitions']);
-    if (defsRes.success && defsRes.rows.length > 0) {
-      setAvailableFieldDefs(defsRes.rows[0].value || []);
-    }
-
-    const prefRes = await window.electronAPI.namedQuery('getSystemSetting', ['nicSyncFieldPreference']);
-    if (prefRes.success && prefRes.rows.length > 0) {
-      setSelectedSyncFields(prefRes.rows[0].value || ['hostname', 'os']);
-    }
-
     const custRes = await window.electronAPI.namedQuery('fetchCustomers');
     if (custRes.success) {
       setCustomers(custRes.rows.map(r => r.name));
@@ -284,16 +270,6 @@ const HwList = ({ isSplitMode = false }) => {
       window.dispatchEvent(new CustomEvent('db-update'));
     }
     else alert('儲存失敗：' + res.error);
-  };
-
-  const handleSaveSyncPreference = async () => {
-    const res = await window.electronAPI.namedQuery('upsertSystemSetting', ['nicSyncFieldPreference', selectedSyncFields]);
-    if (res.success) { alert('同步設定已儲存！'); setShowSyncConfig(false); }
-  };
-
-  const toggleSyncField = (fieldId) => {
-    if (selectedSyncFields.includes(fieldId)) setSelectedSyncFields(selectedSyncFields.filter(id => id !== fieldId));
-    else setSelectedSyncFields([...selectedSyncFields, fieldId]);
   };
 
   const handleUpdateStatus = async (id, sn, newStatus, label) => {
@@ -525,13 +501,6 @@ const HwList = ({ isSplitMode = false }) => {
         )}
       </div>
       <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <input type="checkbox" id="showServerDetails" checked={showServerDetails} onChange={(e) => setShowServerDetails(e.target.checked)} style={{ cursor: 'pointer' }} />
-          <label htmlFor="showServerDetails" style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-muted)', cursor: 'pointer' }}>顯示伺服器同步資訊</label>
-        </div>
-        <button onClick={() => setShowSyncConfig(true)} style={{ padding: '10px 16px', backgroundColor: 'var(--bg-surface-subtle)', border: '1px solid var(--border-color)', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', fontWeight: '700', color: 'var(--text-main)', gap: '6px' }}>
-          <Settings size={16} /> 伺服器屬性顯示設定
-        </button>
 
         {/* 卡片聚合維度選擇器 */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'var(--bg-surface-subtle)', padding: '3px 8px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
@@ -830,10 +799,9 @@ const HwList = ({ isSplitMode = false }) => {
             <th style={{ ...thStyle, textAlign: 'left' }}>訂單來源 (OrderSource)</th>
             <th style={{ ...thStyle, textAlign: 'left' }}>出貨日期</th>
             <th style={{ ...thStyle, textAlign: 'left' }}>對應伺服器</th>
-            {showServerDetails && <th style={{ ...thStyle, textAlign: 'left' }}>伺服器屬性</th>}
             <th style={{ ...thStyle, textAlign: 'left' }}>客戶</th>
             <th style={{ ...thStyle, textAlign: 'left' }}>End-user</th>
-            {showServerDetails && <th style={{ ...thStyle, textAlign: 'left' }}>位置</th>}
+            <th style={{ ...thStyle, textAlign: 'left' }}>位置</th>
             <th style={{ ...thStyle, textAlign: 'left', width: '100px' }}>狀態</th>
             <th style={{ ...thStyle, textAlign: 'center', width: '80px' }}>功能</th>
           </tr>
@@ -905,37 +873,6 @@ const HwList = ({ isSplitMode = false }) => {
                     </div>
                   )}
                 </td>
-                {showServerDetails && (
-                  <td style={tdStyle}>
-                    <div style={{ fontSize: '11px' }}>
-                      {selectedSyncFields.map(id => {
-                        const def = availableFieldDefs.find(d => d.id === id);
-                        // 如果是自訂欄位且找不到定義 (已被刪除)，則不顯示
-                        if (id !== 'hostname' && id !== 'os' && !def) return null;
-
-                        const label = id === 'hostname' ? 'HostName' : (id === 'os' ? 'OS' : (id === 'nic' ? 'FW' : def?.label.split(' ')[0]));
-                        let val = null;
-                        if (id === 'hostname') return null; // 已移至序號下方顯示
-                        else if (id === 'os') val = nic.server_os;
-                        else if (id === 'nic') val = nic.server_nic;
-                        else val = serverAttrs[id];
-
-                        if (!val) return null;
-                        return (
-                          <div key={id} style={{ display: 'flex', gap: '4px', marginBottom: '2px' }}>
-                            <span style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{label}:</span>
-                            <span style={{ fontWeight: 600, color: def?.color || 'inherit' }}>{val}</span>
-                          </div>
-                        );
-                      })}
-                      {selectedSyncFields.every(id => {
-                        if (id === 'hostname') return !nic.server_hostname;
-                        if (id === 'os') return !nic.server_os;
-                        return !serverAttrs[id];
-                      }) && <span style={{ color: 'var(--text-subtle)' }}>--</span>}
-                    </div>
-                  </td>
-                )}
                 <td style={tdStyle}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 700, color: 'var(--text-main)' }}>
@@ -953,13 +890,11 @@ const HwList = ({ isSplitMode = false }) => {
                     {nic.server_end_user || serverAttrs.end_user || nic.end_user || nic.custom_attributes?.end_user || '--'}
                   </div>
                 </td>
-                {showServerDetails && (
-                  <td style={tdStyle}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-main)' }}>
-                      <MapPin size={14} color="var(--text-muted)" /> {nic.server_location || '--'}
-                    </div>
-                  </td>
-                )}
+                <td style={tdStyle}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-main)' }}>
+                    <MapPin size={14} color="var(--text-muted)" /> {nic.server_location || '--'}
+                  </div>
+                </td>
                 <td style={{ ...tdStyle, width: '100px' }}><span style={{ padding: '4px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: '800', backgroundColor: cfg.bgColor, color: cfg.color, border: `1px solid ${cfg.borderColor}`, whiteSpace: 'nowrap' }}>{cfg.label}</span></td>
                 <td style={{ ...tdStyle, textAlign: 'center', width: '80px', position: 'relative' }}>
                   <button 
@@ -1126,29 +1061,6 @@ const HwList = ({ isSplitMode = false }) => {
         </div>
       </div>
 
-      {showSyncConfig && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'var(--bg-modal-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
-          <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-main)', width: '450px', padding: '32px', borderRadius: '16px', boxShadow: 'var(--modal-shadow)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-              <h2 style={{ fontSize: '18px', fontWeight: '900', color: 'var(--text-main)', margin: 0 }}>伺服器屬性顯示設定</h2>
-              <X size={20} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setShowSyncConfig(false)} />
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '400px', overflowY: 'auto' }}>
-              {availableFieldDefs.map(def => {
-                const id = def.id;
-                const label = def.label;
-                return (
-                  <label key={id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', border: '1px solid var(--border-color)', borderRadius: '8px', cursor: 'pointer', backgroundColor: 'var(--bg-surface-subtle)' }}>
-                    <input type="checkbox" checked={selectedSyncFields.includes(id)} onChange={() => toggleSyncField(id)} />
-                    <span style={{ fontSize: '14px', color: 'var(--text-main)' }}>{label}</span>
-                  </label>
-                );
-              })}
-            </div>
-            <button onClick={handleSaveSyncPreference} style={{ width: '100%', padding: '12px', backgroundColor: 'var(--primary-color)', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 700, marginTop: '24px', cursor: 'pointer' }}>儲存設定</button>
-          </div>
-        </div>
-      )}
 
       {showEditModal && editItem && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'var(--bg-modal-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>

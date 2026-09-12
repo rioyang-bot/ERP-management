@@ -32,7 +32,6 @@ const Devices = ({ isSplitMode = false }) => {
   });
   const [isBulkMode, setIsBulkMode] = useState(false);
   const [bulkSns, setBulkSns] = useState('');
-  const [customFieldDefs, setCustomFieldDefs] = useState([]);
   const [formKey, setFormKey] = useState(0); // 用於強制重整表單區域
 
   const validateAndSanitize = (val, fieldName = '欄位') => {
@@ -90,8 +89,6 @@ const Devices = ({ isSplitMode = false }) => {
   }, []);
 
   const fetchSettings = useCallback(async () => {
-    const defsRes = await window.electronAPI.namedQuery('getSystemSetting', ['customFieldDefinitions']);
-    if (defsRes.success && defsRes.rows.length > 0) setCustomFieldDefs(defsRes.rows[0].value || []);
   }, []);
 
 
@@ -548,19 +545,6 @@ const Devices = ({ isSplitMode = false }) => {
               <div><label style={labelStyle}>放置位置 (Location)</label><input type="text" name="location" value={formData.location} onChange={handleChange} style={inputStyle} /></div>
             </div>
 
-            {/* Custom attributes section if visible */}
-            {customFieldDefs.length > 0 && (
-              <div style={{ padding: '16px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  {customFieldDefs
-                    
-                    .filter(f => !['sn', 'hostname', 'specification', 'client', 'location', 'installed_date', 'system_date', 'warranty_expire', 'customer_warranty_expire'].includes(f.id))
-                    .map(f => (
-                      <div key={f.id}><label style={labelStyle}>{f.label}</label><input type="text" value={f.isNative ? formData[f.id] : (formData.custom_attributes[f.id] || '')} onChange={e => { if (f.isNative) setFormData({ ...formData, [f.id]: e.target.value }); else setFormData({ ...formData, custom_attributes: { ...formData.custom_attributes, [f.id]: e.target.value } }); }} style={inputStyle} /></div>
-                    ))}
-                </div>
-              </div>
-            )}
 
             <div style={{ textAlign: 'right' }}><button onClick={handleAddAsset} style={{ ...inputStyle, width: '100%', backgroundColor: 'var(--primary-color)', color: '#fff', border: 'none', padding: '14px', fontWeight: '900', cursor: 'pointer', borderRadius: '12px', fontSize: '16px', boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)' }}><Save size={20} style={{ marginRight: '8px', verticalAlign: 'middle' }} /> {isBulkMode ? `開始多筆建檔 (${bulkSns.split('\n').filter(s => s.trim()).length} 筆)` : '儲存設備資料'}</button></div>
           </div>
