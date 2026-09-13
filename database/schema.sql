@@ -105,6 +105,7 @@ CREATE TABLE IF NOT EXISTS item_master (
     unit VARCHAR(20) DEFAULT '個',    -- 單位
     stock_qty INTEGER DEFAULT 0,     -- 實體庫存
     lab_qty INTEGER DEFAULT 0,       -- 實驗室庫存
+    lent_qty INTEGER DEFAULT 0,      -- 借出在外、尚未歸還的數量
     safety_stock INTEGER DEFAULT 0,  -- 安全水位
     purchase_price DECIMAL(15, 2),   -- 採購單價
     currency VARCHAR(10) DEFAULT 'TWD', -- 幣別

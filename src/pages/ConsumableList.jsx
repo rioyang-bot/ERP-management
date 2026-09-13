@@ -378,6 +378,7 @@ const ConsumableList = ({ isSplitMode = false }) => {
           specs: new Set(),
           stock_qty: 0,
           lab_qty: 0,
+          lent_qty: 0,
           total_qty: 0,
           hasLowStock: false
         };
@@ -388,9 +389,11 @@ const ConsumableList = ({ isSplitMode = false }) => {
 
       const stock = Number(curr.stock_qty || 0);
       const lab = Number(curr.lab_qty || 0);
+      const lent = Number(curr.lent_qty || 0);
       const safety = Number(curr.safety_stock || 0);
       acc[key].stock_qty += stock;
       acc[key].lab_qty += lab;
+      acc[key].lent_qty += lent;
       acc[key].total_qty += (stock + lab);
       if (safety > 0 && (stock + lab) <= safety) {
         acc[key].hasLowStock = true;
@@ -493,7 +496,7 @@ const ConsumableList = ({ isSplitMode = false }) => {
           </div>
 
           {/* 底部數據指標格 (在席 / 借測 / 總計) */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px', marginTop: '8px', paddingTop: '6px', borderTop: '1px solid var(--border-color)', fontSize: '11px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', marginTop: '8px', paddingTop: '6px', borderTop: '1px solid var(--border-color)', fontSize: '11px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
               <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>在席</span>
               <span style={{ color: 'var(--primary-color)', fontWeight: 800 }}>{st.stock_qty}</span>
@@ -501,6 +504,10 @@ const ConsumableList = ({ isSplitMode = false }) => {
             <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
               <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>借測</span>
               <span style={{ color: '#a855f7', fontWeight: 800 }}>{st.lab_qty}</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+              <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>借出</span>
+              <span style={{ color: st.lent_qty > 0 ? '#d97706' : 'var(--text-subtle)', fontWeight: 800 }}>{st.lent_qty}</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
               <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>總計</span>
@@ -763,6 +770,7 @@ const ConsumableList = ({ isSplitMode = false }) => {
                     <th style={{ ...thStyle, minWidth: '160px' }}>備註</th>
                     <th style={{ ...thStyle, width: '80px', textAlign: 'center', color: 'var(--primary-color)', whiteSpace: 'nowrap' }}>Stock</th>
                     <th style={{ ...thStyle, width: '80px', textAlign: 'center', color: '#a855f7', whiteSpace: 'nowrap' }}>LAB</th>
+                    <th style={{ ...thStyle, width: '80px', textAlign: 'center', color: '#d97706', whiteSpace: 'nowrap' }} title="目前借出在外、尚未歸還的數量。登記歸還後會自動回到 Stock。">借出中</th>
                     <th style={{ ...thStyle, width: '80px', textAlign: 'center', whiteSpace: 'nowrap' }}>Total</th>
                     <th style={{ ...thStyle, width: '100px', textAlign: 'center', whiteSpace: 'nowrap' }}>安全庫存</th>
                     <th style={{ ...thStyle, textAlign: 'center', width: '100px', whiteSpace: 'nowrap' }}>操作</th>
@@ -810,6 +818,14 @@ const ConsumableList = ({ isSplitMode = false }) => {
                       </td>
                       <td style={{ ...tdStyle, fontWeight: 700, color: 'var(--primary-color)', textAlign: 'center' }}>{item.stock_qty || 0}</td>
                       <td style={{ ...tdStyle, fontWeight: 700, color: '#a855f7', cursor: 'pointer', textDecoration: 'underline', textAlign: 'center' }} onClick={() => viewAssignments(item)}>{item.lab_qty || 0}</td>
+                      {/* 借出中不計入 Total：Total 代表現在手上可動用的數量，借出去的拿不回來用。
+                          安全庫存的低量判斷同樣只看 Stock + LAB。 */}
+                      <td
+                        style={{ ...tdStyle, fontWeight: 700, textAlign: 'center', color: Number(item.lent_qty) > 0 ? '#d97706' : 'var(--text-subtle)' }}
+                        title={Number(item.lent_qty) > 0 ? '可於借用單列表查看是哪幾張單尚未歸還' : undefined}
+                      >
+                        {item.lent_qty || 0}
+                      </td>
                       <td style={{ 
                         ...tdStyle, 
                         fontWeight: 800, 

@@ -88,6 +88,11 @@
       "file": "migration_user_preferences.sql",
       "type": "schema",
       "note": "使用者個人偏好設定表，供自訂顯示欄位使用"
+    },
+    {
+      "file": "migration_consumable_lent_qty.sql",
+      "type": "schema",
+      "note": "耗材借出中數量欄位，並回填既有未歸還的借用單"
     }
   ]
 }

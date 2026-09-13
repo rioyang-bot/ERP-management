@@ -243,8 +243,12 @@ const LentList = () => {
       // 階段二：正式變更 (Commit)
       for (const item of items) {
         if (item.category_name === '耗材') {
-          const updateRes = await window.electronAPI.namedQuery('updateStockQtyOnOutbound', [item.quantity, item.item_id]);
-          if (!updateRes.success) throw new Error(`扣除耗材 [${item.brand} ${item.model}] 庫存失敗。`);
+          // 借出用專屬查詢：扣庫存的同時把數量記為「借出中」，歸還時才知道要加回多少
+          const updateRes = await window.electronAPI.namedQuery('updateStockQtyOnLendOut', [item.quantity, item.item_id]);
+          // rows 為空代表被 stock_qty >= $1 的條件擋下，實際沒有扣到，不能當成功
+          if (!updateRes.success || !updateRes.rows?.length) {
+            throw new Error(`扣除耗材 [${item.brand} ${item.model}] 庫存失敗，可能是庫存已被其他人領用。`);
+          }
         } else if (item.category_name === '硬體' || item.category_name === '設備') {
           const destLocation = item.location || dn.location;
           const updateRes = await window.electronAPI.namedQuery('updateAssetStatusAndLocationBySn', ['LENT', destLocation, item.sn]);
@@ -292,7 +296,14 @@ const LentList = () => {
       const items = res.rows;
       
       for (const item of items) {
-        if ((item.category_name === '硬體' || item.category_name === '設備') && item.sn) {
+        if (item.category_name === '耗材') {
+          // 耗材沒有序號可以改狀態，借出時扣掉的數量要在這裡加回庫存，
+          // 否則單子雖然標記為已歸還，庫存卻永遠短少那些數量
+          const updateRes = await window.electronAPI.namedQuery('updateStockQtyOnLendReturn', [item.quantity, item.item_id]);
+          if (!updateRes.success || !updateRes.rows?.length) {
+            throw new Error(`回補耗材 [${item.brand} ${item.model}] 庫存失敗。`);
+          }
+        } else if ((item.category_name === '硬體' || item.category_name === '設備') && item.sn) {
            const updateRes = await window.electronAPI.namedQuery('updateAssetStatusAndLocationBySn', ['ACTIVE', '', item.sn]);
            if (!updateRes.success) throw new Error(`變更序號 [${item.sn}] 狀態失敗。`);
         }
@@ -311,7 +322,7 @@ const LentList = () => {
         { dnId: dn.id, dnNumber: dn.request_no, customer: dn.customer, returnDate: date, itemsCount: items.length, items: items.map(i => ({ model: i.model, brand: i.brand, sn: i.sn })) }
       );
 
-      alert('歸還成功！設備已恢復為在庫狀態。');
+      alert('歸還成功！設備已恢復為在庫狀態，耗材數量已回補庫存。');
       setReturnModal({ show: false, dn: null, date: '' });
       fetchRecords();
 

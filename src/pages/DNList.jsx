@@ -224,8 +224,17 @@ const DNList = ({ isSplitMode = false }) => {
       // 階段二：正式變更 (Commit)
       for (const item of dnItems) {
         if (item.category_name === '耗材') {
-           const res = await window.electronAPI.namedQuery('updateStockQtyOnOutbound', [item.quantity, item.item_id]);
-           if (!res.success) throw new Error(`扣除耗材 [${item.brand} ${item.model}] 庫存時發生錯誤。`);
+           // 借用單也會出現在本列表，從這裡確認時同樣要記為「借出中」，
+           // 不然日後歸還會找不到要加回多少（與借用單列表的處理保持一致）
+           const isLend = selectedDN.request_type === 'LEND';
+           const res = await window.electronAPI.namedQuery(
+             isLend ? 'updateStockQtyOnLendOut' : 'updateStockQtyOnOutbound',
+             [item.quantity, item.item_id]
+           );
+           // rows 為空代表被 stock_qty >= $1 擋下，實際沒有扣到
+           if (!res.success || !res.rows?.length) {
+             throw new Error(`扣除耗材 [${item.brand} ${item.model}] 庫存時發生錯誤，可能是庫存不足。`);
+           }
         } else if (item.category_name === '硬體' || item.category_name === '設備') {
            const destLocation = item.location || selectedDN.location;
            const assetStatus = selectedDN.request_type === 'LEND' ? 'LENT' : 'SHIPPED';

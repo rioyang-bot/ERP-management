@@ -290,8 +290,8 @@ export const queries = {
   insertAssetRecord: `INSERT INTO assets (item_master_id, sn, client, hostname, location, installed_date, customer_warranty_expire, system_date, warranty_expire, os, nic, custom_attributes, ownership, status, remarks) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14, 'ACTIVE'), $15)`,
 
   // ConsumableList.jsx
-  fetchConsumablesList: `SELECT v.*, i.id as id, i.stock_qty, i.lab_qty, c.name as category_name FROM v_inventory_summary v JOIN item_master i ON v.item_id = i.id LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '耗材' ORDER BY i.id DESC`,
-  fetchConsumablesListByType: `SELECT v.*, i.id as id, i.stock_qty, i.lab_qty, c.name as category_name FROM v_inventory_summary v JOIN item_master i ON v.item_id = i.id LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '耗材' AND v.type = $1 ORDER BY i.id DESC`,
+  fetchConsumablesList: `SELECT v.*, i.id as id, i.stock_qty, i.lab_qty, COALESCE(i.lent_qty, 0) as lent_qty, c.name as category_name FROM v_inventory_summary v JOIN item_master i ON v.item_id = i.id LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '耗材' ORDER BY i.id DESC`,
+  fetchConsumablesListByType: `SELECT v.*, i.id as id, i.stock_qty, i.lab_qty, COALESCE(i.lent_qty, 0) as lent_qty, c.name as category_name FROM v_inventory_summary v JOIN item_master i ON v.item_id = i.id LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '耗材' AND v.type = $1 ORDER BY i.id DESC`,
   deleteConsumableMasterIfSafe: `
       DELETE FROM item_master i
       WHERE i.id = $1
@@ -686,7 +686,14 @@ export const queries = {
   `,
   checkItemStock: `SELECT stock_qty FROM item_master WHERE id = $1`,
   checkAssetActive: `SELECT status FROM assets WHERE sn = $1`,
-  updateStockQtyOnOutbound: `UPDATE item_master SET stock_qty = stock_qty - $1 WHERE id = $2 AND stock_qty >= $1`,
+  // 加上 RETURNING id：namedQuery 只回 { success, rows }，沒有 rowCount。
+  // 沒有 RETURNING 的話，庫存不足被 WHERE 擋掉時仍會回報成功，等於默默沒扣到。
+  updateStockQtyOnOutbound: `UPDATE item_master SET stock_qty = stock_qty - $1 WHERE id = $2 AND stock_qty >= $1 RETURNING id`,
+  // 借用單確認借出：扣庫存的同時記為借出在外，歸還時才知道要加回多少
+  updateStockQtyOnLendOut: `UPDATE item_master SET stock_qty = stock_qty - $1, lent_qty = COALESCE(lent_qty, 0) + $1 WHERE id = $2 AND stock_qty >= $1 RETURNING id`,
+  // 借用單登記歸還：數量回到庫存。lent_qty 以 GREATEST 夾住下限，
+  // 避免歷史資料（本功能上線前就已借出、未回填到的單據）把借出中減成負數。
+  updateStockQtyOnLendReturn: `UPDATE item_master SET stock_qty = stock_qty + $1, lent_qty = GREATEST(COALESCE(lent_qty, 0) - $1, 0) WHERE id = $2 RETURNING id`,
   updateAssetStatusAndLocationBySn: `UPDATE assets SET status = $1, location = $2 WHERE sn = $3`,
   updateAssetStatusLocationAndShippingDateBySn: `UPDATE assets SET status = $1, location = $2, shipping_date = $3 WHERE sn = $4`,
   updateAssetStatusLocationAndInstalledDateBySn: `UPDATE assets SET status = $1, location = $2, installed_date = $3, shipping_date = $3 WHERE sn = $4`,
