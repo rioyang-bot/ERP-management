@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Search, Columns3, Edit2, X, Server, User, MapPin, MoreHorizontal, Trash2, ShoppingBag, AlertTriangle, CheckCircle, Save, Monitor, Settings, ShieldAlert, Archive, RotateCcw, Cpu, Send, History, Building2, Info, RefreshCw } from 'lucide-react';
+import { Search, Columns3, Edit2, X, Server, User, MapPin, MoreHorizontal, Trash2, ShoppingBag, AlertTriangle, CheckCircle, Save, Monitor, Settings, ShieldAlert, Archive, RotateCcw, Cpu, Send, History, Building2, RefreshCw } from 'lucide-react';
 import ItemLedgerModal from '../components/ItemLedgerModal';
 import HwRegistrationModal from '../components/HwRegistrationModal';
 import RmaReplacementModal from '../components/RmaReplacementModal';
 import { logUpdate, logDelete, logStatusChange } from '../utils/auditLogger';
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
-import { isItemRetired, getItemAggregationKey, aggregateCards, computeNewRetiredKeys } from '../utils/cardAggregation';
+import { isItemRetired, getItemAggregationKey, aggregateCards, computeNewRetiredKeys, getCardTitle, showsModelSubtitle, getCardSearchText } from '../utils/cardAggregation';
 import ColumnVisibilityModal from '../components/ColumnVisibilityModal';
+import CardAggregationLegend from '../components/CardAggregationLegend';
 import { useColumnPreferences } from '../hooks/useColumnPreferences';
 
 // 硬體列表的欄位清單：id 對應表格的每一欄，always 代表不可隱藏
@@ -570,6 +571,24 @@ const HwList = ({ isSplitMode = false }) => {
             </button>
             <button
               type="button"
+              onClick={() => handleAggregationModeChange('TYPE')}
+              style={{
+                padding: '5px 10px',
+                borderRadius: '7px',
+                border: 'none',
+                fontSize: '11px',
+                fontWeight: '800',
+                cursor: 'pointer',
+                backgroundColor: aggregationMode === 'TYPE' ? 'var(--primary-color)' : 'transparent',
+                color: aggregationMode === 'TYPE' ? '#fff' : 'var(--text-muted)',
+                transition: 'all 0.15s'
+              }}
+              title="依類型聚合：相同類型合併統計（不分廠牌與型號，例如所有伺服器算成一張卡片）"
+            >
+              🔧 依類型
+            </button>
+            <button
+              type="button"
               onClick={() => handleAggregationModeChange('BRAND')}
               style={{
                 padding: '5px 10px',
@@ -642,13 +661,13 @@ const HwList = ({ isSplitMode = false }) => {
                   <div style={{ marginBottom: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>
                     <div style={{ fontSize: '12px', fontWeight: '900', color: isSelected ? 'var(--primary-color)' : 'var(--text-main)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
                       <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <Monitor size={12} color={isSelected ? 'var(--primary-color)' : 'var(--text-muted)'} /> {st.brand}
+                        <Monitor size={12} color={isSelected ? 'var(--primary-color)' : 'var(--text-muted)'} /> {getCardTitle(st, aggregationMode)}
                       </span>
                       <span style={{ fontSize: '10px', fontWeight: '800', color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', backgroundColor: 'var(--bg-surface-subtle)', padding: '1px 5px', borderRadius: '4px', marginRight: '22px' }}>
                         共 {st.total} 個
                       </span>
                     </div>
-                    {aggregationMode !== 'BRAND' && (
+                    {showsModelSubtitle(aggregationMode) && (
                       <div style={{ color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', fontSize: '10px', fontWeight: '700', marginTop: '2px', paddingLeft: '16px' }}>
                         {st.type} - {st.model}
                       </div>
@@ -684,7 +703,7 @@ const HwList = ({ isSplitMode = false }) => {
         }
         if (filterType && st.type !== filterType) return false;
         if (searchTerms.length === 0) return true;
-        const target = `${st.brand} ${st.type} ${st.model} ${st.specification}`.toLowerCase();
+        const target = getCardSearchText(st);
         return searchTerms.every(t => target.includes(t));
       };
 
@@ -722,13 +741,13 @@ const HwList = ({ isSplitMode = false }) => {
                     <div style={{ marginBottom: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>
                       <div style={{ fontSize: '13px', fontWeight: '900', color: isSelected ? 'var(--primary-color)' : 'var(--text-main)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <Monitor size={12} color={isSelected ? 'var(--primary-color)' : 'var(--text-muted)'} /> {st.brand}
+                          <Monitor size={12} color={isSelected ? 'var(--primary-color)' : 'var(--text-muted)'} /> {getCardTitle(st, aggregationMode)}
                         </span>
                         <span style={{ fontSize: '10px', fontWeight: '800', color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', backgroundColor: 'var(--bg-surface-subtle)', padding: '1px 5px', borderRadius: '4px', marginRight: '22px' }}>
                           共 {st.total} 個
                         </span>
                       </div>
-                      {aggregationMode !== 'BRAND' && (
+                      {showsModelSubtitle(aggregationMode) && (
                         <div style={{ color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', fontSize: '10px', fontWeight: '700', marginTop: '2px', paddingLeft: '16px' }}>
                           {st.type} - {st.model}
                         </div>
@@ -799,13 +818,13 @@ const HwList = ({ isSplitMode = false }) => {
                   <div style={{ marginBottom: '6px', borderBottom: '1px solid var(--border-color)', paddingBottom: '4px', overflow: 'hidden' }}>
                     <div style={{ fontSize: '12px', fontWeight: '900', color: isSelected ? 'var(--primary-color)' : 'var(--text-main)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
                       <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <Monitor size={12} color={isSelected ? 'var(--primary-color)' : 'var(--text-muted)'} /> {st.brand}
+                        <Monitor size={12} color={isSelected ? 'var(--primary-color)' : 'var(--text-muted)'} /> {getCardTitle(st, aggregationMode)}
                       </span>
                       <span style={{ fontSize: '10px', fontWeight: '800', color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', backgroundColor: 'var(--bg-surface-subtle)', padding: '1px 5px', borderRadius: '4px', marginRight: '20px' }}>
                         共 {st.total} 個
                       </span>
                     </div>
-                    {aggregationMode !== 'BRAND' && (
+                    {showsModelSubtitle(aggregationMode) && (
                       <div style={{ color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', fontSize: '10px', fontWeight: '700', marginTop: '1px', paddingLeft: '16px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
                         {st.type} - {st.model}
                       </div>
@@ -1091,38 +1110,8 @@ const HwList = ({ isSplitMode = false }) => {
           </div>
         )}
 
-        {/* 硬體卡片聚合規則說明 */}
-        <div style={{
-          marginTop: '24px',
-          padding: '14px 18px',
-          backgroundColor: 'var(--bg-surface-subtle)',
-          borderRadius: '12px',
-          border: '1px solid var(--border-color)',
-          display: 'flex',
-          alignItems: 'flex-start',
-          gap: '12px',
-          fontSize: '13px',
-          color: 'var(--text-muted)',
-          lineHeight: '1.6'
-        }}>
-          <Info size={18} color="var(--primary-color)" style={{ flexShrink: 0, marginTop: '2px' }} />
-          <div>
-            <div style={{ fontWeight: '800', color: 'var(--text-main)', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              硬體卡片聚合規則說明
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <div>• <b>當前聚合維度</b>：
-                <span style={{ color: 'var(--primary-color)', fontWeight: '800' }}>
-                  {aggregationMode === 'SPEC' && '🏷️ 依規格聚合（廠牌 ＋ 類型 ＋ 型號 ＋ 規格，規格不同即獨立卡片）'}
-                  {aggregationMode === 'MODEL' && '📦 依型號聚合（廠牌 ＋ 類型 ＋ 型號，同型號合併卡片不分規格）'}
-                  {aggregationMode === 'BRAND' && '🏢 依廠牌聚合（純依廠牌合併統計卡片）'}
-                </span>
-                （可於右上方自由切換）
-              </div>
-              <div>• <b>連動篩選</b>：點擊上方任一卡片，系統將自動依該卡片維度（廠牌、型號或規格）過濾下方硬體資產明細清單；再次點擊可取消篩選。</div>
-            </div>
-          </div>
-        </div>
+        {/* 硬體卡片聚合規則說明（三個列表共用同一份說明） */}
+        <CardAggregationLegend unit="硬體" mode={aggregationMode} />
       </div>
 
 

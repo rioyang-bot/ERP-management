@@ -8,6 +8,7 @@ import ConsumableCustomTagsModal from '../components/ConsumableCustomTagsModal';
 import { logUpdate, logDelete } from '../utils/auditLogger';
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
+import CardAggregationLegend from '../components/CardAggregationLegend';
 
 const editLabelStyle = { display: 'block', fontWeight: 800, fontSize: '13px', marginBottom: '6px', color: 'var(--text-muted)' };
 const editInputStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', outline: 'none', fontSize: '13px', boxSizing: 'border-box' };
@@ -918,6 +919,9 @@ const ConsumableList = ({ isSplitMode = false }) => {
             </button>
           </div>
         )}
+
+        {/* 耗材卡片聚合規則說明（三個列表共用同一份說明；耗材固定依類型） */}
+        <CardAggregationLegend unit="耗材" mode="TYPE" fixed />
       </div>
 
       {showEditModal && editItem && (
