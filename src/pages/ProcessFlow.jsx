@@ -31,11 +31,12 @@ import {
   X
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import BackupRestoreGuide from '../components/BackupRestoreGuide';
 import './ProcessFlow.css';
 
 const ProcessFlow = () => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('MODULE_BLOCKS'); // 'MODULE_BLOCKS' | 'E2E_FLOW' | 'STATE_MACHINE' | 'ROLE_GUIDE'
+  const [activeTab, setActiveTab] = useState('MODULE_BLOCKS'); // 'MODULE_BLOCKS' | 'E2E_FLOW' | 'STATE_MACHINE' | 'ROLE_GUIDE' | 'BACKUP'
   const [selectedBlock, setSelectedBlock] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [flowStreamType, setFlowStreamType] = useState('ALL'); // 'ALL' | 'DOC' | 'ASSET' | 'REPORT'
@@ -317,6 +318,14 @@ const ProcessFlow = () => {
         >
           <Users size={18} />
           <span>角色作業指南 (Role Guide)</span>
+        </button>
+
+        <button
+          className={`view-tab-btn ${activeTab === 'BACKUP' ? 'active' : ''}`}
+          onClick={() => setActiveTab('BACKUP')}
+        >
+          <Database size={18} />
+          <span>資料備份與還原 (Backup & Restore)</span>
         </button>
       </div>
 
@@ -911,6 +920,12 @@ const ProcessFlow = () => {
           </div>
         </div>
       )}
+
+      {/* =========================================================
+          視圖 5：資料備份與還原 (Backup & Restore)
+          備份時間、保留策略與還原步驟，方便日後查閱
+          ========================================================= */}
+      {activeTab === 'BACKUP' && <BackupRestoreGuide />}
 
       {/* =========================================================
           選中方塊詳細 Modal (Block Details Drawer / Modal)
