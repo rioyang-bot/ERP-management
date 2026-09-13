@@ -34,6 +34,7 @@ describe('硬體列表：掛載於不存在設備的標示', () => {
             custom_attributes: { server_sn: n.server_sn },
             server_sn: n.server_sn,
             server_exists: n.server_exists,
+            client: n.client || null,
             server_client: n.server_client || null,
           })),
         });
@@ -90,8 +91,24 @@ describe('硬體列表：掛載於不存在設備的標示', () => {
       expect(screen.getByText('X0341997')).toBeInTheDocument();
     });
     expect(screen.queryByText('查無此設備')).not.toBeInTheDocument();
-    // 對應伺服器欄位的副標顯示該設備的客戶（客戶欄本身也會顯示，因此共兩處）
-    expect(screen.getAllByText('台積電').length).toBeGreaterThanOrEqual(2);
+    // 對應伺服器欄位的副標顯示該設備的客戶（硬體本身沒填客戶，客戶欄不會重複顯示）
+    expect(screen.getByText('台積電')).toBeInTheDocument();
+  });
+
+  it('硬體的客戶是自己的欄位，不會被掛載設備的客戶取代', async () => {
+    setupNics([{
+      sn: 'HW-CLIENT-1', server_sn: 'X0341997', server_exists: true,
+      client: '硬體自己的客戶', server_client: '設備的客戶',
+    }]);
+    renderList();
+    await showTable('TESTBRAND');
+
+    await waitFor(() => {
+      expect(screen.getByText('X0341997')).toBeInTheDocument();
+    });
+    // 客戶欄顯示硬體自己的客戶；設備的客戶只出現在「對應伺服器」欄位底下
+    expect(screen.getByText('硬體自己的客戶')).toBeInTheDocument();
+    expect(screen.getByText('設備的客戶')).toBeInTheDocument();
   });
 
   it('未填伺服器序號者不應被誤標', async () => {

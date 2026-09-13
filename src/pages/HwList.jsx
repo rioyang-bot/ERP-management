@@ -940,10 +940,13 @@ const HwList = ({ isSplitMode = false }) => {
                     </div>
                   )}
                 </td>
+                {/* 硬體的客戶是硬體自己的欄位，不沿用掛載設備的客戶；
+                    設備那邊的客戶顯示在「對應伺服器」欄位底下。
+                    底下的聯絡人也是依硬體自己的客戶查出來的，混用會對不起來。 */}
                 <td style={{ ...tdStyle, ...hideCol('client') }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 700, color: 'var(--text-main)' }}>
-                      <User size={14} color="var(--text-muted)" /> {nic.server_client || nic.client || '--'}
+                      <User size={14} color="var(--text-muted)" /> {nic.client || '--'}
                     </div>
                     {(nic.partner_contact || nic.partner_phone) && (
                       <div style={{ fontSize: '11px', color: 'var(--text-muted)', paddingLeft: '18px' }}>
