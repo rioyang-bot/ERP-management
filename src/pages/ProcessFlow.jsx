@@ -26,17 +26,19 @@ import {
   KeyRound, 
   ChevronRight,
   Zap,
+  Send,
   HelpCircle,
   Wrench,
   X
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import BackupRestoreGuide from '../components/BackupRestoreGuide';
+import LendFlowGuide from '../components/LendFlowGuide';
 import './ProcessFlow.css';
 
 const ProcessFlow = () => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('MODULE_BLOCKS'); // 'MODULE_BLOCKS' | 'E2E_FLOW' | 'STATE_MACHINE' | 'ROLE_GUIDE' | 'BACKUP'
+  const [activeTab, setActiveTab] = useState('MODULE_BLOCKS'); // 'MODULE_BLOCKS' | 'E2E_FLOW' | 'STATE_MACHINE' | 'LEND_FLOW' | 'ROLE_GUIDE' | 'BACKUP'
   const [selectedBlock, setSelectedBlock] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [flowStreamType, setFlowStreamType] = useState('ALL'); // 'ALL' | 'DOC' | 'ASSET' | 'REPORT'
@@ -149,7 +151,7 @@ const ProcessFlow = () => {
       subModules: [
         { name: '出貨單建立 (Outbound)', path: '/outbound', desc: '建立 D/N 單，掃描/選擇在庫 SN（嚴格防重複出貨攔截），出貨專案支援雙模式立案並自動回寫綁定' },
         { name: '出貨單列表 (D/N List)', path: '/dn-list', desc: '搜尋列新增狀態查詢欄位 (全部 / 待出貨 / 已出貨 / 已歸還)，支援銷貨單總覽與列印/PDF' },
-        { name: '設備/硬體借用列表 (Device/HW Lent List)', path: '/lent-list', desc: '追蹤借出設備與硬體、預計歸還日、逾期警示與一鍵歸還驗收' }
+        { name: '設備/硬體借用列表 (Device/HW Lent List)', path: '/lent-list', desc: '追蹤借出設備、硬體與耗材、預計歸還日、逾期警示與一鍵歸還驗收（耗材歸還時數量自動回補庫存）' }
       ],
       inputs: ['客戶/專案出貨需求', '內部/外部借用申請', '在庫狀態 (ACTIVE) 設備/硬體/耗材'],
       outputs: ['出貨單 (DN-YYYYMMDD-XX)', '資產狀態轉移 (SHIPPED/LENT)', '自動回寫設備專案/客戶屬性', '專案庫存扣減'],
@@ -157,7 +159,9 @@ const ProcessFlow = () => {
         '出貨防呆與序號防重複：序號輸入即時回顯比對，嚴格限制僅「在庫 (ACTIVE)」狀態之資產可排定出貨；若資產為已出貨 (SHIPPED)、借出 (LENT)、維修 (REPAIRING) 或報廢，立即彈窗阻擋以防重複出貨。',
         '出貨專案自動立案與回寫：出貨專案支援選取或直接輸入新專案名稱；建立出貨單時若為新專案將自動立案，並全自動將該專案名稱與客戶回寫綁定至所有出貨設備及其掛載硬體元件之自訂屬性。',
         '單據類型為 SALE (銷貨) 時：庫存狀態變更為 SHIPPED (已出貨)，數據自動送至專案進銷存報表。',
-        '單據類型為 LENT (借用) 時：庫存狀態變更為 LENT (借出中)，歸還時進行驗收並自動恢復 ACTIVE。',
+        '單據類型為 LENT (借用) 時，有序號的設備/硬體：狀態變更為 LENT (借出中)，歸還時進行驗收並自動恢復 ACTIVE。',
+        '單據類型為 LENT (借用) 時，耗材：沒有序號可標記狀態，改以數量計算——確認借出時庫存減、借出中加；登記歸還時庫存加回、借出中減。耗材列表可直接看到目前借出在外的數量。',
+        '耗材的「借出中」數量不計入 Total，也不影響安全庫存的低量警示：Total 代表現在手上可動用的數量，借出在外的無法動用。',
         '當設備狀態變更為出貨 (SHIPPED) 或在庫 (ACTIVE) 時，系統自動連動更新其搭載硬體 (Mounted HW) 為同步狀態。',
         '出貨單列表支援以「狀態 (Status)」進行快速篩選（待出貨 PENDING、已出貨 SHIPPED、已歸還 RETURNED）。'
       ]
@@ -310,6 +314,14 @@ const ProcessFlow = () => {
         >
           <Sparkles size={18} />
           <span>資產狀態生命週期 (Asset State)</span>
+        </button>
+
+        <button
+          className={`view-tab-btn ${activeTab === 'LEND_FLOW' ? 'active' : ''}`}
+          onClick={() => setActiveTab('LEND_FLOW')}
+        >
+          <Send size={18} />
+          <span>借用與歸還流程 (Lend & Return)</span>
         </button>
 
         <button 
@@ -922,7 +934,13 @@ const ProcessFlow = () => {
       )}
 
       {/* =========================================================
-          視圖 5：資料備份與還原 (Backup & Restore)
+          視圖 5：借用與歸還流程 (Lend & Return)
+          設備/硬體改序號狀態、耗材加減數量，兩者差異直接影響庫存數字
+          ========================================================= */}
+      {activeTab === 'LEND_FLOW' && <LendFlowGuide />}
+
+      {/* =========================================================
+          視圖 6：資料備份與還原 (Backup & Restore)
           備份時間、保留策略與還原步驟，方便日後查閱
           ========================================================= */}
       {activeTab === 'BACKUP' && <BackupRestoreGuide />}
