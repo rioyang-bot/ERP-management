@@ -933,9 +933,10 @@ const HwList = ({ isSplitMode = false }) => {
                       查無此設備
                     </div>
                   )}
-                  {nic.server_hostname && (
+                  {/* 副標顯示該設備的客戶，方便直接看出這張硬體掛在誰的機器上 */}
+                  {nic.server_client && (
                     <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', paddingLeft: '16px' }}>
-                      HostName: <b style={{ color: 'var(--text-main)' }}>{nic.server_hostname}</b>
+                      客戶: <b style={{ color: 'var(--text-main)' }}>{nic.server_client}</b>
                     </div>
                   )}
                 </td>

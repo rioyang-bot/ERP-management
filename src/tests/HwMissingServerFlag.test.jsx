@@ -14,7 +14,7 @@ import { createRunTransactionMock } from './helpers/mockTransaction';
 describe('硬體列表：掛載於不存在設備的標示', () => {
   const namedQueryMock = vi.fn();
 
-  /** @param {Array<{sn:string, server_sn:string, server_exists:boolean, server_hostname?:string}>} nics */
+  /** @param {Array<{sn:string, server_sn:string, server_exists:boolean, server_client?:string}>} nics */
   const setupNics = (nics) => {
     namedQueryMock.mockImplementation((query) => {
       if (query === 'fetchNicList' || query === 'fetchNicListByType') {
@@ -34,7 +34,7 @@ describe('硬體列表：掛載於不存在設備的標示', () => {
             custom_attributes: { server_sn: n.server_sn },
             server_sn: n.server_sn,
             server_exists: n.server_exists,
-            server_hostname: n.server_hostname || null,
+            server_client: n.server_client || null,
           })),
         });
       }
@@ -82,7 +82,7 @@ describe('硬體列表：掛載於不存在設備的標示', () => {
   });
 
   it('伺服器序號對應得到設備時不應出現標示', async () => {
-    setupNics([{ sn: 'HW-OK-1', server_sn: 'X0341997', server_exists: true, server_hostname: 'host-a' }]);
+    setupNics([{ sn: 'HW-OK-1', server_sn: 'X0341997', server_exists: true, server_client: '台積電' }]);
     renderList();
     await showTable('TESTBRAND');
 
@@ -90,6 +90,8 @@ describe('硬體列表：掛載於不存在設備的標示', () => {
       expect(screen.getByText('X0341997')).toBeInTheDocument();
     });
     expect(screen.queryByText('查無此設備')).not.toBeInTheDocument();
+    // 對應伺服器欄位的副標顯示該設備的客戶（客戶欄本身也會顯示，因此共兩處）
+    expect(screen.getAllByText('台積電').length).toBeGreaterThanOrEqual(2);
   });
 
   it('未填伺服器序號者不應被誤標', async () => {
