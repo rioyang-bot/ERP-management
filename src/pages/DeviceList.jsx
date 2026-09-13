@@ -11,6 +11,7 @@ import { isItemRetired, getItemAggregationKey, aggregateCards, computeNewRetired
 import ColumnVisibilityModal from '../components/ColumnVisibilityModal';
 import CardAggregationLegend from '../components/CardAggregationLegend';
 import WarrantyBadge from '../components/WarrantyBadge';
+import { isFullyOutOfWarranty } from '../utils/warranty';
 import { useColumnPreferences } from '../hooks/useColumnPreferences';
 
 // 設備列表的欄位清單：id 對應表格的每一欄，always 代表不可隱藏
@@ -469,6 +470,9 @@ const DeviceList = ({ isSplitMode = false }) => {
 
   const statusPriority = { 'REPAIRING': 1, 'LENT': 2, 'ACTIVE': 3, 'SHIPPED': 4, 'PENDING_SCRAP': 5, 'SCRAPPED': 6 };
 
+  // 排序用的基準日：整次排序共用同一個，避免跨午夜時前後比較不一致
+  const sortToday = new Date();
+
   const sortedItems = items
     .filter(item => {
       if (selectedCardKey) {
@@ -491,8 +495,16 @@ const DeviceList = ({ isSplitMode = false }) => {
       });
     })
     .sort((a, b) => {
+      // 第一排序：狀態
       const priorityDiff = (statusPriority[a.status] || 99) - (statusPriority[b.status] || 99);
       if (priorityDiff !== 0) return priorityDiff;
+
+      // 第二排序：已過保的排到同狀態的最後面。
+      // 基準日在排序開始前取一次，避免同一次排序中前後比較的基準不一致。
+      const expiredDiff = (isFullyOutOfWarranty(a, sortToday) ? 1 : 0)
+        - (isFullyOutOfWarranty(b, sortToday) ? 1 : 0);
+      if (expiredDiff !== 0) return expiredDiff;
+
       return (b.id || 0) - (a.id || 0);
     });
 

@@ -34,3 +34,22 @@ export function getWarrantyState(expireDate, today = new Date()) {
   if (days <= EXPIRING_SOON_DAYS) return { status: 'EXPIRING', days };
   return { status: 'VALID', days };
 }
+
+/**
+ * 這筆資產是否已完全沒有保固。
+ *
+ * 只有「有填到期日、而且填了的每一種保固都已過期」才算過保。
+ * 原廠保固過了但客戶保固還在，對客戶而言仍在保固責任內，不算過保；
+ * 完全沒填到期日則是狀況不明，同樣不算過保，以免被當成過期處理。
+ *
+ * @param {{warranty_expire?: any, customer_warranty_expire?: any}} item
+ * @param {Date} [today] 便於測試指定基準日
+ */
+export function isFullyOutOfWarranty(item, today = new Date()) {
+  const states = [item?.warranty_expire, item?.customer_warranty_expire]
+    .map((d) => getWarrantyState(d, today))
+    .filter(Boolean);
+
+  if (states.length === 0) return false;
+  return states.every((s) => s.status === 'EXPIRED');
+}

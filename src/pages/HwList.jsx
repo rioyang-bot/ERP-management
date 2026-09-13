@@ -10,6 +10,7 @@ import PageSizeSelector from '../components/common/PageSizeSelector';
 import { isItemRetired, getItemAggregationKey, aggregateCards, computeNewRetiredKeys, getCardTitle, showsModelSubtitle, getCardSearchText } from '../utils/cardAggregation';
 import ColumnVisibilityModal from '../components/ColumnVisibilityModal';
 import CardAggregationLegend from '../components/CardAggregationLegend';
+import { isFullyOutOfWarranty } from '../utils/warranty';
 import { useColumnPreferences } from '../hooks/useColumnPreferences';
 
 // 硬體列表的欄位清單：id 對應表格的每一欄，always 代表不可隱藏
@@ -398,6 +399,9 @@ const HwList = ({ isSplitMode = false }) => {
 
   const statusPriority = { 'REPAIR': 1, 'LENT': 2, 'ACTIVE': 3, 'SHIPPED': 4, 'SCRAPPED': 5 };
 
+  // 排序用的基準日：整次排序共用同一個，避免跨午夜時前後比較不一致
+  const sortToday = new Date();
+
   const filteredNics = nics
     .filter(n => {
       if (selectedCardKey) {
@@ -420,7 +424,16 @@ const HwList = ({ isSplitMode = false }) => {
         (n.server_sn || n.custom_attributes?.server_sn || '').toLowerCase().includes(term)
       );
     })
-    .sort((a, b) => (statusPriority[a.status] || 99) - (statusPriority[b.status] || 99));
+    .sort((a, b) => {
+      // 第一排序：狀態
+      const priorityDiff = (statusPriority[a.status] || 99) - (statusPriority[b.status] || 99);
+      if (priorityDiff !== 0) return priorityDiff;
+
+      // 第二排序：已過保的排到同狀態的最後面。
+      // 硬體目前沒有顯示保固欄位，資料填了就會生效。
+      return (isFullyOutOfWarranty(a, sortToday) ? 1 : 0)
+        - (isFullyOutOfWarranty(b, sortToday) ? 1 : 0);
+    });
 
   const totalPages = Math.ceil(filteredNics.length / itemsPerPage);
   const paginatedNics = filteredNics.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
