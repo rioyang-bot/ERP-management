@@ -266,7 +266,8 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
   };
 
   const handleSubmit = async () => {
-    if (!partnerId) return alert('請先選擇對應的採購單以帶入供應商資訊');
+    // 供應商改為非必填：收到貨時常常還沒確認是哪一家，
+    // 先把品項與數量入庫，供應商日後於進貨單列表編輯補填。
     if (items.some(i => !i.itemId && !i.purchaseRecordId)) return alert('請確認所有明細均已選擇入庫品項');
     
     // 檢查入庫數量是否皆為大於 0 的正整數
@@ -305,7 +306,7 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
       steps.push({
         id: 'order',
         queryName: 'insertInboundOrder',
-        params: [orderNo, partnerId, invoiceNo, 'COMPLETED', JSON.stringify(attachments)],
+        params: [orderNo, partnerId || null, invoiceNo, 'COMPLETED', JSON.stringify(attachments)],
       });
 
       items.forEach((item, idx) => {
@@ -446,12 +447,12 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
           />
         </div>
         <div>
-          <label style={labelStyle}>供應商名稱 {hasPOSelected ? '(自動帶入)' : '(必填)'}</label>
+          <label style={labelStyle}>供應商名稱 {hasPOSelected ? '(自動帶入)' : '(可留空)'}</label>
           {hasPOSelected ? (
             <input disabled value={partners.find(p => p.id.toString() === partnerId?.toString())?.name || '請於下方選擇採購單'} style={{ ...inputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)' }} />
           ) : (
             <select value={partnerId || ''} onChange={(e) => setPartnerId(e.target.value)} style={{ ...inputStyle, backgroundColor: 'var(--input-bg)', color: 'var(--input-text)' }}>
-              <option value="">-- 請選擇供應商 --</option>
+              <option value="">-- 尚未確認，日後補填 --</option>
               {partners.map(p => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}

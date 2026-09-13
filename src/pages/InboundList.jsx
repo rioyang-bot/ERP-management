@@ -163,7 +163,10 @@ const InboundList = ({ isSplitMode = false }) => {
            partner_id: editData.partner_id,
            invoice_no: editData.invoice_no,
            attachments: JSON.stringify(editData.attachments),
-           partner_name: partners.find(p => p.id.toString() === editData.partner_id.toString())?.name || prev.partner_name
+           // 清空供應商時要一併清掉顯示的名稱，不能沿用舊值
+           partner_name: editData.partner_id
+             ? (partners.find(p => p.id.toString() === editData.partner_id.toString())?.name || prev.partner_name)
+             : null
         }));
       } else {
         alert('儲存失敗：' + res.error);
@@ -332,7 +335,7 @@ const InboundList = ({ isSplitMode = false }) => {
                   <tr key={order.id} className="row-hover" style={{ borderBottom: '1px solid var(--table-border)', color: 'var(--text-main)' }}>
                     <td style={{ padding: '12px', fontWeight: 700, color: 'var(--text-main)' }}>{order.order_no}</td>
                     <td style={{ padding: '12px', color: 'var(--text-muted)' }}>{new Date(order.created_at).toLocaleString()}</td>
-                    <td style={{ padding: '12px', color: order.partner_name ? 'var(--text-main)' : 'var(--text-subtle)', fontWeight: 600 }}>{order.partner_name || '無紀錄'}</td>
+                    <td style={{ padding: '12px', color: order.partner_name ? 'var(--text-main)' : 'var(--text-subtle)', fontWeight: 600 }}>{order.partner_name || '待補填'}</td>
                     <td style={{ padding: '12px', color: order.invoice_no ? 'var(--text-main)' : 'var(--text-subtle)' }}>{order.invoice_no || '--'}</td>
                     <td style={{ padding: '12px', whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'flex', gap: '6px', alignItems: 'center', whiteSpace: 'nowrap' }}>
@@ -400,7 +403,7 @@ const InboundList = ({ isSplitMode = false }) => {
                 </h2>
                 <div style={{ display: 'flex', gap: '20px', color: 'var(--text-muted)', fontSize: '0.9rem', fontWeight: 500 }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Calendar size={14} /> 建立時間：{new Date(selectedOrder.created_at).toLocaleString()}</span>
-                  {!isEditing && <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><FileText size={14} /> 供應商：{selectedOrder.partner_name || '無'}</span>}
+                  {!isEditing && <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><FileText size={14} /> 供應商：{selectedOrder.partner_name || '待補填'}</span>}
                 </div>
               </div>
               <button
@@ -422,7 +425,7 @@ const InboundList = ({ isSplitMode = false }) => {
                        <div style={{ flex: 1 }}>
                           <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, color: 'var(--text-muted)' }}>供應商</label>
                           <select value={editData.partner_id} onChange={e => setEditData({...editData, partner_id: e.target.value})} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', outline: 'none' }}>
-                            <option value="">請選擇供應商</option>
+                            <option value="">-- 尚未確認 --</option>
                             {partners.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                           </select>
                        </div>
