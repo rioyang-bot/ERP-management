@@ -1,6 +1,11 @@
 export const queries = {
   // AssetList.jsx
   fetchAssetsList: `SELECT a.*, a.id as id, i.id as item_master_id, i.specification, i.type, i.brand, i.model, i.unit, c.name as category_name,
+      -- 目前借出中的借用單號，供列表在狀態底下顯示（已歸還的單不列入）
+      (SELECT string_agg(DISTINCT r.request_no, ', ' ORDER BY r.request_no)
+       FROM outbound_items oi JOIN outbound_requests r ON oi.request_id = r.id
+       WHERE r.request_type = 'LEND' AND r.status = 'SHIPPED'
+         AND a.sn IS NOT NULL AND a.sn <> '' AND oi.sn = a.sn) as lent_request_no,
       COALESCE(a.custom_attributes->>'contact_person', p.contact_person) as partner_contact,
       COALESCE(a.custom_attributes->>'contact_phone', p.phone) as partner_phone,
       (SELECT json_agg(json_build_object('brand', comp.brand, 'model', comp.model, 'sn', comp.sn)) 
@@ -38,6 +43,11 @@ export const queries = {
       )
       WHERE c.name = '設備' ORDER BY a.id DESC`,
   fetchAssetsListByBrand: `SELECT a.*, a.id as id, i.id as item_master_id, i.specification, i.type, i.brand, i.model, i.unit, c.name as category_name,
+      -- 目前借出中的借用單號，供列表在狀態底下顯示（已歸還的單不列入）
+      (SELECT string_agg(DISTINCT r.request_no, ', ' ORDER BY r.request_no)
+       FROM outbound_items oi JOIN outbound_requests r ON oi.request_id = r.id
+       WHERE r.request_type = 'LEND' AND r.status = 'SHIPPED'
+         AND a.sn IS NOT NULL AND a.sn <> '' AND oi.sn = a.sn) as lent_request_no,
       COALESCE(a.custom_attributes->>'contact_person', p.contact_person) as partner_contact,
       COALESCE(a.custom_attributes->>'contact_phone', p.phone) as partner_phone,
       (SELECT json_agg(json_build_object('brand', comp.brand, 'model', comp.model, 'sn', comp.sn)) 
@@ -290,8 +300,16 @@ export const queries = {
   insertAssetRecord: `INSERT INTO assets (item_master_id, sn, client, hostname, location, installed_date, customer_warranty_expire, system_date, warranty_expire, os, nic, custom_attributes, ownership, status, remarks) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14, 'ACTIVE'), $15)`,
 
   // ConsumableList.jsx
-  fetchConsumablesList: `SELECT v.*, i.id as id, i.stock_qty, i.lab_qty, COALESCE(i.lent_qty, 0) as lent_qty, c.name as category_name FROM v_inventory_summary v JOIN item_master i ON v.item_id = i.id LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '耗材' ORDER BY i.id DESC`,
-  fetchConsumablesListByType: `SELECT v.*, i.id as id, i.stock_qty, i.lab_qty, COALESCE(i.lent_qty, 0) as lent_qty, c.name as category_name FROM v_inventory_summary v JOIN item_master i ON v.item_id = i.id LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '耗材' AND v.type = $1 ORDER BY i.id DESC`,
+  fetchConsumablesList: `SELECT v.*, i.id as id, i.stock_qty, i.lab_qty, COALESCE(i.lent_qty, 0) as lent_qty,
+      -- 目前借出中的借用單號。同一耗材可能同時掛在多張單上，以逗號併列
+      (SELECT string_agg(DISTINCT r.request_no, ', ' ORDER BY r.request_no)
+       FROM outbound_items oi JOIN outbound_requests r ON oi.request_id = r.id
+       WHERE r.request_type = 'LEND' AND r.status = 'SHIPPED' AND oi.item_id = i.id) as lent_request_no, c.name as category_name FROM v_inventory_summary v JOIN item_master i ON v.item_id = i.id LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '耗材' ORDER BY i.id DESC`,
+  fetchConsumablesListByType: `SELECT v.*, i.id as id, i.stock_qty, i.lab_qty, COALESCE(i.lent_qty, 0) as lent_qty,
+      -- 目前借出中的借用單號。同一耗材可能同時掛在多張單上，以逗號併列
+      (SELECT string_agg(DISTINCT r.request_no, ', ' ORDER BY r.request_no)
+       FROM outbound_items oi JOIN outbound_requests r ON oi.request_id = r.id
+       WHERE r.request_type = 'LEND' AND r.status = 'SHIPPED' AND oi.item_id = i.id) as lent_request_no, c.name as category_name FROM v_inventory_summary v JOIN item_master i ON v.item_id = i.id LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '耗材' AND v.type = $1 ORDER BY i.id DESC`,
   deleteConsumableMasterIfSafe: `
       DELETE FROM item_master i
       WHERE i.id = $1
@@ -512,6 +530,11 @@ export const queries = {
       SELECT specification FROM item_master WHERE UPPER(TRIM(REGEXP_REPLACE(COALESCE(brand, ''), '[[:space:]]+', ' ', 'g'))) = UPPER(TRIM(REGEXP_REPLACE(COALESCE($1, ''), '[[:space:]]+', ' ', 'g'))) AND UPPER(TRIM(REGEXP_REPLACE(COALESCE(type, ''), '[[:space:]]+', ' ', 'g'))) = UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g'))) AND UPPER(TRIM(REGEXP_REPLACE(COALESCE(model, ''), '[[:space:]]+', ' ', 'g'))) = UPPER(TRIM(REGEXP_REPLACE(COALESCE($3, ''), '[[:space:]]+', ' ', 'g'))) AND category_id = (SELECT id FROM categories WHERE name = '硬體') LIMIT 1`,
     fetchNicListByType: `
       SELECT a.*, i.specification, i.type, i.brand, i.model, i.unit, 
+      -- 目前借出中的借用單號，供列表在狀態底下顯示（已歸還的單不列入）
+      (SELECT string_agg(DISTINCT r.request_no, ', ' ORDER BY r.request_no)
+       FROM outbound_items oi JOIN outbound_requests r ON oi.request_id = r.id
+       WHERE r.request_type = 'LEND' AND r.status = 'SHIPPED'
+         AND a.sn IS NOT NULL AND a.sn <> '' AND oi.sn = a.sn) as lent_request_no,
              a.custom_attributes->>'server_sn' as server_sn,
              s.client as server_client, s.location as server_location,
              s.hostname as server_hostname, s.os as server_os, s.nic as server_nic,
@@ -535,6 +558,11 @@ export const queries = {
       ORDER BY a.id DESC`,
   fetchNicList: `
       SELECT a.*, i.specification, i.type, i.brand, i.model, i.unit, 
+      -- 目前借出中的借用單號，供列表在狀態底下顯示（已歸還的單不列入）
+      (SELECT string_agg(DISTINCT r.request_no, ', ' ORDER BY r.request_no)
+       FROM outbound_items oi JOIN outbound_requests r ON oi.request_id = r.id
+       WHERE r.request_type = 'LEND' AND r.status = 'SHIPPED'
+         AND a.sn IS NOT NULL AND a.sn <> '' AND oi.sn = a.sn) as lent_request_no,
              a.custom_attributes->>'server_sn' as server_sn,
              s.client as server_client, s.location as server_location,
              s.hostname as server_hostname, s.os as server_os, s.nic as server_nic,

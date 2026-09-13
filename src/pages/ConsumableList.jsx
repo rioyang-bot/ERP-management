@@ -825,6 +825,14 @@ const ConsumableList = ({ isSplitMode = false }) => {
                         title={Number(item.lent_qty) > 0 ? '可於借用單列表查看是哪幾張單尚未歸還' : undefined}
                       >
                         {item.lent_qty || 0}
+                        {item.lent_request_no && (
+                          <div
+                            style={{ fontSize: '10px', fontWeight: 700, marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                            title={`借用單 ${item.lent_request_no}｜可於借用單列表查詢`}
+                          >
+                            {item.lent_request_no}
+                          </div>
+                        )}
                       </td>
                       <td style={{ 
                         ...tdStyle, 

@@ -973,7 +973,16 @@ const HwList = ({ isSplitMode = false }) => {
                     {nic.remarks || '--'}
                   </div>
                 </td>
-                <td style={{ ...tdStyle, width: '100px', ...hideCol('status') }}><span style={{ padding: '4px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: '800', backgroundColor: cfg.bgColor, color: cfg.color, border: `1px solid ${cfg.borderColor}`, whiteSpace: 'nowrap' }}>{cfg.label}</span></td>
+                <td style={{ ...tdStyle, width: '100px', ...hideCol('status') }}><span style={{ padding: '4px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: '800', backgroundColor: cfg.bgColor, color: cfg.color, border: `1px solid ${cfg.borderColor}`, whiteSpace: 'nowrap' }}>{cfg.label}</span>
+                  {nic.lent_request_no && (
+                    <div
+                      style={{ fontSize: '10px', color: '#d97706', fontWeight: 700, marginTop: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                      title={`借用單 ${nic.lent_request_no}｜可於借用單列表查詢`}
+                    >
+                      借用單 {nic.lent_request_no}
+                    </div>
+                  )}
+                </td>
                 <td style={{ ...tdStyle, textAlign: 'center', width: '80px', position: 'relative' }}>
                   <button 
                     className="action-menu-btn"

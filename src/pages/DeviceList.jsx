@@ -1133,6 +1133,14 @@ const DeviceList = ({ isSplitMode = false }) => {
                                 }}>
                                   {config.label}
                                 </span>
+                                {item.lent_request_no && (
+                                  <div
+                                    style={{ fontSize: '10px', color: '#d97706', fontWeight: 700, marginTop: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                                    title={`借用單 ${item.lent_request_no}｜可於借用單列表查詢`}
+                                  >
+                                    借用單 {item.lent_request_no}
+                                  </div>
+                                )}
                               </td>
                               <td style={{ ...tdStyle, textAlign: 'center', width: '80px', position: 'relative' }}>
                                 <button 
