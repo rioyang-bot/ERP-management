@@ -10,6 +10,7 @@ import PageSizeSelector from '../components/common/PageSizeSelector';
 import { isItemRetired, getItemAggregationKey, aggregateCards, computeNewRetiredKeys, getCardTitle, showsModelSubtitle, getCardSearchText } from '../utils/cardAggregation';
 import ColumnVisibilityModal from '../components/ColumnVisibilityModal';
 import CardAggregationLegend from '../components/CardAggregationLegend';
+import WarrantyBadge from '../components/WarrantyBadge';
 import { useColumnPreferences } from '../hooks/useColumnPreferences';
 
 // 設備列表的欄位清單：id 對應表格的每一欄，always 代表不可隱藏
@@ -1000,7 +1001,12 @@ const DeviceList = ({ isSplitMode = false }) => {
                           <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('end_user') }}>End-user</th>
                           <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('location') }}>位置</th>
                           <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('remarks') }}>備註</th>
-                          <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('warranty') }}>保固資訊 (P/S/W/C)</th>
+                          <th
+                            style={{ ...thStyle, textAlign: 'left', ...hideCol('warranty') }}
+                            title="P 安裝日／S 系統日／W 原廠保固到期／C 客戶保固到期。圓形標記：綠底保＝保固內、黃底保＝90 天內到期、紅底過＝已過期；未填到期日不顯示標記。"
+                          >
+                            保固資訊 (P/S/W/C)
+                          </th>
                           <th style={{ ...thStyle, textAlign: 'left', width: '100px' , ...hideCol('status') }}>狀態</th>
                           <th style={{ ...thStyle, textAlign: 'center', width: '80px' }}>功能</th>
                         </tr>
@@ -1115,8 +1121,16 @@ const DeviceList = ({ isSplitMode = false }) => {
                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 8px' }}>
                                    <div><span style={{ color: '#3b82f6', fontWeight: 'bold' }}>P:</span> {item.installed_date ? new Date(item.installed_date).toLocaleDateString() : '--'}</div>
                                    <div><span style={{ color: '#10b981', fontWeight: 'bold' }}>S:</span> {item.system_date ? new Date(item.system_date).toLocaleDateString() : '--'}</div>
-                                   <div><span style={{ color: '#ef4444', fontWeight: 'bold' }}>W:</span> {item.warranty_expire ? new Date(item.warranty_expire).toLocaleDateString() : '--'}</div>
-                                   <div><span style={{ color: '#f59e0b', fontWeight: 'bold' }}>C:</span> {item.customer_warranty_expire ? new Date(item.customer_warranty_expire).toLocaleDateString() : '--'}</div>
+                                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                     <span style={{ color: '#ef4444', fontWeight: 'bold' }}>W:</span>
+                                     {item.warranty_expire ? new Date(item.warranty_expire).toLocaleDateString() : '--'}
+                                     <WarrantyBadge expireDate={item.warranty_expire} name="原廠保固" size={15} />
+                                   </div>
+                                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                     <span style={{ color: '#f59e0b', fontWeight: 'bold' }}>C:</span>
+                                     {item.customer_warranty_expire ? new Date(item.customer_warranty_expire).toLocaleDateString() : '--'}
+                                     <WarrantyBadge expireDate={item.customer_warranty_expire} name="客戶保固" size={15} />
+                                   </div>
                                  </div>
                                </td>
 
