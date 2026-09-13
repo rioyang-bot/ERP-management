@@ -126,14 +126,14 @@ const ProcessFlow = () => {
       subModules: [
         { name: '設備列表 (Device List)', path: '/device-list', desc: '伺服器/主機資產清冊、四欄聚合卡片、汰舊區管理、狀態過濾與 RMA 換新序號' },
         { name: '硬體列表 (HW List)', path: '/hw-list', desc: '網卡、模組等硬體庫存、四欄聚合卡片、汰舊區管理、規格搜尋與 RMA 換新序號' },
-        { name: '耗材列表 (Consumable List)', path: '/consumable-list', desc: '耗材現存量、安全水位警戒、調撥與品項規格管理（已完全移除單位）' },
-        { name: '實體庫存盤點 (Stocktaking)', path: '/stocktaking', desc: '定期盤點全廠資產，支援內部公司資產核對' }
+        { name: '耗材列表 (Consumable List)', path: '/consumable-list', desc: '耗材現存量、安全水位警戒、Stock↔LAB 調撥、借出中數量與品項規格管理' },
+        { name: '實體庫存盤點 (Stocktaking)', path: '/stocktaking', desc: '匯出目前在庫清單為 CSV 盤點單（含實盤確認欄位）供現場核對；實盤結果需人工比對，系統不回寫' }
       ],
-      inputs: ['進貨驗收完成資產', '借用歸還驗收合格品', '原廠 RMA 換新良品', '盤點實盤數據'],
-      outputs: ['在庫可用資產清單', '品項異動台帳 (Item Ledger)', 'RMA 換號歷程', '盤點實盤比對總表'],
+      inputs: ['進貨驗收完成資產', '借用歸還驗收合格品', '原廠 RMA 換新良品'],
+      outputs: ['在庫可用資產清單', '品項異動台帳 (Item Ledger)', 'RMA 換號歷程', '盤點清單 CSV（供現場人工核對）'],
       businessRules: [
         '每件設備/硬體具備唯一生命週期狀態：在庫 (ACTIVE) / 借出 (LENT) / 已出貨 (SHIPPED) / 維修 (REPAIRING) / 報廢 (SCRAPPED)。',
-        '卡片聚合與汰舊區規則：支援「依規格 (SPEC)」、「依型號 (MODEL)」與「依廠牌 (BRAND)」三種維度即時切換；可拖曳或點選將卡片移至「汰舊區 (Retired Zone)」，切換聚合維度時汰舊區精準排除，不混入在席數量統計。',
+        '卡片聚合與汰舊區規則：支援「依規格 (SPEC)」、「依型號 (MODEL)」、「依類型 (TYPE)」與「依廠牌 (BRAND)」四種維度即時切換；可拖曳或點選將卡片移至「汰舊區 (Retired Zone)」，切換聚合維度時汰舊區精準排除，不混入在席數量統計。',
         '原廠 RMA 換新序號雙模式支援：設備清單與硬體清單操作選單皆提供「🔄 原廠換新 / 更換序號 (RMA)」，可依業務需求選擇【模式一：直接更換序號（原機承接履歷、合約及零組件 server_sn 連動）】或【模式二：RMA 一換一更換（舊機報廢 SCRAPPED、自動新增新品 ACTIVE 並轉移零組件）】。',
         '支援資產歸屬切換（公司資產 COMPANY ➔ 一般銷售 FOR_SALE）與搭載硬體狀態同步聯動（設備出貨/入庫時同步更新其搭載硬體）。',
         '點選任一資產即可開啟「品項台帳 (Ledger)」，完整追溯其入庫、批次匯入、借還、RMA 換號與出貨全歷史。'
@@ -235,7 +235,7 @@ const ProcessFlow = () => {
       title: '帳號權限與密碼原則 (RBAC & Policy)',
       icon: <KeyRound size={18} color="#6366f1" />,
       path: '/settings',
-      desc: '嚴格控管 ADMIN、IT、USER 三級權限，提供 SHA-256 密碼加密與密碼複雜度原則。'
+      desc: '嚴格控管 ADMIN、IT、USER 三級權限，密碼以 bcrypt 加鹽雜湊保存（舊有的 SHA-256 資料於登入時自動升級），並提供密碼複雜度原則與連線階段管理。'
     }
   ], []);
 
