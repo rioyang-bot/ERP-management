@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import RmaReplacementModal from '../components/RmaReplacementModal';
+import { createRunTransactionMock } from './helpers/mockTransaction';
 
 describe('RmaReplacementModal 彈窗整合測試', () => {
   const onSuccessMock = vi.fn();
@@ -32,6 +33,8 @@ describe('RmaReplacementModal 彈窗整合測試', () => {
     vi.spyOn(window, 'alert').mockImplementation(() => {});
 
     window.electronAPI = {
+      // 多步驟交易轉發給同一組 namedQuery 模擬，才驗證得到實際送出的查詢
+      runTransaction: (steps) => createRunTransactionMock(window.electronAPI.namedQuery)(steps),
       namedQuery: vi.fn().mockImplementation((query, params) => {
         if (query === 'checkAssetSnExists' || query === 'checkAssetSnExistsExcludeSelf') {
           if (params[0] === 'DUPLICATE_SN') {

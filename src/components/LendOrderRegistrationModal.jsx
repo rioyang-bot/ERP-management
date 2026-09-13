@@ -318,58 +318,62 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
       const nextNum = (parseInt(countRes.rows[0].count) || 1).toString().padStart(2, '0');
       const dnNumber = `DN-${dateStr}-${nextNum}`;
 
-      // 2. 建立借用單標頭 (Outbound Request, request_type = 'LEND')
-      const reqRes = await window.electronAPI.namedQuery('insertOutboundRequest', [
-        dnNumber,
-        header.customer,
-        header.location,
-        header.date,
-        authUser?.id || null,
-        header.contact_info,
-        'LEND',
-        header.expected_return_date || null
-      ]);
+      // 2~3. 借用單標頭與明細放在同一個交易裡，與出貨單的建立方式一致。
+      //      先前是分開送出，明細寫入失敗只會跳警告，結果留下一張沒有品項的借用單。
+      const steps = [{
+        id: 'request',
+        queryName: 'insertOutboundRequest',
+        params: [
+          dnNumber,
+          header.customer,
+          header.location,
+          header.date,
+          authUser?.id || null,
+          header.contact_info,
+          'LEND',
+          header.expected_return_date || null
+        ],
+        expectRows: 1,
+        errorMessage: '建立借用單標頭失敗',
+      }];
 
-      if (!reqRes.success) throw new Error(reqRes.error || '建立借用單標頭失敗');
+      // 明細以 $ref 取用上一步產生的單頭 id
+      const requestIdRef = { $ref: 'request.rows.0.id' };
 
-      const requestId = reqRes.rows[0].id;
-
-      // 3. 建立借用明細 (Outbound Items)
-      let itemError = null;
       for (const item of outboundItems) {
         const itemPurpose = item.purpose || header.purpose || '運作測試';
-        const itemRes = await window.electronAPI.namedQuery('insertLendOutboundItem', [
-          requestId,
-          item.item_id || item.item_master_id,
-          item.sn || null,
-          item.qty,
-          item.location || header.location,
-          itemPurpose
-        ]);
-        if (itemRes && !itemRes.success) {
-          itemError = itemRes.error || '寫入借用品項失敗';
-          console.error('Insert lend outbound item error:', itemError);
-        }
+        steps.push({
+          queryName: 'insertLendOutboundItem',
+          params: [
+            requestIdRef,
+            item.item_id || item.item_master_id,
+            item.sn || null,
+            item.qty,
+            item.location || header.location,
+            itemPurpose
+          ],
+        });
 
         if (item.components && item.components.length > 0) {
           for (const comp of item.components) {
-            const compRes = await window.electronAPI.namedQuery('insertLendOutboundItem', [
-              requestId,
-              comp.item_master_id, 
-              comp.sn,
-              1,
-              item.location || header.location,
-              itemPurpose
-            ]);
-            if (compRes && !compRes.success) {
-              console.error('Insert lend component error:', compRes.error);
-            }
+            steps.push({
+              queryName: 'insertLendOutboundItem',
+              params: [
+                requestIdRef,
+                comp.item_master_id,
+                comp.sn,
+                1,
+                item.location || header.location,
+                itemPurpose
+              ],
+            });
           }
         }
       }
 
-      if (itemError) {
-        alert(`⚠️ 注意：借用單已建立 [${dnNumber}]，但明細品項寫入時發生異常：${itemError}。請檢查明細！`);
+      const txRes = await window.electronAPI.runTransaction(steps);
+      if (!txRes.success) {
+        throw new Error((txRes.error || '建立借用單失敗。') + '\n未留下任何不完整的單據。');
       }
 
       logCreate(
@@ -379,6 +383,9 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
         `建立借用單 [${dnNumber}] 對象: ${header.customer} 共 ${outboundItems.length} 個品項 (預計歸還日: ${header.expected_return_date || '未指定'})`,
         { dnNumber, customer: header.customer, location: header.location, request_type: 'LEND', expected_return_date: header.expected_return_date, itemsCount: outboundItems.length, items: outboundItems.map(i => ({ model: i.model, brand: i.brand, sn: i.sn, qty: i.qty, purpose: i.purpose || header.purpose || '運作測試' })) }
       );
+
+      // 單頭 id 由交易的第一步產生
+      const requestId = txRes.results?.request?.rows?.[0]?.id;
 
       const createdDnInfo = {
         id: requestId,

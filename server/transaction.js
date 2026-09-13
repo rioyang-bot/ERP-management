@@ -9,6 +9,10 @@
 // 作法：前端一次送出整串步驟，伺服器在單一連線的單一交易中依序執行，
 //       全部成功才提交，任一步失敗即全部回滾。
 //
+// 條件未成立即中止：UPDATE 常帶有防呆條件（例如「庫存要夠才扣」）。條件不成立時
+//       SQL 本身不會報錯，只是 0 筆異動，交易照樣提交，結果會變成「單據狀態改了、
+//       庫存卻沒扣」。步驟加上 expectRows: 1 即要求至少異動一筆，否則整筆回滾。
+//
 // 步驟間傳值：後面的步驟常需要前面步驟產生的 id（例如進貨單 id）。
 //       在 params 中以 { "$ref": "步驟名.rows.0.id" } 表示，執行時會替換為
 //       先前步驟的實際結果。只支援讀取已執行步驟的結果，不支援任意運算。
@@ -52,7 +56,7 @@ const resolveParams = (params, results) =>
  * @param {Record<string,string>} deps.namedQueries  具名查詢字典
  * @param {(params: unknown[]) => unknown[]} deps.prepareParams
  *        參數前處理（清洗、JSON 字串化、補齊數量），與單筆查詢保持一致
- * @param {Array<{id?: string, queryName: string, params?: unknown[]}>} steps
+ * @param {Array<{id?: string, queryName: string, params?: unknown[], expectRows?: number, errorMessage?: string}>} steps
  * @returns {Promise<{success: boolean, results?: object, error?: string, failedStep?: number}>}
  */
 export const runTransaction = async ({ pool, namedQueries, prepareParams }, steps) => {
@@ -81,6 +85,17 @@ export const runTransaction = async ({ pool, namedQueries, prepareParams }, step
       const sql = namedQueries[step.queryName];
       const params = prepareParams(resolveParams(step.params, results), sql);
       const r = await client.query(sql, params);
+
+      // 防呆條件未成立時 SQL 不會報錯，只是 0 筆異動。
+      // 要求最少異動筆數的步驟在此主動中止，讓整筆交易回滾。
+      const expect = Number(step.expectRows) || 0;
+      if (expect > 0 && r.rowCount < expect) {
+        throw new Error(
+          step.errorMessage
+          || `第 ${i + 1} 步 (${step.queryName}) 未異動任何資料，可能是條件不成立（例如庫存不足）。`
+        );
+      }
+
       const outcome = { rows: r.rows, rowCount: r.rowCount };
       // 具名步驟才保留結果，供後續步驟以 $ref 取用
       if (step.id) results[step.id] = outcome;

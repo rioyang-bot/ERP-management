@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { validateNewSn, performInPlaceReplacement, performOneToOneReplacement } from '../utils/rmaService';
+import { createRunTransactionMock } from './helpers/mockTransaction';
 
 describe('rmaService 核心更換服務單元測試', () => {
   const querySpy = vi.fn();
@@ -10,6 +11,8 @@ describe('rmaService 核心更換服務單元測試', () => {
 
     // Default window.electronAPI mock
     window.electronAPI = {
+      // 多步驟交易轉發給同一組 namedQuery 模擬，才驗證得到實際送出的查詢
+      runTransaction: (steps) => createRunTransactionMock(window.electronAPI.namedQuery)(steps),
       namedQuery: vi.fn().mockImplementation((query, params) => {
         querySpy(query, params);
         if (query === 'checkAssetSnExists' || query === 'checkAssetSnExistsExcludeSelf') {

@@ -241,24 +241,42 @@ const LentList = () => {
       }
 
       // 階段二：正式變更 (Commit)
+      // 整張單放在同一個交易裡，任一步失敗全部回滾。
+      // 先前是逐筆送出，中途失敗會留下「部分品項已扣庫存、單據狀態卻沒改」的狀態，
+      // 再按一次確認就會重複扣一次。
+      const steps = [];
       for (const item of items) {
         if (item.category_name === '耗材') {
           // 借出用專屬查詢：扣庫存的同時把數量記為「借出中」，歸還時才知道要加回多少
-          const updateRes = await window.electronAPI.namedQuery('updateStockQtyOnLendOut', [item.quantity, item.item_id]);
-          // rows 為空代表被 stock_qty >= $1 的條件擋下，實際沒有扣到，不能當成功
-          if (!updateRes.success || !updateRes.rows?.length) {
-            throw new Error(`扣除耗材 [${item.brand} ${item.model}] 庫存失敗，可能是庫存已被其他人領用。`);
-          }
+          steps.push({
+            queryName: 'updateStockQtyOnLendOut',
+            params: [item.quantity, item.item_id],
+            // 庫存不足會被 stock_qty >= $1 擋下而變成 0 筆異動，SQL 不會報錯
+            expectRows: 1,
+            errorMessage: `耗材 [${item.brand} ${item.model}] 庫存不足，無法借出。`,
+          });
         } else if (item.category_name === '硬體' || item.category_name === '設備') {
-          const destLocation = item.location || dn.location;
-          const updateRes = await window.electronAPI.namedQuery('updateAssetStatusAndLocationBySn', ['LENT', destLocation, item.sn]);
-          if (!updateRes.success) throw new Error(`變更序號 [${item.sn}] 狀態為借出失敗。`);
+          steps.push({
+            queryName: 'updateAssetStatusAndLocationBySn',
+            params: ['LENT', item.location || dn.location, item.sn],
+            expectRows: 1,
+            errorMessage: `序號 [${item.sn}] 找不到對應資產，無法變更為借出。`,
+          });
         }
       }
 
-      // 更新出貨單狀態為 SHIPPED
-      const finalRes = await window.electronAPI.namedQuery('updateOutboundRequestStatus', ['SHIPPED', dn.id]);
-      if (!finalRes.success) throw new Error('變更借用單狀態失敗。');
+      // 單據狀態放在最後一步，與庫存異動同進同出
+      steps.push({
+        queryName: 'updateOutboundRequestStatus',
+        params: ['SHIPPED', dn.id],
+        expectRows: 1,
+        errorMessage: '變更借用單狀態失敗。',
+      });
+
+      const txRes = await window.electronAPI.runTransaction(steps);
+      if (!txRes.success) {
+        throw new Error((txRes.error || '確認借出失敗。') + '\n\n所有變更已全部退回，庫存與單據狀態維持原樣。');
+      }
 
       logStatusChange(
         'LENT',
@@ -295,22 +313,39 @@ const LentList = () => {
       if (!res.success) throw new Error('讀取明細失敗');
       const items = res.rows;
       
+      // 與確認借出相同：整張單放在同一個交易裡，避免只回補一半的庫存
+      const steps = [];
       for (const item of items) {
         if (item.category_name === '耗材') {
           // 耗材沒有序號可以改狀態，借出時扣掉的數量要在這裡加回庫存，
           // 否則單子雖然標記為已歸還，庫存卻永遠短少那些數量
-          const updateRes = await window.electronAPI.namedQuery('updateStockQtyOnLendReturn', [item.quantity, item.item_id]);
-          if (!updateRes.success || !updateRes.rows?.length) {
-            throw new Error(`回補耗材 [${item.brand} ${item.model}] 庫存失敗。`);
-          }
+          steps.push({
+            queryName: 'updateStockQtyOnLendReturn',
+            params: [item.quantity, item.item_id],
+            expectRows: 1,
+            errorMessage: `回補耗材 [${item.brand} ${item.model}] 庫存失敗，查無此品項。`,
+          });
         } else if ((item.category_name === '硬體' || item.category_name === '設備') && item.sn) {
-           const updateRes = await window.electronAPI.namedQuery('updateAssetStatusAndLocationBySn', ['ACTIVE', '', item.sn]);
-           if (!updateRes.success) throw new Error(`變更序號 [${item.sn}] 狀態失敗。`);
+          steps.push({
+            queryName: 'updateAssetStatusAndLocationBySn',
+            params: ['ACTIVE', '', item.sn],
+            expectRows: 1,
+            errorMessage: `序號 [${item.sn}] 找不到對應資產，無法恢復為在庫。`,
+          });
         }
       }
 
-      const finalRes = await window.electronAPI.namedQuery('updateOutboundRequestReturned', [dn.id, date]);
-      if (!finalRes.success) throw new Error('變更借用單狀態失敗。');
+      steps.push({
+        queryName: 'updateOutboundRequestReturned',
+        params: [dn.id, date],
+        expectRows: 1,
+        errorMessage: '變更借用單狀態失敗。',
+      });
+
+      const txRes = await window.electronAPI.runTransaction(steps);
+      if (!txRes.success) {
+        throw new Error((txRes.error || '登記歸還失敗。') + '\n\n所有變更已全部退回，庫存與單據狀態維持原樣。');
+      }
 
       logStatusChange(
         'LENT',

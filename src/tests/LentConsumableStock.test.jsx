@@ -116,7 +116,8 @@ describe('借用單：耗材的庫存異動', () => {
       if (query === 'fetchLentRequests') return Promise.resolve({ success: true, rows: [lentRecord('PENDING')] });
       if (query === 'fetchDNItems') return Promise.resolve({ success: true, rows: [CONSUMABLE] });
       if (query === 'checkItemStock') return Promise.resolve({ success: true, rows: [{ stock_qty: 25 }] });
-      if (query === 'updateStockQtyOnLendOut') return Promise.resolve({ success: true, rows: [] });
+      // rowCount: 0 代表被 stock_qty >= $1 擋下，SQL 沒有報錯但也沒有異動到資料
+      if (query === 'updateStockQtyOnLendOut') return Promise.resolve({ success: true, rows: [], rowCount: 0 });
       return Promise.resolve({ success: true, rows: [] });
     });
 

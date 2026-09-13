@@ -5,6 +5,7 @@ import { BrowserRouter, MemoryRouter } from 'react-router-dom';
 import DNList from '../pages/DNList';
 import DeviceList from '../pages/DeviceList';
 import HwList from '../pages/HwList';
+import { createRunTransactionMock } from './helpers/mockTransaction';
 
 describe('設備與硬體出貨日期 (shipping_date) 欄位與確認出貨自動回寫測試', () => {
   beforeEach(() => {
@@ -15,6 +16,8 @@ describe('設備與硬體出貨日期 (shipping_date) 欄位與確認出貨自�
     const executedQueries = [];
 
     window.electronAPI = {
+      // 多步驟交易轉發給同一組 namedQuery 模擬，才驗證得到實際送出的查詢
+      runTransaction: (steps) => createRunTransactionMock(window.electronAPI.namedQuery)(steps),
       namedQuery: vi.fn(async (query, params) => {
         executedQueries.push({ query, params });
         if (query === 'fetchDNList') {
@@ -113,6 +116,8 @@ describe('設備與硬體出貨日期 (shipping_date) 欄位與確認出貨自�
 
   it('DeviceList 應呈現保固資訊 (P/S/W/C) 與安裝日期，不顯示獨立出貨日標籤', async () => {
     window.electronAPI = {
+      // 多步驟交易轉發給同一組 namedQuery 模擬，才驗證得到實際送出的查詢
+      runTransaction: (steps) => createRunTransactionMock(window.electronAPI.namedQuery)(steps),
       namedQuery: vi.fn(async (query, params) => {
         if (query === 'fetchAssetsList' || query === 'fetchAssetsListByBrand') {
           return {
@@ -157,6 +162,8 @@ describe('設備與硬體出貨日期 (shipping_date) 欄位與確認出貨自�
 
   it('HwList 應能在搜尋關鍵字時顯示出貨日期欄位與資料', async () => {
     window.electronAPI = {
+      // 多步驟交易轉發給同一組 namedQuery 模擬，才驗證得到實際送出的查詢
+      runTransaction: (steps) => createRunTransactionMock(window.electronAPI.namedQuery)(steps),
       namedQuery: vi.fn(async (query) => {
         if (query === 'fetchNicList' || query === 'fetchNicListByType') {
           return {

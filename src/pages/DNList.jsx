@@ -222,48 +222,68 @@ const DNList = ({ isSplitMode = false }) => {
       }
 
       // 階段二：正式變更 (Commit)
+      // 整張單的庫存異動與狀態變更放在同一個交易裡：任一步失敗全部回滾。
+      // 先前是逐筆送出，第 3 個品項失敗時前 2 個已經扣掉、單據狀態卻還是待出貨，
+      // 使用者再按一次確認就會把前 2 個再扣一次。
+      const steps = [];
+      const shipDate = selectedDN.shipping_date || new Date().toISOString().split('T')[0];
+      const isLend = selectedDN.request_type === 'LEND';
+
       for (const item of dnItems) {
         if (item.category_name === '耗材') {
            // 借用單也會出現在本列表，從這裡確認時同樣要記為「借出中」，
            // 不然日後歸還會找不到要加回多少（與借用單列表的處理保持一致）
-           const isLend = selectedDN.request_type === 'LEND';
-           const res = await window.electronAPI.namedQuery(
-             isLend ? 'updateStockQtyOnLendOut' : 'updateStockQtyOnOutbound',
-             [item.quantity, item.item_id]
-           );
-           // rows 為空代表被 stock_qty >= $1 擋下，實際沒有扣到
-           if (!res.success || !res.rows?.length) {
-             throw new Error(`扣除耗材 [${item.brand} ${item.model}] 庫存時發生錯誤，可能是庫存不足。`);
-           }
+           steps.push({
+             queryName: isLend ? 'updateStockQtyOnLendOut' : 'updateStockQtyOnOutbound',
+             params: [item.quantity, item.item_id],
+             // 庫存不足會被 stock_qty >= $1 擋下而變成 0 筆異動，
+             // SQL 本身不報錯，必須在此要求至少異動一筆才會中止交易
+             expectRows: 1,
+             errorMessage: `耗材 [${item.brand} ${item.model}] 庫存不足，無法扣除。`,
+           });
         } else if (item.category_name === '硬體' || item.category_name === '設備') {
            const destLocation = item.location || selectedDN.location;
-           const assetStatus = selectedDN.request_type === 'LEND' ? 'LENT' : 'SHIPPED';
-           const shipDate = selectedDN.shipping_date || new Date().toISOString().split('T')[0];
-           const res = await window.electronAPI.namedQuery('updateAssetStatusLocationAndInstalledDateBySn', [assetStatus, destLocation, shipDate, item.sn]);
-           if (!res.success) throw new Error(`變更序號 [${item.sn}] 狀態與安裝日期時發生錯誤。`);
+           const assetStatus = isLend ? 'LENT' : 'SHIPPED';
+           steps.push({
+             queryName: 'updateAssetStatusLocationAndInstalledDateBySn',
+             params: [assetStatus, destLocation, shipDate, item.sn],
+             expectRows: 1,
+             errorMessage: `序號 [${item.sn}] 找不到對應資產，無法變更狀態。`,
+           });
 
-           // 同步將該設備掛載之硬體零組件更新安裝與出貨日期
-           try {
-             await window.electronAPI.namedQuery('updateMountedHardwareInstalledAndShippingDate', [shipDate, item.sn]);
-           } catch (err) {
-             console.error('Update mounted hardware installed date error:', err);
-           }
+           // 同步將該設備掛載之硬體零組件更新安裝與出貨日期。
+           // 沒有掛載硬體時為 0 筆異動，屬正常情況，因此不設 expectRows。
+           steps.push({
+             queryName: 'updateMountedHardwareInstalledAndShippingDate',
+             params: [shipDate, item.sn],
+           });
 
            // 若出貨單有專案，確保資產與搭載零組件之專案屬性完整寫入
            if (selectedDN.project_name && item.sn) {
-             try {
-               await window.electronAPI.namedQuery('updateAssetProjectAndClientBySn', [selectedDN.project_name, selectedDN.customer, item.sn]);
-               await window.electronAPI.namedQuery('updateMountedHardwareProjectAndClient', [selectedDN.project_name, selectedDN.customer, item.sn]);
-             } catch (err) {
-               console.error('Ensure project on delivery error:', err);
-             }
+             steps.push({
+               queryName: 'updateAssetProjectAndClientBySn',
+               params: [selectedDN.project_name, selectedDN.customer, item.sn],
+             });
+             steps.push({
+               queryName: 'updateMountedHardwareProjectAndClient',
+               params: [selectedDN.project_name, selectedDN.customer, item.sn],
+             });
            }
         }
       }
 
-      // 更新出貨單狀態
-      const finalRes = await window.electronAPI.namedQuery('updateOutboundRequestStatus', ['SHIPPED', selectedDN.id]);
-      if (!finalRes.success) throw new Error('變更出貨單主檔狀態時發生錯誤。');
+      // 單據狀態放在最後一步，與庫存異動同進同出
+      steps.push({
+        queryName: 'updateOutboundRequestStatus',
+        params: ['SHIPPED', selectedDN.id],
+        expectRows: 1,
+        errorMessage: '變更出貨單主檔狀態時發生錯誤。',
+      });
+
+      const txRes = await window.electronAPI.runTransaction(steps);
+      if (!txRes.success) {
+        throw new Error((txRes.error || '確認出貨失敗。') + '\n\n所有變更已全部退回，庫存與單據狀態維持原樣。');
+      }
 
       logStatusChange(
         'OUTBOUND',

@@ -176,15 +176,9 @@ export async function performOneToOneReplacement(asset, newSn, rmaDetails = {}) 
     rma_history: [...prevRmaHistory, oldRmaRecord]
   };
 
-  const updateOldRes = await window.electronAPI.namedQuery('updateAssetStatusAndAttributes', [
-    'SCRAPPED',
-    oldAssetUpdatedAttrs,
-    asset.id
-  ]);
-
-  if (!updateOldRes.success) {
-    throw new Error(updateOldRes.error || '更新舊資產報廢狀態失敗');
-  }
+  // 舊機報廢與新機建立必須同進同出：先前是分兩次送出，
+  // 新機建立失敗時舊機已經報廢，這台設備就從在庫清單上消失了。
+  // 因此改為單一交易，實際執行在下方組好所有步驟後一次送出。
 
   // 3. 建立新資產 (New Asset) -> 承接規格屬性、客戶、End-user，設為 ACTIVE
   const newRmaRecord = {
@@ -205,39 +199,52 @@ export async function performOneToOneReplacement(asset, newSn, rmaDetails = {}) 
     rma_history: [newRmaRecord]
   };
 
-  const insertRes = await window.electronAPI.namedQuery('insertRmaAssetRecord', [
-    asset.item_master_id,
-    cleanNewSn,
-    asset.client || null,
-    asset.end_user || prevCustomAttrs.end_user || null,
-    asset.hostname || null,
-    asset.location || null,
-    replaceDate, // 新安裝/入庫日期
-    asset.customer_warranty_expire || null,
-    asset.system_date || null,
-    asset.warranty_expire || null,
-    asset.os || null,
-    asset.nic || null,
-    newAssetAttrs,
-    asset.ownership || 'FOR_SALE',
-    'ACTIVE'
-  ]);
+  const steps = [
+    {
+      id: 'scrapOld',
+      queryName: 'updateAssetStatusAndAttributes',
+      params: ['SCRAPPED', oldAssetUpdatedAttrs, asset.id],
+      expectRows: 1,
+      errorMessage: '更新舊資產報廢狀態失敗，查無此資產。',
+    },
+    {
+      id: 'newAsset',
+      queryName: 'insertRmaAssetRecord',
+      params: [
+        asset.item_master_id,
+        cleanNewSn,
+        asset.client || null,
+        asset.end_user || prevCustomAttrs.end_user || null,
+        asset.hostname || null,
+        asset.location || null,
+        replaceDate, // 新安裝/入庫日期
+        asset.customer_warranty_expire || null,
+        asset.system_date || null,
+        asset.warranty_expire || null,
+        asset.os || null,
+        asset.nic || null,
+        newAssetAttrs,
+        asset.ownership || 'FOR_SALE',
+        'ACTIVE'
+      ],
+      expectRows: 1,
+      errorMessage: '建立原廠新品資產失敗。',
+    },
+  ];
 
-  if (!insertRes.success) {
-    throw new Error(insertRes.error || '建立原廠新品資產失敗');
-  }
-
-  const newAssetId = insertRes.rows?.[0]?.id;
-
-  // 4. 掛載硬體自動轉移：若舊機有掛載硬體零組件，將其 server_sn 移轉綁定至新機！
+  // 4. 掛載硬體自動轉移：若舊機有掛載硬體零組件，將其 server_sn 移轉綁定至新機。
+  //    舊機沒有掛載任何硬體時為 0 筆異動，屬正常情況，因此不設 expectRows。
   if (oldSn) {
-    try {
-      await window.electronAPI.namedQuery('updateMountedHardwareServerSn', [cleanNewSn, oldSn]);
-      await window.electronAPI.namedQuery('updateRepairItemsSn', [cleanNewSn, oldSn]);
-    } catch (syncErr) {
-      console.warn('Mounted hardware transfer note:', syncErr);
-    }
+    steps.push({ queryName: 'updateMountedHardwareServerSn', params: [cleanNewSn, oldSn] });
+    steps.push({ queryName: 'updateRepairItemsSn', params: [cleanNewSn, oldSn] });
   }
+
+  const txRes = await window.electronAPI.runTransaction(steps);
+  if (!txRes.success) {
+    throw new Error((txRes.error || '原廠換新處理失敗。') + '\n所有變更已全部退回，舊機維持原狀。');
+  }
+
+  const newAssetId = txRes.results?.newAsset?.rows?.[0]?.id;
 
   // 5. 寫入稽核日誌
   await logStatusChange(

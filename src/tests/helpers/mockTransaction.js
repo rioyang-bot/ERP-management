@@ -37,6 +37,19 @@ export const createRunTransactionMock = (namedQueryMock) => async (steps) => {
     if (res && res.success === false) {
       return { success: false, error: res.error || `步驟 ${step.queryName} 失敗` };
     }
+
+    // 與正式環境一致：要求最少異動筆數的步驟，實際為 0 筆時整批失敗。
+    // 防呆條件（例如「庫存要夠才扣」）不成立時 SQL 不報錯，只是沒有異動到資料。
+    // rowCount 才是異動筆數的權威來源。多數測試的模擬只回 { success, rows }，
+    // 而真實的 UPDATE 即使不帶 RETURNING 也會回報異動筆數，
+    // 因此未提供 rowCount 時視為正常異動；要模擬「被條件擋下」請明確回傳 rowCount: 0。
+    const expect = Number(step.expectRows) || 0;
+    if (expect > 0) {
+      const rowCount = res?.rowCount ?? (res?.rows?.length || 1);
+      if (rowCount < expect) {
+        return { success: false, error: step.errorMessage || `步驟 ${step.queryName} 未異動任何資料` };
+      }
+    }
     if (step.id) {
       results[step.id] = { rows: res?.rows || [], rowCount: res?.rowCount ?? (res?.rows?.length || 0) };
     }
