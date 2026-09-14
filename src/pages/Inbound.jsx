@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Trash2, Save, FileText, ShoppingBag, Layers, AlertCircle, ArrowDownToLine, Search, Package } from 'lucide-react';
 import InboundItemSelectModal from '../components/InboundItemSelectModal';
 import { logCreate } from '../utils/auditLogger';
+import { parseSnLines, validateSnBatch } from '../utils/snBatch';
 
 const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) => {
   const [availableItems, setAvailableItems] = useState([]);
@@ -80,18 +81,30 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
     setItems(items.filter(item => item.id !== id));
   };
 
-  const handleExpandRow = (rowId) => {
+  // 批次序號清單：一次貼上多個序號，再展開成每筆一列。
+  // 原本是先展開成空白列、再一格一格貼，20 筆就要貼 20 次。
+  const [snBatch, setSnBatch] = useState({ show: false, rowId: null, text: '' });
+
+  const openSnBatch = (rowId) => {
     const row = items.find(r => r.id === rowId);
     if (!row || row.qty <= 1 || !(row.cat_name === '設備' || row.cat_name === '硬體')) return;
-    if (!window.confirm(`確定要將此項目展開為 ${row.qty} 筆獨立設備以分別輸入序號嗎？`)) return;
-    const newRows = [];
-    for (let i = 0; i < row.qty; i++) {
-      newRows.push({ ...row, id: Date.now() + i, qty: 1, sn: '' });
-    }
-    const idx = items.findIndex(r => r.id === rowId);
+    setSnBatch({ show: true, rowId, text: '' });
+  };
+
+  const applySnBatch = () => {
+    const row = items.find(r => r.id === snBatch.rowId);
+    if (!row) return;
+    const usedSns = items.filter(r => r.id !== row.id && r.sn).map(r => r.sn);
+    const result = validateSnBatch(snBatch.text, row.qty, usedSns);
+    if (!result.ok) return alert(result.message);
+
+    // 展開成每筆一列，序號依序填入
+    const newRows = result.sns.map((sn, i) => ({ ...row, id: Date.now() + i, qty: 1, sn }));
+    const idx = items.findIndex(r => r.id === snBatch.rowId);
     const nextItems = [...items];
     nextItems.splice(idx, 1, ...newRows);
     setItems(nextItems);
+    setSnBatch({ show: false, rowId: null, text: '' });
   };
 
   const handleItemSelect = (rowId, value) => {
@@ -595,7 +608,7 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
               <td style={tdStyle}>
                 {row.cat_name ? <span style={{ padding: '4px 10px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '6px', fontSize: '0.8rem', color: 'var(--text-main)', border: '1px solid var(--border-color)', fontWeight: 600 }}>{row.cat_name}</span> : <span style={{ color: 'var(--text-subtle)', fontSize: '0.8rem' }}>--</span>}
               </td>
-              <td style={tdStyle}>{(row.cat_name === '設備' || row.cat_name === '硬體') ? <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><input placeholder="SN / 序號" value={row.sn} onChange={(e) => handleRowChange(row.id, 'sn', e.target.value)} style={{ ...inputStyle, border: '1px solid var(--input-border)' }} />{row.qty > 1 && <button onClick={() => handleExpandRow(row.id)} title="展開為獨立序號" style={expandButtonStyle}><Layers size={16} /></button>}</div> : <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>耗材無需序號</span>}</td>
+              <td style={tdStyle}>{(row.cat_name === '設備' || row.cat_name === '硬體') ? <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><input placeholder="SN / 序號" value={row.sn} onChange={(e) => handleRowChange(row.id, 'sn', e.target.value)} style={{ ...inputStyle, border: '1px solid var(--input-border)' }} />{row.qty > 1 && <button onClick={() => openSnBatch(row.id)} title="批次序號清單（每行一個序號）" style={expandButtonStyle}><Layers size={16} /></button>}</div> : <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>耗材無需序號</span>}</td>
               <td style={tdStyle}><input type="number" value={row.qty} onChange={(e) => handleRowChange(row.id,'qty', parseInt(e.target.value)||0)} style={{ ...inputStyle, width: '80px' }} /></td>
               <td style={{ ...tdStyle, textAlign: 'center' }}><button onClick={() => handleRemove(row.id)} style={deleteButtonStyle}><Trash2 size={20} /></button></td>
             </tr>
@@ -663,6 +676,66 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '16px', borderTop: '1px solid var(--border-color)', paddingTop: '32px' }}>
         <button onClick={handleSubmit} style={submitButtonStyle}><ShoppingBag size={20} /> 確認入庫作業</button>
       </div>
+      {/* 批次序號清單 */}
+      {snBatch.show && (() => {
+        const row = items.find(r => r.id === snBatch.rowId);
+        if (!row) return null;
+        const sns = parseSnLines(snBatch.text);
+        const usedSns = items.filter(r => r.id !== row.id && r.sn).map(r => r.sn);
+        const check = validateSnBatch(snBatch.text, row.qty, usedSns);
+        return (
+          <div style={modalOverlayStyle}>
+            <div className="card-surface" style={{ width: '520px', maxWidth: '95vw', padding: '28px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '16px' }}>
+              <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-main)' }}>批次序號清單</h2>
+              <p style={{ margin: '6px 0 16px', fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.7 }}>
+                每行貼上一個序號。套用後會展開成 <b style={{ color: 'var(--text-main)' }}>{row.qty}</b> 筆獨立明細，序號依序填入。
+              </p>
+
+              <textarea
+                autoFocus
+                value={snBatch.text}
+                onChange={(e) => setSnBatch(prev => ({ ...prev, text: e.target.value }))}
+                placeholder={'一行一個序號，例如：\nSN0001\nSN0002\nSN0003'}
+                style={{ ...inputStyle, width: '100%', minHeight: '200px', fontFamily: 'monospace', resize: 'vertical', boxSizing: 'border-box' }}
+              />
+
+              <div style={{
+                marginTop: '10px', padding: '10px 12px', borderRadius: '8px', fontSize: '13px', lineHeight: 1.6,
+                backgroundColor: check.ok ? 'rgba(22, 163, 74, 0.10)' : 'rgba(239, 68, 68, 0.08)',
+                border: check.ok ? '1px solid rgba(22, 163, 74, 0.35)' : '1px solid rgba(239, 68, 68, 0.30)',
+                color: 'var(--text-main)',
+              }}>
+                目前 <b>{sns.length}</b> 行 / 需要 <b>{row.qty}</b> 筆
+                {check.ok ? ' ✓ 可以套用' : (snBatch.text.trim() ? ` ${check.message}` : '')}
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px', marginTop: '20px' }}>
+                <button
+                  type="button"
+                  onClick={() => setSnBatch({ show: false, rowId: null, text: '' })}
+                  style={{ flex: 1, padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-main)', fontWeight: 700, cursor: 'pointer' }}
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={applySnBatch}
+                  disabled={!check.ok}
+                  style={{
+                    flex: 1, padding: '12px', borderRadius: '8px', border: 'none', fontWeight: 700,
+                    backgroundColor: check.ok ? 'var(--primary-color)' : 'var(--bg-surface-subtle)',
+                    color: check.ok ? '#fff' : 'var(--text-subtle)',
+                    cursor: check.ok ? 'pointer' : 'not-allowed',
+                  }}
+                >
+                  套用並展開
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {showQuickAdd && (
         <div style={modalOverlayStyle}>
           <div className="card-surface" style={{ width: '420px', padding: '32px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '16px' }}>
