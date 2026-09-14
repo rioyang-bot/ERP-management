@@ -548,6 +548,20 @@ export const queries = {
   insertInboundAssets: `INSERT INTO assets (sn, item_master_id, status, custom_attributes) VALUES ($1, $2, 'ACTIVE', jsonb_build_object('project_name', $3::text))`,
   insertInboundItems: `INSERT INTO inbound_items (inbound_order_id, item_id, sn, quantity, purchase_record_id, unit_price) VALUES ($1, $2, $3, $4, $5, 0)`,
   updateStockQtyOnInbound: `UPDATE item_master SET stock_qty = stock_qty + $1 WHERE id = $2`,
+  // 刪除進貨單時把採購單的已入庫數量退回來，狀態依退回後的數量重算。
+  // 與 updatePurchaseRecordStatus 對稱；以 GREATEST 夾住下限，避免歷史資料
+  // 對不上時被減成負數。
+  reversePurchaseRecordOnInboundDelete: `
+    UPDATE purchase_records SET
+      received_quantity = GREATEST(COALESCE(received_quantity, 0) - $1, 0),
+      status = CASE
+        WHEN GREATEST(COALESCE(received_quantity, 0) - $1, 0) <= 0 THEN 'ORDERED'
+        WHEN GREATEST(COALESCE(received_quantity, 0) - $1, 0) >= quantity THEN 'COMPLETED'
+        ELSE 'PARTIAL' END,
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = $2 RETURNING id`,
+  // 刪除進貨單時把入庫加上的庫存扣回來
+  reverseStockQtyOnInboundDelete: `UPDATE item_master SET stock_qty = GREATEST(COALESCE(stock_qty, 0) - $1, 0) WHERE id = $2 RETURNING id`,
   updatePurchaseRecordStatus: `UPDATE purchase_records SET received_quantity = COALESCE(received_quantity, 0) + $1, status = CASE WHEN COALESCE(received_quantity, 0) + $1 >= quantity THEN 'COMPLETED' ELSE 'PARTIAL' END, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
   fetchInboundList: `SELECT io.*, p.name as partner_name, (SELECT pr.project_name FROM inbound_items ii JOIN purchase_records pr ON ii.purchase_record_id = pr.id WHERE ii.inbound_order_id = io.id AND pr.project_name IS NOT NULL LIMIT 1) as project_name FROM inbound_orders io LEFT JOIN partners p ON io.partner_id = p.id ORDER BY io.created_at DESC`,
   fetchInboundItems: `
