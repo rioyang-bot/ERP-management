@@ -12,6 +12,7 @@ import ColumnVisibilityModal from '../components/ColumnVisibilityModal';
 import CardAggregationLegend from '../components/CardAggregationLegend';
 import { isFullyOutOfWarranty } from '../utils/warranty';
 import { useColumnPreferences } from '../hooks/useColumnPreferences';
+import { useCardLayoutByMode } from '../hooks/useCardLayout';
 
 // 硬體列表的欄位清單：id 對應表格的每一欄，always 代表不可隱藏
 const HW_COLUMNS = [
@@ -467,10 +468,9 @@ const HwList = ({ isSplitMode = false }) => {
   const totalPages = Math.ceil(filteredNics.length / itemsPerPage);
   const paginatedNics = filteredNics.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
-  const [layoutMap, setLayoutMap] = useState(() => {
-    const saved = localStorage.getItem('hw_list_layout_map');
-    return saved ? JSON.parse(saved) : {};
-  });
+  // 卡片排列以登入身分為範圍存在伺服器端，每個人各自一份
+  // 排列依聚合維度分開存放：切到別的維度時卡片整批換掉，共用一份會被清光
+  const [layoutMap, setLayoutMap, layoutLoaded] = useCardLayoutByMode('cardLayout:hwList', aggregationMode, 'hw_list_layout_map');
 
   const handleAggregationModeChange = (mode) => {
     setAggregationMode(mode);
@@ -496,7 +496,6 @@ const HwList = ({ isSplitMode = false }) => {
     if (newMap[targetSlotIdx]) { if (oldSlotIdx !== undefined) newMap[oldSlotIdx] = newMap[targetSlotIdx]; }
     newMap[targetSlotIdx] = key;
     setLayoutMap(newMap);
-    localStorage.setItem('hw_list_layout_map', JSON.stringify(newMap));
     setDraggingCardKey(null);
   };
 
@@ -834,9 +833,10 @@ const HwList = ({ isSplitMode = false }) => {
         while (updatedMap[currentIdx]) currentIdx++;
         updatedMap[currentIdx] = key;
       });
-      setLayoutMap(updatedMap);
-      localStorage.setItem('hw_list_layout_map', JSON.stringify(updatedMap));
       currentLayoutMap = updatedMap;
+      // 伺服器上的排列還沒回來前不要回寫，否則會把使用者存好的位置
+      // 蓋成這次剛算出來的預設位置
+      if (layoutLoaded) setLayoutMap(updatedMap);
     }
 
     const maxOccupiedIdx = Object.keys(currentLayoutMap).reduce((max, current) => Math.max(max, parseInt(current)), -1);

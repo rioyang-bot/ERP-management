@@ -7,6 +7,7 @@ import ConsumableBatchImportModal from '../components/ConsumableBatchImportModal
 import ConsumableCustomTagsModal from '../components/ConsumableCustomTagsModal';
 import { logUpdate, logDelete } from '../utils/auditLogger';
 import { usePageSize } from '../utils/usePageSize';
+import { useCardLayout } from '../hooks/useCardLayout';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 import CardAggregationLegend from '../components/CardAggregationLegend';
 
@@ -292,14 +293,8 @@ const ConsumableList = ({ isSplitMode = false }) => {
   const paginatedItems = filteredItems.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   // --- 儀表板拖曳排序邏輯 ---
-  const [typeOrder, setTypeOrder] = useState(() => {
-    try {
-      const saved = localStorage.getItem('consumable_type_order');
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      return [];
-    }
-  });
+  // 卡片排列以登入身分為範圍存在伺服器端，每個人各自一份
+  const [typeOrder, setTypeOrder] = useCardLayout('cardOrder:consumableList', [], 'consumable_type_order');
   const [draggingCardKey, setDraggingCardKey] = useState(null);
 
   const [retiredKeys, setRetiredKeys] = useState(() => {
@@ -330,7 +325,6 @@ const ConsumableList = ({ isSplitMode = false }) => {
       newOrder.splice(sourceIdx, 1);
       newOrder.splice(targetIdx, 0, sourceKey);
       setTypeOrder(newOrder);
-      localStorage.setItem('consumable_type_order', JSON.stringify(newOrder));
     }
     setDraggingCardKey(null);
   };
