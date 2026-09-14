@@ -238,17 +238,51 @@ export const queries = {
         ))
       )
       WHERE c.name = '設備' ORDER BY a.id DESC LIMIT 10`,
-  fetchDeviceTypes: `SELECT id, name FROM item_types WHERE category_id = (SELECT id FROM categories WHERE name = '設備') ORDER BY name ASC`,
+  fetchDeviceTypes: `
+    SELECT MIN(i.id) AS id, i.type AS name
+    FROM item_master i
+    JOIN categories c ON i.category_id = c.id
+    WHERE c.name = '設備'
+      AND EXISTS (SELECT 1 FROM assets a WHERE a.item_master_id = i.id)
+      AND NULLIF(TRIM(COALESCE(i.type, '')), '') IS NOT NULL
+      
+    GROUP BY i.type
+    ORDER BY i.type ASC
+  `,
   fetchTypesByBrand: `SELECT id, name FROM item_types WHERE category_id = (SELECT id FROM categories WHERE name = '設備') ORDER BY name ASC`,
-  fetchDeviceBrands: `SELECT id, name FROM item_brands WHERE category_id = (SELECT id FROM categories WHERE name = '設備') ORDER BY name ASC`,
+  // ---------------------------------------------------------------------------
+  // 建檔用的下拉選單：一律讀「既有卡片」，不再讀 item_brands / item_types /
+  // item_models 三張主檔表。
+  //
+  // 舊作法的問題：畫面上按「新增廠牌」會立刻寫進主檔表，就算後來取消整張建檔，
+  // 那個廠牌也永遠留著，於是下拉裡出現一堆實際上沒有任何卡片的選項。
+  // 改讀卡片之後，看得到的選項就等於列表上看得到的卡片，不會再有幽靈選項。
+  //
+  // 設備與硬體以「該主檔至少有一筆資產」為準；耗材沒有資產，一筆主檔就是一張卡片。
+  // 回傳格式維持 { id, name }，呼叫端不需改動。
+  // ---------------------------------------------------------------------------
+  fetchDeviceBrands: `
+    SELECT MIN(i.id) AS id, i.brand AS name
+    FROM item_master i
+    JOIN categories c ON i.category_id = c.id
+    WHERE c.name = '設備'
+      AND EXISTS (SELECT 1 FROM assets a WHERE a.item_master_id = i.id)
+      AND NULLIF(TRIM(COALESCE(i.brand, '')), '') IS NOT NULL
+      
+    GROUP BY i.brand
+    ORDER BY i.brand ASC
+  `,
   fetchModelsByBrand: `
-      SELECT DISTINCT m.name FROM item_models m 
-      LEFT JOIN item_brands b ON m.brand_id = b.id
-      LEFT JOIN item_types t ON m.type_id = t.id
-      LEFT JOIN item_brands tb ON t.brand_id = tb.id
-      WHERE (LOWER(b.name) = LOWER($1) OR LOWER(tb.name) = LOWER($1))
-        AND (b.category_id = (SELECT id FROM categories WHERE name = '設備') OR t.category_id = (SELECT id FROM categories WHERE name = '設備'))
-      ORDER BY m.name ASC`,
+    SELECT MIN(i.id) AS id, i.model AS name
+    FROM item_master i
+    JOIN categories c ON i.category_id = c.id
+    WHERE c.name = '設備'
+      AND EXISTS (SELECT 1 FROM assets a WHERE a.item_master_id = i.id)
+      AND NULLIF(TRIM(COALESCE(i.model, '')), '') IS NOT NULL
+      AND UPPER(TRIM(COALESCE(i.brand, ''))) = UPPER(TRIM(COALESCE($1, '')))
+    GROUP BY i.model
+    ORDER BY i.model ASC
+  `,
   fetchModelsByBrandType: `
       SELECT DISTINCT m.name FROM item_models m 
       LEFT JOIN item_brands b ON m.brand_id = b.id
@@ -360,21 +394,40 @@ export const queries = {
   // 與 item_types.brand_id，但這兩個欄位是相容用的舊欄位、實際從未寫入，
   // 導致此下拉選單永遠是空的。改用與 fetchHwModelsByBrand 相同的 LEFT JOIN 寫法。
   fetchConsumableModelsByBrand: `
-      SELECT DISTINCT m.name FROM item_models m
-      LEFT JOIN item_brands b ON m.brand_id = b.id
-      LEFT JOIN item_types t ON m.type_id = t.id
-      LEFT JOIN item_brands tb ON t.brand_id = tb.id
-      WHERE (LOWER(b.name) = LOWER($1) OR LOWER(tb.name) = LOWER($1))
-        AND (b.category_id = (SELECT id FROM categories WHERE name = '耗材')
-             OR t.category_id = (SELECT id FROM categories WHERE name = '耗材'))
-      ORDER BY m.name ASC`,
+    SELECT MIN(i.id) AS id, i.model AS name
+    FROM item_master i
+    JOIN categories c ON i.category_id = c.id
+    WHERE c.name = '耗材'
+      AND TRUE
+      AND NULLIF(TRIM(COALESCE(i.model, '')), '') IS NOT NULL
+      AND UPPER(TRIM(COALESCE(i.brand, ''))) = UPPER(TRIM(COALESCE($1, '')))
+    GROUP BY i.model
+    ORDER BY i.model ASC
+  `,
   // 類型屬於各類別共用的通用庫，不綁定特定廠牌（與 fetchDeviceTypes / fetchHwTypes 一致）。
   // 舊版以 brand_id 過濾，但新增類型時並不會寫入 brand_id，導致此下拉選單永遠是空的。
   fetchConsumableTypes: `
-      SELECT name FROM item_types
-      WHERE category_id = (SELECT id FROM categories WHERE name = '耗材')
-      ORDER BY name ASC`,
-  fetchConsumableBrands: `SELECT id, name FROM item_brands WHERE category_id = (SELECT id FROM categories WHERE name = '耗材') ORDER BY name ASC`,
+    SELECT MIN(i.id) AS id, i.type AS name
+    FROM item_master i
+    JOIN categories c ON i.category_id = c.id
+    WHERE c.name = '耗材'
+      AND TRUE
+      AND NULLIF(TRIM(COALESCE(i.type, '')), '') IS NOT NULL
+      
+    GROUP BY i.type
+    ORDER BY i.type ASC
+  `,
+  fetchConsumableBrands: `
+    SELECT MIN(i.id) AS id, i.brand AS name
+    FROM item_master i
+    JOIN categories c ON i.category_id = c.id
+    WHERE c.name = '耗材'
+      AND TRUE
+      AND NULLIF(TRIM(COALESCE(i.brand, '')), '') IS NOT NULL
+      
+    GROUP BY i.brand
+    ORDER BY i.brand ASC
+  `,
 
   // Purchasing.jsx
   fetchPurchasingRecords: `
@@ -517,17 +570,40 @@ export const queries = {
 
   // Hardware / NIC Registration & List
   fetchNicBrands: `SELECT id, name FROM item_brands WHERE category_id = (SELECT id FROM categories WHERE name = '硬體') ORDER BY name ASC`,
-  fetchHwBrands: `SELECT id, name FROM item_brands WHERE category_id = (SELECT id FROM categories WHERE name = '硬體') ORDER BY name ASC`,
-  fetchHwTypes: `SELECT id, name FROM item_types WHERE category_id = (SELECT id FROM categories WHERE name = '硬體') ORDER BY name ASC`,
+  fetchHwBrands: `
+    SELECT MIN(i.id) AS id, i.brand AS name
+    FROM item_master i
+    JOIN categories c ON i.category_id = c.id
+    WHERE c.name = '硬體'
+      AND EXISTS (SELECT 1 FROM assets a WHERE a.item_master_id = i.id)
+      AND NULLIF(TRIM(COALESCE(i.brand, '')), '') IS NOT NULL
+      
+    GROUP BY i.brand
+    ORDER BY i.brand ASC
+  `,
+  fetchHwTypes: `
+    SELECT MIN(i.id) AS id, i.type AS name
+    FROM item_master i
+    JOIN categories c ON i.category_id = c.id
+    WHERE c.name = '硬體'
+      AND EXISTS (SELECT 1 FROM assets a WHERE a.item_master_id = i.id)
+      AND NULLIF(TRIM(COALESCE(i.type, '')), '') IS NOT NULL
+      
+    GROUP BY i.type
+    ORDER BY i.type ASC
+  `,
   fetchNicTypesByBrand: `SELECT id, name FROM item_types WHERE category_id = (SELECT id FROM categories WHERE name = '硬體') ORDER BY name ASC`,
   fetchHwModelsByBrand: `
-      SELECT DISTINCT m.name FROM item_models m 
-      LEFT JOIN item_brands b ON m.brand_id = b.id
-      LEFT JOIN item_types t ON m.type_id = t.id
-      LEFT JOIN item_brands tb ON t.brand_id = tb.id
-      WHERE (LOWER(b.name) = LOWER($1) OR LOWER(tb.name) = LOWER($1))
-        AND (b.category_id = (SELECT id FROM categories WHERE name = '硬體') OR t.category_id = (SELECT id FROM categories WHERE name = '硬體'))
-      ORDER BY m.name ASC`,
+    SELECT MIN(i.id) AS id, i.model AS name
+    FROM item_master i
+    JOIN categories c ON i.category_id = c.id
+    WHERE c.name = '硬體'
+      AND EXISTS (SELECT 1 FROM assets a WHERE a.item_master_id = i.id)
+      AND NULLIF(TRIM(COALESCE(i.model, '')), '') IS NOT NULL
+      AND UPPER(TRIM(COALESCE(i.brand, ''))) = UPPER(TRIM(COALESCE($1, '')))
+    GROUP BY i.model
+    ORDER BY i.model ASC
+  `,
   fetchNicModelsByBrandType: `
       SELECT DISTINCT m.name FROM item_models m 
       LEFT JOIN item_brands b ON m.brand_id = b.id
