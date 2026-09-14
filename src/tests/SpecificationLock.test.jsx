@@ -60,7 +60,7 @@ describe('設備與硬體列表編輯詳細資訊中型號與規格欄位可自�
       if (query === 'countAssetsByMasterId') {
         return Promise.resolve({ success: true, rows: [{ count: 1 }] });
       }
-      if (query === 'updateItemMasterSpecs') {
+      if (query === 'updateItemMasterIdentity') {
         return Promise.resolve({ success: true });
       }
       if (query === 'insertDeviceModel') {
@@ -115,7 +115,8 @@ describe('設備與硬體列表編輯詳細資訊中型號與規格欄位可自�
     fireEvent.click(saveBtn);
 
     await waitFor(() => {
-      expect(namedQueryMock).toHaveBeenCalledWith('updateItemMasterSpecs', ['Updated Spec 128G', 'BCHFT-2PC', 55]);
+      // 廠牌與類型未變動時仍沿用原值，一併寫回同一張主檔
+      expect(namedQueryMock).toHaveBeenCalledWith('updateItemMasterIdentity', ['Updated Spec 128G', '24C', 'BlackCore', 'BCHFT-2PC', 55]);
       expect(namedQueryMock).toHaveBeenCalledWith('updateAssetDetails', expect.any(Array));
     });
   });
@@ -156,7 +157,7 @@ describe('設備與硬體列表編輯詳細資訊中型號與規格欄位可自�
       if (query === 'countAssetsByMasterId') {
         return Promise.resolve({ success: true, rows: [{ count: 1 }] });
       }
-      if (query === 'updateItemMasterSpecs') {
+      if (query === 'updateItemMasterIdentity') {
         return Promise.resolve({ success: true });
       }
       if (query === 'insertDeviceModel') {
@@ -211,7 +212,7 @@ describe('設備與硬體列表編輯詳細資訊中型號與規格欄位可自�
     fireEvent.click(saveBtn);
 
     await waitFor(() => {
-      expect(namedQueryMock).toHaveBeenCalledWith('updateItemMasterSpecs', ['Quad Port 25GbE PCIe 4.0', 'E810-CQDA2', 88]);
+      expect(namedQueryMock).toHaveBeenCalledWith('updateItemMasterIdentity', ['Quad Port 25GbE PCIe 4.0', 'NIC 網卡', 'Intel', 'E810-CQDA2', 88]);
       expect(namedQueryMock).toHaveBeenCalledWith('updateNicDetails', expect.any(Array));
     });
   });

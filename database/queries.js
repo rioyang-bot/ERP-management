@@ -172,6 +172,16 @@ export const queries = {
   `,
   updateRepairItemsSn: `UPDATE repair_items SET sn = $1 WHERE sn IS NOT NULL AND TRIM(sn) = TRIM($2)`,
   updateOutboundItemsSn: `UPDATE outbound_items SET sn = $1 WHERE sn IS NOT NULL AND TRIM(sn) = TRIM($2)`,
+  // 品項主檔的識別欄位（廠牌／類型／型號／規格）一次更新。
+  // 廠牌與類型改為可編輯後，只改型號與規格的 updateItemMasterSpecs 已不夠用。
+  // 正規化方式與新增時一致：去除頭尾與重複空白、英文轉大寫，
+  // 避免同一個廠牌因大小寫或空白不同而變成兩張卡片。
+  updateItemMasterIdentity: `UPDATE item_master SET
+      specification = $1,
+      type = UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g'))),
+      brand = UPPER(TRIM(REGEXP_REPLACE(COALESCE($3, ''), '[[:space:]]+', ' ', 'g'))),
+      model = UPPER(TRIM(REGEXP_REPLACE(COALESCE($4, ''), '[[:space:]]+', ' ', 'g')))
+    WHERE id = $5 RETURNING id`,
   updateItemMasterSpecs: `UPDATE item_master SET specification = $1, model = UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g'))) WHERE id = $3`,
   countAssetsByMasterId: `SELECT COUNT(*) as count FROM assets WHERE item_master_id = $1`,
   updateAssetMasterId: `UPDATE assets SET item_master_id = $1 WHERE id = $2`,

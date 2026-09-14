@@ -40,6 +40,9 @@ const HwList = ({ isSplitMode = false }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [customers, setCustomers] = useState([]);
   const [projects, setProjects] = useState([]);
+  // 編輯視窗的廠牌／類型下拉選單來源
+  const [brandOptions, setBrandOptions] = useState([]);
+  const [typeOptions, setTypeOptions] = useState([]);
   const [activeMenuId, setActiveMenuId] = useState(null);
   const [menuPosition, setMenuPosition] = useState(null);
   const [ledgerItem, setLedgerItem] = useState(null);
@@ -148,7 +151,19 @@ const HwList = ({ isSplitMode = false }) => {
     };
   }, [loadData]);
 
+  // 廠牌與類型主檔，供編輯視窗的下拉選單使用。
+  // 讓使用者從既有清單挑選而不是自由輸入，改錯字的同時也不會再造出新的錯字。
+  const fetchBrandTypeOptions = useCallback(async () => {
+    const [b, t] = await Promise.all([
+      window.electronAPI.namedQuery('fetchHwBrands'),
+      window.electronAPI.namedQuery('fetchHwTypes'),
+    ]);
+    if (b.success) setBrandOptions(b.rows || []);
+    if (t.success) setTypeOptions(t.rows || []);
+  }, []);
+
   const handleEdit = (nic) => {
+    fetchBrandTypeOptions();
     let shipDateStr = '';
     if (nic.shipping_date) {
       try { shipDateStr = new Date(nic.shipping_date).toISOString().split('T')[0]; } catch { shipDateStr = ''; }
@@ -156,6 +171,8 @@ const HwList = ({ isSplitMode = false }) => {
     setEditItem({
       ...nic,
       _origModel: nic.model || '',
+      _origBrand: nic.brand || '',
+      _origType: nic.type || '',
       _origSpec: nic.specification || '',
       ownership: nic.ownership || 'FOR_SALE',
       shipping_date: shipDateStr,
@@ -191,13 +208,19 @@ const HwList = ({ isSplitMode = false }) => {
       return;
     }
 
-    const isModelOrSpecChanged = (newModel !== (editItem._origModel || '')) || (newSpec !== (editItem._origSpec || ''));
-    if (isModelOrSpecChanged) {
+    // 廠牌與類型改為可編輯後，四個識別欄位任一變動都要重新對應品項主檔
+    const newBrand = (editItem.brand || '').trim();
+    const newType = (editItem.type || '').trim();
+    const isIdentityChanged = (newModel !== (editItem._origModel || ''))
+      || (newSpec !== (editItem._origSpec || ''))
+      || (newBrand !== (editItem._origBrand || ''))
+      || (newType !== (editItem._origType || ''));
+    if (isIdentityChanged) {
       let targetMasterId = null;
       const findRes = await window.electronAPI.namedQuery('findItemMaster', [
         newSpec,
-        editItem.type || '',
-        editItem.brand || '',
+        newType,
+        newBrand,
         newModel
       ]);
 
@@ -208,13 +231,15 @@ const HwList = ({ isSplitMode = false }) => {
         const refCount = (countRes.success && countRes.rows?.[0]) ? parseInt(countRes.rows[0].count, 10) : 99;
 
         if (refCount <= 1) {
-          await window.electronAPI.namedQuery('updateItemMasterSpecs', [newSpec, newModel, editItem.item_master_id]);
+          // 這張主檔只有這一筆資產在用，直接改名不影響別人
+          await window.electronAPI.namedQuery('updateItemMasterIdentity', [newSpec, newType, newBrand, newModel, editItem.item_master_id]);
           targetMasterId = editItem.item_master_id;
         } else {
+          // 還有別的資產共用這張主檔，改名會連帶改到它們，因此另建一張
           const createRes = await window.electronAPI.namedQuery('insertItemMaster', [
             newSpec,
-            editItem.type || '',
-            editItem.brand || '',
+            newType,
+            newBrand,
             newModel,
             '個',
             '硬體'
@@ -232,7 +257,11 @@ const HwList = ({ isSplitMode = false }) => {
         }
       }
 
-      await window.electronAPI.namedQuery('insertDeviceModel', [editItem.brand, newModel, '硬體']);
+      // 廠牌與類型清單也要補上新值，否則下次新增設備時選不到，
+      // 又會被迫手動輸入而重新製造出大小寫不一致的重複項
+      if (newBrand) await window.electronAPI.namedQuery('insertDeviceBrand', ['硬體', newBrand]);
+      if (newType) await window.electronAPI.namedQuery('insertDeviceType', ['硬體', newType]);
+      await window.electronAPI.namedQuery('insertDeviceModel', [newBrand, newModel, '硬體']);
     }
 
     // 更新資產明細
@@ -1151,12 +1180,34 @@ const HwList = ({ isSplitMode = false }) => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
                 <div>
-                  <label style={editLabelStyle}>廠牌 (Brand) (鎖定)</label>
-                  <input type="text" value={editItem.brand || ''} disabled readOnly style={{ ...editInputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', cursor: 'not-allowed' }} />
+                  <label style={editLabelStyle}>廠牌 (Brand)</label>
+                  <select
+                    value={editItem.brand || ''}
+                    onChange={(e) => setEditItem({ ...editItem, brand: e.target.value })}
+                    style={editInputStyle}
+                    title="當初輸入錯誤時可在此改正，存檔後會重新對應到正確的品項主檔"
+                  >
+                    {/* 目前值可能因為當初輸入錯誤而不在主檔清單中，仍要列出來才改得掉 */}
+                    {editItem.brand && !brandOptions.some(o => o.name === editItem.brand) && (
+                      <option value={editItem.brand}>{editItem.brand}（目前值）</option>
+                    )}
+                    {brandOptions.map(o => <option key={o.id} value={o.name}>{o.name}</option>)}
+                  </select>
                 </div>
                 <div>
-                  <label style={editLabelStyle}>類型 (Type) (鎖定)</label>
-                  <input type="text" value={editItem.type || ''} disabled readOnly style={{ ...editInputStyle, backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', cursor: 'not-allowed' }} />
+                  <label style={editLabelStyle}>類型 (Type)</label>
+                  <select
+                    value={editItem.type || ''}
+                    onChange={(e) => setEditItem({ ...editItem, type: e.target.value })}
+                    style={editInputStyle}
+                    title="當初輸入錯誤時可在此改正，存檔後會重新對應到正確的品項主檔"
+                  >
+                    {/* 目前值可能因為當初輸入錯誤而不在主檔清單中，仍要列出來才改得掉 */}
+                    {editItem.type && !typeOptions.some(o => o.name === editItem.type) && (
+                      <option value={editItem.type}>{editItem.type}（目前值）</option>
+                    )}
+                    {typeOptions.map(o => <option key={o.id} value={o.name}>{o.name}</option>)}
+                  </select>
                 </div>
                 <div>
                   <label style={editLabelStyle}>型號 (Model) *</label>
