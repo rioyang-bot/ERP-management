@@ -12,7 +12,9 @@ import PageSizeSelector from '../components/common/PageSizeSelector';
 
 const LentList = () => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState('PENDING'); // 'PENDING' | 'SHIPPED' | 'RETURNED'
+  const [activeTab, setActiveTab] = useState('PENDING');
+  // 自動切換分頁只在第一次載入時做一次
+  const didAutoSwitchRef = useRef(false); // 'PENDING' | 'SHIPPED' | 'RETURNED'
   const [dnRecords, setDnRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -45,11 +47,18 @@ const LentList = () => {
       if (res.success) {
         const rows = res.rows || [];
         setDnRecords(rows);
-        // 如果目前待出貨為 0 且借出中有資料，自動切換至借出中
-        const pCount = rows.filter(r => r.status === 'PENDING').length;
-        const sCount = rows.filter(r => r.status === 'SHIPPED').length;
-        if (pCount === 0 && sCount > 0 && activeTab === 'PENDING') {
-          setActiveTab('SHIPPED');
+        // 第一次載入時，若待借出是空的而借出中有資料，直接切到借出中比較省事。
+        //
+        // 只做一次。這段原本每次抓資料都會執行，而切換分頁本身就會重新抓資料，
+        // 於是待借出一旦為空，使用者點該分頁就會被立刻彈回借出中 ——
+        // 看起來像「點了沒反應」，那個分頁等於永遠打不開。
+        if (!didAutoSwitchRef.current) {
+          didAutoSwitchRef.current = true;
+          const pCount = rows.filter(r => r.status === 'PENDING').length;
+          const sCount = rows.filter(r => r.status === 'SHIPPED').length;
+          if (pCount === 0 && sCount > 0) {
+            setActiveTab('SHIPPED');
+          }
         }
       } else {
         setError('無法讀取清單：' + (res.error || '未知錯誤'));
@@ -60,7 +69,9 @@ const LentList = () => {
     } finally {
       setLoading(false);
     }
-  }, [activeTab]);
+    // 不依賴 activeTab：這支查詢本來就是抓全部單據，與目前在哪個分頁無關。
+    // 依賴它只會讓每次切換分頁都多打一次查詢。
+  }, []);
 
   useEffect(() => {
     fetchRecords();
