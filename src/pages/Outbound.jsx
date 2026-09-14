@@ -2,16 +2,32 @@ import React, { useState, useEffect, useContext } from 'react';
 import { ClipboardList, Search, Plus, Trash2, Send, Calendar, MapPin, User, Package, Cpu, ChevronRight, AlertCircle, Loader2, Truck, FolderGit2, Sparkles } from 'lucide-react';
 import { RoleContext } from '../context/RoleContext';
 import { useNavigate } from 'react-router-dom';
-import { logCreate } from '../utils/auditLogger';
+import { logCreate, logUpdate } from '../utils/auditLogger';
 import DeliveryReceiptPrintModal from '../components/DeliveryReceiptPrintModal';
 import './Outbound.css';
 
-const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) => {
+/**
+ * 出貨單建檔。
+ *
+ * 傳入 editingDn 即進入編輯模式：載入該張「已建立 (待出貨)」的單據供修改，
+ * 存檔時更新原單而不是新建，也不會動到使用者手上還沒送出的草稿。
+ */
+const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null, editingDn = null }) => {
   const { authUser } = useContext(RoleContext) || {};
   const navigate = useNavigate();
+  const isEditing = !!editingDn;
   
   // --- 單據標頭狀態 (從 localStorage 初始化) ---
   const [header, setHeader] = useState(() => {
+    if (editingDn) {
+      return {
+        customer: editingDn.customer || '',
+        contact_info: editingDn.contact_info || '',
+        location: editingDn.location || '',
+        date: editingDn.shipping_date ? String(editingDn.shipping_date).split('T')[0] : new Date().toISOString().split('T')[0],
+        project_name: editingDn.project_name || ''
+      };
+    }
     const saved = localStorage.getItem('dn_draft_header');
     return saved ? JSON.parse(saved) : {
       customer: '',
@@ -24,6 +40,7 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) 
 
   // --- 搜尋與列表狀態 (從 localStorage 初始化) ---
   const [outboundItems, setOutboundItems] = useState(() => {
+    if (editingDn) return [];
     const saved = localStorage.getItem('dn_draft_items');
     return saved ? JSON.parse(saved) : [];
   });
@@ -32,7 +49,7 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) 
   const [hwSnInput, setHwSnInput] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [dnNo, setDnNo] = useState('');
+  const [dnNo, setDnNo] = useState(editingDn?.request_no || '');
 
   // 下拉選單資料
   const [customers, setCustomers] = useState([]);
@@ -67,6 +84,7 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) 
   // 當日期變更時重新預覽單號
   const handleDateChange = (newDate) => {
     setHeader(prev => ({ ...prev, date: newDate }));
+    if (isEditing) return; // 編輯時沿用原單號，不重新預覽
     fetchNextDnNo(newDate).then(no => {
       if (no) setDnNo(no);
     });
@@ -74,12 +92,15 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) 
 
   // 儲存草稿
   useEffect(() => {
+    // 編輯既有單據時不寫草稿，否則會蓋掉使用者手上還沒送出的新單
+    if (isEditing) return;
     localStorage.setItem('dn_draft_header', JSON.stringify(header));
-  }, [header]);
+  }, [header, isEditing]);
 
   useEffect(() => {
+    if (isEditing) return;
     localStorage.setItem('dn_draft_items', JSON.stringify(outboundItems));
-  }, [outboundItems]);
+  }, [outboundItems, isEditing]);
 
   // --- 初始化資料 ---
   useEffect(() => {
@@ -87,10 +108,12 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) 
       // 確保出貨單 project_name 欄位遷移存在
       try { await window.electronAPI.namedQuery('migrateOutboundProjectName'); } catch(e) {}
 
-      const initialDate = header.date || new Date().toISOString().split('T')[0];
-      fetchNextDnNo(initialDate).then(no => {
-        if (no) setDnNo(no);
-      });
+      if (!isEditing) {
+        const initialDate = header.date || new Date().toISOString().split('T')[0];
+        fetchNextDnNo(initialDate).then(no => {
+          if (no) setDnNo(no);
+        });
+      }
 
       // 獲取客戶清單
       const custRes = await window.electronAPI.namedQuery('fetchCustomers');
@@ -110,6 +133,34 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) 
     };
     initData();
   }, []);
+
+  // --- 編輯模式：載入該張單據目前的明細 ---
+  useEffect(() => {
+    if (!isEditing) return;
+    let cancelled = false;
+    (async () => {
+      const res = await window.electronAPI.namedQuery('fetchDNItems', [editingDn.id]);
+      if (cancelled || !res.success) return;
+      // 原本掛在設備底下的硬體在明細裡本來就是獨立一列，這裡照樣攤平呈現，
+      // 存檔時寫回去的列數與內容才會與原單一致。
+      setOutboundItems((res.rows || []).map((r, i) => ({
+        tempId: `edit-${r.id || i}`,
+        item_id: r.item_id,
+        item_master_id: r.item_id,
+        brand: r.brand,
+        model: r.model,
+        specification: r.specification,
+        type: r.type,
+        category_name: r.category_name,
+        sn: r.sn || '',
+        qty: r.quantity || 1,
+        location: r.location || '',
+        isSerialized: !!r.sn,
+        components: []
+      })));
+    })();
+    return () => { cancelled = true; };
+  }, [isEditing, editingDn?.id]);
 
   // --- 專案變更邏輯（支援下拉現有專案或直接鍵入新專案） ---
   const handleProjectChange = async (val) => {
@@ -303,12 +354,15 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) 
 
     setIsSubmitting(true);
     try {
-      // 1. 產生 D/N 單號 (DN-YYYYMMDD-XX)
+      // 1. 編輯沿用原單號；新建才產生 D/N 單號 (DN-YYYYMMDD-XX)
       const dateStr = header.date.replace(/-/g, '');
-      const prefix = `DN-${dateStr}-`;
-      const countRes = await window.electronAPI.namedQuery('countOutboundRequests', [prefix]);
-      const nextNum = (parseInt(countRes?.rows?.[0]?.count, 10) || 1).toString().padStart(2, '0');
-      const dnNumber = `DN-${dateStr}-${nextNum}`;
+      let dnNumber = editingDn?.request_no || '';
+      if (!isEditing) {
+        const prefix = `DN-${dateStr}-`;
+        const countRes = await window.electronAPI.namedQuery('countOutboundRequests', [prefix]);
+        const nextNum = (parseInt(countRes?.rows?.[0]?.count, 10) || 1).toString().padStart(2, '0');
+        dnNumber = `DN-${dateStr}-${nextNum}`;
+      }
 
       // 2. 專案自動立案處理 (若有填寫專案且不存在於專案表中)
       const cleanProject = (header.project_name || '').trim();
@@ -352,22 +406,50 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) 
       // 3+4. 出貨單標頭、明細與資產專案屬性回寫，全部併為單一交易。
       // 先前是逐筆送出：明細失敗時只會跳出「出貨單已建立，但明細寫入異常，
       // 請檢查出貨單明細」的提示，留下一張明細不全的出貨單。
-      const steps = [{
-        id: 'request',
-        queryName: 'insertOutboundRequestWithProject',
-        params: [
-          dnNumber,
-          header.customer,
-          header.location,
-          header.date,
-          authUser?.id || null,
-          header.contact_info,
-          'SALE',
-          null,
-          cleanProject || null,
-        ],
-      }];
-      const requestIdRef = { $ref: 'request.rows.0.id' };
+      // 編輯：更新單頭並整批換掉明細；新建：建立單頭後寫入明細。
+      // 兩者都在同一個交易裡，不會出現「舊明細刪了、新的沒寫進去」。
+      const steps = isEditing
+        ? [
+            {
+              id: 'request',
+              queryName: 'updateOutboundRequestHeader',
+              params: [
+                header.customer,
+                header.location,
+                header.date,
+                header.contact_info,
+                editingDn.expected_return_date || null,
+                cleanProject || null,
+                editingDn.id,
+              ],
+              // 0 筆代表這張單已不是「已建立 (待出貨)」，例如別人剛按了確認出貨
+              expectRows: 1,
+              errorMessage: '這張出貨單已不是「已建立 (待出貨)」狀態，無法修改。請重新整理後再確認。',
+            },
+            {
+              queryName: 'deleteOutboundItemsByRequest',
+              params: [editingDn.id],
+            },
+          ]
+        : [{
+            id: 'request',
+            queryName: 'insertOutboundRequestWithProject',
+            params: [
+              dnNumber,
+              header.customer,
+              header.location,
+              header.date,
+              authUser?.id || null,
+              header.contact_info,
+              'SALE',
+              null,
+              cleanProject || null,
+            ],
+            expectRows: 1,
+            errorMessage: '建立出貨單標頭失敗',
+          }];
+      // 明細的單頭 id：編輯用既有的，新建則取用上一步產生的
+      const requestIdRef = isEditing ? editingDn.id : { $ref: 'request.rows.0.id' };
 
       for (const item of outboundItems) {
         steps.push({
@@ -398,15 +480,26 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) 
       const txRes = await window.electronAPI.runTransaction(steps);
 
       if (txRes.success) {
-        const requestId = txRes.results.request.rows[0].id;
+        const requestId = isEditing ? editingDn.id : txRes.results.request.rows[0].id;
 
-        logCreate(
-          'OUTBOUND',
-          dnNumber,
-          header.customer || '出貨單',
-          `建立出貨申請單 [${dnNumber}] 對象: ${header.customer}${cleanProject ? ` (專案: ${cleanProject})` : ''} 共 ${outboundItems.length} 個品項 (一般銷貨)`,
-          { dnNumber, customer: header.customer, project_name: cleanProject, location: header.location, request_type: 'SALE', itemsCount: outboundItems.length, items: outboundItems.map(i => ({ model: i.model, brand: i.brand, sn: i.sn, qty: i.qty })) }
-        );
+        const logMeta = { dnNumber, customer: header.customer, project_name: cleanProject, location: header.location, request_type: 'SALE', itemsCount: outboundItems.length, items: outboundItems.map(i => ({ model: i.model, brand: i.brand, sn: i.sn, qty: i.qty })) };
+        if (isEditing) {
+          logUpdate(
+            'OUTBOUND',
+            requestId,
+            dnNumber,
+            `修改待出貨單據 [${dnNumber}] 對象: ${header.customer}${cleanProject ? ` (專案: ${cleanProject})` : ''} 共 ${outboundItems.length} 個品項`,
+            logMeta
+          );
+        } else {
+          logCreate(
+            'OUTBOUND',
+            dnNumber,
+            header.customer || '出貨單',
+            `建立出貨申請單 [${dnNumber}] 對象: ${header.customer}${cleanProject ? ` (專案: ${cleanProject})` : ''} 共 ${outboundItems.length} 個品項 (一般銷貨)`,
+            logMeta
+          );
+        }
 
         const dnData = {
           id: requestId,
@@ -420,21 +513,23 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) 
         };
         const currentItems = [...outboundItems];
 
-        // 清除清單與快取
-        setOutboundItems([]);
-        setHeader({
-          customer: '',
-          contact_info: '',
-          location: '',
-          date: new Date().toISOString().split('T')[0],
-          project_name: ''
-        });
-        localStorage.removeItem('dn_draft_items');
-        localStorage.removeItem('dn_draft_header');
+        // 清除清單與快取（編輯既有單據時草稿不屬於這張單，不能動）
+        if (!isEditing) {
+          setOutboundItems([]);
+          setHeader({
+            customer: '',
+            contact_info: '',
+            location: '',
+            date: new Date().toISOString().split('T')[0],
+            project_name: ''
+          });
+          localStorage.removeItem('dn_draft_items');
+          localStorage.removeItem('dn_draft_header');
+        }
 
         setDeliveryReceiptModal({ show: true, dn: dnData, items: currentItems });
       } else {
-        alert('建立出貨單失敗，所有變更已取消：\n' + (txRes.error || '未知錯誤'));
+        alert(`${isEditing ? '修改' : '建立'}出貨單失敗，所有變更已取消：\n` + (txRes.error || '未知錯誤'));
       }
     } catch (err) {
       console.error('Submit error:', err);
@@ -954,7 +1049,7 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) 
                 onClick={handleSubmit} 
                 disabled={isSubmitting || outboundItems.length === 0}
               >
-                <Send size={18} /> 送出並建立出貨單 (D/N)
+                <Send size={18} /> {isEditing ? '儲存修改' : '送出並建立出貨單 (D/N)'}
               </button>
             </div>
           </div>

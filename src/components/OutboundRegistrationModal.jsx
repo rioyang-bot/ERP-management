@@ -2,11 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { X, Truck } from 'lucide-react';
 import Outbound from '../pages/Outbound';
 
-const OutboundRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
+const OutboundRegistrationModal = ({ isOpen, onClose, onSuccess, editingDn = null }) => {
+  const isEditing = !!editingDn;
   const [dnNo, setDnNo] = useState('');
 
   useEffect(() => {
     if (!isOpen) return;
+    // 編輯既有單據時單號就是原本那一張，不需要預覽下一號
+    if (isEditing) return;
     const fetchNext = async () => {
       try {
         const dStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
@@ -23,7 +26,10 @@ const OutboundRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
       }
     };
     fetchNext();
-  }, [isOpen]);
+  }, [isOpen, isEditing]);
+
+  // 編輯時顯示原單號；新建時顯示預覽出來的下一號
+  const shownDnNo = isEditing ? (editingDn.request_no || '') : dnNo;
 
   if (!isOpen) return null;
 
@@ -36,9 +42,9 @@ const OutboundRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <h2 style={{ fontSize: '20px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
-                <Truck size={22} color="var(--primary-color)" /> 新增出貨單建檔 (Delivery Note Registration)
+                <Truck size={22} color="var(--primary-color)" /> {isEditing ? '修改出貨單 (Edit Delivery Note)' : '新增出貨單建檔 (Delivery Note Registration)'}
               </h2>
-              {dnNo && (
+              {shownDnNo && (
                 <span style={{
                   padding: '4px 10px',
                   borderRadius: '6px',
@@ -48,7 +54,7 @@ const OutboundRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                   fontSize: '13px',
                   border: '1px solid rgba(37, 99, 235, 0.3)'
                 }}>
-                  單號: {dnNo}
+                  單號: {shownDnNo}
                 </span>
               )}
             </div>
@@ -67,6 +73,7 @@ const OutboundRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
           <Outbound
             isSplitMode={true}
             isModalMode={true}
+            editingDn={editingDn}
             onClose={() => {
               if (onSuccess) onSuccess();
               onClose();
