@@ -12,6 +12,7 @@ import ColumnVisibilityModal from '../components/ColumnVisibilityModal';
 import CardAggregationLegend from '../components/CardAggregationLegend';
 import WarrantyBadge from '../components/WarrantyBadge';
 import { isFullyOutOfWarranty } from '../utils/warranty';
+import { getActiveSnTerm, filterMountableHw } from '../utils/mountedHwFilter';
 import { useColumnPreferences } from '../hooks/useColumnPreferences';
 
 // 設備列表的欄位清單：id 對應表格的每一欄，always 代表不可隱藏
@@ -1540,7 +1541,19 @@ const DeviceList = ({ isSplitMode = false }) => {
                     overflowY: 'auto', zIndex: 20, boxShadow: 'var(--modal-shadow)'
                   }}>
                     <div style={{ padding: '8px 12px', backgroundColor: 'var(--bg-surface-subtle)', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', fontWeight: 'bold' }}>
-                      <span>可掛載之硬體資產清單 (點擊加入/移除)</span>
+                      <span>
+                        可掛載之硬體資產清單 (點擊加入/移除)
+                        {(() => {
+                          const term = getActiveSnTerm(editItem.mounted_hw_sns);
+                          if (!term) return null;
+                          const n = filterMountableHw(availableHardwares, term).length;
+                          return (
+                            <span style={{ marginLeft: '8px', fontWeight: 400, color: 'var(--text-muted)' }}>
+                              — 以「{term}」篩選，{n} / {availableHardwares.length} 筆
+                            </span>
+                          );
+                        })()}
+                      </span>
                       <span style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setShowHwDropdown(false)}>關閉 ✕</span>
                     </div>
                     {(() => {
@@ -1548,7 +1561,17 @@ const DeviceList = ({ isSplitMode = false }) => {
                         .split(/[,，\s\n]+/)
                         .map(s => s.trim().toLowerCase())
                         .filter(Boolean);
-                      return availableHardwares.map(hw => {
+                      // 依「正在輸入的那一段」即時篩選；序號、廠牌、型號、類型都比對得到
+                      const term = getActiveSnTerm(editItem.mounted_hw_sns);
+                      const shown = filterMountableHw(availableHardwares, term);
+                      if (shown.length === 0) {
+                        return (
+                          <div style={{ padding: '14px 12px', fontSize: '0.85rem', color: 'var(--text-muted)', textAlign: 'center' }}>
+                            沒有符合「{term}」的硬體。清除輸入即可看到全部 {availableHardwares.length} 筆。
+                          </div>
+                        );
+                      }
+                      return shown.map(hw => {
                         const isSelected = curSns.includes((hw.sn || '').toLowerCase());
                         const isMountedToOther = hw.server_sn && hw.server_sn.trim() !== (editItem.sn || '').trim();
                         return (
