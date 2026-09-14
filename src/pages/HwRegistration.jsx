@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Save, Trash2, Cpu, Settings2, X, Server, Layers, ListFilter, FileSpreadsheet } from 'lucide-react';
-import { sanitizeInput, sanitizeSearchInput } from '../utils/security';
 import { logCreate } from '../utils/auditLogger';
 import HwBatchImportModal from '../components/HwBatchImportModal';
 import { normalizeMasterName } from '../utils/normalizeMasterData';
@@ -297,22 +296,6 @@ const HwRegistration = ({ isSplitMode = false }) => {
     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
   });
 
-  const RenderInlineMgmt = ({ title, items, onDelete }) => (
-    <div style={{ marginTop: '8px', border: '1px solid var(--border-color)', borderRadius: '10px', backgroundColor: 'var(--bg-surface)', boxShadow: 'var(--modal-shadow)' }}>
-      <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: '700', color: 'var(--text-main)' }}>
-        <span>管理{title}清單</span>
-        <X size={14} onClick={() => setActiveMgmt(null)} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} />
-      </div>
-      <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
-        {items.map(item => (
-          <div key={typeof item === 'object' ? item.id : item} style={{ padding: '8px 12px', display: 'flex', justifyContent: 'space-between', fontSize: '13px', borderBottom: '1px solid var(--border-color)', color: 'var(--text-main)' }}>
-            <span>{typeof item === 'object' ? item.name : item}</span>
-            <Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => onDelete(typeof item === 'object' ? item.name : item)} />
-          </div>
-        ))}
-      </div>
-    </div>
-  );
 
   return (
     <div style={containerStyle}>

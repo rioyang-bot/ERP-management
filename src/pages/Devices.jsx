@@ -232,7 +232,9 @@ const Devices = ({ isSplitMode = false }) => {
       }
 
       alert(isBulkMode ? `批次建檔完成！成功建立 ${successCount} 筆設備紀錄。` : '設備建檔成功！');
-      fetchAssets();
+      // 剛建立的卡片可能帶進新的廠牌或類型，重新載入讓它們立刻可選。
+      // 型號清單不在這裡重載：表單接著會重置為第一個廠牌，載入舊廠牌的型號反而對不起來。
+      await Promise.all([fetchBrands(), fetchTypes()]);
       setFormData({
         sn: '', specification: '', type: '', brand: brands[0]?.name || '', model: '', client: '',
         hostname: '', location: '', installed_date: '', customer_warranty_expire: '', system_date: '', warranty_expire: '',
