@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Plus, Save, Settings2, Trash2, X, Package, Check, FileSpreadsheet } from 'lucide-react';
 import { logCreate } from '../utils/auditLogger';
 import ConsumableBatchImportModal from './ConsumableBatchImportModal';
@@ -11,9 +11,6 @@ const ConsumableRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   const [showAddType, setShowAddType] = useState(false);
   const [showAddBrand, setShowAddBrand] = useState(false);
   const [showAddModel, setShowAddModel] = useState(false);
-  const [showManageType, setShowManageType] = useState(false);
-  const [showManageBrand, setShowManageBrand] = useState(false);
-  const [showManageModel, setShowManageModel] = useState(false);
   const [newTypeName, setNewTypeName] = useState('');
   const [newBrandName, setNewBrandName] = useState('');
   const [newModelName, setNewModelName] = useState('');
@@ -32,11 +29,33 @@ const ConsumableRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
     return val.trim();
   };
 
+  // 這次建檔中新輸入、但還沒真正建立的類型／廠牌／型號。
+  // 下拉選單已改讀「既有卡片」，新值在存檔前還沒有卡片、查不到，
+  // 因此先暫存在這裡讓使用者選得到；按下儲存建立卡片後就會自然出現在清單中。
+  // 取消建檔則什麼都不會留下。
+  const [pending, setPending] = useState({ types: [], brands: [], models: [] });
+  const pendingRef = useRef(pending);
+  pendingRef.current = pending;
+
+  /** 把暫存值併進查詢結果，重複的不重覆列出 */
+  const withPending = (names, kind) => {
+    const extra = pendingRef.current[kind].filter((x) => !names.includes(x));
+    return [...names, ...extra];
+  };
+
+  /** 併入暫存廠牌（廠牌是物件陣列，與類型／型號的字串陣列不同） */
+  const brandRowsWithPending = (rows) => ([
+    ...rows,
+    ...pendingRef.current.brands
+      .filter((n) => !rows.some((r) => r.name === n))
+      .map((n) => ({ id: 'pending-' + n, name: n })),
+  ]);
+
   const fetchTypes = useCallback(async (brandName, currentType = '') => {
     if (!brandName) { setTypes([]); return { typeNames: [], nextType: '' }; }
     const res = await window.electronAPI.namedQuery('fetchConsumableTypes', []);
     if (res.success) {
-      const typeNames = res.rows.map(r => r.name);
+      const typeNames = withPending(res.rows.map(r => r.name), 'types');
       setTypes(typeNames);
       const nextType = typeNames.includes(currentType) ? currentType : (typeNames[0] || '');
       setFormData(prev => ({ ...prev, type: nextType }));
@@ -49,7 +68,7 @@ const ConsumableRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
     if (!brandName || !typeName) { setModels([]); return { modelNames: [] }; }
     const res = await window.electronAPI.namedQuery('fetchConsumableModelsByBrand', [brandName]);
     if (res.success) {
-      const modelNames = res.rows.map(r => r.name);
+      const modelNames = withPending(res.rows.map(r => r.name), 'models');
       setModels(modelNames);
       setFormData(prev => ({ ...prev, model: modelNames.includes(prev.model) ? prev.model : (modelNames[0] || '') }));
       return { modelNames };
@@ -60,7 +79,7 @@ const ConsumableRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   const fetchBrands = useCallback(async () => {
     const res = await window.electronAPI.namedQuery('fetchConsumableBrands');
     if (res.success) {
-      setBrands(res.rows);
+      setBrands(brandRowsWithPending(res.rows));
       if (!formData.brand && res.rows.length > 0) {
         const initialBrand = res.rows[0].name;
         setFormData(prev => ({ ...prev, brand: initialBrand }));
@@ -81,31 +100,23 @@ const ConsumableRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   const handleAddType = async () => {
     const name = normalizeMasterName(validateAndSanitize(newTypeName, '類型名稱'));
     if (!name || !formData.brand) return;
-    const res = await window.electronAPI.namedQuery('insertDeviceType', ['耗材', name]);
-    if (res.success) {
-      await fetchTypes(formData.brand);
+    setPending(prev => ({ ...prev, types: [...new Set([...prev.types, name])] }));
+    setTypes(prev => (prev.includes(name) ? prev : [...prev, name]));
+    {
       setFormData(prev => ({ ...prev, type: name }));
       setNewTypeName('');
       setShowAddType(false);
     }
   };
 
-  const handleDeleteType = async (typeName) => {
-    if (!confirm(`確定要刪除「${typeName}」嗎？`)) return;
-    const res = await window.electronAPI.namedQuery('deleteDeviceType', [typeName, '耗材']);
-    if (res.success) {
-      await fetchTypes(formData.brand);
-      if (formData.type === typeName) setFormData(prev => ({ ...prev, type: '' }));
-    }
-  };
 
   const handleAddBrand = async () => {
     const name = normalizeMasterName(validateAndSanitize(newBrandName, '廠牌名稱'));
     if (!name) return;
-    const res = await window.electronAPI.namedQuery('insertDeviceBrand', ['耗材', name]);
-    if (res.success) {
+    setPending(prev => ({ ...prev, brands: [...new Set([...prev.brands, name])] }));
+    setBrands(prev => (prev.some(b => b.name === name) ? prev : [...prev, { id: 'pending-' + name, name }]));
+    {
       setFormData({ ...formData, brand: name });
-      await fetchBrands();
       setNewBrandName('');
       setShowAddBrand(false);
     }
@@ -114,33 +125,16 @@ const ConsumableRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   const handleAddModel = async () => {
     const name = normalizeMasterName(validateAndSanitize(newModelName, '型號名稱'));
     if (!name || !formData.brand || !formData.type) return;
-    const res = await window.electronAPI.namedQuery('insertDeviceModel', [formData.brand, name, '耗材']);
-    if (res.success) {
-      if (res.rowCount === 0) return alert('失敗：關聯錯誤');
+    setPending(prev => ({ ...prev, models: [...new Set([...prev.models, name])] }));
+    setModels(prev => (prev.includes(name) ? prev : [...prev, name]));
+    {
       setFormData(prev => ({ ...prev, model: name }));
-      await fetchModels(formData.brand, formData.type);
       setNewModelName('');
       setShowAddModel(false);
     }
   };
 
-  const handleDeleteModel = async (modelName) => {
-    if (!confirm(`確定要刪除「${modelName}」嗎？`)) return;
-    const res = await window.electronAPI.namedQuery('deleteDeviceModel', [modelName, formData.brand, '耗材']);
-    if (res.success) {
-      await fetchModels(formData.brand, formData.type);
-      if (formData.model === modelName) setFormData(prev => ({ ...prev, model: '' }));
-    }
-  };
 
-  const handleDeleteBrand = async (brandName) => {
-    if (!confirm(`確定要刪除「${brandName}」嗎？`)) return;
-    const res = await window.electronAPI.namedQuery('deleteDeviceBrand', [brandName, '耗材']);
-    if (res.success) {
-      await fetchBrands();
-      if (formData.brand === brandName) setFormData(prev => ({ ...prev, brand: '' }));
-    }
-  };
 
   const handleChange = async (e) => {
     const { name, value } = e.target;
@@ -237,7 +231,7 @@ const ConsumableRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0, 0, 0, 0.65)', backdropFilter: 'blur(5px)', padding: '20px' }}>
       <div style={{ backgroundColor: 'var(--bg-surface)', width: '100%', maxWidth: '850px', maxHeight: '90vh', borderRadius: '16px', border: '1px solid var(--border-color)', boxShadow: '0 20px 40px rgba(0,0,0,0.3)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        
+
         {/* Modal Header */}
         <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-surface-subtle)' }}>
           <div>
@@ -289,22 +283,11 @@ const ConsumableRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                     {brands.map(b => <option key={b.name} value={b.name}>{b.name}</option>)}
                   </select>
                   <button type="button" onClick={() => setShowAddBrand(!showAddBrand)} style={iconButtonStyle} title="新增廠牌"><Plus size={16} /></button>
-                  <button type="button" onClick={() => setShowManageBrand(!showManageBrand)} style={iconButtonStyle} title="管理廠牌"><Settings2 size={16} /></button>
                 </div>
                 {showAddBrand && (
                   <div style={{ marginTop: '8px', display: 'flex', gap: '8px' }}>
                     <input placeholder="新廠牌名稱" value={newBrandName} onChange={e => setNewBrandName(e.target.value)} style={inputStyle} />
                     <button type="button" onClick={handleAddBrand} style={{ ...iconButtonStyle, backgroundColor: 'var(--primary-color)', color: '#fff' }}>儲存</button>
-                  </div>
-                )}
-                {showManageBrand && (
-                  <div style={{ marginTop: '8px', border: '1px solid var(--border-color)', borderRadius: '8px', maxHeight: '120px', overflowY: 'auto' }}>
-                    {brands.map(b => (
-                      <div key={b.name} style={manageItemStyle}>
-                        <span>{b.name}</span>
-                        <Trash2 size={14} color="#ef4444" cursor="pointer" onClick={() => handleDeleteBrand(b.name)} />
-                      </div>
-                    ))}
                   </div>
                 )}
               </div>
@@ -318,22 +301,11 @@ const ConsumableRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                     {types.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
                   <button type="button" onClick={() => setShowAddType(!showAddType)} style={iconButtonStyle} title="新增類型"><Plus size={16} /></button>
-                  <button type="button" onClick={() => setShowManageType(!showManageType)} style={iconButtonStyle} title="管理類型"><Settings2 size={16} /></button>
                 </div>
                 {showAddType && (
                   <div style={{ marginTop: '8px', display: 'flex', gap: '8px' }}>
                     <input placeholder="新類型名稱" value={newTypeName} onChange={e => setNewTypeName(e.target.value)} style={inputStyle} />
                     <button type="button" onClick={handleAddType} style={{ ...iconButtonStyle, backgroundColor: 'var(--primary-color)', color: '#fff' }}>儲存</button>
-                  </div>
-                )}
-                {showManageType && (
-                  <div style={{ marginTop: '8px', border: '1px solid var(--border-color)', borderRadius: '8px', maxHeight: '120px', overflowY: 'auto' }}>
-                    {types.map(t => (
-                      <div key={t} style={manageItemStyle}>
-                        <span>{t}</span>
-                        <Trash2 size={14} color="#ef4444" cursor="pointer" onClick={() => handleDeleteType(t)} />
-                      </div>
-                    ))}
                   </div>
                 )}
               </div>
@@ -347,22 +319,11 @@ const ConsumableRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                     {models.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                   <button type="button" onClick={() => setShowAddModel(!showAddModel)} style={iconButtonStyle} title="新增型號/規格"><Plus size={16} /></button>
-                  <button type="button" onClick={() => setShowManageModel(!showManageModel)} style={iconButtonStyle} title="管理型號/規格"><Settings2 size={16} /></button>
                 </div>
                 {showAddModel && (
                   <div style={{ marginTop: '8px', display: 'flex', gap: '8px' }}>
                     <input placeholder="新型號/規格名稱" value={newModelName} onChange={e => setNewModelName(e.target.value)} style={inputStyle} />
                     <button type="button" onClick={handleAddModel} style={{ ...iconButtonStyle, backgroundColor: 'var(--primary-color)', color: '#fff' }}>儲存</button>
-                  </div>
-                )}
-                {showManageModel && (
-                  <div style={{ marginTop: '8px', border: '1px solid var(--border-color)', borderRadius: '8px', maxHeight: '120px', overflowY: 'auto' }}>
-                    {models.map(m => (
-                      <div key={m} style={manageItemStyle}>
-                        <span>{m}</span>
-                        <Trash2 size={14} color="#ef4444" cursor="pointer" onClick={() => handleDeleteModel(m)} />
-                      </div>
-                    ))}
                   </div>
                 )}
               </div>
@@ -397,7 +358,7 @@ const ConsumableRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
           >
             取消
           </button>
-          
+
           <div style={{ display: 'flex', gap: '12px' }}>
             <button
               type="button"

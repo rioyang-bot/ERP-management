@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Plus, Save, Trash2, Cpu, Settings2, X, Server, FileSpreadsheet, Check } from 'lucide-react';
 import { logCreate } from '../utils/auditLogger';
 import HwBatchImportModal from './HwBatchImportModal';
@@ -11,7 +11,6 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   const [projects, setProjects] = useState([]);
   const [showBatchImport, setShowBatchImport] = useState(false);
 
-  const [activeMgmt, setActiveMgmt] = useState(null);
   const [activeAdd, setActiveAdd] = useState(null);
 
   const [newBrandName, setNewBrandName] = useState('');
@@ -38,15 +37,37 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
     return val.trim();
   };
 
+  // 這次建檔中新輸入、但還沒真正建立的類型／廠牌／型號。
+  // 下拉選單已改讀「既有卡片」，新值在存檔前還沒有卡片、查不到，
+  // 因此先暫存在這裡讓使用者選得到；按下儲存建立卡片後就會自然出現在清單中。
+  // 取消建檔則什麼都不會留下。
+  const [pending, setPending] = useState({ types: [], brands: [], models: [] });
+  const pendingRef = useRef(pending);
+  pendingRef.current = pending;
+
+  /** 把暫存值併進查詢結果，重複的不重覆列出 */
+  const withPending = (names, kind) => {
+    const extra = pendingRef.current[kind].filter((x) => !names.includes(x));
+    return [...names, ...extra];
+  };
+
+  /** 併入暫存廠牌（廠牌是物件陣列，與類型／型號的字串陣列不同） */
+  const brandRowsWithPending = (rows) => ([
+    ...rows,
+    ...pendingRef.current.brands
+      .filter((n) => !rows.some((r) => r.name === n))
+      .map((n) => ({ id: 'pending-' + n, name: n })),
+  ]);
+
   const fetchBrands = useCallback(async () => {
     const res = await window.electronAPI.namedQuery('fetchHwBrands');
-    if (res.success) setBrands(res.rows);
+    if (res.success) setBrands(brandRowsWithPending(res.rows));
   }, []);
 
   const fetchTypes = useCallback(async (currentType = '') => {
     const res = await window.electronAPI.namedQuery('fetchHwTypes');
     if (res.success) {
-      const typeNames = res.rows.map(r => r.name);
+      const typeNames = withPending(res.rows.map(r => r.name), 'types');
       setTypes(typeNames);
       setFormData(prev => ({
         ...prev,
@@ -61,7 +82,7 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
     if (!brandName) { setModels([]); return { modelNames: [] }; }
     const res = await window.electronAPI.namedQuery('fetchHwModelsByBrand', [brandName]);
     if (res.success) {
-      const modelNames = res.rows.map(r => r.name);
+      const modelNames = withPending(res.rows.map(r => r.name), 'models');
       setModels(modelNames);
       setFormData(prev => ({ ...prev, model: modelNames.includes(prev.model) ? prev.model : '' }));
       return { modelNames };
@@ -119,79 +140,44 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   const handleAddBrand = async () => {
     const name = normalizeMasterName(validateAndSanitize(newBrandName, '廠牌名稱'));
     if (!name) return;
-    const res = await window.electronAPI.namedQuery('insertDeviceBrand', ['硬體', name]);
-    if (res.success) { 
+    // 只暫存，等整張建檔儲存時才會隨卡片一起建立
+    setPending(prev => ({ ...prev, brands: [...new Set([...prev.brands, name])] }));
+    setBrands(prev => (prev.some(b => b.name === name) ? prev : [...prev, { id: 'pending-' + name, name }]));
+    {
       setFormData(prev => ({ ...prev, brand: name, model: '' }));
-      await fetchBrands(); 
-      await fetchModels(name);
-      setNewBrandName(''); 
-      setActiveAdd(null); 
+      // 新廠牌底下還沒有任何型號
+      setModels([]);
+      setNewBrandName('');
+      setActiveAdd(null);
     }
-    else alert('新增失敗：' + res.error);
   };
 
   const handleAddType = async () => {
     const name = normalizeMasterName(validateAndSanitize(newTypeName, '類型名稱'));
     if (!name) return;
-    const res = await window.electronAPI.namedQuery('insertDeviceType', ['硬體', name]);
-    if (res.success) { 
+    setPending(prev => ({ ...prev, types: [...new Set([...prev.types, name])] }));
+    setTypes(prev => (prev.includes(name) ? prev : [...prev, name]));
+    {
       setFormData(prev => ({ ...prev, type: name }));
-      await fetchTypes(name); 
-      setNewTypeName(''); 
-      setActiveAdd(null); 
+      setNewTypeName('');
+      setActiveAdd(null);
     }
-    else alert('新增失敗：' + res.error);
   };
 
   const handleAddModel = async () => {
     const name = normalizeMasterName(validateAndSanitize(newModelName, '型號名稱'));
     if (!name || !formData.brand) return alert('請先選擇廠牌後再新增型號');
-    const res = await window.electronAPI.namedQuery('insertDeviceModel', [formData.brand, name, '硬體']);
-    if (res.success) { 
+    setPending(prev => ({ ...prev, models: [...new Set([...prev.models, name])] }));
+    setModels(prev => (prev.includes(name) ? prev : [...prev, name]));
+    {
       setFormData(prev => ({ ...prev, model: name }));
-      await fetchModels(formData.brand); 
-      setNewModelName(''); 
-      setActiveAdd(null); 
+      setNewModelName('');
+      setActiveAdd(null);
     }
-    else alert('新增失敗：' + res.error);
   };
 
-  const handleDeleteBrand = async (brandName) => {
-    if (!confirm(`確定要刪除廠牌「${brandName}」嗎？`)) return;
-    const res = await window.electronAPI.namedQuery('deleteDeviceBrand', [brandName, '硬體']);
-    if (res.success) {
-      await fetchBrands();
-      if (formData.brand === brandName) {
-        setFormData(prev => ({ ...prev, brand: '', model: '' }));
-        setModels([]);
-      }
-    }
-    else alert('刪除失敗：' + res.error);
-  };
 
-  const handleDeleteType = async (typeName) => {
-    if (!confirm(`確定要刪除類型「${typeName}」嗎？`)) return;
-    const res = await window.electronAPI.namedQuery('deleteDeviceType', [typeName, '硬體']);
-    if (res.success) {
-      await fetchTypes();
-      if (formData.type === typeName) {
-        setFormData(prev => ({ ...prev, type: '' }));
-      }
-    }
-    else alert('刪除失敗：' + res.error);
-  };
 
-  const handleDeleteModel = async (modelName) => {
-    if (!confirm(`確定要刪除型號「${modelName}」嗎？`)) return;
-    const res = await window.electronAPI.namedQuery('deleteDeviceModel', [modelName, formData.brand, '硬體']);
-    if (res.success) {
-      await fetchModels(formData.brand);
-      if (formData.model === modelName) {
-        setFormData(prev => ({ ...prev, model: '' }));
-      }
-    }
-    else alert('刪除失敗：' + res.error);
-  };
 
   const handleSave = async (continueAdd = false) => {
     const safeType = validateAndSanitize(formData.type, '類型');
@@ -438,22 +424,11 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                     {types.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
                   <button type="button" onClick={() => setActiveAdd(activeAdd === 'type' ? null : 'type')} style={iconBtnStyle} title="新增類型"><Plus size={16} /></button>
-                  <button type="button" onClick={() => setActiveMgmt(activeMgmt === 'type' ? null : 'type')} style={iconBtnStyle} title="管理類型"><Settings2 size={16} /></button>
                 </div>
                 {activeAdd === 'type' && (
                   <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
                     <input value={newTypeName} onChange={e => setNewTypeName(e.target.value)} placeholder="類型名稱 (例: NIC)" style={inputStyle} />
                     <button type="button" onClick={handleAddType} style={{ ...iconBtnStyle, backgroundColor: 'var(--primary-color)', color: '#fff' }}>儲存</button>
-                  </div>
-                )}
-                {activeMgmt === 'type' && (
-                  <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', marginTop: '8px', padding: '8px', maxHeight: '120px', overflowY: 'auto' }}>
-                    {types.map(t => (
-                      <div key={t} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '13px' }}>
-                        <span>{t}</span>
-                        <Trash2 size={14} color="#ef4444" cursor="pointer" onClick={() => handleDeleteType(t)} />
-                      </div>
-                    ))}
                   </div>
                 )}
               </div>
@@ -467,22 +442,11 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                     {brands.map(b => <option key={b.name} value={b.name}>{b.name}</option>)}
                   </select>
                   <button type="button" onClick={() => setActiveAdd(activeAdd === 'brand' ? null : 'brand')} style={iconBtnStyle} title="新增廠牌"><Plus size={16} /></button>
-                  <button type="button" onClick={() => setActiveMgmt(activeMgmt === 'brand' ? null : 'brand')} style={iconBtnStyle} title="管理廠牌"><Settings2 size={16} /></button>
                 </div>
                 {activeAdd === 'brand' && (
                   <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
                     <input value={newBrandName} onChange={e => setNewBrandName(e.target.value)} placeholder="廠牌名稱" style={inputStyle} />
                     <button type="button" onClick={handleAddBrand} style={{ ...iconBtnStyle, backgroundColor: 'var(--primary-color)', color: '#fff' }}>儲存</button>
-                  </div>
-                )}
-                {activeMgmt === 'brand' && (
-                  <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', marginTop: '8px', padding: '8px', maxHeight: '120px', overflowY: 'auto' }}>
-                    {brands.map(b => (
-                      <div key={b.name} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '13px' }}>
-                        <span>{b.name}</span>
-                        <Trash2 size={14} color="#ef4444" cursor="pointer" onClick={() => handleDeleteBrand(b.name)} />
-                      </div>
-                    ))}
                   </div>
                 )}
               </div>
@@ -496,22 +460,11 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                     {models.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                   <button type="button" onClick={() => setActiveAdd(activeAdd === 'model' ? null : 'model')} disabled={!formData.brand} style={iconBtnStyle} title="新增型號"><Plus size={16} /></button>
-                  <button type="button" onClick={() => setActiveMgmt(activeMgmt === 'model' ? null : 'model')} disabled={!formData.brand} style={iconBtnStyle} title="管理型號"><Settings2 size={16} /></button>
                 </div>
                 {activeAdd === 'model' && (
                   <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
                     <input value={newModelName} onChange={e => setNewModelName(e.target.value)} placeholder="型號名稱" style={inputStyle} />
                     <button type="button" onClick={handleAddModel} style={{ ...iconBtnStyle, backgroundColor: 'var(--primary-color)', color: '#fff' }}>儲存</button>
-                  </div>
-                )}
-                {activeMgmt === 'model' && (
-                  <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', marginTop: '8px', padding: '8px', maxHeight: '120px', overflowY: 'auto' }}>
-                    {models.map(m => (
-                      <div key={m} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '13px' }}>
-                        <span>{m}</span>
-                        <Trash2 size={14} color="#ef4444" cursor="pointer" onClick={() => handleDeleteModel(m)} />
-                      </div>
-                    ))}
                   </div>
                 )}
               </div>
@@ -528,13 +481,13 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}>
                 <div>
                   <label style={labelStyle}>硬體序號 (S/N)</label>
-                  <input 
-                    name="sn" 
-                    value={formData.sn} 
-                    onChange={handleChange} 
+                  <input
+                    name="sn"
+                    value={formData.sn}
+                    onChange={handleChange}
                     onBlur={() => handleSnBlur(formData.sn)}
-                    style={inputStyle} 
-                    placeholder="請輸入或掃描序號" 
+                    style={inputStyle}
+                    placeholder="請輸入或掃描序號"
                   />
                 </div>
                 <div>
@@ -557,13 +510,13 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
               </div>
               <div>
                 <label style={labelStyle}>訂單來源 (OrderSource)</label>
-                <input 
-                  type="text" 
-                  name="order_source" 
-                  value={formData.order_source} 
-                  onChange={handleChange} 
-                  style={inputStyle} 
-                  placeholder="請輸入訂單來源 (例: XeAU Nov2022)" 
+                <input
+                  type="text"
+                  name="order_source"
+                  value={formData.order_source}
+                  onChange={handleChange}
+                  style={inputStyle}
+                  placeholder="請輸入訂單來源 (例: XeAU Nov2022)"
                 />
               </div>
             </div>
@@ -579,7 +532,7 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
           >
             取消
           </button>
-          
+
           <div style={{ display: 'flex', gap: '12px' }}>
             <button
               type="button"

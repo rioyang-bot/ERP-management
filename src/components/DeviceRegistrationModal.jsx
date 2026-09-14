@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Save, Settings2, Trash2, X, Monitor, User, MapPin, ListFilter, Server, FileSpreadsheet, Check } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Plus, Save, X, Monitor, User, MapPin, ListFilter, Server, FileSpreadsheet, Check } from 'lucide-react';
 import { logCreate } from '../utils/auditLogger';
 import DeviceBatchImportModal from './DeviceBatchImportModal';
 import { normalizeMasterName } from '../utils/normalizeMasterData';
@@ -12,9 +12,6 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   const [showAddType, setShowAddType] = useState(false);
   const [showAddBrand, setShowAddBrand] = useState(false);
   const [showAddModel, setShowAddModel] = useState(false);
-  const [showManageType, setShowManageType] = useState(false);
-  const [showManageBrand, setShowManageBrand] = useState(false);
-  const [showManageModel, setShowManageModel] = useState(false);
   const [newTypeName, setNewTypeName] = useState('');
   const [newBrandName, setNewBrandName] = useState('');
   const [newModelName, setNewModelName] = useState('');
@@ -43,11 +40,25 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
     return val.trim();
   };
 
+  // 這次建檔中新輸入、但還沒真正建立的類型／廠牌／型號。
+  // 下拉選單已改讀「既有卡片」，新值在存檔前還沒有卡片、查不到，
+  // 因此先暫存在這裡讓使用者選得到；按下儲存建立卡片後就會自然出現在清單中。
+  // 取消建檔則什麼都不會留下。
+  const [pending, setPending] = useState({ types: [], brands: [], models: [] });
+  const pendingRef = useRef(pending);
+  pendingRef.current = pending;
+
+  /** 把暫存值併進查詢結果，重複的不重覆列出 */
+  const withPending = (names, kind) => {
+    const extra = pendingRef.current[kind].filter((x) => !names.includes(x));
+    return [...names, ...extra];
+  };
+
   const fetchModels = useCallback(async (brandName) => {
     if (!brandName) { setModels([]); return { modelNames: [] }; }
     const res = await window.electronAPI.namedQuery('fetchModelsByBrand', [brandName]);
     if (res.success) {
-      const modelNames = res.rows.map(r => r.name);
+      const modelNames = withPending(res.rows.map(r => r.name), 'models');
       setModels(modelNames);
       setFormData(prev => ({ ...prev, model: modelNames.includes(prev.model) ? prev.model : (modelNames[0] || '') }));
       return { modelNames };
@@ -58,7 +69,7 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   const fetchTypes = useCallback(async (currentType = '') => {
     const res = await window.electronAPI.namedQuery('fetchDeviceTypes');
     if (res.success) {
-      const typeNames = res.rows.map(r => r.name);
+      const typeNames = withPending(res.rows.map(r => r.name), 'types');
       setTypes(typeNames);
       setFormData(prev => ({
         ...prev,
@@ -72,7 +83,13 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   const fetchBrands = useCallback(async () => {
     const res = await window.electronAPI.namedQuery('fetchDeviceBrands');
     if (res.success) {
-      setBrands(res.rows);
+      const brandRows = [
+        ...res.rows,
+        ...pendingRef.current.brands
+          .filter((n) => !res.rows.some((r) => r.name === n))
+          .map((n) => ({ id: 'pending-' + n, name: n })),
+      ];
+      setBrands(brandRows);
       if (!formData.brand && res.rows.length > 0) {
         const initialBrand = res.rows[0].name;
         setFormData(prev => ({ ...prev, brand: initialBrand }));
@@ -107,69 +124,38 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   if (!isOpen) return null;
 
 
-  const handleAddType = async () => {
+  const handleAddType = () => {
     const name = normalizeMasterName(validateAndSanitize(newTypeName, '類型名稱'));
     if (!name) return;
-    const res = await window.electronAPI.namedQuery('insertDeviceType', ['設備', name]);
-    if (res.success) {
-      setFormData(prev => ({ ...prev, type: name }));
-      await fetchTypes(name);
-      setNewTypeName(''); setShowAddType(false);
-    }
+    // 只暫存，等整張建檔儲存時才會隨卡片一起建立
+    setPending(prev => ({ ...prev, types: [...new Set([...prev.types, name])] }));
+    setTypes(prev => (prev.includes(name) ? prev : [...prev, name]));
+    setFormData(prev => ({ ...prev, type: name }));
+    setNewTypeName(''); setShowAddType(false);
   };
 
-  const handleDeleteType = async (typeName) => {
-    if (!confirm(`確定要刪除類型「${typeName}」嗎？`)) return;
-    const res = await window.electronAPI.namedQuery('deleteDeviceType', [typeName, '設備']);
-    if (res.success) {
-      await fetchTypes();
-      if (formData.type === typeName) setFormData(prev => ({ ...prev, type: '' }));
-    }
-  };
 
-  const handleAddModel = async () => {
+  const handleAddModel = () => {
     const name = normalizeMasterName(validateAndSanitize(newModelName, '型號名稱'));
     if (!name || !formData.brand) return alert('請先選擇或輸入廠牌');
-    const res = await window.electronAPI.namedQuery('insertDeviceModel', [formData.brand, name, '設備']);
-    if (res.success) {
-      setFormData(prev => ({ ...prev, model: name }));
-      await fetchModels(formData.brand);
-      setNewModelName(''); setShowAddModel(false);
-    }
+    setPending(prev => ({ ...prev, models: [...new Set([...prev.models, name])] }));
+    setModels(prev => (prev.includes(name) ? prev : [...prev, name]));
+    setFormData(prev => ({ ...prev, model: name }));
+    setNewModelName(''); setShowAddModel(false);
   };
 
-  const handleDeleteModel = async (modelName) => {
-    if (!confirm(`確定要刪除「${modelName}」嗎？`)) return;
-    const res = await window.electronAPI.namedQuery('deleteDeviceModel', [modelName, formData.brand, '設備']);
-    if (res.success) {
-      await fetchModels(formData.brand);
-      if (formData.model === modelName) setFormData(prev => ({ ...prev, model: '' }));
-    }
-  };
 
-  const handleAddBrand = async () => {
+  const handleAddBrand = () => {
     const name = normalizeMasterName(validateAndSanitize(newBrandName, '廠牌名稱'));
     if (!name) return;
-    const res = await window.electronAPI.namedQuery('insertDeviceBrand', ['設備', name]);
-    if (res.success) {
-      setFormData(prev => ({ ...prev, brand: name }));
-      await fetchBrands();
-      await fetchModels(name);
-      setNewBrandName(''); setShowAddBrand(false);
-    }
+    setPending(prev => ({ ...prev, brands: [...new Set([...prev.brands, name])] }));
+    setBrands(prev => (prev.some(b => b.name === name) ? prev : [...prev, { id: 'pending-' + name, name }]));
+    setFormData(prev => ({ ...prev, brand: name, model: '' }));
+    // 新廠牌底下還沒有任何型號，清空型號清單讓使用者自行新增
+    setModels([]);
+    setNewBrandName(''); setShowAddBrand(false);
   };
 
-  const handleDeleteBrand = async (brandName) => {
-    if (!confirm(`確定要刪除「${brandName}」嗎？`)) return;
-    const res = await window.electronAPI.namedQuery('deleteDeviceBrand', [brandName, '設備']);
-    if (res.success) {
-      await fetchBrands();
-      if (formData.brand === brandName) {
-        setFormData(prev => ({ ...prev, brand: '', model: '' }));
-        setModels([]);
-      }
-    }
-  };
 
   const handleChange = async (e) => {
     const { name, value } = e.target;
@@ -303,7 +289,6 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   const labelStyle = { display: 'block', fontSize: '13px', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '8px' };
   const inputStyle = { width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', fontSize: '14px', boxSizing: 'border-box', outline: 'none' };
   const iconButtonStyle = { padding: '8px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-main)', cursor: 'pointer' };
-  const manageItemStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', fontSize: '13px', borderBottom: '1px solid var(--border-color)', color: 'var(--text-main)' };
   const modeBtnStyle = (active) => ({
     flex: 1, padding: '10px', borderRadius: '8px', border: 'none',
     backgroundColor: active ? 'var(--primary-color)' : 'var(--bg-surface-subtle)',
@@ -363,22 +348,11 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                     {types.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
                   <button type="button" onClick={() => setShowAddType(!showAddType)} style={iconButtonStyle} title="新增類型"><Plus size={16} /></button>
-                  <button type="button" onClick={() => setShowManageType(!showManageType)} style={iconButtonStyle} title="管理類型"><Settings2 size={16} /></button>
                 </div>
                 {showAddType && (
                   <div style={{ marginTop: '8px', display: 'flex', gap: '8px' }}>
                     <input placeholder="新類型名稱" value={newTypeName} onChange={e => setNewTypeName(e.target.value)} style={inputStyle} />
                     <button type="button" onClick={handleAddType} style={{ ...iconButtonStyle, backgroundColor: 'var(--primary-color)', color: '#fff' }}>儲存</button>
-                  </div>
-                )}
-                {showManageType && (
-                  <div style={{ marginTop: '8px', border: '1px solid var(--border-color)', borderRadius: '8px', maxHeight: '120px', overflowY: 'auto' }}>
-                    {types.map(t => (
-                      <div key={t} style={manageItemStyle}>
-                        <span>{t}</span>
-                        <Trash2 size={14} color="#ef4444" cursor="pointer" onClick={() => handleDeleteType(t)} />
-                      </div>
-                    ))}
                   </div>
                 )}
               </div>
@@ -392,22 +366,11 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                     {brands.map(b => <option key={b.name} value={b.name}>{b.name}</option>)}
                   </select>
                   <button type="button" onClick={() => setShowAddBrand(!showAddBrand)} style={iconButtonStyle} title="新增廠牌"><Plus size={16} /></button>
-                  <button type="button" onClick={() => setShowManageBrand(!showManageBrand)} style={iconButtonStyle} title="管理廠牌"><Settings2 size={16} /></button>
                 </div>
                 {showAddBrand && (
                   <div style={{ marginTop: '8px', display: 'flex', gap: '8px' }}>
                     <input placeholder="新廠牌名稱" value={newBrandName} onChange={e => setNewBrandName(e.target.value)} style={inputStyle} />
                     <button type="button" onClick={handleAddBrand} style={{ ...iconButtonStyle, backgroundColor: 'var(--primary-color)', color: '#fff' }}>儲存</button>
-                  </div>
-                )}
-                {showManageBrand && (
-                  <div style={{ marginTop: '8px', border: '1px solid var(--border-color)', borderRadius: '8px', maxHeight: '120px', overflowY: 'auto' }}>
-                    {brands.map(b => (
-                      <div key={b.name} style={manageItemStyle}>
-                        <span>{b.name}</span>
-                        <Trash2 size={14} color="#ef4444" cursor="pointer" onClick={() => handleDeleteBrand(b.name)} />
-                      </div>
-                    ))}
                   </div>
                 )}
               </div>
@@ -421,22 +384,11 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                     {models.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                   <button type="button" onClick={() => setShowAddModel(!showAddModel)} style={iconButtonStyle} title="新增型號"><Plus size={16} /></button>
-                  <button type="button" onClick={() => setShowManageModel(!showManageModel)} style={iconButtonStyle} title="管理型號"><Settings2 size={16} /></button>
                 </div>
                 {showAddModel && (
                   <div style={{ marginTop: '8px', display: 'flex', gap: '8px' }}>
                     <input placeholder="新型號名稱" value={newModelName} onChange={e => setNewModelName(e.target.value)} style={inputStyle} />
                     <button type="button" onClick={handleAddModel} style={{ ...iconButtonStyle, backgroundColor: 'var(--primary-color)', color: '#fff' }}>儲存</button>
-                  </div>
-                )}
-                {showManageModel && (
-                  <div style={{ marginTop: '8px', border: '1px solid var(--border-color)', borderRadius: '8px', maxHeight: '120px', overflowY: 'auto' }}>
-                    {models.map(m => (
-                      <div key={m} style={manageItemStyle}>
-                        <span>{m}</span>
-                        <Trash2 size={14} color="#ef4444" cursor="pointer" onClick={() => handleDeleteModel(m)} />
-                      </div>
-                    ))}
                   </div>
                 )}
               </div>

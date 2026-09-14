@@ -12,9 +12,6 @@ const Consumables = ({ isSplitMode = false }) => {
   const [showAddType, setShowAddType] = useState(false);
   const [showAddBrand, setShowAddBrand] = useState(false);
   const [showAddModel, setShowAddModel] = useState(false);
-  const [showManageType, setShowManageType] = useState(false);
-  const [showManageBrand, setShowManageBrand] = useState(false);
-  const [showManageModel, setShowManageModel] = useState(false);
   const [showBatchImport, setShowBatchImport] = useState(false);
   const [newTypeName, setNewTypeName] = useState('');
   const [newBrandName, setNewBrandName] = useState('');
@@ -93,14 +90,6 @@ const Consumables = ({ isSplitMode = false }) => {
     }
   };
 
-  const handleDeleteType = async (typeName) => {
-    if (!confirm(`確定要刪除「${typeName}」嗎？`)) return;
-    const res = await window.electronAPI.namedQuery('deleteDeviceType', [typeName, '耗材']);
-    if (res.success) {
-      await fetchTypes(formData.brand);
-      if (formData.type === typeName) setFormData(prev => ({ ...prev, type: '' }));
-    }
-  };
 
   const handleAddBrand = async () => {
     const name = normalizeMasterName(validateAndSanitize(newBrandName, '廠牌名稱'));
@@ -127,23 +116,7 @@ const Consumables = ({ isSplitMode = false }) => {
     }
   };
 
-  const handleDeleteModel = async (modelName) => {
-    if (!confirm(`確定要刪除「${modelName}」嗎？`)) return;
-    const res = await window.electronAPI.namedQuery('deleteDeviceModel', [modelName, formData.brand, '耗材']);
-    if (res.success) {
-      await fetchModels(formData.brand, formData.type);
-      if (formData.model === modelName) setFormData(prev => ({ ...prev, model: '' }));
-    }
-  };
 
-  const handleDeleteBrand = async (brandName) => {
-    if (!confirm(`確定要刪除「${brandName}」嗎？`)) return;
-    const res = await window.electronAPI.namedQuery('deleteDeviceBrand', [brandName, '耗材']);
-    if (res.success) {
-      await fetchBrands();
-      if (formData.brand === brandName) setFormData(prev => ({ ...prev, brand: '' }));
-    }
-  };
 
   const handleChange = async (e) => {
     const { name, value } = e.target;
@@ -243,7 +216,6 @@ const Consumables = ({ isSplitMode = false }) => {
   const labelStyle = { display: 'block', fontSize: '14px', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '8px' };
   const inputStyle = { width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', fontSize: '14px', outline: 'none', boxSizing: 'border-box' };
   const iconButtonStyle = { padding: '8px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-main)', cursor: 'pointer' };
-  const manageItemStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', fontSize: '13px', borderBottom: '1px solid var(--border-color)', color: 'var(--text-main)' };
 
   return (
     <div style={containerStyle}>
@@ -302,10 +274,8 @@ const Consumables = ({ isSplitMode = false }) => {
                     {brands.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}
                   </select>
                   <button onClick={() => setShowAddBrand(!showAddBrand)} style={iconButtonStyle}><Plus size={18} /></button>
-                  <button onClick={() => setShowManageBrand(!showManageBrand)} style={iconButtonStyle}><Settings2 size={18} /></button>
                 </div>
                 {showAddBrand && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newBrandName} onChange={e => setNewBrandName(e.target.value)} style={inputStyle} /><button onClick={handleAddBrand} style={{ ...iconButtonStyle, background: 'var(--primary-color)', color: '#fff' }}><Plus size={18} /></button></div>}
-                {showManageBrand && <div style={{ marginTop: '8px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-surface-subtle)' }}>{brands.map(b => (<div key={b.id} style={manageItemStyle}><span>{b.name}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteBrand(b.name)} /></div>))}</div>}
               </div>
 
               <div>
@@ -315,10 +285,8 @@ const Consumables = ({ isSplitMode = false }) => {
                     {types.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
                   <button onClick={() => setShowAddType(!showAddType)} style={iconButtonStyle}><Plus size={18} /></button>
-                  <button onClick={() => setShowManageType(!showManageType)} style={iconButtonStyle}><Settings2 size={18} /></button>
                 </div>
                 {showAddType && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newTypeName} onChange={e => setNewTypeName(e.target.value)} style={inputStyle} /><button onClick={handleAddType} style={{ ...iconButtonStyle, background: 'var(--primary-color)', color: '#fff' }}><Plus size={18} /></button></div>}
-                {showManageType && <div style={{ marginTop: '8px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-surface-subtle)' }}>{types.map(t => (<div key={t} style={manageItemStyle}><span>{t}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteType(t)} /></div>))}</div>}
               </div>
 
               <div>
@@ -329,10 +297,8 @@ const Consumables = ({ isSplitMode = false }) => {
                     {models.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                   <button onClick={() => setShowAddModel(!showAddModel)} style={iconButtonStyle}><Plus size={18} /></button>
-                  <button onClick={() => setShowManageModel(!showManageModel)} style={iconButtonStyle}><Settings2 size={18} /></button>
                 </div>
                 {showAddModel && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newModelName} onChange={e => setNewModelName(e.target.value)} style={inputStyle} placeholder="新型號/規格名稱" /><button onClick={handleAddModel} style={{ ...iconButtonStyle, background: 'var(--primary-color)', color: '#fff' }}><Plus size={18} /></button></div>}
-                {showManageModel && <div style={{ marginTop: '8px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-surface-subtle)' }}>{models.map(m => (<div key={m} style={manageItemStyle}><span>{m}</span><Trash2 size={14} color="#ef4444" style={{ cursor: 'pointer' }} onClick={() => handleDeleteModel(m)} /></div>))}</div>}
               </div>
             </div>
 

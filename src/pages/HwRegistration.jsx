@@ -15,7 +15,6 @@ const HwRegistration = ({ isSplitMode = false }) => {
   const [showProjectDropdown, setShowProjectDropdown] = useState(false);
   const [showBatchImport, setShowBatchImport] = useState(false);
 
-  const [activeMgmt, setActiveMgmt] = useState(null);
   const [activeAdd, setActiveAdd] = useState(null);
 
   const [newBrandName, setNewBrandName] = useState('');
@@ -156,42 +155,8 @@ const HwRegistration = ({ isSplitMode = false }) => {
     else alert('新增失敗：' + res.error);
   };
 
-  const handleDeleteBrand = async (brandName) => {
-    if (!confirm(`確定要刪除廠牌「${brandName}」嗎？`)) return;
-    const res = await window.electronAPI.namedQuery('deleteDeviceBrand', [brandName, '硬體']);
-    if (res.success) {
-      await fetchBrands();
-      if (formData.brand === brandName) {
-        setFormData(prev => ({ ...prev, brand: '', model: '' }));
-        setModels([]);
-      }
-    }
-    else alert('刪除失敗：' + res.error);
-  };
 
-  const handleDeleteType = async (typeName) => {
-    if (!confirm(`確定要刪除類型「${typeName}」嗎？`)) return;
-    const res = await window.electronAPI.namedQuery('deleteDeviceType', [typeName, '硬體']);
-    if (res.success) {
-      await fetchTypes();
-      if (formData.type === typeName) {
-        setFormData(prev => ({ ...prev, type: '' }));
-      }
-    }
-    else alert('刪除失敗：' + res.error);
-  };
 
-  const handleDeleteModel = async (modelName) => {
-    if (!confirm(`確定要刪除型號「${modelName}」嗎？`)) return;
-    const res = await window.electronAPI.namedQuery('deleteDeviceModel', [modelName, formData.brand, '硬體']);
-    if (res.success) {
-      await fetchModels(formData.brand);
-      if (formData.model === modelName) {
-        setFormData(prev => ({ ...prev, model: '' }));
-      }
-    }
-    else alert('刪除失敗：' + res.error);
-  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -409,10 +374,8 @@ const HwRegistration = ({ isSplitMode = false }) => {
                     {types.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
                   <button type="button" onClick={() => setActiveAdd(activeAdd === 'type' ? null : 'type')} style={iconBtnStyle} title="新增類型"><Plus size={18} /></button>
-                  <button type="button" onClick={() => setActiveMgmt(activeMgmt === 'type' ? null : 'type')} style={iconBtnStyle} title="管理類型"><Settings2 size={18} /></button>
                 </div>
                 {activeAdd === 'type' && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newTypeName} onChange={e => setNewTypeName(e.target.value)} placeholder="新類型 (例: NIC)" style={inputStyle} /><button type="button" onClick={handleAddType} style={{ ...iconBtnStyle, background: '#2563eb', color: '#fff' }}><Plus size={18} /></button></div>}
-                {activeMgmt === 'type' && <RenderInlineMgmt title="類型" items={types.map(t => ({ name: t }))} onDelete={handleDeleteType} />}
               </div>
 
               {/* 2. 廠牌 (Brand) */}
@@ -424,10 +387,8 @@ const HwRegistration = ({ isSplitMode = false }) => {
                     {brands.map(b => <option key={b.id || b.name} value={b.name}>{b.name}</option>)}
                   </select>
                   <button type="button" onClick={() => setActiveAdd(activeAdd === 'brand' ? null : 'brand')} style={iconBtnStyle} title="新增廠牌"><Plus size={18} /></button>
-                  <button type="button" onClick={() => setActiveMgmt(activeMgmt === 'brand' ? null : 'brand')} style={iconBtnStyle} title="管理廠牌"><Settings2 size={18} /></button>
                 </div>
                 {activeAdd === 'brand' && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newBrandName} onChange={e => setNewBrandName(e.target.value)} placeholder="新廠牌" style={inputStyle} /><button type="button" onClick={handleAddBrand} style={{ ...iconBtnStyle, background: '#2563eb', color: '#fff' }}><Plus size={18} /></button></div>}
-                {activeMgmt === 'brand' && <RenderInlineMgmt title="廠牌" items={brands} onDelete={handleDeleteBrand} />}
               </div>
 
               {/* 3. 型號 (Model) */}
@@ -439,10 +400,8 @@ const HwRegistration = ({ isSplitMode = false }) => {
                     {models.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                   <button type="button" onClick={() => setActiveAdd(activeAdd === 'model' ? null : 'model')} style={iconBtnStyle} disabled={!formData.brand} title="新增型號"><Plus size={18} /></button>
-                  <button type="button" onClick={() => setActiveMgmt(activeMgmt === 'model' ? null : 'model')} style={iconBtnStyle} disabled={!formData.brand} title="管理型號"><Settings2 size={18} /></button>
                 </div>
                 {activeAdd === 'model' && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newModelName} onChange={e => setNewModelName(e.target.value)} placeholder="新型號" style={inputStyle} /><button type="button" onClick={handleAddModel} style={{ ...iconBtnStyle, background: '#2563eb', color: '#fff' }}><Plus size={18} /></button></div>}
-                {activeMgmt === 'model' && <RenderInlineMgmt title="型號" items={models.map(m => ({ name: m }))} onDelete={handleDeleteModel} />}
               </div>
             </div>
 
