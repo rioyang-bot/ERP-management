@@ -261,6 +261,21 @@ export const queries = {
   // 設備與硬體以「該主檔至少有一筆資產」為準；耗材沒有資產，一筆主檔就是一張卡片。
   // 回傳格式維持 { id, name }，呼叫端不需改動。
   // ---------------------------------------------------------------------------
+  // 既有卡片一覽：供建檔時「從既有卡片選取」一次帶入類型／廠牌／型號／規格，
+  // 以及規格欄位的建議清單。$1 為類別（設備／硬體／耗材）。
+  // 設備與硬體要有資產才算一張卡片；耗材一筆主檔就是一張卡片。
+  fetchExistingCards: `
+    SELECT i.brand, i.type, i.model,
+           COALESCE(NULLIF(TRIM(i.specification), ''), '') AS specification,
+           COUNT(a.id)::int AS asset_count
+    FROM item_master i
+    JOIN categories c ON i.category_id = c.id
+    LEFT JOIN assets a ON a.item_master_id = i.id
+    WHERE c.name = $1
+    GROUP BY i.brand, i.type, i.model, COALESCE(NULLIF(TRIM(i.specification), ''), '')
+    HAVING $1 = '耗材' OR COUNT(a.id) > 0
+    ORDER BY i.brand ASC, i.type ASC, i.model ASC, specification ASC
+  `,
   fetchDeviceBrands: `
     SELECT MIN(i.id) AS id, i.brand AS name
     FROM item_master i

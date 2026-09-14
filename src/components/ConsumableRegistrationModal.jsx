@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Plus, Save, Settings2, Trash2, X, Package, Check, FileSpreadsheet } from 'lucide-react';
+import { Plus, Save, Settings2, Trash2, X, Package, Check, FileSpreadsheet, Layers } from 'lucide-react';
 import { logCreate } from '../utils/auditLogger';
+import CardPickerModal from './CardPickerModal';
 import ConsumableBatchImportModal from './ConsumableBatchImportModal';
 import { normalizeMasterName } from '../utils/normalizeMasterData';
 
@@ -33,6 +34,25 @@ const ConsumableRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   // 下拉選單已改讀「既有卡片」，新值在存檔前還沒有卡片、查不到，
   // 因此先暫存在這裡讓使用者選得到；按下儲存建立卡片後就會自然出現在清單中。
   // 取消建檔則什麼都不會留下。
+  const [showCardPicker, setShowCardPicker] = useState(false);
+
+  // 從既有卡片一次帶入類型／廠牌／型號。
+  // 耗材的「型號/規格」在畫面上是同一欄（model），另有一個規格欄位 spec。
+  const handlePickCard = async (card) => {
+    // 先確保各下拉的選項清單含有帶入的值，否則 select 會顯示空白
+    setTypes(prev => (prev.includes(card.type) ? prev : [...prev, card.type]));
+    setBrands(prev => (prev.some(b => b.name === card.brand) ? prev : [...prev, { id: 'card-' + card.brand, name: card.brand }]));
+    await fetchModels(card.brand, card.type);
+    setModels(prev => (prev.includes(card.model) ? prev : [...prev, card.model]));
+    setFormData(prev => ({
+      ...prev,
+      type: card.type || '',
+      brand: card.brand || '',
+      model: card.model || '',
+      spec: card.specification || prev.spec,
+    }));
+  };
+
   const [pending, setPending] = useState({ types: [], brands: [], models: [] });
   const pendingRef = useRef(pending);
   pendingRef.current = pending;
@@ -226,7 +246,6 @@ const ConsumableRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   const labelStyle = { display: 'block', fontSize: '14px', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '8px' };
   const inputStyle = { width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', fontSize: '14px', outline: 'none', boxSizing: 'border-box' };
   const iconButtonStyle = { padding: '8px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-main)', cursor: 'pointer' };
-  const manageItemStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', fontSize: '13px', borderBottom: '1px solid var(--border-color)', color: 'var(--text-main)' };
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0, 0, 0, 0.65)', backdropFilter: 'blur(5px)', padding: '20px' }}>
@@ -294,7 +313,22 @@ const ConsumableRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
 
               {/* 類型 */}
               <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                 <label style={labelStyle}>類型 (Type) *</label>
+                  <button
+                    type="button"
+                    onClick={() => setShowCardPicker(true)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 8px',
+                      borderRadius: '6px', border: '1px solid var(--border-color)',
+                      backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--primary-color)',
+                      fontSize: '11px', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
+                    }}
+                    title="從既有卡片一次帶入類型、廠牌與型號/規格"
+                  >
+                    <Layers size={12} /> 從既有卡片選取
+                  </button>
+                </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <select name="type" value={formData.type} onChange={handleChange} style={inputStyle} required>
                     <option value="">選擇類型</option>
@@ -391,6 +425,12 @@ const ConsumableRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
           }}
         />
       )}
+      <CardPickerModal
+        isOpen={showCardPicker}
+        onClose={() => setShowCardPicker(false)}
+        category="耗材"
+        onSelect={handlePickCard}
+      />
     </div>
   );
 };

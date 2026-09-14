@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Plus, Save, Trash2, Cpu, Settings2, X, Server, FileSpreadsheet, Check } from 'lucide-react';
+import { Plus, Save, Trash2, Cpu, Settings2, X, Server, FileSpreadsheet, Check, Layers } from 'lucide-react';
 import { logCreate } from '../utils/auditLogger';
+import CardPickerModal from './CardPickerModal';
 import HwBatchImportModal from './HwBatchImportModal';
 import { normalizeMasterName } from '../utils/normalizeMasterData';
 
@@ -41,6 +42,40 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   // 下拉選單已改讀「既有卡片」，新值在存檔前還沒有卡片、查不到，
   // 因此先暫存在這裡讓使用者選得到；按下儲存建立卡片後就會自然出現在清單中。
   // 取消建檔則什麼都不會留下。
+  const [showCardPicker, setShowCardPicker] = useState(false);
+  // 既有卡片用過的規格，供「套用既有規格」下拉使用
+  const [cardSpecs, setCardSpecs] = useState([]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    (async () => {
+      const res = await window.electronAPI.namedQuery('fetchExistingCards', ['硬體']);
+      if (res?.success) {
+        const specs = [...new Set((res.rows || []).map(r => r.specification).filter(Boolean))];
+        setCardSpecs(specs.sort());
+      }
+    })();
+  }, [isOpen]);
+
+  // 從既有卡片一次帶入類型／廠牌／型號／規格。
+  // 帶進來的值一定已經存在於清單中，因此不需要進暫存。
+  const handlePickCard = async (card) => {
+    // 帶入的值來自既有卡片，必定有效；但各下拉的選項清單未必已經載入該值
+    //（例如型號清單還停在原本的廠牌），因此先確保選項存在再設定值，
+    // 否則 select 會因為沒有對應的 option 而顯示空白。
+    setTypes(prev => (prev.includes(card.type) ? prev : [...prev, card.type]));
+    setBrands(prev => (prev.some(b => b.name === card.brand) ? prev : [...prev, { id: 'card-' + card.brand, name: card.brand }]));
+    await fetchModels(card.brand);
+    setModels(prev => (prev.includes(card.model) ? prev : [...prev, card.model]));
+    setFormData(prev => ({
+      ...prev,
+      type: card.type || '',
+      brand: card.brand || '',
+      model: card.model || '',
+      specification: card.specification || '',
+    }));
+  };
+
   const [pending, setPending] = useState({ types: [], brands: [], models: [] });
   const pendingRef = useRef(pending);
   pendingRef.current = pending;
@@ -417,7 +452,22 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '16px' }}>
               {/* 1. 類型 (Type) */}
               <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                 <label style={labelStyle}>類型 (Type) *</label>
+                  <button
+                    type="button"
+                    onClick={() => setShowCardPicker(true)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 8px',
+                      borderRadius: '6px', border: '1px solid var(--border-color)',
+                      backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--primary-color)',
+                      fontSize: '11px', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
+                    }}
+                    title="從既有卡片一次帶入類型、廠牌、型號與規格"
+                  >
+                    <Layers size={12} /> 從既有卡片選取
+                  </button>
+                </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <select name="type" value={formData.type} onChange={handleChange} style={inputStyle} required>
                     <option value="">請選擇類型</option>
@@ -473,6 +523,18 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
             {/* 規格 */}
             <div style={{ marginBottom: '16px' }}>
               <label style={labelStyle}>規格 (Specification) <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>(選填)</span></label>
+              {/* textarea 不支援建議清單，改用下拉直接套用既有卡片用過的規格 */}
+              {cardSpecs.length > 0 && (
+                <select
+                  value=""
+                  onChange={(e) => { if (e.target.value) setFormData(prev => ({ ...prev, specification: e.target.value })); }}
+                  style={{ ...inputStyle, marginBottom: '6px', fontSize: '12px' }}
+                  title="從既有卡片用過的規格挑一個填入"
+                >
+                  <option value="">套用既有規格…</option>
+                  {cardSpecs.map(sp => <option key={sp} value={sp}>{sp}</option>)}
+                </select>
+              )}
               <textarea name="specification" value={formData.specification} onChange={handleChange} style={{ ...inputStyle, minHeight: '60px', resize: 'vertical' }} placeholder="選填，可輸入硬體核心規格與配置..." />
             </div>
 
@@ -565,6 +627,12 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
           }}
         />
       )}
+      <CardPickerModal
+        isOpen={showCardPicker}
+        onClose={() => setShowCardPicker(false)}
+        category="硬體"
+        onSelect={handlePickCard}
+      />
     </div>
   );
 };
