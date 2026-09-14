@@ -120,4 +120,37 @@ describe('設備編輯：搭載硬體清單即時篩選', () => {
     await userEvent.type(input, 'ZZZZNOTEXIST');
     expect(await screen.findByText(/清除輸入即可看到全部 3 筆/)).toBeInTheDocument();
   });
+
+  /**
+   * 點選後不應把篩選關鍵字留下來
+   *
+   * 使用者回報：打了 U5M 篩選出一筆，點選加入後欄位變成「U5M, U5M16V5601255」，
+   * 前面多出一筆紅色的「U5M（未建檔硬體）」。
+   */
+  describe('設備編輯：點選硬體後欄位的內容', () => {
+    it('打了關鍵字再點選，關鍵字被換成選到的序號而不是留下來', async () => {
+      const input = await openEditor();
+      await userEvent.type(input, 'U5M');
+
+      const row = await screen.findByText(/U5M16V5601255/);
+      await userEvent.click(row);
+
+      await waitFor(() => {
+        expect(input.value).toBe('U5M16V5601255');
+      });
+      // 不該再出現「未建檔硬體」的紅色標籤
+      expect(screen.queryByText(/未建檔硬體/)).not.toBeInTheDocument();
+    });
+
+    it('前面已選好的會保留，只換掉正在輸入的那一段', async () => {
+      const input = await openEditor();
+      await userEvent.type(input, 'STG10005Y26, U5M');
+
+      await userEvent.click(await screen.findByText(/U5M16V5601255/));
+
+      await waitFor(() => {
+        expect(input.value).toBe('STG10005Y26, U5M16V5601255');
+      });
+    });
+  });
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getActiveSnTerm, filterMountableHw } from '../utils/mountedHwFilter';
+import { getActiveSnTerm, filterMountableHw, getCommittedSns, toggleMountedSn } from '../utils/mountedHwFilter';
 
 const HW = [
   { id: 1, sn: 'STG10005Y26', brand: 'V-COLOR', model: 'DDR5-5800', type: 'RAM' },
@@ -67,5 +67,54 @@ describe('依關鍵字篩選可掛載硬體', () => {
     expect(filterMountableHw(null, 'x')).toEqual([]);
     expect(filterMountableHw([{ sn: 'A' }], 'a')).toHaveLength(1);
     expect(filterMountableHw([{}], 'a')).toEqual([]);
+  });
+});
+
+describe('取出已確定的序號（不含正在輸入的關鍵字）', () => {
+  it('正在輸入的那一段不算一筆序號', () => {
+    expect(getCommittedSns('U5M')).toEqual([]);
+    expect(getCommittedSns('SN001, U5M')).toEqual(['SN001']);
+  });
+
+  it('以分隔符號結尾時全部都算已確定', () => {
+    expect(getCommittedSns('SN001, ')).toEqual(['SN001']);
+    expect(getCommittedSns('SN001, SN002,')).toEqual(['SN001', 'SN002']);
+  });
+
+  it('空內容回傳空陣列', () => {
+    expect(getCommittedSns('')).toEqual([]);
+    expect(getCommittedSns(null)).toEqual([]);
+  });
+});
+
+describe('從清單點選後欄位應該變成什麼', () => {
+  it('打了關鍵字再點選，關鍵字被換掉而不是留下來', () => {
+    // 這正是原本的問題：打 U5M 點選後變成「U5M, U5M16V5601255」兩筆
+    expect(toggleMountedSn('U5M', 'U5M16V5601255')).toBe('U5M16V5601255');
+  });
+
+  it('前面已選的保留，只換掉正在輸入的那一段', () => {
+    expect(toggleMountedSn('SN001, U5M', 'U5M16V5601255')).toBe('SN001, U5M16V5601255');
+  });
+
+  it('沒有在輸入時就是單純加入', () => {
+    expect(toggleMountedSn('SN001, ', 'SN002')).toBe('SN001, SN002');
+    expect(toggleMountedSn('', 'SN002')).toBe('SN002');
+  });
+
+  it('已經在清單中就移除', () => {
+    expect(toggleMountedSn('SN001, SN002,', 'SN001')).toBe('SN002');
+  });
+
+  it('移除時不分大小寫', () => {
+    expect(toggleMountedSn('sn001, SN002,', 'SN001')).toBe('SN002');
+  });
+
+  it('不會加入重複的序號', () => {
+    expect(toggleMountedSn('SN001, SN002,', 'SN002')).toBe('SN001');
+  });
+
+  it('點選空序號時原樣返回，不會弄壞欄位', () => {
+    expect(toggleMountedSn('SN001, U5M', '')).toBe('SN001, U5M');
   });
 });

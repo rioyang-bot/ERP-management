@@ -49,3 +49,44 @@ export function filterMountableHw(list, term) {
     return hay.includes(t);
   });
 }
+
+/**
+ * 從欄位內容取出「已經確定的序號」，不含正在輸入的那一段。
+ *
+ * 正在輸入的那一段是用來篩選清單的關鍵字，不是一筆真的序號。
+ * 從清單點選時若不先把它拿掉，那段關鍵字會被當成一筆序號留下來
+ * （例如打了 U5M 再點選，結果變成「U5M, U5M16V5601255」兩筆）。
+ *
+ * @param {string} text 欄位目前的完整內容
+ * @returns {string[]}
+ */
+export function getCommittedSns(text) {
+  const all = String(text || '')
+    .split(SEPARATOR)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  // 有正在輸入的片段時，它一定是最後一個元素
+  return getActiveSnTerm(text) ? all.slice(0, -1) : all;
+}
+
+/**
+ * 從清單點選某筆硬體後，欄位應該變成的內容。
+ *
+ * 已經在清單中就移除（取消掛載），否則加入；正在輸入的篩選關鍵字一律換掉。
+ *
+ * @param {string} text 欄位目前的完整內容
+ * @param {string} sn   點選的序號
+ * @returns {string}
+ */
+export function toggleMountedSn(text, sn) {
+  const target = String(sn || '').trim();
+  if (!target) return String(text || '');
+
+  const committed = getCommittedSns(text);
+  const exists = committed.some((s) => s.toLowerCase() === target.toLowerCase());
+  const next = exists
+    ? committed.filter((s) => s.toLowerCase() !== target.toLowerCase())
+    : [...committed, target];
+
+  return Array.from(new Set(next)).join(', ');
+}

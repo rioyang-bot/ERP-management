@@ -12,7 +12,7 @@ import ColumnVisibilityModal from '../components/ColumnVisibilityModal';
 import CardAggregationLegend from '../components/CardAggregationLegend';
 import WarrantyBadge from '../components/WarrantyBadge';
 import { isFullyOutOfWarranty } from '../utils/warranty';
-import { getActiveSnTerm, filterMountableHw } from '../utils/mountedHwFilter';
+import { getActiveSnTerm, filterMountableHw, getCommittedSns, toggleMountedSn } from '../utils/mountedHwFilter';
 import { useColumnPreferences } from '../hooks/useColumnPreferences';
 
 // 設備列表的欄位清單：id 對應表格的每一欄，always 代表不可隱藏
@@ -1557,10 +1557,8 @@ const DeviceList = ({ isSplitMode = false }) => {
                       <span style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setShowHwDropdown(false)}>關閉 ✕</span>
                     </div>
                     {(() => {
-                      const curSns = (editItem.mounted_hw_sns || '')
-                        .split(/[,，\s\n]+/)
-                        .map(s => s.trim().toLowerCase())
-                        .filter(Boolean);
+                      // 只看「已經確定的序號」，正在輸入的篩選關鍵字不算已選取
+                      const curSns = getCommittedSns(editItem.mounted_hw_sns).map(x => x.toLowerCase());
                       // 依「正在輸入的那一段」即時篩選；序號、廠牌、型號、類型都比對得到
                       const term = getActiveSnTerm(editItem.mounted_hw_sns);
                       const shown = filterMountableHw(availableHardwares, term);
@@ -1589,17 +1587,12 @@ const DeviceList = ({ isSplitMode = false }) => {
                             }}
                             onMouseDown={(e) => {
                               e.preventDefault();
-                              const currentList = (editItem.mounted_hw_sns || '')
-                                .split(/[,，\s\n]+/)
-                                .map(s => s.trim())
-                                .filter(Boolean);
-                              let newList;
-                              if (isSelected) {
-                                newList = currentList.filter(s => s.toLowerCase() !== (hw.sn || '').toLowerCase());
-                              } else {
-                                newList = [...currentList, hw.sn];
-                              }
-                              setEditItem({ ...editItem, mounted_hw_sns: Array.from(new Set(newList)).join(', ') });
+                              // 打了關鍵字再點選時，關鍵字要被換成選到的序號，
+                              // 不能當成一筆已輸入的序號留下來
+                              setEditItem({
+                                ...editItem,
+                                mounted_hw_sns: toggleMountedSn(editItem.mounted_hw_sns, hw.sn),
+                              });
                             }}
                           >
                             <div>
