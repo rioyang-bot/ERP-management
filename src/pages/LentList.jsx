@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
-  FileText, Search, Eye, CornerDownLeft, AlertCircle, History, Clock, 
+  FileText, Search, Eye, CornerDownLeft, RotateCcw, AlertCircle, History, Clock, 
   CheckCircle, Printer, PackageCheck, Send, Paperclip, Upload, Trash2, 
   Download, ExternalLink, FileCheck, Image as ImageIcon, X, Plus 
 } from 'lucide-react';
@@ -297,6 +297,77 @@ const LentList = () => {
       alert('⚠️ 確認借出失敗：\n' + err.message);
     } finally {
       setIsConfirming(false);
+    }
+  };
+
+  // 撤銷借出：把「借出中」退回「待借出」。
+  //
+  // 這與「歸還」在帳上的意義完全不同：歸還代表對方真的把東西還回來了，
+  // 單據結案並留下歸還日期；撤銷則是當初按錯或內容要改，不該在履歷上
+  // 留下一筆從未發生過的借還紀錄。因此另外做一個動作，而不是拿歸還來湊。
+  //
+  // 實際的庫存異動與歸還相同（是「確認借出」的反向），差別只在單據狀態
+  // 退回 PENDING、且不寫入歸還日期。
+  const [revertModal, setRevertModal] = useState({ show: false, dn: null });
+
+  const executeRevertToPending = async () => {
+    const dn = revertModal.dn;
+    if (!dn) return;
+
+    try {
+      const res = await window.electronAPI.namedQuery('fetchDNItems', [dn.id]);
+      if (!res.success) throw new Error('讀取明細失敗');
+      const items = res.rows;
+
+      const steps = [];
+      for (const item of items) {
+        if (item.category_name === '耗材') {
+          steps.push({
+            queryName: 'updateStockQtyOnLendReturn',
+            params: [item.quantity, item.item_id],
+            expectRows: 1,
+            errorMessage: `回補耗材 [${item.brand} ${item.model}] 庫存失敗，查無此品項。`,
+          });
+        } else if ((item.category_name === '硬體' || item.category_name === '設備') && item.sn) {
+          steps.push({
+            queryName: 'updateAssetStatusAndLocationBySn',
+            params: ['ACTIVE', '', item.sn],
+            expectRows: 1,
+            errorMessage: `序號 [${item.sn}] 找不到對應資產，無法恢復為在庫。`,
+          });
+        }
+      }
+
+      steps.push({
+        queryName: 'updateOutboundRequestStatus',
+        params: ['PENDING', dn.id],
+        expectRows: 1,
+        errorMessage: '變更借用單狀態失敗。',
+      });
+
+      const txRes = await window.electronAPI.runTransaction(steps);
+      if (!txRes.success) {
+        throw new Error((txRes.error || '撤銷借出失敗。') + '\n\n所有變更已全部退回，庫存與單據狀態維持原樣。');
+      }
+
+      logStatusChange(
+        'LENT',
+        dn.request_no,
+        dn.customer || '借用單',
+        'SHIPPED',
+        'PENDING',
+        `撤銷借出：借用單 [${dn.request_no}] 退回待借出，庫存與資產狀態已還原 (共 ${items.length} 項品項)`,
+        { dnId: dn.id, dnNumber: dn.request_no, customer: dn.customer, itemsCount: items.length,
+          items: items.map(i => ({ model: i.model, brand: i.brand, sn: i.sn, qty: i.quantity })) }
+      );
+
+      alert('已撤銷借出，單據退回「待借出」，庫存與資產狀態已還原。');
+      setRevertModal({ show: false, dn: null });
+      setActiveTab('PENDING');
+      fetchRecords();
+    } catch (err) {
+      console.error('Revert lend error:', err);
+      alert('撤銷借出時發生錯誤：\n' + err.message);
     }
   };
 
@@ -710,6 +781,16 @@ const LentList = () => {
                           <CornerDownLeft size={16} />
                         </button>
                       )}
+                      {dn.status === 'SHIPPED' && (
+                        <button
+                          onClick={() => setRevertModal({ show: true, dn })}
+                          title="撤銷借出（退回待借出以便修改）"
+                          aria-label="撤銷借出"
+                          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', padding: 0, backgroundColor: 'rgba(245, 158, 11, 0.12)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.35)', borderRadius: '8px', cursor: 'pointer' }}
+                        >
+                          <RotateCcw size={16} />
+                        </button>
+                      )}
                       {dn.status === 'PENDING' && (
                         <button 
                           style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', padding: 0, backgroundColor: 'rgba(239, 68, 68, 0.12)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '6px', cursor: 'pointer', flexShrink: 0 }}
@@ -1031,6 +1112,41 @@ const LentList = () => {
                 }
               }}
             />
+          </div>
+        </div>
+      )}
+
+      {/* 撤銷借出確認 Modal */}
+      {revertModal.show && revertModal.dn && (
+        <div className="modal-overlay" style={{ zIndex: 9999 }}>
+          <div className="modal-content" style={{ width: '460px', maxWidth: '95vw', padding: '24px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '16px' }}>
+            <h3 style={{ marginTop: 0, color: '#f59e0b' }}>撤銷借出</h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: 1.8 }}>
+              將借用單 <strong style={{ color: 'var(--primary-color)' }}>{revertModal.dn.request_no}</strong> 退回「待借出」，
+              以便修改內容。設備與硬體會恢復為在庫、耗材數量會加回庫存。
+            </p>
+            <div style={{
+              padding: '12px 14px', borderRadius: '8px', margin: '14px 0',
+              backgroundColor: 'rgba(245, 158, 11, 0.10)', border: '1px solid rgba(245, 158, 11, 0.35)',
+              fontSize: '13px', color: 'var(--text-main)', lineHeight: 1.8,
+            }}>
+              這不是「歸還」。撤銷代表<b>這次借出根本沒有發生</b>（例如按錯或內容要改），
+              因此不會留下歸還紀錄。如果對方是真的把東西還回來了，請改用「歸還入庫」。
+            </div>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setRevertModal({ show: false, dn: null })}
+                style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-main)', cursor: 'pointer' }}
+              >
+                取消
+              </button>
+              <button
+                onClick={executeRevertToPending}
+                style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', backgroundColor: '#f59e0b', color: 'white', fontWeight: 600, cursor: 'pointer' }}
+              >
+                確定撤銷
+              </button>
+            </div>
           </div>
         </div>
       )}
