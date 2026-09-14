@@ -1,18 +1,17 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import * as XLSX from 'xlsx';
-import { 
+import {
   X, UploadCloud, FileSpreadsheet, CheckCircle2, AlertTriangle, AlertCircle,
   XCircle, Filter, Layers, Database, ArrowRight, RefreshCw, Info, Download, Cpu, Server, Plus, Check
 } from 'lucide-react';
 import { logEvent, ACTION_TYPES, MODULE_MAP } from '../utils/auditLogger';
 import { parseSpreadsheetFile, fixMojibake, asText, excelSerialToDate } from '../utils/encoding';
 import { matchPartnerContact } from '../utils/partnerMatcher';
-import { normalizeMasterName } from '../utils/normalizeMasterData';
 
 const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] }) => {
   const [file, setFile] = useState(null);
   const [fileName, setFileName] = useState('');
-  
+
   // 硬體主檔設定 (廠牌 / 類型 / 型號 / 規格 / 歸屬)
   const [selectedBrand, setSelectedBrand] = useState('');
   const [selectedType, setSelectedType] = useState('');
@@ -535,41 +534,41 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
       }
 
       // 智慧匹配 4 種日期欄位
-      const installedDateRaw = 
+      const installedDateRaw =
         row['Project Date ( Installedl )'] ||
         row['Project Date (Installedl)'] ||
-        row['Project Date ( Installed )'] || 
-        row['Project Date( Installed )'] || 
-        row['Project Date (Installed)'] || 
+        row['Project Date ( Installed )'] ||
+        row['Project Date( Installed )'] ||
+        row['Project Date (Installed)'] ||
         findColumnValue(row, [
           'Project Date ( Installedl )', 'Project Date (Installedl)',
           'Project Date ( Installed )', 'Project Date (Installed)', 'Project Date( Installed )',
           'Installed Date', 'InstalledDate', 'Installed', '安裝日期', '專案安裝日期', '安裝日', 'Project Date', 'ProjectDate'
         ]);
 
-      const customerWarrantyRaw = 
-        row['Customer Warranty Expire'] || 
-        row['Customer Warranty Expiry'] || 
-        row['Customer Warranty'] || 
+      const customerWarrantyRaw =
+        row['Customer Warranty Expire'] ||
+        row['Customer Warranty Expiry'] ||
+        row['Customer Warranty'] ||
         findColumnValue(row, [
-          'Customer Warranty Expire', 'Customer Warranty Expiry', 'Customer Warranty', 
+          'Customer Warranty Expire', 'Customer Warranty Expiry', 'Customer Warranty',
           '客戶保固到期', '客戶保固', '客戶保固日', 'Cust Warranty Expire', 'Cust Warranty', 'CustomerWarrantyExpire'
         ]);
 
-      const systemDateRaw = 
-        row['BlackCore System Date'] || 
-        row['System Date'] || 
+      const systemDateRaw =
+        row['BlackCore System Date'] ||
+        row['System Date'] ||
         findColumnValue(row, [
-          'BlackCore System Date', 'Black Core System Date', 'System Date', 'SystemDate', 
+          'BlackCore System Date', 'Black Core System Date', 'System Date', 'SystemDate',
           '原廠系統日期', '原廠系統日', '系統日期', '系統日', 'BC System Date'
         ]);
 
-      const warrantyExpireRaw = 
-        row['BlackCore Warranty Expire'] || 
-        row['BlackCore Warranty Expiry'] || 
-        row['Warranty Expire'] || 
+      const warrantyExpireRaw =
+        row['BlackCore Warranty Expire'] ||
+        row['BlackCore Warranty Expiry'] ||
+        row['Warranty Expire'] ||
         findColumnValue(row, [
-          'BlackCore Warranty Expire', 'Black Core Warranty Expire', 'BlackCore Warranty Expiry', 'BlackCore Warranty', 
+          'BlackCore Warranty Expire', 'Black Core Warranty Expire', 'BlackCore Warranty Expiry', 'BlackCore Warranty',
           'Warranty Expire', 'Warranty Expiry', '原廠保固到期', '原廠保固', '保固到期', '保固到期日', 'BC Warranty Expire'
         ]);
 
@@ -741,44 +740,14 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
     const errors = [];
 
     try {
-      // 1. 收集 distinct (brand, type, model) 與客戶，自動補齊主檔
-      const brandSet = new Set();
-      const typeMap = new Map(); // brand -> Set of types
-      const modelMap = new Map(); // `${brand}___${type}` -> Set of models
+      // 1. 收集客戶，自動補齊 partners 主檔。
+      //    廠牌／類型／型號不再另外補寫：下拉已改讀既有卡片，
+      //    匯入建立的資產本身就會讓這些值出現在清單中。
       const clientSet = new Set();
 
       validItems.forEach(item => {
-        brandSet.add(item.brand);
-        
-        if (!typeMap.has(item.brand)) typeMap.set(item.brand, new Set());
-        typeMap.get(item.brand).add(item.type);
-
-        const key = `${item.brand}___${item.type}`;
-        if (!modelMap.has(key)) modelMap.set(key, new Set());
-        modelMap.get(key).add(item.model);
-
         if (item.client) clientSet.add(item.client);
       });
-
-      // 自動補齊 廠牌 (Brand)
-      for (const brand of brandSet) {
-        await window.electronAPI.namedQuery('insertDeviceBrand', ['硬體', normalizeMasterName(brand)]);
-      }
-
-      // 自動補齊 類型 (Type)
-      for (const types of typeMap.values()) {
-        for (const type of types) {
-          await window.electronAPI.namedQuery('insertDeviceType', ['硬體', normalizeMasterName(type)]);
-        }
-      }
-
-      // 自動補齊 型號 (Model)
-      for (const [key, models] of modelMap.entries()) {
-        const [brand] = key.split('___');
-        for (const model of models) {
-          await window.electronAPI.namedQuery('insertDeviceModel', [normalizeMasterName(brand), normalizeMasterName(model), '硬體']);
-        }
-      }
 
       // 自動補齊 客戶 (Partner)
       for (const client of clientSet) {

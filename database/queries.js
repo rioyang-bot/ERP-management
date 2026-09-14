@@ -584,7 +584,16 @@ export const queries = {
   fetchUserByUsername: `SELECT id, username, role, full_name, is_active FROM users WHERE LOWER(username) = LOWER($1)`,
 
   // Hardware / NIC Registration & List
-  fetchNicBrands: `SELECT id, name FROM item_brands WHERE category_id = (SELECT id FROM categories WHERE name = '硬體') ORDER BY name ASC`,
+  fetchNicBrands: `
+    SELECT MIN(i.id) AS id, i.brand AS name
+    FROM item_master i
+    JOIN categories c ON i.category_id = c.id
+    WHERE c.name = '硬體'
+      AND EXISTS (SELECT 1 FROM assets a WHERE a.item_master_id = i.id)
+      AND NULLIF(TRIM(COALESCE(i.brand, '')), '') IS NOT NULL
+    GROUP BY i.brand
+    ORDER BY i.brand ASC
+  `,
   fetchHwBrands: `
     SELECT MIN(i.id) AS id, i.brand AS name
     FROM item_master i
@@ -607,7 +616,16 @@ export const queries = {
     GROUP BY i.type
     ORDER BY i.type ASC
   `,
-  fetchNicTypesByBrand: `SELECT id, name FROM item_types WHERE category_id = (SELECT id FROM categories WHERE name = '硬體') ORDER BY name ASC`,
+  fetchNicTypesByBrand: `
+    SELECT MIN(i.id) AS id, i.type AS name
+    FROM item_master i
+    JOIN categories c ON i.category_id = c.id
+    WHERE c.name = '硬體'
+      AND EXISTS (SELECT 1 FROM assets a WHERE a.item_master_id = i.id)
+      AND NULLIF(TRIM(COALESCE(i.type, '')), '') IS NOT NULL
+    GROUP BY i.type
+    ORDER BY i.type ASC
+  `,
   fetchHwModelsByBrand: `
     SELECT MIN(i.id) AS id, i.model AS name
     FROM item_master i

@@ -7,7 +7,6 @@ import {
 import { logEvent, ACTION_TYPES, MODULE_MAP } from '../utils/auditLogger';
 import { parseSpreadsheetFile, fixMojibake, asText, excelSerialToDate } from '../utils/encoding';
 import { matchPartnerContact } from '../utils/partnerMatcher';
-import { normalizeMasterName } from '../utils/normalizeMasterData';
 
 const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] }) => {
   const [file, setFile] = useState(null);
@@ -624,34 +623,14 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
     const errors = [];
 
     try {
-      // 1. 預先收集所有 distinct (brand, type, model) 與客戶，確保主檔存在
-      const brandSet = new Set();
-      const typeSet = new Set();
-      const modelSet = new Set(); // `${brand}___${model}`
+      // 1. 預先收集客戶，確保 partners 主檔存在。
+      //    廠牌／類型／型號不再另外補寫：下拉已改讀既有卡片，
+      //    匯入建立的資產本身就會讓這些值出現在清單中。
       const clientSet = new Set();
 
       validItems.forEach(item => {
-        if (item.brand) brandSet.add(item.brand);
-        if (item.type) typeSet.add(item.type);
-        if (item.brand && item.model) modelSet.add(`${item.brand}___${item.model}`);
         if (item.client) clientSet.add(item.client);
       });
-
-      // 自動補齊 廠牌 (Brand)
-      for (const brand of brandSet) {
-        await window.electronAPI.namedQuery('insertDeviceBrand', ['設備', normalizeMasterName(brand)]);
-      }
-
-      // 自動補齊 類型 (Type) - 通用庫
-      for (const type of typeSet) {
-        await window.electronAPI.namedQuery('insertDeviceType', ['設備', normalizeMasterName(type)]);
-      }
-
-      // 自動補齊 型號 (Model) - 隸屬於廠牌
-      for (const bm of modelSet) {
-        const [brand, model] = bm.split('___');
-        await window.electronAPI.namedQuery('insertDeviceModel', [normalizeMasterName(brand), normalizeMasterName(model), '設備']);
-      }
 
       // 自動補齊 客戶 (Partner)
       for (const client of clientSet) {

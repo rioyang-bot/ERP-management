@@ -1,18 +1,17 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import * as XLSX from 'xlsx';
-import { 
-  X, UploadCloud, FileSpreadsheet, CheckCircle2, AlertTriangle, 
+import {
+  X, UploadCloud, FileSpreadsheet, CheckCircle2, AlertTriangle,
   XCircle, Filter, Layers, Database, ArrowRight, RefreshCw, Info, Download, Package, Plus, Check, Edit3
 } from 'lucide-react';
 import { logEvent, ACTION_TYPES, MODULE_MAP } from '../utils/auditLogger';
 import { parseSpreadsheetFile, fixMojibake, asText } from '../utils/encoding';
-import { normalizeMasterName } from '../utils/normalizeMasterData';
 
 // 常見廠牌關鍵字特徵表，用於智慧推導
 const KNOWN_BRANDS = [
-  'Cisco/Exablaze', 'Exablaze', 'Cisco', 'Solarflare', 'SF', 'Mellanox', 'Intel', 
-  'GigaIO', 'TimeBeat', 'Panduit', 'FS', 'COMMSCOPE', 'CORNING', 'LDA', 
-  'AFL', '10GTek', 'FINISAR', 'ARISTA', 'Fortinet', 'Micron', 'BlackCore', 
+  'Cisco/Exablaze', 'Exablaze', 'Cisco', 'Solarflare', 'SF', 'Mellanox', 'Intel',
+  'GigaIO', 'TimeBeat', 'Panduit', 'FS', 'COMMSCOPE', 'CORNING', 'LDA',
+  'AFL', '10GTek', 'FINISAR', 'ARISTA', 'Fortinet', 'Micron', 'BlackCore',
   'ASUS', 'V-Color', 'MICROCHIP', 'Kingston', 'Samsung', 'Dell', 'HP', 'Lenovo', 'METECH'
 ];
 
@@ -87,7 +86,7 @@ function getSuggestedUnit(typeStr) {
 const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes = [] }) => {
   const [file, setFile] = useState(null);
   const [fileName, setFileName] = useState('');
-  
+
   // 覆蓋/預設設定
   const [overrideBrand, setOverrideBrand] = useState('');
   const [overrideType, setOverrideType] = useState('');
@@ -425,45 +424,8 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
     const errors = [];
 
     try {
-      // 1. 收集 distinct (brand, type, model) 自動補齊主檔分類
-      const brandSet = new Set();
-      const typeMap = new Map(); // brand -> Set of types
-      const modelMap = new Map(); // `${brand}___${type}` -> Set of models
-
-      importableItems.forEach(item => {
-        if (item.brand) {
-          brandSet.add(item.brand);
-          if (item.type) {
-            if (!typeMap.has(item.brand)) typeMap.set(item.brand, new Set());
-            typeMap.get(item.brand).add(item.type);
-
-            const key = `${item.brand}___${item.type}`;
-            if (!modelMap.has(key)) modelMap.set(key, new Set());
-            if (item.model) modelMap.get(key).add(item.model);
-          }
-        }
-      });
-
-      // 自動補齊 廠牌 (Brand)
-      for (const brand of brandSet) {
-        await window.electronAPI.namedQuery('insertDeviceBrand', ['耗材', normalizeMasterName(brand)]);
-      }
-
-      // 自動補齊 類型 (Type)
-      for (const types of typeMap.values()) {
-        for (const type of types) {
-          await window.electronAPI.namedQuery('insertDeviceType', ['耗材', normalizeMasterName(type)]);
-        }
-      }
-
-      // 自動補齊 型號 (Model)
-      for (const [key, models] of modelMap.entries()) {
-        const [brand] = key.split('___');
-        for (const model of models) {
-          await window.electronAPI.namedQuery('insertDeviceModel', [normalizeMasterName(brand), normalizeMasterName(model), '耗材']);
-        }
-      }
-
+      // 廠牌／類型／型號不再另外補寫主檔表：下拉已改讀既有卡片，
+      // 匯入建立的品項本身就會讓這些值出現在清單中。
       // 2. 逐筆寫入或更新 item_master
       for (let i = 0; i < importableItems.length; i++) {
         const item = importableItems[i];
@@ -641,7 +603,7 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
 
         {/* Modal Body */}
         <div style={{ padding: '8px 16px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '8px', minHeight: 0 }}>
-          
+
           {/* 匯入完成成功狀態視窗 */}
           {importResult && (
             <div style={{
