@@ -1,13 +1,21 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { 
-  FileText, Search, Plus, Trash2, Send, Calendar, MapPin, User, 
+import {
+  FileText, Search, Plus, Trash2, Send, Calendar, MapPin, User,
   Package, Cpu, ChevronRight, AlertCircle, Loader2, X, Tag, ClipboardList
 } from 'lucide-react';
 import { RoleContext } from '../context/RoleContext';
 import { logCreate } from '../utils/auditLogger';
 import '../pages/Outbound.css';
 
-const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
+/**
+ * 借用單建檔／編輯
+ *
+ * 傳入 editingDn 即進入編輯模式：載入該單的內容供修改，存檔時更新原單而不是新建。
+ * 只有「待借出」的單可以編輯 —— 已出庫的內容改了會與實際庫存不符，
+ * 這點在資料庫的 UPDATE 條件裡也擋了一層，畫面漏擋也不會改到。
+ */
+const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess, editingDn = null }) => {
+  const isEditing = !!editingDn;
   const { authUser } = useContext(RoleContext) || {};
 
   // --- 單據標頭狀態 ---
@@ -30,7 +38,7 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   const [hwSnInput, setHwSnInput] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
+
   // 自動補全相關狀態
   const [activeAssets, setActiveAssets] = useState([]);
   const [showDeviceDropdown, setShowDeviceDropdown] = useState(false);
@@ -74,17 +82,58 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   };
 
   // --- 持久化同步 ---
+  // 草稿只服務「新建」：編輯既有單據時寫進草稿，會在下次新建時把別人的單帶出來
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !isEditing) {
       localStorage.setItem('lend_draft_header', JSON.stringify(header));
     }
-  }, [header, isOpen]);
+  }, [header, isOpen, isEditing]);
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !isEditing) {
       localStorage.setItem('lend_draft_items', JSON.stringify(outboundItems));
     }
-  }, [outboundItems, isOpen]);
+  }, [outboundItems, isOpen, isEditing]);
+
+  // 進入編輯模式時載入該單的內容
+  useEffect(() => {
+    if (!isOpen || !isEditing) return;
+    let cancelled = false;
+    (async () => {
+      setHeader({
+        customer: editingDn.customer || '',
+        customerId: '',
+        contact_info: editingDn.contact_info || '',
+        location: editingDn.location || '',
+        date: editingDn.shipping_date ? String(editingDn.shipping_date).split('T')[0] : new Date().toISOString().split('T')[0],
+        expected_return_date: editingDn.expected_return_date ? String(editingDn.expected_return_date).split('T')[0] : '',
+        project_name: editingDn.project_name || '',
+        purpose: '運作測試',
+      });
+      setLendNo(editingDn.request_no || '');
+
+      const res = await window.electronAPI.namedQuery('fetchDNItems', [editingDn.id]);
+      if (cancelled || !res.success) return;
+      setOutboundItems((res.rows || []).map((r, i) => ({
+        tempId: `edit-${r.id || i}`,
+        item_id: r.item_id,
+        item_master_id: r.item_id,
+        brand: r.brand,
+        model: r.model,
+        specification: r.specification,
+        type: r.type,
+        category_name: r.category_name,
+        sn: r.sn || '',
+        qty: r.quantity || 1,
+        location: r.location || '',
+        purpose: r.purpose || '運作測試',
+        isSerialized: !!r.sn,
+        components: [],
+      })));
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, isEditing, editingDn?.id]);
 
   // --- 初始化資料 ---
   useEffect(() => {
@@ -121,7 +170,7 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   const handleProjectSelect = async (e) => {
     const selectedProject = e.target.value;
     setHeader(prev => ({ ...prev, project_name: selectedProject }));
-    
+
     if (selectedProject) {
       try {
         const res = await window.electronAPI.namedQuery('fetchAssetsByProject', [selectedProject]);
@@ -135,11 +184,11 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
             purpose: header.purpose || '運作測試',
             components: item.components || []
           }));
-          
+
           setOutboundItems(prev => {
             const existingSns = new Set(prev.map(i => i.sn));
             const filteredNewItems = newItems.filter(i => !existingSns.has(i.sn));
-            
+
             if (filteredNewItems.length > 0) {
               alert(`已從專案 [${selectedProject}] 自動帶入 ${filteredNewItems.length} 項資產。`);
               return [...prev, ...filteredNewItems];
@@ -167,10 +216,10 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
       const res = await window.electronAPI.namedQuery('fetchAssetDetailBySN', [cleanSn]);
       if (res.success && res.rows.length > 0) {
         const item = res.rows[0];
-        
+
         const isDevice = item.category_name === '設備';
         const categoryMatch = (type === 'device' && isDevice) || (type === 'hw' && !isDevice);
-        
+
         if (!categoryMatch) {
             alert(type === 'device' ? '此項目屬於「硬體」，請改用下方的硬體搜尋列！' : '此項目屬於「設備」，請改用上方的設備搜尋列！');
             return false;
@@ -222,7 +271,7 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
 
     const suggestions = type === 'device' ? getDeviceSuggestions() : getHwSuggestions();
 
-    const exactSnMatch = activeAssets.find(a => 
+    const exactSnMatch = activeAssets.find(a =>
       ((type === 'device' && a.category_name === '設備') || (type === 'hw' && a.category_name !== '設備' && a.category_name !== '耗材')) &&
       a.sn.toLowerCase() === inputVal.toLowerCase()
     );
@@ -271,19 +320,19 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   };
 
   const updateQty = (tempId, newQty) => {
-    setOutboundItems(prev => prev.map(i => 
+    setOutboundItems(prev => prev.map(i =>
       i.tempId === tempId ? { ...i, qty: Math.max(1, newQty) } : i
     ));
   };
 
   const updateLocation = (tempId, newLoc) => {
-    setOutboundItems(prev => prev.map(i => 
+    setOutboundItems(prev => prev.map(i =>
       i.tempId === tempId ? { ...i, location: newLoc } : i
     ));
   };
 
   const updatePurpose = (tempId, newPurpose) => {
-    setOutboundItems(prev => prev.map(i => 
+    setOutboundItems(prev => prev.map(i =>
       i.tempId === tempId ? { ...i, purpose: newPurpose } : i
     ));
   };
@@ -311,34 +360,62 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
 
     setIsSubmitting(true);
     try {
-      // 1. 產生 D/N 單號 (DN-YYYYMMDD-XX)
-      const dateStr = header.date.replace(/-/g, '');
-      const prefix = `DN-${dateStr}-`;
-      const countRes = await window.electronAPI.namedQuery('countOutboundRequests', [prefix]);
-      const nextNum = (parseInt(countRes.rows[0].count) || 1).toString().padStart(2, '0');
-      const dnNumber = `DN-${dateStr}-${nextNum}`;
+      // 編輯模式沿用原單號；新建才產生新的 D/N 單號 (DN-YYYYMMDD-XX)
+      let dnNumber = editingDn?.request_no || '';
+      if (!isEditing) {
+        const dateStr = header.date.replace(/-/g, '');
+        const prefix = `DN-${dateStr}-`;
+        const countRes = await window.electronAPI.namedQuery('countOutboundRequests', [prefix]);
+        const nextNum = (parseInt(countRes.rows[0].count) || 1).toString().padStart(2, '0');
+        dnNumber = `DN-${dateStr}-${nextNum}`;
+      }
 
       // 2~3. 借用單標頭與明細放在同一個交易裡，與出貨單的建立方式一致。
       //      先前是分開送出，明細寫入失敗只會跳警告，結果留下一張沒有品項的借用單。
-      const steps = [{
-        id: 'request',
-        queryName: 'insertOutboundRequest',
-        params: [
-          dnNumber,
-          header.customer,
-          header.location,
-          header.date,
-          authUser?.id || null,
-          header.contact_info,
-          'LEND',
-          header.expected_return_date || null
-        ],
-        expectRows: 1,
-        errorMessage: '建立借用單標頭失敗',
-      }];
+      // 編輯：更新單頭並整批換掉明細；新建：建立單頭後寫入明細。
+      // 兩者都在同一個交易中，不會出現「舊明細刪了、新的沒寫進去」。
+      const steps = isEditing
+        ? [
+            {
+              id: 'request',
+              queryName: 'updateOutboundRequestHeader',
+              params: [
+                header.customer,
+                header.location,
+                header.date,
+                header.contact_info,
+                header.expected_return_date || null,
+                header.project_name || null,
+                editingDn.id,
+              ],
+              // 0 筆代表該單已不是「待借出」（例如別人剛按了確認借出）
+              expectRows: 1,
+              errorMessage: '這張借用單已不是「待借出」狀態，無法修改。請重新整理後再確認。',
+            },
+            {
+              queryName: 'deleteOutboundItemsByRequest',
+              params: [editingDn.id],
+            },
+          ]
+        : [{
+            id: 'request',
+            queryName: 'insertOutboundRequest',
+            params: [
+              dnNumber,
+              header.customer,
+              header.location,
+              header.date,
+              authUser?.id || null,
+              header.contact_info,
+              'LEND',
+              header.expected_return_date || null
+            ],
+            expectRows: 1,
+            errorMessage: '建立借用單標頭失敗',
+          }];
 
-      // 明細以 $ref 取用上一步產生的單頭 id
-      const requestIdRef = { $ref: 'request.rows.0.id' };
+      // 明細的單頭 id：編輯用既有的，新建則取用上一步產生的
+      const requestIdRef = isEditing ? editingDn.id : { $ref: 'request.rows.0.id' };
 
       for (const item of outboundItems) {
         const itemPurpose = item.purpose || header.purpose || '運作測試';
@@ -373,19 +450,19 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
 
       const txRes = await window.electronAPI.runTransaction(steps);
       if (!txRes.success) {
-        throw new Error((txRes.error || '建立借用單失敗。') + '\n未留下任何不完整的單據。');
+        throw new Error((txRes.error || `${isEditing ? '修改' : '建立'}借用單失敗。`) + '\n所有變更已全部退回，原本的內容維持不變。');
       }
 
       logCreate(
         'LENT',
         dnNumber,
         header.customer || '借用單',
-        `建立借用單 [${dnNumber}] 對象: ${header.customer} 共 ${outboundItems.length} 個品項 (預計歸還日: ${header.expected_return_date || '未指定'})`,
+        `${isEditing ? '修改' : '建立'}借用單 [${dnNumber}] 對象: ${header.customer} 共 ${outboundItems.length} 個品項 (預計歸還日: ${header.expected_return_date || '未指定'})`,
         { dnNumber, customer: header.customer, location: header.location, request_type: 'LEND', expected_return_date: header.expected_return_date, itemsCount: outboundItems.length, items: outboundItems.map(i => ({ model: i.model, brand: i.brand, sn: i.sn, qty: i.qty, purpose: i.purpose || header.purpose || '運作測試' })) }
       );
 
       // 單頭 id 由交易的第一步產生
-      const requestId = txRes.results?.request?.rows?.[0]?.id;
+      const requestId = isEditing ? editingDn.id : txRes.results?.request?.rows?.[0]?.id;
 
       const createdDnInfo = {
         id: requestId,
@@ -404,8 +481,8 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
         purpose: i.purpose || header.purpose || '運作測試'
       }));
 
-      alert(`借用單 [${dnNumber}] 已成功建立！\n已為您自動載入「借貨申請單」預覽，您可直接列印或下載 PDF。`);
-      
+      alert(`借用單 [${dnNumber}] 已成功${isEditing ? '修改' : '建立'}！\n已為您自動載入「借貨申請單」預覽，您可直接列印或下載 PDF。`);
+
       // 清除暫存
       setOutboundItems([]);
       setHeader({
@@ -426,7 +503,7 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
       }
     } catch (err) {
       console.error('Submit lend note error:', err);
-      alert('建立借用單失敗：' + err.message);
+      alert(`${isEditing ? '修改' : '建立'}借用單失敗：` + err.message);
     } finally {
       setIsSubmitting(false);
     }
@@ -486,21 +563,21 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
 
   return (
     <div className="modal-overlay" style={{ zIndex: 9990 }} onClick={onClose}>
-      <div 
-        className="modal-content" 
-        style={{ 
-          width: '95vw', 
-          maxWidth: '1400px', 
-          maxHeight: '92vh', 
-          display: 'flex', 
-          flexDirection: 'column', 
-          backgroundColor: 'var(--bg-surface)', 
-          border: '1px solid var(--border-color)', 
-          color: 'var(--text-main)', 
-          padding: '0', 
+      <div
+        className="modal-content"
+        style={{
+          width: '95vw',
+          maxWidth: '1400px',
+          maxHeight: '92vh',
+          display: 'flex',
+          flexDirection: 'column',
+          backgroundColor: 'var(--bg-surface)',
+          border: '1px solid var(--border-color)',
+          color: 'var(--text-main)',
+          padding: '0',
           borderRadius: '16px',
           overflow: 'hidden'
-        }} 
+        }}
         onClick={e => e.stopPropagation()}
       >
         {/* 標題欄 */}
@@ -508,7 +585,7 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <h2 style={{ fontSize: '20px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
-                <FileText size={24} color="#f59e0b" /> 借用單建檔 (Lend Note Registration)
+                <FileText size={24} color="#f59e0b" /> {isEditing ? '修改借用單 (Edit Lend Note)' : '借用單建檔 (Lend Note Registration)'}
               </h2>
               {lendNo && (
                 <span style={{
@@ -528,8 +605,8 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
               建立借用申請單，支援設備序號自動導出與耗材選取，建立後可直接產生並列印借貨申請單。
             </p>
           </div>
-          <button 
-            onClick={onClose} 
+          <button
+            onClick={onClose}
             style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', padding: '6px' }}
           >
             <X size={22} />
@@ -554,10 +631,10 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                     </label>
                     <div className="input-with-icon">
                       <ClipboardList size={16} />
-                      <input 
-                        type="text" 
-                        readOnly 
-                        value={lendNo || '計算中...'} 
+                      <input
+                        type="text"
+                        readOnly
+                        value={lendNo || '計算中...'}
                         style={{
                           backgroundColor: 'var(--bg-surface-subtle)',
                           color: 'var(--text-muted)',
@@ -572,15 +649,15 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                   <div className="dn-field">
                     <label>借貸對象 (客戶) *</label>
                     <div className="select-wrapper">
-                      <select 
-                        value={header.customerId || customers.find(c => c.name === header.customer)?.id || ''} 
+                      <select
+                        value={header.customerId || customers.find(c => c.name === header.customer)?.id || ''}
                         onChange={e => {
                           const selectedId = e.target.value;
                           const customerData = customers.find(c => c.id.toString() === selectedId);
                           if (customerData) {
                             const contactStr = `${customerData.contact || ''} ${customerData.phone || ''}`.trim();
                             setHeader(prev => ({
-                              ...prev, 
+                              ...prev,
                               customerId: selectedId,
                               customer: customerData.name,
                               contact_info: contactStr,
@@ -588,7 +665,7 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                             }));
                           } else {
                             setHeader(prev => ({
-                              ...prev, 
+                              ...prev,
                               customerId: '',
                               customer: '',
                               contact_info: '',
@@ -611,9 +688,9 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                     <label>借出日期</label>
                     <div className="input-with-icon">
                       <Calendar size={16} />
-                      <input 
-                        type="date" 
-                        value={header.date} 
+                      <input
+                        type="date"
+                        value={header.date}
                         onChange={e => handleDateChange(e.target.value)}
                       />
                     </div>
@@ -635,10 +712,10 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                     <label>聯絡資訊 (自動帶出)</label>
                     <div className="input-with-icon">
                       <User size={16} />
-                      <input 
-                        type="text" 
+                      <input
+                        type="text"
                         placeholder="系統自動帶出..."
-                        value={header.contact_info} 
+                        value={header.contact_info}
                         readOnly
                         style={{ backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', cursor: 'not-allowed' }}
                       />
@@ -648,8 +725,8 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                   <div className="dn-field">
                     <label>借用專案 (自動帶入資產)</label>
                     <div className="select-wrapper">
-                      <select 
-                        value={header.project_name || ''} 
+                      <select
+                        value={header.project_name || ''}
                         onChange={handleProjectSelect}
                       >
                         <option value="">無 (不指定)</option>
@@ -666,8 +743,8 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                     <label>借出地點 / 備註</label>
                     <div className="input-with-icon">
                       <MapPin size={16} />
-                      <input 
-                        type="text" 
+                      <input
+                        type="text"
                         placeholder="借出地點 / 備註"
                         value={header.location}
                         onChange={e => setHeader(prev => ({ ...prev, location: e.target.value }))}
@@ -679,8 +756,8 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                     <label>借用用途 (預設用途)</label>
                     <div className="input-with-icon">
                       <Tag size={16} />
-                      <input 
-                        type="text" 
+                      <input
+                        type="text"
                         placeholder="預設用途 (如: 運作測試、客戶借測、POC驗證...)"
                         value={header.purpose ?? '運作測試'}
                         onChange={e => setHeader(prev => ({ ...prev, purpose: e.target.value }))}
@@ -695,10 +772,10 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                 <div className="dn-card-header">
                   <Cpu size={18} /> <span>資產序號匯入 (S/N Scan)</span>
                 </div>
-                
+
                 <form className="sn-search-box device-box" style={{ marginBottom: '12px', position: 'relative' }} onSubmit={(e) => handleSnSearch(e, 'device')}>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     placeholder="輸入設備序號、廠牌、型號或規格搜尋 (可點選直接加入)..."
                     value={deviceSnInput}
                     onChange={e => {
@@ -712,7 +789,7 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                     {isSearching ? <Loader2 className="spinner" size={14} /> : <Search size={14} />}
                     加入設備
                   </button>
-                  
+
                   {showDeviceDropdown && (
                     <div className="autocomplete-dropdown">
                       <div className="ac-dropdown-header">
@@ -724,8 +801,8 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                         </div>
                       ) : (
                         getDeviceSuggestions().map(suggestion => (
-                          <div 
-                            key={suggestion.sn} 
+                          <div
+                            key={suggestion.sn}
                             className="autocomplete-item"
                             onMouseDown={(e) => {
                               e.preventDefault();
@@ -752,8 +829,8 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                 </form>
 
                 <form className="sn-search-box hw-box" style={{ position: 'relative' }} onSubmit={(e) => handleSnSearch(e, 'hw')}>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     placeholder="輸入硬體序號、廠牌、類型或規格搜尋 (可點選直接加入)..."
                     value={hwSnInput}
                     onChange={e => {
@@ -767,7 +844,7 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                     {isSearching ? <Loader2 className="spinner" size={14} /> : <Search size={14} />}
                     加入硬體
                   </button>
-                  
+
                   {showHwDropdown && (
                     <div className="autocomplete-dropdown">
                       <div className="ac-dropdown-header">
@@ -779,8 +856,8 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                         </div>
                       ) : (
                         getHwSuggestions().map(suggestion => (
-                          <div 
-                            key={suggestion.sn} 
+                          <div
+                            key={suggestion.sn}
                             className="autocomplete-item"
                             onMouseDown={(e) => {
                               e.preventDefault();
@@ -812,11 +889,11 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                 <div className="dn-card-header">
                   <Package size={18} /> <span>耗材庫存快選 (Consumables)</span>
                 </div>
-                
+
                 {/* 耗材篩選列 */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', padding: '0 18px 12px' }}>
-                  <select 
-                    value={csmFilterBrand} 
+                  <select
+                    value={csmFilterBrand}
                     onChange={e => { setCsmFilterBrand(e.target.value); setCsmFilterType(''); setCsmFilterModel(''); }}
                     style={{ padding: '7px 10px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-main)', outline: 'none' }}
                   >
@@ -824,8 +901,8 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                     {csmBrands.map(b => <option key={b} value={b}>{b}</option>)}
                   </select>
 
-                  <select 
-                    value={csmFilterType} 
+                  <select
+                    value={csmFilterType}
                     onChange={e => { setCsmFilterType(e.target.value); setCsmFilterModel(''); }}
                     style={{ padding: '7px 10px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-main)', outline: 'none' }}
                   >
@@ -833,8 +910,8 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                     {csmTypes.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
 
-                  <select 
-                    value={csmFilterModel} 
+                  <select
+                    value={csmFilterModel}
                     onChange={e => setCsmFilterModel(e.target.value)}
                     style={{ padding: '7px 10px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-main)', outline: 'none' }}
                   >
@@ -842,9 +919,9 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                     {csmModels.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
 
-                  <input 
-                    type="text" 
-                    placeholder="搜尋耗材..." 
+                  <input
+                    type="text"
+                    placeholder="搜尋耗材..."
                     value={csmSearchTerm}
                     onChange={e => setCsmSearchTerm(e.target.value)}
                     style={{ padding: '7px 10px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-main)', outline: 'none' }}
@@ -886,7 +963,7 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                     <FileText size={18} /> <span>已排定借出品項 ({outboundItems.length})</span>
                   </div>
                   {outboundItems.length > 0 && (
-                    <button 
+                    <button
                       onClick={() => setOutboundItems([])}
                       style={{ border: 'none', background: 'none', color: '#ef4444', fontSize: '12px', cursor: 'pointer', fontWeight: 600 }}
                     >
@@ -939,17 +1016,17 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                           ) : (
                             <div className="qty-control">
                               <button onClick={() => updateQty(item.tempId, item.qty - 1)}>-</button>
-                              <input 
-                                type="number" 
-                                value={item.qty} 
+                              <input
+                                type="number"
+                                value={item.qty}
                                 onChange={e => updateQty(item.tempId, parseInt(e.target.value) || 1)}
                               />
                               <button onClick={() => updateQty(item.tempId, item.qty + 1)}>+</button>
                             </div>
                           )}
 
-                          <input 
-                            type="text" 
+                          <input
+                            type="text"
                             className="item-purpose-input"
                             placeholder="用途 (如: 運作測試)"
                             value={item.purpose ?? ''}
@@ -957,8 +1034,8 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                             title="借用用途 (將對應借貨申請單之用途欄位)"
                           />
 
-                          <input 
-                            type="text" 
+                          <input
+                            type="text"
                             className="item-loc-input"
                             placeholder="借出地點"
                             value={item.location || ''}
@@ -975,21 +1052,21 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                 </div>
 
                 <div className="dn-card-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '16px', borderTop: '1px solid var(--border-color)' }}>
-                  <button 
+                  <button
                     onClick={handleClearDraft}
                     style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', fontSize: '0.85rem', cursor: 'pointer', fontWeight: 600 }}
                   >
                     清除重填
                   </button>
 
-                  <button 
-                    className="btn-submit-dn" 
-                    onClick={handleSubmit} 
+                  <button
+                    className="btn-submit-dn"
+                    onClick={handleSubmit}
                     disabled={isSubmitting || outboundItems.length === 0}
                     style={{ padding: '10px 24px', borderRadius: '10px', backgroundColor: '#f59e0b', color: '#fff', border: 'none', fontWeight: 800, fontSize: '0.95rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(245, 158, 11, 0.3)' }}
                   >
                     {isSubmitting ? <Loader2 className="spinner" size={18} /> : <Send size={18} />}
-                    建立借用單
+                    {isEditing ? '儲存修改' : '建立借用單'}
                   </button>
                 </div>
               </div>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
-  FileText, Search, Eye, CornerDownLeft, RotateCcw, AlertCircle, History, Clock, 
+  FileText, Search, Eye, CornerDownLeft, RotateCcw, Pencil, AlertCircle, History, Clock, 
   CheckCircle, Printer, PackageCheck, Send, Paperclip, Upload, Trash2, 
   Download, ExternalLink, FileCheck, Image as ImageIcon, X, Plus 
 } from 'lucide-react';
@@ -309,6 +309,8 @@ const LentList = () => {
   // 實際的庫存異動與歸還相同（是「確認借出」的反向），差別只在單據狀態
   // 退回 PENDING、且不寫入歸還日期。
   const [revertModal, setRevertModal] = useState({ show: false, dn: null });
+  // 正在編輯的借用單。只有「待借出」可編輯，已出庫的內容改了會與實際庫存不符。
+  const [editingDn, setEditingDn] = useState(null);
 
   const executeRevertToPending = async () => {
     const dn = revertModal.dn;
@@ -792,6 +794,16 @@ const LentList = () => {
                         </button>
                       )}
                       {dn.status === 'PENDING' && (
+                        <button
+                          onClick={() => setEditingDn(dn)}
+                          title="修改借用單內容"
+                          aria-label="修改借用單"
+                          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', padding: 0, backgroundColor: 'rgba(37, 99, 235, 0.12)', color: 'var(--primary-color)', border: '1px solid rgba(37, 99, 235, 0.35)', borderRadius: '8px', cursor: 'pointer' }}
+                        >
+                          <Pencil size={16} />
+                        </button>
+                      )}
+                      {dn.status === 'PENDING' && (
                         <button 
                           style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', padding: 0, backgroundColor: 'rgba(239, 68, 68, 0.12)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '6px', cursor: 'pointer', flexShrink: 0 }}
                           title="刪除借用單"
@@ -1187,6 +1199,18 @@ const LentList = () => {
           </div>
         </div>
       )}
+
+      {/* 編輯既有借用單：沿用同一個視窗，傳入 editingDn 即為編輯模式。
+          只有「待借出」的單會出現編輯按鈕，資料庫的 UPDATE 條件也擋了一層。 */}
+      <LendOrderRegistrationModal
+        isOpen={!!editingDn}
+        editingDn={editingDn}
+        onClose={() => setEditingDn(null)}
+        onSuccess={() => {
+          setEditingDn(null);
+          fetchRecords();
+        }}
+      />
 
       {/* 借用單建檔 (Lend Note Registration) Modal */}
       {isCreateModalOpen && (

@@ -850,6 +850,17 @@ export const queries = {
   updateAssetShippingDateBySn: `UPDATE assets SET shipping_date = $1 WHERE sn = $2`,
   updateOutboundRequestStatus: `UPDATE outbound_requests SET status = $1 WHERE id = $2`,
   updateOutboundRequestReturned: `UPDATE outbound_requests SET status = 'RETURNED', actual_return_date = $2 WHERE id = $1`,
+  // 編輯借用單：只有「待借出」的單據可以改，已出庫的內容改了會與實際庫存不符。
+  // 狀態條件寫在 SQL 裡，就算畫面漏擋也不會改到已出庫的單。
+  updateOutboundRequestHeader: `
+    UPDATE outbound_requests SET
+      customer = $1, location = $2, shipping_date = $3,
+      contact_info = $4, expected_return_date = $5, project_name = $6
+    WHERE id = $7 AND status = 'PENDING'
+    RETURNING id`,
+  // 編輯時整批換掉明細：逐筆比對差異在這個資料量下不划算，也容易漏。
+  // 與新的明細寫入放在同一個交易中，不會出現刪掉舊的卻沒寫進新的。
+  deleteOutboundItemsByRequest: `DELETE FROM outbound_items WHERE request_id = $1`,
   deleteOutboundRequest: `DELETE FROM outbound_requests WHERE id = $1`,
   migrateOutboundSignedDoc: `ALTER TABLE outbound_requests ADD COLUMN IF NOT EXISTS signed_doc_url TEXT; ALTER TABLE outbound_requests ADD COLUMN IF NOT EXISTS signed_doc_name TEXT;`,
   updateOutboundSignedDoc: `UPDATE outbound_requests SET signed_doc_url = $1, signed_doc_name = $2 WHERE id = $3`,
