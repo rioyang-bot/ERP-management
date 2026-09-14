@@ -472,37 +472,6 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
         </div>
       </div>
       
-      <div style={{ marginBottom: '32px' }}>
-        <label style={labelStyle}>相關附件 (報價單、進貨單影本等)</label>
-        <div style={{ padding: '16px', border: '2px dashed var(--border-color)', borderRadius: '12px', backgroundColor: 'var(--bg-surface-subtle)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
-            {attachments.map((att, index) => (
-              <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '8px', boxShadow: 'var(--card-shadow)' }}>
-                {att.type?.startsWith('image/') ? (
-                   <img src={getMediaSrc(att.fileName)} alt={att.originalName} style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px', cursor: 'pointer' }} onClick={() => setPreviewFile(att)} />
-                ) : (
-                   <div style={{ width: '40px', height: '40px', backgroundColor: 'var(--bg-surface-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '4px', cursor: 'pointer' }} onClick={() => setPreviewFile(att)}>
-                      <FileText size={20} color="var(--text-muted)" />
-                   </div>
-                )}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '150px' }} title={att.originalName}>{att.originalName}</div>
-                </div>
-                <button onClick={() => removeAttachment(index)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '4px' }}>
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            ))}
-          </div>
-          <div>
-            <label style={{ display: 'inline-block', padding: '8px 16px', backgroundColor: 'var(--bg-surface)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer' }}>
-              + 新增附件
-              <input type="file" multiple style={{ display: 'none' }} onChange={handleFileUpload} />
-            </label>
-          </div>
-        </div>
-      </div>
-      
       <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '20px' }}>
         <thead>
           <tr style={{ backgroundColor: 'var(--table-header-bg)', textAlign: 'left' }}>
@@ -660,6 +629,37 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
           </button>
         </div>
       </div>
+      <div style={{ marginBottom: '32px' }}>
+        <label style={labelStyle}>相關附件 (報價單、進貨單影本等)</label>
+        <div style={{ padding: '16px', border: '2px dashed var(--border-color)', borderRadius: '12px', backgroundColor: 'var(--bg-surface-subtle)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+            {attachments.map((att, index) => (
+              <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '8px', boxShadow: 'var(--card-shadow)' }}>
+                {att.type?.startsWith('image/') ? (
+                   <img src={getMediaSrc(att.fileName)} alt={att.originalName} style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px', cursor: 'pointer' }} onClick={() => setPreviewFile(att)} />
+                ) : (
+                   <div style={{ width: '40px', height: '40px', backgroundColor: 'var(--bg-surface-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '4px', cursor: 'pointer' }} onClick={() => setPreviewFile(att)}>
+                      <FileText size={20} color="var(--text-muted)" />
+                   </div>
+                )}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '150px' }} title={att.originalName}>{att.originalName}</div>
+                </div>
+                <button onClick={() => removeAttachment(index)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '4px' }}>
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+          <div>
+            <label style={{ display: 'inline-block', padding: '8px 16px', backgroundColor: 'var(--bg-surface)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer' }}>
+              + 新增附件
+              <input type="file" multiple style={{ display: 'none' }} onChange={handleFileUpload} />
+            </label>
+          </div>
+        </div>
+      </div>
+
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '16px', borderTop: '1px solid var(--border-color)', paddingTop: '32px' }}>
         <button onClick={handleSubmit} style={submitButtonStyle}><ShoppingBag size={20} /> 確認入庫作業</button>
       </div>
