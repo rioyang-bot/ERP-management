@@ -7,6 +7,7 @@ import {
 import { logEvent, ACTION_TYPES, MODULE_MAP } from '../utils/auditLogger';
 import { parseSpreadsheetFile, fixMojibake, asText, excelSerialToDate } from '../utils/encoding';
 import { matchPartnerContact } from '../utils/partnerMatcher';
+import { findColumnValue } from '../utils/importColumnMatch';
 import { buildFillPlan, buildFillParams, getKeptFieldLabels, indexAssetsBySn } from '../utils/assetFillImport';
 
 const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] }) => {
@@ -266,35 +267,6 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
   };
 
   // 智慧比對欄位名稱 (支援排除指定關鍵字，如尋找 Type 時排除 OS Type)
-  const findColumnValue = (rowObj, possibleKeys, excludedKeywords = []) => {
-    if (!rowObj) return '';
-    for (const key of Object.keys(rowObj)) {
-      const normalizedKey = key.trim().toLowerCase().replace(/[\s_\(\)\-\[\]\/\\:]/g, '');
-      if (excludedKeywords.some(ex => normalizedKey.includes(ex.toLowerCase()))) continue;
-      for (const pk of possibleKeys) {
-        const normalizedPk = pk.trim().toLowerCase().replace(/[\s_\(\)\-\[\]\/\\:]/g, '');
-        if (normalizedKey === normalizedPk) {
-          const val = rowObj[key];
-          if (val === undefined || val === null || val === '') return '';
-          return typeof val === 'number' ? val : fixMojibake(String(val).trim());
-        }
-      }
-    }
-    for (const key of Object.keys(rowObj)) {
-      const normalizedKey = key.trim().toLowerCase().replace(/[\s_\(\)\-\[\]\/\\:]/g, '');
-      if (excludedKeywords.some(ex => normalizedKey.includes(ex.toLowerCase()))) continue;
-      for (const pk of possibleKeys) {
-        const normalizedPk = pk.trim().toLowerCase().replace(/[\s_\(\)\-\[\]\/\\:]/g, '');
-        if (normalizedPk.length >= 2 && normalizedKey.includes(normalizedPk)) {
-          const val = rowObj[key];
-          if (val !== undefined && val !== null && val !== '' && String(val).trim() !== '') {
-            return typeof val === 'number' ? val : fixMojibake(String(val).trim());
-          }
-        }
-      }
-    }
-    return '';
-  };
 
   // 智慧搜尋硬體序號 (支援如 SF2541 SN, MCX512A SN, Serial Number, SN 等)
   const findSnValue = (rowObj) => {

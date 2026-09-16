@@ -7,6 +7,7 @@ import {
 import { logEvent, ACTION_TYPES, MODULE_MAP } from '../utils/auditLogger';
 import { parseSpreadsheetFile, fixMojibake, asText, excelSerialToDate } from '../utils/encoding';
 import { matchPartnerContact } from '../utils/partnerMatcher';
+import { findColumnValue } from '../utils/importColumnMatch';
 import { buildFillPlan, buildFillParams, getKeptFieldLabels, indexAssetsBySn } from '../utils/assetFillImport';
 
 const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] }) => {
@@ -193,37 +194,6 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
   };
 
   // 智慧匹配欄位名稱 (支援排除指定關鍵字，如尋找 Type 時排除 OS Type)
-  const findColumnValue = (rowObj, possibleKeys, excludedKeywords = []) => {
-    if (!rowObj) return '';
-    // 1. 精準比對 (忽略空格、大小寫、符號等)
-    for (const key of Object.keys(rowObj)) {
-      const normalizedKey = key.trim().toLowerCase().replace(/[\s_\(\)\-\[\]\/\\:]/g, '');
-      if (excludedKeywords.some(ex => normalizedKey.includes(ex.toLowerCase()))) continue;
-      for (const pk of possibleKeys) {
-        const normalizedPk = pk.trim().toLowerCase().replace(/[\s_\(\)\-\[\]\/\\:]/g, '');
-        if (normalizedKey === normalizedPk) {
-          const val = rowObj[key];
-          if (val === undefined || val === null || val === '') return '';
-          return typeof val === 'number' ? val : fixMojibake(String(val).trim());
-        }
-      }
-    }
-    // 2. 寬鬆包含比對 (例如標題包含 "spec" 或 "規格")
-    for (const key of Object.keys(rowObj)) {
-      const normalizedKey = key.trim().toLowerCase().replace(/[\s_\(\)\-\[\]\/\\:]/g, '');
-      if (excludedKeywords.some(ex => normalizedKey.includes(ex.toLowerCase()))) continue;
-      for (const pk of possibleKeys) {
-        const normalizedPk = pk.trim().toLowerCase().replace(/[\s_\(\)\-\[\]\/\\:]/g, '');
-        if (normalizedPk.length >= 2 && normalizedKey.includes(normalizedPk)) {
-          const val = rowObj[key];
-          if (val !== undefined && val !== null && val !== '' && String(val).trim() !== '') {
-            return typeof val === 'number' ? val : fixMojibake(String(val).trim());
-          }
-        }
-      }
-    }
-    return '';
-  };
 
   // 處理上傳檔案
   const handleFileProcess = async (selectedFile) => {
