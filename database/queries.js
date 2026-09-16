@@ -221,6 +221,38 @@ export const queries = {
   // Dashboard / Misc
   fetchCustomers: `SELECT id, name, contact_person as contact, phone, address FROM partners WHERE partner_type = 'CUSTOMER' AND COALESCE(is_active, TRUE) = true ORDER BY name ASC, contact_person ASC`,
   fetchAssetSns: `SELECT sn FROM assets WHERE sn IS NOT NULL AND sn != ''`,
+  // 重新匯入補齊空白欄位：先取出檔案裡這些序號在系統中目前的內容，
+  // 才知道哪些欄位是空的、哪些已經有值不能動。
+  fetchAssetsBySnListForFill: `
+    SELECT a.id, a.sn, a.client, a.hostname, a.location, a.remarks,
+           a.installed_date, a.customer_warranty_expire, a.system_date, a.warranty_expire,
+           a.status, a.ownership,
+           COALESCE(a.custom_attributes, '{}'::jsonb) as custom_attributes,
+           i.brand, i.type, i.model, i.specification, c.name as category_name
+    FROM assets a
+    LEFT JOIN item_master i ON a.item_master_id = i.id
+    LEFT JOIN categories c ON i.category_id = c.id
+    WHERE a.sn IS NOT NULL AND UPPER(TRIM(a.sn)) = ANY($1::text[])
+  `,
+  // 只補空白：每一欄都先看既有值，有值就維持原樣，空的才寫入帶進來的值。
+  // 判斷放在 SQL 而不是只靠前端比對 —— 預覽到實際寫入之間別人若剛好填了，
+  // 也不會被這次匯入蓋掉。
+  // custom_attributes 以「既有的 || 這次要補的」合併，而要補的鍵值在前端
+  // 已篩掉既有非空的鍵，因此不會動到原本就有內容的屬性。
+  fillEmptyAssetFieldsBySn: `
+    UPDATE assets SET
+      client = CASE WHEN COALESCE(TRIM(client), '') = '' THEN $2 ELSE client END,
+      hostname = CASE WHEN COALESCE(TRIM(hostname), '') = '' THEN $3 ELSE hostname END,
+      location = CASE WHEN COALESCE(TRIM(location), '') = '' THEN $4 ELSE location END,
+      remarks = CASE WHEN COALESCE(TRIM(remarks), '') = '' THEN $5 ELSE remarks END,
+      installed_date = COALESCE(installed_date, $6::date),
+      customer_warranty_expire = COALESCE(customer_warranty_expire, $7::date),
+      system_date = COALESCE(system_date, $8::date),
+      warranty_expire = COALESCE(warranty_expire, $9::date),
+      custom_attributes = COALESCE(custom_attributes, '{}'::jsonb) || $10::jsonb,
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = $1
+    RETURNING id, sn`,
   insertCustomerIfNotExist: `INSERT INTO partners (partner_type, name) SELECT 'CUSTOMER', $1 WHERE NOT EXISTS (SELECT 1 FROM partners WHERE name = $1 AND partner_type = 'CUSTOMER')`,
   
   // Assets.jsx

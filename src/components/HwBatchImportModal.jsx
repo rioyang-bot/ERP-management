@@ -7,6 +7,7 @@ import {
 import { logEvent, ACTION_TYPES, MODULE_MAP } from '../utils/auditLogger';
 import { parseSpreadsheetFile, fixMojibake, asText, excelSerialToDate } from '../utils/encoding';
 import { matchPartnerContact } from '../utils/partnerMatcher';
+import { buildFillPlan, buildFillParams, getKeptFieldLabels, indexAssetsBySn } from '../utils/assetFillImport';
 
 const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] }) => {
   const [file, setFile] = useState(null);
@@ -30,6 +31,10 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
   const [importProgress, setImportProgress] = useState(0);
   const [activeTab, setActiveTab] = useState('all'); // 'all', 'valid', 'skipped', 'duplicate'
   const [existingSns, setExistingSns] = useState(new Set());
+  // 重新匯入補齊：序號已存在時，把系統裡還是空白的欄位補上（已經有值的一律不動）
+  const [fillExisting, setFillExisting] = useState(false);
+  const [existingAssets, setExistingAssets] = useState(new Map());
+  const [isLoadingExisting, setIsLoadingExisting] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -188,6 +193,8 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
     setImportProgress(0);
     setActiveTab('all');
     setImportResult(null);
+    setFillExisting(false);
+    setExistingAssets(new Map());
   };
 
   // 標準化日期解析函式 (支援 DD/MM/YYYY, YYYY-MM-DD, YYYY/MM/DD, Excel 序列數字與數值字串)
@@ -465,6 +472,8 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
       // 檢核狀態判定
       let status = 'VALID';
       let skipReason = '';
+      // 檔案內自己重複與「系統裡已經有這筆」要分開：只有後者才能拿來補齊
+      let existsInSystem = false;
 
       // 規則 1：廠牌 / 類型 / 型號 / 序號 缺一不建立 (規格改為選填)
       if (!brand) {
@@ -491,6 +500,7 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
         } else if (existingSns.has(cleanSn)) {
           status = 'DUPLICATE';
           skipReason = '此序號已存在於系統硬體/設備清冊中';
+          existsInSystem = true;
         }
       }
 
@@ -606,6 +616,7 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
         itemStatus,
         status,
         skipReason,
+        existsInSystem,
         custom_attributes: rowCustomAttrs
       });
     });
@@ -656,14 +667,58 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
     return hasType && hasOsType;
   }, [fileHeaders]);
 
+  // 檔案中已經在系統裡的序號（大寫，供查詢目前內容用）
+  const existingSnsInFile = useMemo(
+    () => parsedRows.filter(r => r.existsInSystem).map(r => asText(r.sn).toUpperCase()).filter(Boolean),
+    [parsedRows]
+  );
+
+  // 勾選補齊後才去取既有內容：沒有要補就不必多打這一趟
+  useEffect(() => {
+    if (!isOpen || !fillExisting || existingSnsInFile.length === 0) {
+      setExistingAssets(new Map());
+      return undefined;
+    }
+    let cancelled = false;
+    (async () => {
+      setIsLoadingExisting(true);
+      try {
+        const res = await window.electronAPI.namedQuery('fetchAssetsBySnListForFill', [existingSnsInFile]);
+        if (!cancelled && res.success) setExistingAssets(indexAssetsBySn(res.rows));
+      } catch (e) {
+        console.error('讀取既有資產內容失敗:', e);
+      } finally {
+        if (!cancelled) setIsLoadingExisting(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isOpen, fillExisting, existingSnsInFile]);
+
+  // 每一列可以補進去的欄位。沒有任何空白可補的就不會出現在這裡
+  const fillPlans = useMemo(() => {
+    const map = new Map();
+    if (!fillExisting) return map;
+    const attributeLabels = {};
+    customFieldDefs.forEach(f => { if (f.id) attributeLabels[f.id] = f.label || f.id; });
+
+    parsedRows.forEach(row => {
+      if (!row.existsInSystem) return;
+      const existing = existingAssets.get(asText(row.sn).toUpperCase());
+      if (!existing) return;
+      const plan = buildFillPlan(existing, row, { attributeLabels });
+      if (plan) map.set(row.rowIndex, { plan, kept: getKeptFieldLabels(existing, row) });
+    });
+    return map;
+  }, [fillExisting, parsedRows, existingAssets, customFieldDefs]);
+
   // 統計數據
   const stats = useMemo(() => {
     const total = parsedRows.length;
     const valid = parsedRows.filter(r => r.status === 'VALID').length;
     const skipped = parsedRows.filter(r => r.status === 'SKIPPED').length;
     const duplicate = parsedRows.filter(r => r.status === 'DUPLICATE').length;
-    return { total, valid, skipped, duplicate };
-  }, [parsedRows]);
+    return { total, valid, skipped, duplicate, fillable: fillPlans.size };
+  }, [parsedRows, fillPlans]);
 
   // 根據當前 Tab 篩選欲顯示的項目
   const displayRows = useMemo(() => {
@@ -723,12 +778,16 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
     }
 
     const validItems = parsedRows.filter(r => r.status === 'VALID');
-    if (validItems.length === 0) {
+    const fillList = [...fillPlans.values()].map(e => e.plan);
+    if (validItems.length === 0 && fillList.length === 0) {
       alert('目前沒有符合建立條件的硬體資料（請確認是否已填寫廠牌、類型、型號與序號，或檢查是否序號重複）。');
       return;
     }
 
-    if (!window.confirm(`確定要將 ${validItems.length} 筆硬體資料匯入建立至系統庫存嗎？`)) {
+    const actions = [];
+    if (validItems.length > 0) actions.push(`新建 ${validItems.length} 筆硬體`);
+    if (fillList.length > 0) actions.push(`補齊 ${fillList.length} 筆既有資產的空白欄位（已有值的欄位不會被更動）`);
+    if (!window.confirm(`確定要執行以下動作嗎？\n\n• ${actions.join('\n• ')}`)) {
       return;
     }
 
@@ -736,8 +795,11 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
     setImportProgress(0);
 
     let successCount = 0;
+    let filledCount = 0;
     let failCount = 0;
     const errors = [];
+    const totalOps = validItems.length + fillList.length;
+    let doneOps = 0;
 
     try {
       // 1. 收集客戶，自動補齊 partners 主檔。
@@ -846,7 +908,32 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
           errors.push(`第 ${item.rowIndex} 行 [${item.sn || '無'}] 處理異常：${itemErr.message}`);
         }
 
-        setImportProgress(Math.round(((i + 1) / validItems.length) * 100));
+        doneOps++;
+        setImportProgress(Math.round((doneOps / totalOps) * 100));
+      }
+
+      // 補齊既有資產的空白欄位。
+      // 只補空白由 SQL 保證：預覽到實際寫入之間別人若剛好填了，也不會被蓋掉。
+      for (const plan of fillList) {
+        try {
+          const params = buildFillParams(plan, {
+            filled_by_import: true,
+            fill_import_file: fileName,
+            fill_import_date: new Date().toISOString(),
+          });
+          const res = await window.electronAPI.namedQuery('fillEmptyAssetFieldsBySn', params);
+          if (res.success && (res.rows || []).length > 0) {
+            filledCount++;
+          } else {
+            failCount++;
+            errors.push(`序號 [${plan.sn}] 補齊失敗：${res.error || '找不到該筆資產'}`);
+          }
+        } catch (fillErr) {
+          failCount++;
+          errors.push(`序號 [${plan.sn}] 補齊異常：${fillErr.message}`);
+        }
+        doneOps++;
+        setImportProgress(Math.round((doneOps / totalOps) * 100));
       }
 
       // 3. 稽核日誌紀錄
@@ -856,11 +943,13 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
         moduleLabel: MODULE_MAP.HARDWARE.label,
         targetId: fileName,
         targetName: `${selectedBrand || '批次'} ${selectedModel || '硬體'} 批次匯入`,
-        summary: `批次匯入 ${fileName}：成功建立 ${successCount} 筆硬體，略過 ${stats.skipped} 筆，衝突 ${stats.duplicate} 筆`,
+        summary: `批次匯入 ${fileName}：成功建立 ${successCount} 筆硬體${filledCount > 0 ? `，補齊既有資產空白欄位 ${filledCount} 筆` : ''}，略過 ${stats.skipped} 筆，衝突 ${stats.duplicate} 筆`,
         details: {
           fileName,
           totalRows: parsedRows.length,
           successCount,
+          filledCount,
+          filledSns: fillList.map(f => f.sn),
           failCount,
           skippedCount: stats.skipped,
           duplicateCount: stats.duplicate,
@@ -876,6 +965,7 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
       setImportResult({
         success: true,
         successCount,
+        filledCount,
         failCount,
         skippedCount: stats.skipped,
         duplicateCount: stats.duplicate,
@@ -1650,6 +1740,28 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
                       序號重複 ({stats.duplicate})
                     </button>
                   </div>
+
+                  {/* 重新匯入補齊：序號已存在的那些列，把系統裡還空著的欄位補上 */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap', marginTop: '8px' }}>
+                    <label
+                      style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-main)', cursor: 'pointer', fontWeight: 700 }}
+                      title="序號已存在的資產，若系統中某些欄位還是空的，就用檔案裡的值補上。已經有值的欄位一律不會被覆蓋。"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={fillExisting}
+                        onChange={(e) => setFillExisting(e.target.checked)}
+                        style={{ width: '15px', height: '15px', cursor: 'pointer' }}
+                      />
+                      一併補齊既有序號的空白欄位
+                      {isLoadingExisting && <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} />}
+                    </label>
+                    {fillExisting && (
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                        可補齊 <b style={{ color: '#3b82f6', fontSize: '14px' }}>{stats.fillable}</b> 筆
+                      </div>
+                    )}
+                  </div>
                 </div>
 
               {/* 資料表格容器 - 1080P 自適應彈性填滿 */}
@@ -1714,12 +1826,23 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
                           );
                         }
 
+                        // 這一列雖然序號重複，但系統裡還有空白欄位可以補
+                        const fillEntry = fillPlans.get(row.rowIndex);
+                        if (fillEntry) {
+                          const fillTitle = `將補上：${fillEntry.plan.labels.join('、')}${fillEntry.kept.length > 0 ? `\n保留原值（系統中已有資料）：${fillEntry.kept.join('、')}` : ''}`;
+                          statusBadge = (
+                            <span style={{ padding: '3px 8px', borderRadius: '12px', backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6', fontWeight: '700', fontSize: '11px', whiteSpace: 'nowrap' }} title={fillTitle}>
+                              🩹 補齊 {fillEntry.plan.count} 個空白欄位
+                            </span>
+                          );
+                        }
+
                         return (
                           <tr
                             key={idx}
                             style={{
                               borderBottom: '1px solid var(--border-color)',
-                              backgroundColor: row.status === 'SKIPPED' ? 'rgba(245, 158, 11, 0.03)' : (row.status === 'DUPLICATE' ? 'rgba(239, 68, 68, 0.03)' : 'transparent')
+                              backgroundColor: fillEntry ? 'rgba(59, 130, 246, 0.05)' : (row.status === 'SKIPPED' ? 'rgba(245, 158, 11, 0.03)' : (row.status === 'DUPLICATE' ? 'rgba(239, 68, 68, 0.03)' : 'transparent'))
                             }}
                           >
                             <td style={{ padding: '8px 12px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>#{row.rowIndex}</td>
@@ -1852,6 +1975,9 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
               </div>
               <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.6' }}>
                 • 成功寫入庫存：<b>{importResult.successCount}</b> 筆<br />
+                {importResult.filledCount > 0 && (
+                  <>• 補齊既有資產空白欄位：<b>{importResult.filledCount}</b> 筆<br /></>
+                )}
                 • 規則略過（缺廠牌/類型/型號/序號）：<b>{importResult.skippedCount}</b> 筆<br />
                 • 序號重複阻擋：<b>{importResult.duplicateCount}</b> 筆<br />
                 {importResult.failCount > 0 && <span style={{ color: '#ef4444' }}>• 寫入失敗：<b>{importResult.failCount}</b> 筆</span>}
@@ -1893,25 +2019,25 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
             </button>
             <button
               type="button"
-              disabled={isImporting || stats.valid === 0}
+              disabled={isImporting || (stats.valid + (fillExisting ? stats.fillable : 0)) === 0}
               onClick={executeImport}
               style={{
                 padding: '7px 20px',
                 borderRadius: '8px',
                 border: 'none',
-                backgroundColor: (isImporting || stats.valid === 0) ? 'var(--border-color)' : '#6366f1',
+                backgroundColor: (isImporting || (stats.valid + (fillExisting ? stats.fillable : 0)) === 0) ? 'var(--border-color)' : '#6366f1',
                 color: '#fff',
                 fontSize: '12px',
                 fontWeight: '700',
-                cursor: (isImporting || stats.valid === 0) ? 'not-allowed' : 'pointer',
+                cursor: (isImporting || (stats.valid + (fillExisting ? stats.fillable : 0)) === 0) ? 'not-allowed' : 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px',
-                boxShadow: (isImporting || stats.valid === 0) ? 'none' : '0 2px 6px rgba(99, 102, 241, 0.35)'
+                boxShadow: (isImporting || (stats.valid + (fillExisting ? stats.fillable : 0)) === 0) ? 'none' : '0 2px 6px rgba(99, 102, 241, 0.35)'
               }}
             >
               <Database size={14} />
-              {isImporting ? '匯入處理中...' : `確認批次匯入 (${stats.valid})`}
+              {isImporting ? '匯入處理中...' : `確認批次匯入 (${stats.valid}${fillExisting && stats.fillable > 0 ? ` + 補齊 ${stats.fillable}` : ''})`}
             </button>
           </div>
         </div>
