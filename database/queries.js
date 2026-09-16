@@ -223,6 +223,10 @@ export const queries = {
   fetchAssetSns: `SELECT sn FROM assets WHERE sn IS NOT NULL AND sn != ''`,
   // 重新匯入補齊空白欄位：先取出檔案裡這些序號在系統中目前的內容，
   // 才知道哪些欄位是空的、哪些已經有值不能動。
+  //
+  // 序號以逗號分隔的「字串」傳入，不用陣列：具名查詢的參數前處理會把物件
+  // （陣列也是物件）轉成 JSON 字串，$1::text[] 收到 ["A","B"] 會轉型失敗。
+  // 分隔符號用逗號而不是換行，是因為參數過濾會把 CR/LF 濾掉。
   fetchAssetsBySnListForFill: `
     SELECT a.id, a.sn, a.client, a.hostname, a.location, a.remarks,
            a.installed_date, a.customer_warranty_expire, a.system_date, a.warranty_expire,
@@ -232,7 +236,7 @@ export const queries = {
     FROM assets a
     LEFT JOIN item_master i ON a.item_master_id = i.id
     LEFT JOIN categories c ON i.category_id = c.id
-    WHERE a.sn IS NOT NULL AND UPPER(TRIM(a.sn)) = ANY($1::text[])
+    WHERE a.sn IS NOT NULL AND UPPER(TRIM(a.sn)) = ANY(string_to_array($1, ','))
   `,
   // 只補空白：每一欄都先看既有值，有值就維持原樣，空的才寫入帶進來的值。
   // 判斷放在 SQL 而不是只靠前端比對 —— 預覽到實際寫入之間別人若剛好填了，

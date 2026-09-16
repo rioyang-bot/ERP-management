@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildFillPlan,
   buildFillParams,
+  buildSnListParam,
   getKeptFieldLabels,
   indexAssetsBySn,
   isEmptyValue,
@@ -163,7 +164,48 @@ describe('組出寫入用的參數', () => {
   it('可一併帶上這次補齊的來源，日後查得到是哪個檔案補的', () => {
     const plan = buildFillPlan({ id: 1, sn: 'S', custom_attributes: {} }, { sn: 'S', client: 'A' });
     const params = buildFillParams(plan, { fill_import_file: 'a.xlsx' });
-    expect(JSON.parse(params.at(-1))).toEqual({ fill_import_file: 'a.xlsx' });
+    expect(params.at(-1)).toEqual({ fill_import_file: 'a.xlsx' });
+  });
+
+  it('自訂屬性以物件傳出，不是 JSON 字串', () => {
+    // 字串參數會被伺服器的安全過濾洗掉 ( ) + @ 等字元，JSON 內容會被改壞
+    const plan = buildFillPlan(
+      { id: 1, sn: 'S', custom_attributes: {} },
+      { sn: 'S', custom_attributes: { contact_person: '吳沛恆 (Sales) & 分機+123' } }
+    );
+    const attrs = buildFillParams(plan).at(-1);
+    expect(typeof attrs).toBe('object');
+    expect(attrs.contact_person).toBe('吳沛恆 (Sales) & 分機+123');
+  });
+});
+
+/**
+ * 使用者回報：87 筆序號全部標成重複、可補齊卻是 0 筆，確認匯入按鈕整個點不下去。
+ *
+ * 原因是序號清單以「陣列」當查詢參數傳出去。具名查詢的參數前處理會把物件
+ * （陣列也是物件）轉成 JSON 字串，$1::text[] 收到 ["A","B"] 直接轉型失敗，
+ * 查詢整個報錯，既有資料一筆也讀不到，算出來自然是 0 筆可補。
+ */
+describe('序號清單的查詢參數', () => {
+  it('組成逗號分隔的字串，而不是陣列', () => {
+    expect(buildSnListParam(['a-1', 'b-2'])).toBe('A-1,B-2');
+    expect(typeof buildSnListParam(['a'])).toBe('string');
+  });
+
+  it('大小寫與前後空白都正規化，才對得上資料庫的比對方式', () => {
+    expect(buildSnListParam([' dfe322328070001 '])).toBe('DFE322328070001');
+  });
+
+  it('空值不會產生多餘的分隔符號', () => {
+    expect(buildSnListParam(['A', '', null, ' ', 'B'])).toBe('A,B');
+    expect(buildSnListParam([])).toBe('');
+    expect(buildSnListParam(null)).toBe('');
+  });
+
+  it('查詢以逗號拆解字串，與組參數的方式一致', () => {
+    // 換行不能當分隔符號：伺服器的參數過濾會把 CR/LF 濾掉
+    expect(queries.fetchAssetsBySnListForFill).toContain("string_to_array($1, ',')");
+    expect(queries.fetchAssetsBySnListForFill).not.toContain('$1::text[]');
   });
 });
 

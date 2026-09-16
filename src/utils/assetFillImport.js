@@ -119,6 +119,10 @@ export function getKeptFieldLabels(existing, row) {
  * 組出 fillEmptyAssetFieldsBySn 的參數。
  * 沒有要補的欄位傳 null，SQL 端會維持原值不動。
  *
+ * 自訂屬性以「物件」而非 JSON 字串回傳：具名查詢的參數前處理會對字串做安全
+ * 過濾（濾掉 ( ) + @ $ 等字元），JSON 內容會被改壞；物件則是在過濾之後才轉成
+ * JSON，內容原封不動。
+ *
  * @param {object} plan buildFillPlan 的結果
  * @param {object} [extraAttributes] 一併寫入的自訂屬性，例如這次補齊的來源檔名
  */
@@ -127,7 +131,18 @@ export function buildFillParams(plan, extraAttributes = {}) {
   const cols = FILLABLE_COLUMNS.map(({ key }) => (
     Object.prototype.hasOwnProperty.call(plan.columns, key) ? plan.columns[key] : null
   ));
-  return [plan.assetId, ...cols, JSON.stringify({ ...(plan.attributes || {}), ...extraAttributes })];
+  return [plan.assetId, ...cols, { ...(plan.attributes || {}), ...extraAttributes }];
+}
+
+/**
+ * 把序號清單組成 fetchAssetsBySnListForFill 的參數。
+ * 與該查詢的 string_to_array 分隔方式綁在一起，改一邊就會對不起來。
+ */
+export function buildSnListParam(sns) {
+  return (Array.isArray(sns) ? sns : [])
+    .map((s) => String(s || '').trim().toUpperCase())
+    .filter(Boolean)
+    .join(',');
 }
 
 /** 以序號（大寫、去空白）為索引，方便與匯入檔的序號對起來 */

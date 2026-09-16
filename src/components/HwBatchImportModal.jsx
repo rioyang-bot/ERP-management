@@ -8,7 +8,7 @@ import { logEvent, ACTION_TYPES, MODULE_MAP } from '../utils/auditLogger';
 import { parseSpreadsheetFile, fixMojibake, asText, excelSerialToDate } from '../utils/encoding';
 import { matchPartnerContact } from '../utils/partnerMatcher';
 import { findColumnValue } from '../utils/importColumnMatch';
-import { buildFillPlan, buildFillParams, getKeptFieldLabels, indexAssetsBySn } from '../utils/assetFillImport';
+import { buildFillPlan, buildFillParams, buildSnListParam, getKeptFieldLabels, indexAssetsBySn } from '../utils/assetFillImport';
 
 const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] }) => {
   const [file, setFile] = useState(null);
@@ -36,6 +36,7 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
   const [fillExisting, setFillExisting] = useState(false);
   const [existingAssets, setExistingAssets] = useState(new Map());
   const [isLoadingExisting, setIsLoadingExisting] = useState(false);
+  const [fillLoadError, setFillLoadError] = useState('');
   const [importResult, setImportResult] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -654,16 +655,28 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
   useEffect(() => {
     if (!isOpen || !fillExisting || existingSnsInFile.length === 0) {
       setExistingAssets(new Map());
+      setFillLoadError('');
       return undefined;
     }
     let cancelled = false;
     (async () => {
       setIsLoadingExisting(true);
+      setFillLoadError('');
       try {
-        const res = await window.electronAPI.namedQuery('fetchAssetsBySnListForFill', [existingSnsInFile]);
-        if (!cancelled && res.success) setExistingAssets(indexAssetsBySn(res.rows));
+        const res = await window.electronAPI.namedQuery('fetchAssetsBySnListForFill', [buildSnListParam(existingSnsInFile)]);
+        if (cancelled) return;
+        if (res.success) {
+          setExistingAssets(indexAssetsBySn(res.rows));
+        } else {
+          // 讀不到就靜靜顯示 0 筆可補，使用者只會看到按鈕點不下去而不知道為什麼
+          setExistingAssets(new Map());
+          setFillLoadError(res.error || '讀取既有資料失敗');
+        }
       } catch (e) {
-        console.error('讀取既有資產內容失敗:', e);
+        if (!cancelled) {
+          setExistingAssets(new Map());
+          setFillLoadError(e.message || '讀取既有資料失敗');
+        }
       } finally {
         if (!cancelled) setIsLoadingExisting(false);
       }
@@ -1208,6 +1221,16 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
                   {fillExisting && stats.fillable > 0 && (
                     <div style={{ marginTop: '4px', color: '#3b82f6', fontWeight: 800 }}>
                       目前檔案中有 {stats.fillable} 筆既有資產可補齊，詳見下方預覽的藍色標示。
+                    </div>
+                  )}
+                  {fillExisting && fillLoadError && (
+                    <div style={{ marginTop: '6px', color: '#ef4444', fontWeight: 800 }}>
+                      ⚠️ 讀取既有資料失敗，因此算不出可補的欄位：{fillLoadError}
+                    </div>
+                  )}
+                  {fillExisting && !fillLoadError && !isLoadingExisting && existingSnsInFile.length > 0 && stats.fillable === 0 && (
+                    <div style={{ marginTop: '4px', color: 'var(--text-main)', fontWeight: 700 }}>
+                      這 {existingSnsInFile.length} 筆既有資產在系統中的欄位都已經有值，沒有空白可補。
                     </div>
                   )}
                 </div>
@@ -2030,6 +2053,15 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
             >
               {importResult ? '關閉' : '取消'}
             </button>
+            {parsedRows.length > 0 && !importResult && (stats.valid + (fillExisting ? stats.fillable : 0)) === 0 && (
+              <span style={{ fontSize: '12px', color: '#f59e0b', fontWeight: 700, marginRight: '8px' }}>
+                {stats.duplicate > 0 && stats.valid === 0
+                  ? (fillExisting
+                      ? '這些序號都已建檔，且系統中沒有空白欄位可補，因此沒有東西要寫入。'
+                      : '這些序號都已建檔，沒有可新建的資料。若要補回當初漏填的欄位，請勾選上方的「一併補齊既有序號的空白欄位」。')
+                  : '沒有符合建立條件的資料。'}
+              </span>
+            )}
             <button
               type="button"
               disabled={isImporting || (stats.valid + (fillExisting ? stats.fillable : 0)) === 0}
