@@ -538,6 +538,8 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
         skipReason,
         existsInSystem,
         rawInstalledDate: installedDateRaw,
+        rawCustomerWarranty: customerWarrantyRaw,
+        rawSystemDate: systemDateRaw,
         rawWarrantyExpire: warrantyExpireRaw,
         custom_attributes: rowCustomAttrs
       });
@@ -1015,6 +1017,34 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
                   </span>
                 </div>
 
+                {/* 重新匯入補齊：放在參數設定裡，一打開就看得到 */}
+                <div style={{
+                  padding: '12px 14px',
+                  backgroundColor: fillExisting ? 'rgba(59, 130, 246, 0.1)' : 'var(--bg-surface-subtle)',
+                  borderRadius: '8px',
+                  border: fillExisting ? '1px solid rgba(59, 130, 246, 0.45)' : '1px solid var(--border-color)',
+                }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 800, color: 'var(--text-main)' }}>
+                    <input
+                      type="checkbox"
+                      checked={fillExisting}
+                      onChange={(e) => setFillExisting(e.target.checked)}
+                      style={{ width: '15px', height: '15px', cursor: 'pointer', flexShrink: 0 }}
+                    />
+                    一併補齊既有序號的空白欄位
+                    {isLoadingExisting && <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} />}
+                  </label>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px', lineHeight: 1.6, paddingLeft: '23px' }}>
+                    序號已經建檔、但當初有欄位漏填時勾選。系統中<b>還是空白</b>的欄位才會用檔案裡的值補上；
+                    <b>已經有值的欄位一律不會被覆蓋</b>。廠牌／類型／型號／規格屬於品項主檔，不在補齊範圍內。
+                    {fillExisting && stats.fillable > 0 && (
+                      <div style={{ marginTop: '4px', color: '#3b82f6', fontWeight: 800 }}>
+                        目前檔案中有 {stats.fillable} 筆既有設備可補齊，詳見下方預覽的藍色標示。
+                      </div>
+                    )}
+                  </div>
+                </div>
+
                 {/* 規則說明小提示 */}
                 <div style={{
                   padding: '12px 14px',
@@ -1037,7 +1067,7 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
                     </li>
                     <li>
                       <b>序號防重複檢核</b>：檔案內重複出現或已存在於系統設備清冊之序號，將自動標記為重複並阻擋重複建檔。
-                      若只是要把當初漏填的欄位補回來，可勾選預覽區的「一併補齊既有序號的空白欄位」——
+                      若只是要把當初漏填的欄位補回來，可勾選上方的「一併補齊既有序號的空白欄位」——
                       系統中還是空白的欄位才會寫入，已經有值的欄位一律不會被覆蓋。
                     </li>
                   </ul>
@@ -1607,29 +1637,13 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
                   </button>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
-                  {/* 重新匯入補齊：序號已存在的那些列，把系統裡還空著的欄位補上 */}
-                  <label
-                    style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-main)', cursor: 'pointer', fontWeight: 700 }}
-                    title="序號已存在的設備，若系統中某些欄位還是空的，就用檔案裡的值補上。已經有值的欄位一律不會被覆蓋。"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={fillExisting}
-                      onChange={(e) => setFillExisting(e.target.checked)}
-                      style={{ width: '15px', height: '15px', cursor: 'pointer' }}
-                    />
-                    一併補齊既有序號的空白欄位
-                    {isLoadingExisting && <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} />}
-                  </label>
-                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                    預計將寫入 <b style={{ color: '#10b981', fontSize: '14px' }}>{stats.valid}</b> 台設備
-                    {fillExisting && (
-                      <>
-                        ，補齊 <b style={{ color: '#3b82f6', fontSize: '14px' }}>{stats.fillable}</b> 筆
-                      </>
-                    )}
-                  </div>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                  預計將寫入 <b style={{ color: '#10b981', fontSize: '14px' }}>{stats.valid}</b> 台設備
+                  {fillExisting && (
+                    <>
+                      ，補齊 <b style={{ color: '#3b82f6', fontSize: '14px' }}>{stats.fillable}</b> 筆
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -1834,10 +1848,25 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
                                 )}
                               </td>
                               <td style={{ padding: '8px 12px', color: 'var(--text-muted)' }}>{row.location || '-'}</td>
-                              <td style={{ padding: '8px 12px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{row.installed_date || '-'}</td>
-                              <td style={{ padding: '8px 12px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{row.customer_warranty_expire || '-'}</td>
-                              <td style={{ padding: '8px 12px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{row.system_date || '-'}</td>
-                              <td style={{ padding: '8px 12px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{row.warranty_expire || '-'}</td>
+                              {[
+                                ['installed_date', 'rawInstalledDate'],
+                                ['customer_warranty_expire', 'rawCustomerWarranty'],
+                                ['system_date', 'rawSystemDate'],
+                                ['warranty_expire', 'rawWarrantyExpire'],
+                              ].map(([field, rawField]) => (
+                                <td key={field} style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>
+                                  {row[field] ? (
+                                    <span style={{ color: 'var(--text-muted)' }}>{row[field]}</span>
+                                  ) : row[rawField] ? (
+                                    // 檔案裡有值卻解析不出日期：多半是格式沒被認出來，要讓人看得見
+                                    <span style={{ color: '#ef4444', fontWeight: 700 }} title={`檔案內容「${row[rawField]}` + '」無法解析為日期，這一欄將留空'}>
+                                      ⚠️ {String(row[rawField])}
+                                    </span>
+                                  ) : (
+                                    <span style={{ color: 'var(--text-muted)' }}>-</span>
+                                  )}
+                                </td>
+                              ))}
                               {customFieldDefs.filter(f => customFieldMapping[f.id]).map(f => (
                                 <td key={f.id} style={{ padding: '8px 12px', color: 'var(--text-main)', whiteSpace: 'nowrap' }}>
                                   {row.custom_attributes?.[f.id] || <span style={{ color: 'var(--text-muted)' }}>--</span>}
