@@ -93,6 +93,11 @@
       "file": "migration_consumable_lent_qty.sql",
       "type": "schema",
       "note": "耗材借出中數量欄位，並回填既有未歸還的借用單"
+    },
+    {
+      "file": "migration_predelivery_checklist.sql",
+      "type": "schema",
+      "note": "出機檢查表：主項目、檢查項目與設備套用紀錄"
     }
   ]
 }

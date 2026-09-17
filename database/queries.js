@@ -218,6 +218,88 @@ export const queries = {
   getSystemSetting: `SELECT value FROM system_settings WHERE key = $1`,
   upsertSystemSetting: `INSERT INTO system_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
   
+  // ==========================================================================
+  // 出機檢查表 (Pre-delivery Checklist)
+  // --------------------------------------------------------------------------
+  // 範本（主項目 + 項目）與設備實際套用的內容是分開的兩塊：
+  // 設備套用時把名稱「快照」下來，範本日後被刪掉也不會讓已套用的檢查表消失。
+  // ==========================================================================
+
+  // --- 範本：主項目 ---
+  fetchChecklistGroups: `
+    SELECT g.*,
+           (SELECT COUNT(*) FROM checklist_items i WHERE i.group_id = g.id AND i.kind = 'MAIN') AS main_count,
+           (SELECT COUNT(*) FROM checklist_items i WHERE i.group_id = g.id AND i.kind = 'DETAIL') AS detail_count
+    FROM checklist_groups g
+    ORDER BY COALESCE(NULLIF(TRIM(g.brand), ''), 'zzz') ASC, g.sort_order ASC, g.id ASC
+  `,
+  insertChecklistGroup: `
+    INSERT INTO checklist_groups (name, brand, sort_order)
+    VALUES (TRIM($1), NULLIF(TRIM(COALESCE($2, '')), ''), COALESCE($3, 0))
+    RETURNING id, name, brand`,
+  updateChecklistGroup: `
+    UPDATE checklist_groups
+    SET name = TRIM($1), brand = NULLIF(TRIM(COALESCE($2, '')), ''), updated_at = CURRENT_TIMESTAMP
+    WHERE id = $3
+    RETURNING id`,
+  // 主項目刪除會連帶刪掉底下的項目（外鍵 CASCADE），
+  // 但設備已經套用出去的內容是快照，不受影響。
+  deleteChecklistGroup: `DELETE FROM checklist_groups WHERE id = $1 RETURNING id`,
+
+  // --- 範本：項目（MAIN 主要檢查功能 / DETAIL 細項）---
+  fetchChecklistItems: `
+    SELECT i.*, g.name AS group_name, g.brand AS group_brand
+    FROM checklist_items i
+    JOIN checklist_groups g ON i.group_id = g.id
+    ORDER BY i.group_id ASC, i.kind DESC, i.sort_order ASC, i.id ASC
+  `,
+  insertChecklistItem: `
+    INSERT INTO checklist_items (group_id, kind, name, sort_order)
+    VALUES ($1, $2, TRIM($3), COALESCE($4, 0))
+    RETURNING id, name, kind`,
+  updateChecklistItemName: `UPDATE checklist_items SET name = TRIM($1) WHERE id = $2 RETURNING id`,
+  deleteChecklistItem: `DELETE FROM checklist_items WHERE id = $1 RETURNING id`,
+
+  // --- 設備實際套用的檢查表 ---
+  fetchAssetChecklist: `
+    SELECT * FROM asset_checklist_items
+    WHERE asset_id = $1
+    ORDER BY sort_order ASC, id ASC
+  `,
+  // 各設備的完成度，供設備列表顯示進度。
+  // 單獨一支查詢而不是併進 fetchAssetsList：尚未套用資料庫變更時
+  // 也只有這支會失敗，不會整個設備列表讀不出來。
+  fetchAssetChecklistSummary: `
+    SELECT asset_id,
+           COUNT(*)::int AS total,
+           COUNT(*) FILTER (WHERE is_checked)::int AS done
+    FROM asset_checklist_items
+    GROUP BY asset_id
+  `,
+  // 重複套用同一個項目時不重寫，避免把已經勾好的狀態洗掉
+  insertAssetChecklistItem: `
+    INSERT INTO asset_checklist_items (asset_id, group_name, kind, item_name, source_item_id, sort_order)
+    SELECT $1::integer, TRIM($2), $3::varchar, TRIM($4), $5::integer, COALESCE($6, 0)
+    WHERE NOT EXISTS (
+      SELECT 1 FROM asset_checklist_items x
+      WHERE x.asset_id = $1::integer
+        AND UPPER(TRIM(x.group_name)) = UPPER(TRIM($2))
+        AND x.kind = $3::varchar
+        AND UPPER(TRIM(x.item_name)) = UPPER(TRIM($4))
+    )
+    RETURNING id`,
+  setAssetChecklistItemChecked: `
+    UPDATE asset_checklist_items
+    SET is_checked = $1, updated_at = CURRENT_TIMESTAMP
+    WHERE id = $2
+    RETURNING id, is_checked`,
+  deleteAssetChecklistItem: `DELETE FROM asset_checklist_items WHERE id = $1 RETURNING id`,
+  deleteAssetChecklistGroup: `
+    DELETE FROM asset_checklist_items
+    WHERE asset_id = $1 AND UPPER(TRIM(group_name)) = UPPER(TRIM($2))
+    RETURNING id`,
+  deleteAssetChecklistAll: `DELETE FROM asset_checklist_items WHERE asset_id = $1 RETURNING id`,
+
   // Dashboard / Misc
   fetchCustomers: `SELECT id, name, contact_person as contact, phone, address FROM partners WHERE partner_type = 'CUSTOMER' AND COALESCE(is_active, TRUE) = true ORDER BY name ASC, contact_person ASC`,
   fetchAssetSns: `SELECT sn FROM assets WHERE sn IS NOT NULL AND sn != ''`,

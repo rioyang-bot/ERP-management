@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Search, Columns3, Edit2, X, Save, MoreHorizontal, MoreVertical, MapPin, User, Trash2, CheckCircle, ShoppingBag, Wrench, ShieldAlert, Cpu, Archive, RotateCcw, Server, Send, History, Building2, RefreshCw, Plus } from 'lucide-react';
+import { Search, Columns3, Edit2, X, Save, MoreHorizontal, MoreVertical, MapPin, User, Trash2, CheckCircle, ShoppingBag, Wrench, ShieldAlert, Cpu, Archive, RotateCcw, Server, Send, History, Building2, RefreshCw, Plus, ClipboardCheck } from 'lucide-react';
 import ItemLedgerModal from '../components/ItemLedgerModal';
 import DeviceRegistrationModal from '../components/DeviceRegistrationModal';
 import RmaReplacementModal from '../components/RmaReplacementModal';
@@ -15,6 +15,7 @@ import { isFullyOutOfWarranty } from '../utils/warranty';
 import { getActiveSnTerm, filterMountableHw, getCommittedSns, toggleMountedSn } from '../utils/mountedHwFilter';
 import { useColumnPreferences } from '../hooks/useColumnPreferences';
 import { useCardLayoutByMode } from '../hooks/useCardLayout';
+import DeviceChecklistModal from '../components/DeviceChecklistModal';
 
 // 設備列表的欄位清單：id 對應表格的每一欄，always 代表不可隱藏
 const DEVICE_COLUMNS = [
@@ -45,7 +46,10 @@ const DeviceList = ({ isSplitMode = false }) => {
   const [brandOptions, setBrandOptions] = useState([]);
   const [typeOptions, setTypeOptions] = useState([]);
   const [projects, setProjects] = useState([]);
-  const [activeMenuId, setActiveMenuId] = useState(null); 
+  const [activeMenuId, setActiveMenuId] = useState(null);
+  // 出機檢查表：目前開啟的設備，以及各設備的完成度（asset_id -> { total, done }）
+  const [checklistDevice, setChecklistDevice] = useState(null);
+  const [checklistSummary, setChecklistSummary] = useState(() => new Map());
   const [menuPosition, setMenuPosition] = useState(null);
   const brandFilter = searchParams.get('brand');
   const [selectedCardKey, setSelectedCardKey] = useState(null);
@@ -56,6 +60,20 @@ const DeviceList = ({ isSplitMode = false }) => {
     const saved = localStorage.getItem('device_list_retired_keys');
     return saved ? JSON.parse(saved) : [];
   });
+
+  const loadChecklistSummary = useCallback(async () => {
+    try {
+      const res = await window.electronAPI.namedQuery('fetchAssetChecklistSummary');
+      if (!res.success) return;
+      const map = new Map();
+      (res.rows || []).forEach((r) => map.set(r.asset_id, { total: Number(r.total) || 0, done: Number(r.done) || 0 }));
+      setChecklistSummary(map);
+    } catch {
+      // 尚未套用資料庫變更時讀不到，這時不顯示進度即可，不影響設備列表
+    }
+  }, []);
+
+  useEffect(() => { loadChecklistSummary(); }, [loadChecklistSummary]);
 
   const handleAggregationModeChange = (mode) => {
     setAggregationMode(mode);
@@ -1197,6 +1215,27 @@ const DeviceList = ({ isSplitMode = false }) => {
                                     借用單 {item.lent_request_no}
                                   </div>
                                 )}
+                                {(() => {
+                                  const cl = checklistSummary.get(item.id);
+                                  if (!cl || cl.total === 0) return null;
+                                  const allDone = cl.done >= cl.total;
+                                  return (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); setChecklistDevice(item); }}
+                                      title={`出機檢查表：${cl.done} / ${cl.total} 項已完成（點擊開啟）`}
+                                      style={{
+                                        marginTop: '4px', padding: '1px 8px', borderRadius: '10px', cursor: 'pointer',
+                                        fontSize: '10px', fontWeight: 800, whiteSpace: 'nowrap',
+                                        border: `1px solid ${allDone ? 'rgba(16, 185, 129, 0.4)' : 'rgba(8, 145, 178, 0.4)'}`,
+                                        backgroundColor: allDone ? 'rgba(16, 185, 129, 0.12)' : 'rgba(8, 145, 178, 0.12)',
+                                        color: allDone ? '#10b981' : '#0891b2',
+                                      }}
+                                    >
+                                      檢查 {cl.done}/{cl.total}
+                                    </button>
+                                  );
+                                })()}
                               </td>
                               <td style={{ ...tdStyle, textAlign: 'center', width: '80px', position: 'relative' }}>
                                 <button 
@@ -1253,6 +1292,13 @@ const DeviceList = ({ isSplitMode = false }) => {
                                       style={{ ...menuButtonStyle, color: 'var(--text-main)' }}
                                     >
                                       <History size={14} /> 履歷 (History)
+                                    </button>
+                                    <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '2px 0' }} />
+                                    <button
+                                      onClick={() => { setActiveMenuId(null); setMenuPosition(null); setChecklistDevice(item); }}
+                                      style={{ ...menuButtonStyle, color: '#0891b2', fontWeight: '700' }}
+                                    >
+                                      <ClipboardCheck size={14} /> 出機檢查表
                                     </button>
                                     <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '2px 0' }} />
                                     <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); handleEditClick(item); }} style={menuButtonStyle}><Edit2 size={14} /> 編輯詳細資訊</button>
@@ -1326,6 +1372,14 @@ const DeviceList = ({ isSplitMode = false }) => {
             </div>
           </div>
         )}
+
+        {/* 單一設備的出機檢查表：套用項目、勾選完成與列印 */}
+        <DeviceChecklistModal
+          isOpen={!!checklistDevice}
+          device={checklistDevice}
+          onClose={() => setChecklistDevice(null)}
+          onChanged={loadChecklistSummary}
+        />
 
         {/* 設備卡片聚合規則說明（三個列表共用同一份說明） */}
         <CardAggregationLegend unit="設備" mode={aggregationMode} />
