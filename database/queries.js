@@ -300,6 +300,49 @@ export const queries = {
     RETURNING id`,
   deleteAssetChecklistAll: `DELETE FROM asset_checklist_items WHERE asset_id = $1 RETURNING id`,
 
+  // --- 依廠牌自動套用 ---
+  // 主項目綁定廠牌之後，該廠牌的每一台設備都要有這組「主要檢查功能」，
+  // 不需要逐台按套用。這支查詢把還缺的補上（已經有的不動，勾選狀態不受影響）。
+  //
+  // 廠牌留空的主項目視為通用，套用到所有設備。
+  // 寫進去的是名稱而不是外鍵參照：範本日後被刪掉，設備上已套用的內容仍然留著。
+  //
+  // $1 傳入資產 id 只同步那一台，傳 null 則同步全部。
+  syncBrandChecklistToAssets: `
+    INSERT INTO asset_checklist_items (asset_id, group_name, kind, item_name, source_item_id, sort_order)
+    SELECT a.id, g.name, 'MAIN', i.name, i.id, COALESCE(i.sort_order, 0)
+    FROM checklist_groups g
+    JOIN checklist_items i ON i.group_id = g.id AND i.kind = 'MAIN'
+    JOIN item_master m ON m.category_id = (SELECT id FROM categories WHERE name = '設備' LIMIT 1)
+                      AND (
+                        COALESCE(NULLIF(TRIM(g.brand), ''), '') = ''
+                        OR UPPER(TRIM(COALESCE(m.brand, ''))) = UPPER(TRIM(g.brand))
+                      )
+    JOIN assets a ON a.item_master_id = m.id
+    WHERE ($1::integer IS NULL OR a.id = $1::integer)
+      AND NOT EXISTS (
+        SELECT 1 FROM asset_checklist_items x
+        WHERE x.asset_id = a.id
+          AND UPPER(TRIM(x.group_name)) = UPPER(TRIM(g.name))
+          AND x.kind = 'MAIN'
+          AND UPPER(TRIM(x.item_name)) = UPPER(TRIM(i.name))
+      )
+    RETURNING id, asset_id`,
+
+  // 範本改名時讓已套用的內容跟著改。
+  // 只更新仍連著範本的那些列（source_item_id 還在）；範本已刪除的孤兒列
+  // 維持原名不動 —— 那些內容已經不歸範本管了。
+  renameAssetChecklistItemsBySource: `
+    UPDATE asset_checklist_items
+    SET item_name = TRIM($1), updated_at = CURRENT_TIMESTAMP
+    WHERE source_item_id = $2
+    RETURNING id`,
+  renameAssetChecklistGroupBySource: `
+    UPDATE asset_checklist_items
+    SET group_name = TRIM($1), updated_at = CURRENT_TIMESTAMP
+    WHERE source_item_id IN (SELECT id FROM checklist_items WHERE group_id = $2)
+    RETURNING id`,
+
   // Dashboard / Misc
   fetchCustomers: `SELECT id, name, contact_person as contact, phone, address FROM partners WHERE partner_type = 'CUSTOMER' AND COALESCE(is_active, TRUE) = true ORDER BY name ASC, contact_person ASC`,
   fetchAssetSns: `SELECT sn FROM assets WHERE sn IS NOT NULL AND sn != ''`,

@@ -9,12 +9,13 @@ import { logCreate, logDelete, logUpdate } from '../utils/auditLogger';
  * 出機檢查表範本 (Pre-delivery Checklist Templates)
  *
  * 結構是兩層：
- *   主項目（可綁定廠牌，例如「BLACKCORE 出機檢查」）
- *     ├─ 主要檢查功能：設備套用該主項目時整組帶入
- *     └─ 細項：由每台設備各自挑選要不要納入
+ *   主項目（綁定廠牌，例如「BLACKCORE 出機檢查」）
+ *     ├─ 主要檢查功能：該廠牌的每一台設備自動套用，不需逐台操作
+ *     └─ 細項：由每台設備各自挑選或自行新增
  *
- * 這裡改的是「範本」。設備套用出去的內容是當下的快照，
- * 在這裡刪掉任何項目都不會影響已經套用到設備上的檢查表。
+ * 這裡改的是「範本」。新增主項目或主要檢查功能之後會立刻同步到所有符合的
+ * 設備；但設備端保留的是套用當下的快照，在這裡刪掉任何項目都不會讓已經
+ * 套用出去的檢查表消失。
  */
 const KIND_MAIN = 'MAIN';
 const KIND_DETAIL = 'DETAIL';
@@ -35,6 +36,8 @@ const ChecklistTemplates = () => {
   // 新增項目（兩組各自一個輸入框）
   const [newItemText, setNewItemText] = useState({ [KIND_MAIN]: '', [KIND_DETAIL]: '' });
   const [editingItem, setEditingItem] = useState(null); // { id, name }
+  // 「已套用到 N 台設備」的提示，讓使用者看得到自動套用真的發生了
+  const [syncNotice, setSyncNotice] = useState('');
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -57,6 +60,23 @@ const ChecklistTemplates = () => {
   }, []);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  /**
+   * 把主項目底下的主要檢查功能補到所有符合廠牌的設備上。
+   * 新增主項目、新增主要檢查功能之後都要跑一次，使用者才不必逐台套用。
+   *
+   * @returns {number} 這次補了幾列
+   */
+  const syncToDevices = async () => {
+    try {
+      const res = await window.electronAPI.namedQuery('syncBrandChecklistToAssets', [null]);
+      if (!res.success) return 0;
+      return (res.rows || []).length;
+    } catch (e) {
+      console.error('同步至設備失敗:', e);
+      return 0;
+    }
+  };
 
   // 還沒選、或選到的主項目已被刪除時，自動選第一個
   useEffect(() => {
@@ -83,6 +103,7 @@ const ChecklistTemplates = () => {
       const created = res.rows?.[0];
       logCreate('SETTING', created?.id, name, `新增出機檢查表主項目 [${name}]${newGroup.brand ? `（廠牌: ${newGroup.brand}）` : '（通用）'}`, { name, brand: newGroup.brand || null });
       setNewGroup({ name: '', brand: '' });
+      await syncToDevices();
       await fetchAll();
       if (created?.id) setSelectedGroupId(created.id);
     } catch (err) {
@@ -96,8 +117,12 @@ const ChecklistTemplates = () => {
     try {
       const res = await window.electronAPI.namedQuery('updateChecklistGroup', [name, editingGroup.brand || null, editingGroup.id]);
       if (!res.success || (res.rows || []).length === 0) throw new Error(res.error || '找不到該主項目');
+      // 設備端已套用的分組名稱跟著改，否則同步會把新名稱再補一份進去
+      await window.electronAPI.namedQuery('renameAssetChecklistGroupBySource', [name, editingGroup.id]);
       logUpdate('SETTING', editingGroup.id, name, `修改出機檢查表主項目 [${name}]`, { name, brand: editingGroup.brand || null });
       setEditingGroup(null);
+      // 廠牌可能被改掉，改完要重新套用到新廠牌的設備
+      await syncToDevices();
       await fetchAll();
     } catch (err) {
       alert(`修改主項目失敗：${err.message}`);
@@ -130,6 +155,14 @@ const ChecklistTemplates = () => {
       if (!res.success) throw new Error(res.error || '新增失敗');
       logCreate('SETTING', res.rows?.[0]?.id, name, `新增出機檢查${kind === KIND_MAIN ? '主要功能' : '細項'} [${name}] 至 [${selectedGroup.name}]`, { group: selectedGroup.name, kind, name });
       setNewItemText((prev) => ({ ...prev, [kind]: '' }));
+
+      // 主要檢查功能一建立就要出現在所有符合廠牌的設備上
+      if (kind === KIND_MAIN) {
+        const n = await syncToDevices();
+        setSyncNotice(n > 0
+          ? `已套用到 ${n} 台${selectedGroup.brand || ''}設備`
+          : '所有符合的設備都已經有這個項目');
+      }
       await fetchAll();
     } catch (err) {
       alert(`新增失敗：${err.message}\n（同一主項目底下不可有重複的名稱）`);
@@ -142,6 +175,8 @@ const ChecklistTemplates = () => {
     try {
       const res = await window.electronAPI.namedQuery('updateChecklistItemName', [name, editingItem.id]);
       if (!res.success) throw new Error(res.error || '修改失敗');
+      // 設備端已套用的同一個項目跟著改名，否則同步會把新名稱再補一份進去
+      await window.electronAPI.namedQuery('renameAssetChecklistItemsBySource', [name, editingItem.id]);
       setEditingItem(null);
       await fetchAll();
     } catch (err) {
@@ -197,8 +232,8 @@ const ChecklistTemplates = () => {
         </div>
         <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
           {isMain
-            ? '設備套用這個主項目時，這一組會整組帶入。'
-            : '設備套用時由使用者各自挑選要納入哪些細項，不會整組帶入。'}
+            ? '新增後立即套用到所有符合廠牌的設備，不需逐台操作。'
+            : '不會自動套用；由每台設備在設備列表各自挑選，或直接新增自己的細項。'}
         </p>
 
         <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
@@ -287,6 +322,11 @@ const ChecklistTemplates = () => {
           </p>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
+          {syncNotice && (
+            <span style={{ alignSelf: 'center', fontSize: '12px', fontWeight: 800, color: '#0891b2', backgroundColor: 'rgba(8, 145, 178, 0.12)', padding: '6px 12px', borderRadius: '20px' }}>
+              {syncNotice}
+            </span>
+          )}
           <button
             type="button"
             onClick={fetchAll}
@@ -309,10 +349,13 @@ const ChecklistTemplates = () => {
         <Info size={18} color="var(--primary-color)" style={{ flexShrink: 0, marginTop: '2px' }} />
         <div style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.8 }}>
           <div>
-            • <b style={{ color: 'var(--text-main)' }}>主項目</b>可綁定廠牌。設備套用時會預設帶出自己廠牌的主項目，仍可改選其他主項目；不指定廠牌即為所有設備通用。
+            • <b style={{ color: 'var(--text-main)' }}>主項目</b>綁定廠牌。建立之後，
+            <b style={{ color: '#0891b2' }}>該廠牌的每一台設備都會自動套用</b>，不需要逐台操作；
+            不指定廠牌即為所有設備通用。
           </div>
           <div>
-            • <b style={{ color: 'var(--text-main)' }}>主要檢查功能</b>整組帶入，<b style={{ color: 'var(--text-main)' }}>細項</b>由每台設備各自挑選——每台設備要檢查的東西不盡相同。
+            • <b style={{ color: 'var(--text-main)' }}>主要檢查功能</b>是自動套用的部分；
+            <b style={{ color: 'var(--text-main)' }}>細項</b>則由每台設備在設備列表各自挑選或自行新增——每台設備要檢查的東西不盡相同。
           </div>
           <div>
             • 在這裡刪除任何項目，<b style={{ color: 'var(--text-main)' }}>都不會影響已經套用到設備上的檢查表</b>：設備端保留的是套用當下的內容。
