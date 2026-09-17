@@ -4,9 +4,12 @@
  * 預覽與實際列印用的是同一份 HTML，避免「看到的」與「印出來的」不一樣。
  * 產生 HTML 而不是 JSX，是因為列印走獨立的 iframe（直接 window.print()
  * 會把整個應用程式的版面也帶進去，印出頂部位移與空白頁）。
+ *
+ * 版面是整張表格：設備資訊採「標題｜內容」兩組併排的格狀排版（一列兩組），
+ * 檢查項目則是有項次、類別、項目、結果與備註欄的表格，方便現場拿著筆勾填。
  */
 
-/** 表頭固定要出現的欄位，順序即是印出來的順序 */
+/** 表頭固定要出現的欄位，順序即是印出來的順序（由左至右、由上而下） */
 export const SHEET_FIELDS = [
   { key: 'type', label: '類型' },
   { key: 'brand', label: '廠牌' },
@@ -38,7 +41,7 @@ export function getContactName(device) {
     || '';
 }
 
-/** 搭載硬體整理成「類型/廠牌 型號 (SN)」一行一筆 */
+/** 搭載硬體整理成「廠牌 型號（SN: xxx）」一筆一行 */
 export function formatMountedHardware(device) {
   const comps = Array.isArray(device?.components) ? device.components : [];
   return comps
@@ -62,6 +65,15 @@ export function groupChecklistItems(items) {
   return [...map.entries()].map(([name, rows]) => ({ name, rows }));
 }
 
+/** 兩個欄位併成一列，最後落單的那個把內容欄拉滿 */
+export function pairFields(fields) {
+  const pairs = [];
+  for (let i = 0; i < fields.length; i += 2) {
+    pairs.push([fields[i], fields[i + 1] || null]);
+  }
+  return pairs;
+}
+
 const fieldValue = (device, key) => {
   if (key === 'contact') return getContactName(device);
   return device?.[key] ?? '';
@@ -77,11 +89,13 @@ export function buildChecklistSheet(device, items = []) {
   const sn = device?.sn || '';
   const title = `出機檢查表 ${sn}`.trim();
 
-  const infoRows = SHEET_FIELDS.map(({ key, label }) => `
-    <tr>
-      <th>${escapeHtml(label)}</th>
-      <td>${escapeHtml(fieldValue(device, key)) || '—'}</td>
-    </tr>`).join('');
+  // 設備資訊：一列兩組「標題｜內容」
+  const infoRows = pairFields(SHEET_FIELDS).map(([left, right]) => {
+    const cell = (f) => `<th>${escapeHtml(f.label)}</th><td>${escapeHtml(fieldValue(device, f.key)) || '—'}</td>`;
+    return right
+      ? `<tr>${cell(left)}${cell(right)}</tr>`
+      : `<tr>${cell(left)}<td class="blank" colspan="2"></td></tr>`;
+  }).join('');
 
   const hardware = formatMountedHardware(device);
   const hardwareHtml = hardware.length > 0
@@ -89,29 +103,34 @@ export function buildChecklistSheet(device, items = []) {
     : '—';
 
   const groups = groupChecklistItems(items);
-  const total = (Array.isArray(items) ? items : []).length;
-  const done = (Array.isArray(items) ? items : []).filter((i) => i.is_checked).length;
+  const all = Array.isArray(items) ? items : [];
+  const total = all.length;
+  const done = all.filter((i) => i.is_checked).length;
+
+  // 檢查項目：項次、類別、項目、結果、備註
+  let seq = 0;
+  const checklistRows = groups.map((g) => {
+    const head = `
+      <tr class="group-row">
+        <td colspan="5">${escapeHtml(g.name)}</td>
+      </tr>`;
+    const rows = g.rows.map((row) => {
+      seq += 1;
+      return `
+      <tr>
+        <td class="col-seq">${seq}</td>
+        <td class="col-kind">${row.kind === 'DETAIL' ? '細項' : '主要'}</td>
+        <td class="col-item">${escapeHtml(row.item_name)}</td>
+        <td class="col-result">${row.is_checked ? '☑' : '☐'}</td>
+        <td class="col-note"></td>
+      </tr>`;
+    }).join('');
+    return head + rows;
+  }).join('');
 
   const checklistHtml = groups.length === 0
-    ? '<div class="empty">尚未套用任何檢查項目</div>'
-    : groups.map((g) => `
-      <table class="check-table">
-        <thead>
-          <tr>
-            <th class="col-check">完成</th>
-            <th class="col-kind">類別</th>
-            <th>${escapeHtml(g.name)}</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${g.rows.map((row) => `
-            <tr>
-              <td class="col-check">${row.is_checked ? '☑' : '☐'}</td>
-              <td class="col-kind">${row.kind === 'DETAIL' ? '細項' : '主要'}</td>
-              <td>${escapeHtml(row.item_name)}</td>
-            </tr>`).join('')}
-        </tbody>
-      </table>`).join('');
+    ? '<tr><td colspan="5" class="empty">尚未套用任何檢查項目</td></tr>'
+    : checklistRows;
 
   const body = `
     <div class="checklist-sheet">
@@ -125,13 +144,27 @@ export function buildChecklistSheet(device, items = []) {
           ${infoRows}
           <tr>
             <th>搭載硬體</th>
-            <td>${hardwareHtml}</td>
+            <td colspan="3">${hardwareHtml}</td>
           </tr>
         </tbody>
       </table>
 
       <div class="section-title">檢查項目（共 ${total} 項，已完成 ${done} 項）</div>
-      ${checklistHtml}
+
+      <table class="check-table">
+        <thead>
+          <tr>
+            <th class="col-seq">項次</th>
+            <th class="col-kind">類別</th>
+            <th class="col-item">檢查項目</th>
+            <th class="col-result">檢查結果</th>
+            <th class="col-note">備註</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${checklistHtml}
+        </tbody>
+      </table>
 
       <table class="sign-table">
         <tbody>
@@ -153,22 +186,37 @@ export function buildChecklistSheet(device, items = []) {
     body { margin: 0; padding: 0; background: #fff; color: #000;
            font-family: "PingFang TC", "Microsoft JhengHei", "Heiti TC", sans-serif; font-size: 12px; }
     .checklist-sheet { width: 100%; }
-    .sheet-head { text-align: center; margin-bottom: 14px; }
-    .sheet-head h1 { font-size: 20px; margin: 0; letter-spacing: 2px; }
+    .sheet-head { text-align: center; margin-bottom: 12px; }
+    .sheet-head h1 { font-size: 20px; margin: 0; letter-spacing: 3px; }
     .sheet-sub { font-size: 11px; color: #555; margin-top: 2px; }
-    table { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
-    th, td { border: 1px solid #000; padding: 5px 8px; text-align: left; vertical-align: top; word-break: break-word; }
-    .info-table th { width: 110px; background: #f1f5f9; font-weight: 700; white-space: nowrap; }
+
+    table { width: 100%; border-collapse: collapse; margin-bottom: 14px; table-layout: fixed; }
+    th, td { border: 1px solid #000; padding: 5px 8px; text-align: left; vertical-align: top;
+             word-wrap: break-word; overflow-wrap: break-word; }
+
+    .info-table th { width: 82px; background: #f1f5f9; font-weight: 700; white-space: nowrap; }
+    .info-table td.blank { background: repeating-linear-gradient(135deg, #fafafa, #fafafa 6px, #fff 6px, #fff 12px); }
     .hw-line { line-height: 1.7; }
+
     .section-title { font-size: 13px; font-weight: 800; margin: 16px 0 6px; border-left: 4px solid #000; padding-left: 8px; }
-    .check-table thead th { background: #f1f5f9; font-weight: 700; }
-    .check-table .col-check { width: 46px; text-align: center; font-size: 15px; }
-    .check-table .col-kind { width: 54px; text-align: center; white-space: nowrap; }
-    .empty { padding: 20px; text-align: center; color: #666; border: 1px dashed #999; }
-    .sign-table { margin-top: 24px; }
-    .sign-table th { width: 90px; background: #f1f5f9; font-weight: 700; white-space: nowrap; }
+
+    .check-table thead th { background: #f1f5f9; font-weight: 700; text-align: center; white-space: nowrap; }
+    .check-table .col-seq { width: 40px; text-align: center; }
+    .check-table .col-kind { width: 50px; text-align: center; white-space: nowrap; }
+    .check-table .col-result { width: 62px; text-align: center; font-size: 15px; }
+    .check-table .col-note { width: 130px; }
+    .check-table .group-row td { background: #e2e8f0; font-weight: 800; text-align: left; }
+    .check-table .empty { text-align: center; color: #666; padding: 20px; }
+
+    .sign-table { margin-top: 20px; }
+    .sign-table th { width: 78px; background: #f1f5f9; font-weight: 700; white-space: nowrap; }
     .sign-table td { height: 34px; }
+
+    thead { display: table-header-group; }
     tr { page-break-inside: avoid; }
+
+    /* 預覽是在畫面上看，留點邊界才像一張紙；列印的邊界由 @page 決定 */
+    @media screen { body { padding: 24px; } }
   `;
 
   const html = `<!DOCTYPE html>

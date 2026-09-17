@@ -4,6 +4,7 @@ import {
   formatMountedHardware,
   getContactName,
   groupChecklistItems,
+  pairFields,
   escapeHtml,
   SHEET_FIELDS,
 } from '../utils/checklistSheet';
@@ -93,6 +94,72 @@ describe('列印內容一定要有的欄位', () => {
     const positions = SHEET_FIELDS.map((f) => body.indexOf(f.label));
     expect(positions.every((p) => p >= 0)).toBe(true);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+  });
+});
+
+/**
+ * 版面是整張表格。先前預覽只是把內容塞進畫面、樣式卻只存在列印文件裡，
+ * 看到的是沒有框線的純文字，與印出來的完全是兩回事。
+ */
+describe('表格版面', () => {
+  const { body, html } = buildChecklistSheet(DEVICE, ITEMS);
+
+  it('設備資訊是「標題｜內容」兩組併排，一列放兩個欄位', () => {
+    // 類型與廠牌在同一列
+    expect(body).toMatch(/<tr><th>類型<\/th><td>SERVER<\/td><th>廠牌<\/th><td>BLACKCORE<\/td><\/tr>/);
+  });
+
+  it('搭載硬體獨佔一整列', () => {
+    expect(body).toContain('<th>搭載硬體</th>');
+    expect(body).toContain('colspan="3"');
+  });
+
+  it('檢查項目表有項次、類別、項目、結果與備註欄', () => {
+    ['項次', '類別', '檢查項目', '檢查結果', '備註'].forEach((h) => expect(body).toContain(h));
+  });
+
+  it('項次連號，跨主項目也不重來', () => {
+    const seqCells = [...body.matchAll(/<td class="col-seq">(\d+)<\/td>/g)].map((m) => Number(m[1]));
+    expect(seqCells).toEqual([1, 2, 3, 4]);
+  });
+
+  it('主項目在表格中以整列標題呈現', () => {
+    expect(body).toContain('<tr class="group-row">');
+    expect(body).toContain('BLACKCORE 出機檢查');
+  });
+
+  it('每一項都留一格空白備註供現場手寫', () => {
+    expect(body).toContain('<td class="col-note"></td>');
+  });
+
+  it('樣式與內容放在同一份文件，預覽與列印看到的一致', () => {
+    expect(html).toContain('<style>');
+    expect(html).toContain('border-collapse: collapse');
+    expect(html).toContain('@page');
+  });
+
+  it('表頭在跨頁時會重複，長清單第二頁才看得懂欄位', () => {
+    expect(html).toContain('thead { display: table-header-group; }');
+  });
+});
+
+describe('欄位兩兩成對', () => {
+  it('偶數個欄位剛好配對', () => {
+    expect(pairFields(['a', 'b', 'c', 'd'])).toEqual([['a', 'b'], ['c', 'd']]);
+  });
+
+  it('奇數個時最後一個落單，另一半補 null', () => {
+    expect(pairFields(['a', 'b', 'c'])).toEqual([['a', 'b'], ['c', null]]);
+  });
+
+  it('空清單不會出錯', () => {
+    expect(pairFields([])).toEqual([]);
+  });
+
+  it('落單時把內容欄拉滿，不會留下半截的格子', () => {
+    const odd = buildChecklistSheet({ type: 'A' }, []);
+    // 目前欄位數是偶數，這裡直接驗證落單時用的樣式存在
+    expect(odd.html).toContain('td.blank');
   });
 });
 
