@@ -6,7 +6,10 @@
  * 會把整個應用程式的版面也帶進去，印出頂部位移與空白頁）。
  *
  * 版面是整張表格：設備資訊採「標題｜內容」兩組併排的格狀排版（一列兩組），
- * 檢查項目則是有項次、類別、項目、結果與備註欄的表格，方便現場拿著筆勾填。
+ * 檢查項目則是有項次、類別、項目、結果與內容欄的表格，方便現場拿著筆勾填。
+ *
+ * 主要檢查功能印勾選結果（☑／☐）；細項記錄的是實際內容而不是做完沒有，
+ * 因此結果欄留白、把填好的內容印在內容欄（例如「OS」→「RH9.6」）。
  */
 
 /** 表頭固定要出現的欄位，順序即是印出來的順序（由左至右、由上而下） */
@@ -104,8 +107,11 @@ export function buildChecklistSheet(device, items = []) {
 
   const groups = groupChecklistItems(items);
   const all = Array.isArray(items) ? items : [];
-  const total = all.length;
-  const done = all.filter((i) => i.is_checked).length;
+  // 細項不勾選，因此完成度只算主要檢查功能
+  const mainRows = all.filter((i) => i.kind !== 'DETAIL');
+  const total = mainRows.length;
+  const done = mainRows.filter((i) => i.is_checked).length;
+  const detailCount = all.length - mainRows.length;
 
   // 檢查項目：項次、類別、項目、結果、備註
   let seq = 0;
@@ -116,13 +122,14 @@ export function buildChecklistSheet(device, items = []) {
       </tr>`;
     const rows = g.rows.map((row) => {
       seq += 1;
+      const isDetail = row.kind === 'DETAIL';
       return `
       <tr>
         <td class="col-seq">${seq}</td>
-        <td class="col-kind">${row.kind === 'DETAIL' ? '細項' : '主要'}</td>
+        <td class="col-kind">${isDetail ? '細項' : '主要'}</td>
         <td class="col-item">${escapeHtml(row.item_name)}</td>
-        <td class="col-result">${row.is_checked ? '☑' : '☐'}</td>
-        <td class="col-note"></td>
+        <td class="col-result">${isDetail ? '' : (row.is_checked ? '☑' : '☐')}</td>
+        <td class="col-note">${isDetail ? escapeHtml(row.content || '') : ''}</td>
       </tr>`;
     }).join('');
     return head + rows;
@@ -149,7 +156,7 @@ export function buildChecklistSheet(device, items = []) {
         </tbody>
       </table>
 
-      <div class="section-title">檢查項目（共 ${total} 項，已完成 ${done} 項）</div>
+      <div class="section-title">檢查項目（主要 ${total} 項，已完成 ${done} 項${detailCount > 0 ? `；細項 ${detailCount} 項` : ''}）</div>
 
       <table class="check-table">
         <thead>
@@ -158,7 +165,7 @@ export function buildChecklistSheet(device, items = []) {
             <th class="col-kind">類別</th>
             <th class="col-item">檢查項目</th>
             <th class="col-result">檢查結果</th>
-            <th class="col-note">備註</th>
+            <th class="col-note">內容 / 備註</th>
           </tr>
         </thead>
         <tbody>
@@ -204,7 +211,7 @@ export function buildChecklistSheet(device, items = []) {
     .check-table .col-seq { width: 40px; text-align: center; }
     .check-table .col-kind { width: 50px; text-align: center; white-space: nowrap; }
     .check-table .col-result { width: 62px; text-align: center; font-size: 15px; }
-    .check-table .col-note { width: 130px; }
+    .check-table .col-note { width: 160px; }
     .check-table .group-row td { background: #e2e8f0; font-weight: 800; text-align: left; }
     .check-table .empty { text-align: center; color: #666; padding: 20px; }
 

@@ -190,6 +190,71 @@ describe('出機檢查表：單一設備', () => {
     });
   });
 
+  /**
+   * 細項記錄的是「這台設備實際是什麼」而不是「做完了沒有」，
+   * 例如細項「OS」填「RH9.6」，因此不勾選、改為填內容。
+   */
+  describe('細項填內容而不是勾選', () => {
+    const WITH_DETAIL = [
+      ...AUTO_APPLIED,
+      { id: 960, group_name: 'SecretHFT 出機檢查', kind: 'DETAIL', item_name: 'OS', content: null, source_item_id: null, is_checked: false },
+    ];
+
+    it('細項沒有勾選框', async () => {
+      setup({ applied: WITH_DETAIL });
+      renderModal();
+      await screen.findByText('OS');
+      expect(screen.queryByRole('checkbox', { name: 'OS 檢查完成' })).not.toBeInTheDocument();
+      // 主要檢查功能仍然有勾選框
+      expect(screen.getByRole('checkbox', { name: 'BIOS 設定 檢查完成' })).toBeInTheDocument();
+    });
+
+    it('細項旁邊有可填寫的內容欄位', async () => {
+      setup({ applied: WITH_DETAIL });
+      renderModal();
+      expect(await screen.findByLabelText('OS 內容')).toBeInTheDocument();
+    });
+
+    it('填好內容離開欄位才寫回資料庫', async () => {
+      setup({ applied: WITH_DETAIL });
+      renderModal();
+
+      const input = await screen.findByLabelText('OS 內容');
+      await userEvent.type(input, 'RH9.6');
+      // 還在輸入中不該一直送請求
+      expect(called('setAssetChecklistItemContent')).toHaveLength(0);
+
+      await userEvent.tab();
+      await waitFor(() => expect(called('setAssetChecklistItemContent')[0].params).toEqual(['RH9.6', 960]));
+    });
+
+    it('內容沒改就不會送出多餘的更新', async () => {
+      setup({ applied: [{ ...WITH_DETAIL[2], content: 'RH9.6' }] });
+      renderModal();
+
+      const input = await screen.findByLabelText('OS 內容');
+      await userEvent.click(input);
+      await userEvent.tab();
+      expect(called('setAssetChecklistItemContent')).toHaveLength(0);
+    });
+
+    it('已填的內容會帶出來', async () => {
+      setup({ applied: [{ ...WITH_DETAIL[2], content: 'RH9.6' }] });
+      renderModal();
+      expect((await screen.findByLabelText('OS 內容')).value).toBe('RH9.6');
+    });
+
+    it('完成度只算主要檢查功能，細項不影響', async () => {
+      setup({ applied: [
+        { ...AUTO_APPLIED[0], is_checked: true },
+        { ...AUTO_APPLIED[1], is_checked: true },
+        WITH_DETAIL[2],
+      ] });
+      renderModal();
+      expect(await screen.findByText(/已完成 2 \/ 2/)).toBeInTheDocument();
+    });
+  });
+
   describe('勾選檢查完成', () => {
     it('勾選會存回資料庫', async () => {
       renderModal();
@@ -230,8 +295,14 @@ describe('出機檢查表：單一設備', () => {
       expect(await screen.findByText('BIOS 設定')).toBeInTheDocument();
       expect(screen.getByText('開機順序')).toBeInTheDocument();
 
-      await userEvent.click(screen.getByRole('checkbox', { name: '開機順序 檢查完成' }));
-      await waitFor(() => expect(called('setAssetChecklistItemChecked')[0].params).toEqual([true, 602]));
+      // 主要檢查功能仍可勾選
+      await userEvent.click(screen.getByRole('checkbox', { name: 'BIOS 設定 檢查完成' }));
+      await waitFor(() => expect(called('setAssetChecklistItemChecked')[0].params).toEqual([false, 601]));
+
+      // 細項仍可填內容
+      await userEvent.type(screen.getByLabelText('開機順序 內容'), 'NVMe 優先');
+      await userEvent.tab();
+      await waitFor(() => expect(called('setAssetChecklistItemContent')[0].params).toEqual(['NVMe 優先', 602]));
     });
 
     it('整組都沒有範本了才提供整組移除', async () => {
@@ -370,7 +441,7 @@ describe('出機檢查表：範本維護頁', () => {
       renderPage();
       await userEvent.click(await screen.findByText('SecretHFT 出機檢查'));
 
-      await userEvent.type(screen.getByPlaceholderText(/開機順序、SR-IOV 開啟/), 'IPMI 帳號');
+      await userEvent.type(screen.getByPlaceholderText(/欄位名稱，例如：OS/), 'IPMI 帳號');
       await userEvent.click(screen.getByRole('button', { name: '新增細項' }));
 
       await waitFor(() => expect(called('insertChecklistItem')).toHaveLength(1));

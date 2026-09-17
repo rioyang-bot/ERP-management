@@ -10,8 +10,9 @@ import { logCreate, logDelete, logUpdate } from '../utils/auditLogger';
  *
  * 結構是兩層：
  *   主項目（綁定廠牌，例如「BLACKCORE 出機檢查」）
- *     ├─ 主要檢查功能：該廠牌的每一台設備自動套用，不需逐台操作
- *     └─ 細項：由每台設備各自挑選或自行新增
+ *     ├─ 主要檢查功能：該廠牌的每一台設備自動套用，勾選表示檢查完成
+ *     └─ 細項：由每台設備各自挑選或自行新增，不勾選，而是填寫內容
+ *              （例如細項「OS」在設備上填「RH9.6」）
  *
  * 這裡改的是「範本」。新增主項目或主要檢查功能之後會立刻同步到所有符合的
  * 設備；但設備端保留的是套用當下的快照，在這裡刪掉任何項目都不會讓已經
@@ -232,8 +233,8 @@ const ChecklistTemplates = () => {
         </div>
         <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
           {isMain
-            ? '新增後立即套用到所有符合廠牌的設備，不需逐台操作。'
-            : '不會自動套用；由每台設備在設備列表各自挑選，或直接新增自己的細項。'}
+            ? '新增後立即套用到所有符合廠牌的設備，勾選表示檢查完成。'
+            : '不自動套用也不勾選：這裡定義的是欄位名稱（例如「OS」），由每台設備各自填寫內容（例如「RH9.6」）。'}
         </p>
 
         <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
@@ -242,7 +243,7 @@ const ChecklistTemplates = () => {
             value={newItemText[kind]}
             onChange={(e) => setNewItemText((prev) => ({ ...prev, [kind]: e.target.value }))}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddItem(kind); } }}
-            placeholder={isMain ? '例如：BIOS 設定、韌體版本確認' : '例如：開機順序、SR-IOV 開啟'}
+            placeholder={isMain ? '例如：BIOS 設定、韌體版本確認' : '欄位名稱，例如：OS、BMC IP、開機順序'}
             disabled={!selectedGroup}
             style={inputStyle}
           />
@@ -354,8 +355,9 @@ const ChecklistTemplates = () => {
             不指定廠牌即為所有設備通用。
           </div>
           <div>
-            • <b style={{ color: 'var(--text-main)' }}>主要檢查功能</b>是自動套用的部分；
-            <b style={{ color: 'var(--text-main)' }}>細項</b>則由每台設備在設備列表各自挑選或自行新增——每台設備要檢查的東西不盡相同。
+            • <b style={{ color: 'var(--text-main)' }}>主要檢查功能</b>是自動套用、需勾選完成的部分；
+            <b style={{ color: 'var(--text-main)' }}>細項</b>則由每台設備在設備列表各自挑選或自行新增，
+            <b style={{ color: '#7c3aed' }}>不勾選、改為填寫內容</b>（例如細項「OS」填「RH9.6」）。
           </div>
           <div>
             • 在這裡刪除任何項目，<b style={{ color: 'var(--text-main)' }}>都不會影響已經套用到設備上的檢查表</b>：設備端保留的是套用當下的內容。

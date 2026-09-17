@@ -80,9 +80,11 @@ describe('列印內容一定要有的欄位', () => {
     expect(body).toContain('共通檢查');
   });
 
-  it('標示總項數與完成數', () => {
-    expect(body).toContain('共 4 項');
-    expect(body).toContain('已完成 2 項');
+  it('標示主要項數與完成數，細項另計', () => {
+    // 細項不勾選，不該被算進完成度
+    expect(body).toContain('主要 3 項');
+    expect(body).toContain('已完成 1 項');
+    expect(body).toContain('細項 1 項');
   });
 
   it('留下檢查人員與日期的簽核欄位', () => {
@@ -140,6 +142,61 @@ describe('表格版面', () => {
 
   it('表頭在跨頁時會重複，長清單第二頁才看得懂欄位', () => {
     expect(html).toContain('thead { display: table-header-group; }');
+  });
+});
+
+/**
+ * 細項記錄的是「這台設備實際是什麼」而不是「做完了沒有」，
+ * 例如細項「OS」內容「RH9.6」，因此不勾選、改為印出內容。
+ */
+describe('細項印的是內容而不是勾選', () => {
+  const WITH_CONTENT = [
+    { group_name: 'G', kind: 'MAIN', item_name: 'BIOS 設定', is_checked: true },
+    { group_name: 'G', kind: 'DETAIL', item_name: 'OS', content: 'RH9.6', is_checked: false },
+    { group_name: 'G', kind: 'DETAIL', item_name: '網卡韌體', content: '', is_checked: false },
+  ];
+  const { body } = buildChecklistSheet(DEVICE, WITH_CONTENT);
+
+  it('細項的內容印在內容欄', () => {
+    expect(body).toContain('<td class="col-note">RH9.6</td>');
+  });
+
+  it('細項的檢查結果欄留白，不印勾選框', () => {
+    const rows = body.match(/<tr>\s*<td class="col-seq">\d+[\s\S]*?<\/tr>/g);
+    const osRow = rows.find((r) => r.includes('>OS<'));
+    expect(osRow).toContain('<td class="col-result"></td>');
+    expect(osRow).not.toContain('☐');
+    expect(osRow).not.toContain('☑');
+  });
+
+  it('主要檢查功能仍然印勾選結果', () => {
+    const rows = body.match(/<tr>\s*<td class="col-seq">\d+[\s\S]*?<\/tr>/g);
+    const mainRow = rows.find((r) => r.includes('BIOS 設定'));
+    expect(mainRow).toContain('☑');
+  });
+
+  it('沒填內容的細項留白供現場手寫', () => {
+    const rows = body.match(/<tr>\s*<td class="col-seq">\d+[\s\S]*?<\/tr>/g);
+    const blankRow = rows.find((r) => r.includes('網卡韌體'));
+    expect(blankRow).toContain('<td class="col-note"></td>');
+  });
+
+  it('欄名寫明是內容欄', () => {
+    expect(body).toContain('內容 / 備註');
+  });
+
+  it('內容同樣會逸出，不會變成標籤', () => {
+    const sheet = buildChecklistSheet(DEVICE, [
+      { group_name: 'G', kind: 'DETAIL', item_name: 'OS', content: '<img src=x>' },
+    ]);
+    expect(sheet.body).not.toContain('<img src=x>');
+    expect(sheet.body).toContain('&lt;img src=x&gt;');
+  });
+
+  it('完成度只算主要檢查功能', () => {
+    expect(body).toContain('主要 1 項');
+    expect(body).toContain('已完成 1 項');
+    expect(body).toContain('細項 2 項');
   });
 });
 

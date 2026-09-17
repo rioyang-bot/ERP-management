@@ -98,6 +98,11 @@
       "file": "migration_predelivery_checklist.sql",
       "type": "schema",
       "note": "出機檢查表：主項目、檢查項目與設備套用紀錄"
+    },
+    {
+      "file": "migration_checklist_detail_content.sql",
+      "type": "schema",
+      "note": "出機檢查表細項的內容欄位（細項改為填寫內容而非勾選）"
     }
   ]
 }

@@ -274,6 +274,7 @@ export const queries = {
            COUNT(*)::int AS total,
            COUNT(*) FILTER (WHERE is_checked)::int AS done
     FROM asset_checklist_items
+    WHERE kind = 'MAIN'
     GROUP BY asset_id
   `,
   // 重複套用同一個項目時不重寫，避免把已經勾好的狀態洗掉
@@ -288,6 +289,12 @@ export const queries = {
         AND UPPER(TRIM(x.item_name)) = UPPER(TRIM($4))
     )
     RETURNING id`,
+  // 細項記錄的是實際內容而不是做完沒有（例如 OS → RH9.6），因此是填值不是勾選
+  setAssetChecklistItemContent: `
+    UPDATE asset_checklist_items
+    SET content = NULLIF(TRIM($1), ''), updated_at = CURRENT_TIMESTAMP
+    WHERE id = $2
+    RETURNING id, content`,
   setAssetChecklistItemChecked: `
     UPDATE asset_checklist_items
     SET is_checked = $1, updated_at = CURRENT_TIMESTAMP
