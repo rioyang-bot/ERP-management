@@ -11,8 +11,9 @@ import { logCreate, logDelete, logUpdate } from '../utils/auditLogger';
  * 結構是兩層：
  *   主項目（綁定廠牌，例如「BLACKCORE 出機檢查」）
  *     ├─ 主要檢查功能：該廠牌的每一台設備自動套用，勾選表示檢查完成
- *     └─ 細項：由每台設備各自挑選或自行新增，不勾選，而是填寫內容
- *              （例如細項「OS」在設備上填「RH9.6」）
+ *     └─ 細項：在設備上填寫內容而不是勾選（例如細項「OS」填「RH9.6」）。
+ *              預設由每台設備各自挑選；勾「自動」之後就跟主要檢查功能一樣
+ *              自動出現在該廠牌的每一台設備上，省去逐台加的功夫。
  *
  * 這裡改的是「範本」。新增主項目或主要檢查功能之後會立刻同步到所有符合的
  * 設備；但設備端保留的是套用當下的快照，在這裡刪掉任何項目都不會讓已經
@@ -170,6 +171,29 @@ const ChecklistTemplates = () => {
     }
   };
 
+  /**
+   * 細項要不要跟著主要檢查功能一起自動套用。
+   * 像 OS、BMC IP 這種每台都要填的欄位，逐台加進去太費工。
+   */
+  const handleToggleAutoApply = async (item) => {
+    const next = !item.auto_apply;
+    try {
+      const res = await window.electronAPI.namedQuery('setChecklistItemAutoApply', [next, item.id]);
+      if (!res.success || (res.rows || []).length === 0) throw new Error(res.error || '找不到該項目');
+      if (next) {
+        const n = await syncToDevices();
+        setSyncNotice(n > 0
+          ? `「${item.name}」已套用到 ${n} 台設備`
+          : `「${item.name}」所有符合的設備都已經有了`);
+      } else {
+        setSyncNotice(`「${item.name}」之後不再自動套用；已經發出去的仍保留在各設備上`);
+      }
+      await fetchAll();
+    } catch (err) {
+      alert(`設定自動套用失敗：${err.message}`);
+    }
+  };
+
   const handleSaveItem = async () => {
     const name = (editingItem.name || '').trim();
     if (!name) return;
@@ -234,7 +258,7 @@ const ChecklistTemplates = () => {
         <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
           {isMain
             ? '新增後立即套用到所有符合廠牌的設備，勾選表示檢查完成。'
-            : '不自動套用也不勾選：這裡定義的是欄位名稱（例如「OS」），由每台設備各自填寫內容（例如「RH9.6」）。'}
+            : '這裡定義的是欄位名稱（例如「OS」），由每台設備填寫內容（例如「RH9.6」）。勾選前面的框，就跟主要檢查功能一樣自動套用到該廠牌的每一台設備。'}
         </p>
 
         <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
@@ -278,9 +302,21 @@ const ChecklistTemplates = () => {
                 backgroundColor: 'var(--bg-surface-subtle)',
               }}
             >
-              <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--text-subtle)', minWidth: '18px' }}>
-                {idx + 1}.
-              </span>
+              {isMain ? (
+                <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--text-subtle)', minWidth: '18px' }}>
+                  {idx + 1}.
+                </span>
+              ) : (
+                // 勾起來就跟主要檢查功能一樣自動套用到該廠牌的每一台設備
+                <input
+                  type="checkbox"
+                  checked={!!item.auto_apply}
+                  onChange={() => handleToggleAutoApply(item)}
+                  aria-label={`${item.name} 自動套用到所有設備`}
+                  title="勾選後，這個細項會自動出現在該廠牌的每一台設備上，不必逐台加入"
+                  style={{ width: '15px', height: '15px', cursor: 'pointer', flexShrink: 0 }}
+                />
+              )}
               {editingItem?.id === item.id ? (
                 <>
                   <input
@@ -298,6 +334,11 @@ const ChecklistTemplates = () => {
                 <>
                   <span style={{ flex: 1, fontSize: '13px', color: 'var(--text-main)', fontWeight: 600, wordBreak: 'break-word' }}>
                     {item.name}
+                    {!isMain && item.auto_apply && (
+                      <span style={{ marginLeft: '6px', fontSize: '10px', fontWeight: 800, padding: '1px 7px', borderRadius: '8px', backgroundColor: 'rgba(8, 145, 178, 0.14)', color: '#0891b2', whiteSpace: 'nowrap' }}>
+                        自動套用
+                      </span>
+                    )}
                   </span>
                   <button type="button" onClick={() => setEditingItem({ id: item.id, name: item.name })} style={iconBtn('#f59e0b')} title="修改名稱" aria-label={`修改 ${item.name}`}><Pencil size={13} /></button>
                   <button type="button" onClick={() => handleDeleteItem(item)} style={iconBtn('#ef4444')} title="刪除" aria-label={`刪除 ${item.name}`}><Trash2 size={13} /></button>
@@ -356,8 +397,10 @@ const ChecklistTemplates = () => {
           </div>
           <div>
             • <b style={{ color: 'var(--text-main)' }}>主要檢查功能</b>是自動套用、需勾選完成的部分；
-            <b style={{ color: 'var(--text-main)' }}>細項</b>則由每台設備在設備列表各自挑選或自行新增，
-            <b style={{ color: '#7c3aed' }}>不勾選、改為填寫內容</b>（例如細項「OS」填「RH9.6」）。
+            <b style={{ color: 'var(--text-main)' }}>細項</b>在設備上
+            <b style={{ color: '#7c3aed' }}>填寫內容而不是勾選</b>（例如細項「OS」填「RH9.6」）。
+            細項預設由每台設備各自挑選，若每台都要填，勾選細項前面的框即可
+            <b style={{ color: '#0891b2' }}>自動套用到該廠牌的所有設備</b>。
           </div>
           <div>
             • 在這裡刪除任何項目，<b style={{ color: 'var(--text-main)' }}>都不會影響已經套用到設備上的檢查表</b>：設備端保留的是套用當下的內容。

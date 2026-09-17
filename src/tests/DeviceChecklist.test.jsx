@@ -182,6 +182,24 @@ describe('出機檢查表：單一設備', () => {
       await waitFor(() => expect(called('deleteAssetChecklistItem')[0].params).toEqual([950]));
     });
 
+    it('設成自動套用的細項不可從單台移除，避免移掉又被補回來', async () => {
+      setup({
+        items: TEMPLATE_ITEMS.map((i) => (i.id === 23 ? { ...i, auto_apply: true } : i)),
+        applied: [
+          ...AUTO_APPLIED,
+          { id: 970, group_name: 'SecretHFT 出機檢查', kind: 'DETAIL', item_name: '開機順序', source_item_id: 23, is_checked: false },
+          { id: 971, group_name: 'SecretHFT 出機檢查', kind: 'DETAIL', item_name: 'SR-IOV 開啟', source_item_id: 24, is_checked: false },
+        ],
+      });
+      renderModal();
+      await screen.findByText('開機順序');
+
+      // 自動套用的那一個沒有移除鈕
+      expect(screen.queryByLabelText('移除 開機順序')).not.toBeInTheDocument();
+      // 逐台加入的那一個仍可移除
+      expect(screen.getByLabelText('移除 SR-IOV 開啟')).toBeInTheDocument();
+    });
+
     it('預設看的是這台設備自己廠牌的那一組', async () => {
       renderModal();
       const select = await screen.findByLabelText('主項目');
@@ -447,6 +465,55 @@ describe('出機檢查表：範本維護頁', () => {
       await waitFor(() => expect(called('insertChecklistItem')).toHaveLength(1));
       expect(called('insertChecklistItem')[0].params.slice(1, 3)).toEqual(['DETAIL', 'IPMI 帳號']);
       expect(called('syncBrandChecklistToAssets')).toHaveLength(0);
+    });
+  });
+
+  /**
+   * 細項逐台加太費工：像 OS、BMC IP 這種每台都要填的欄位，
+   * 勾起來就跟主要檢查功能一樣自動套用到該廠牌的每一台設備。
+   */
+  describe('細項也可以設成自動套用', () => {
+    it('每個細項前面都有自動套用的勾選框', async () => {
+      renderPage();
+      await userEvent.click(await screen.findByText('SecretHFT 出機檢查'));
+      expect(await screen.findByLabelText('開機順序 自動套用到所有設備')).toBeInTheDocument();
+      expect(screen.getByLabelText('SR-IOV 開啟 自動套用到所有設備')).toBeInTheDocument();
+    });
+
+    it('主要檢查功能沒有這個勾選框，它本來就一定自動套用', async () => {
+      renderPage();
+      await userEvent.click(await screen.findByText('SecretHFT 出機檢查'));
+      await screen.findByText('BIOS 設定');
+      expect(screen.queryByLabelText('BIOS 設定 自動套用到所有設備')).not.toBeInTheDocument();
+    });
+
+    it('勾選後寫回設定並立刻同步到設備', async () => {
+      renderPage();
+      await userEvent.click(await screen.findByText('SecretHFT 出機檢查'));
+
+      await userEvent.click(await screen.findByLabelText('開機順序 自動套用到所有設備'));
+
+      await waitFor(() => expect(called('setChecklistItemAutoApply')[0].params).toEqual([true, 23]));
+      await waitFor(() => expect(called('syncBrandChecklistToAssets').length).toBeGreaterThan(0));
+      expect(await screen.findByText(/「開機順序」已套用到 15 台設備/)).toBeInTheDocument();
+    });
+
+    it('取消勾選時說明已發出去的仍保留在各設備上', async () => {
+      items = items.map((i) => (i.id === 23 ? { ...i, auto_apply: true } : i));
+      renderPage();
+      await userEvent.click(await screen.findByText('SecretHFT 出機檢查'));
+
+      await userEvent.click(await screen.findByLabelText('開機順序 自動套用到所有設備'));
+
+      await waitFor(() => expect(called('setChecklistItemAutoApply')[0].params).toEqual([false, 23]));
+      expect(await screen.findByText(/已經發出去的仍保留在各設備上/)).toBeInTheDocument();
+    });
+
+    it('已設為自動套用的細項會標示出來', async () => {
+      items = items.map((i) => (i.id === 23 ? { ...i, auto_apply: true } : i));
+      renderPage();
+      await userEvent.click(await screen.findByText('SecretHFT 出機檢查'));
+      expect(await screen.findByText('自動套用')).toBeInTheDocument();
     });
   });
 

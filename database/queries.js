@@ -258,6 +258,9 @@ export const queries = {
     VALUES ($1, $2, TRIM($3), COALESCE($4, 0))
     RETURNING id, name, kind`,
   updateChecklistItemName: `UPDATE checklist_items SET name = TRIM($1) WHERE id = $2 RETURNING id`,
+  // 細項是否隨主要檢查功能一起自動套用到該廠牌的每一台設備
+  setChecklistItemAutoApply: `
+    UPDATE checklist_items SET auto_apply = $1 WHERE id = $2 RETURNING id, auto_apply`,
   deleteChecklistItem: `DELETE FROM checklist_items WHERE id = $1 RETURNING id`,
 
   // --- 設備實際套用的檢查表 ---
@@ -311,15 +314,19 @@ export const queries = {
   // 主項目綁定廠牌之後，該廠牌的每一台設備都要有這組「主要檢查功能」，
   // 不需要逐台按套用。這支查詢把還缺的補上（已經有的不動，勾選狀態不受影響）。
   //
+  // 細項預設不自動套用，但勾了 auto_apply 的也一起帶入 —— 像 OS、BMC IP
+  // 這種每台都要填的欄位，逐台加太費工。帶進去之後仍然是細項（填內容）。
+  //
   // 廠牌留空的主項目視為通用，套用到所有設備。
   // 寫進去的是名稱而不是外鍵參照：範本日後被刪掉，設備上已套用的內容仍然留著。
   //
   // $1 傳入資產 id 只同步那一台，傳 null 則同步全部。
   syncBrandChecklistToAssets: `
     INSERT INTO asset_checklist_items (asset_id, group_name, kind, item_name, source_item_id, sort_order)
-    SELECT a.id, g.name, 'MAIN', i.name, i.id, COALESCE(i.sort_order, 0)
+    SELECT a.id, g.name, i.kind, i.name, i.id, COALESCE(i.sort_order, 0)
     FROM checklist_groups g
-    JOIN checklist_items i ON i.group_id = g.id AND i.kind = 'MAIN'
+    JOIN checklist_items i ON i.group_id = g.id
+                          AND (i.kind = 'MAIN' OR COALESCE(i.auto_apply, FALSE))
     JOIN item_master m ON m.category_id = (SELECT id FROM categories WHERE name = '設備' LIMIT 1)
                       AND (
                         COALESCE(NULLIF(TRIM(g.brand), ''), '') = ''
@@ -331,7 +338,7 @@ export const queries = {
         SELECT 1 FROM asset_checklist_items x
         WHERE x.asset_id = a.id
           AND UPPER(TRIM(x.group_name)) = UPPER(TRIM(g.name))
-          AND x.kind = 'MAIN'
+          AND x.kind = i.kind
           AND UPPER(TRIM(x.item_name)) = UPPER(TRIM(i.name))
       )
     RETURNING id, asset_id`,

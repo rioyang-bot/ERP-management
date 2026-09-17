@@ -103,6 +103,11 @@
       "file": "migration_checklist_detail_content.sql",
       "type": "schema",
       "note": "出機檢查表細項的內容欄位（細項改為填寫內容而非勾選）"
+    },
+    {
+      "file": "migration_checklist_detail_auto_apply.sql",
+      "type": "schema",
+      "note": "出機檢查表細項的自動套用旗標"
     }
   ]
 }

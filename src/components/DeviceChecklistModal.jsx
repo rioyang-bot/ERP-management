@@ -210,13 +210,19 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
     }
   };
 
+  /** 範本裡仍存在、且設定為自動套用的項目 id */
+  const autoAppliedSourceIds = useMemo(
+    () => new Set(templateItems.filter((i) => i.kind === KIND_MAIN || i.auto_apply).map((i) => i.id)),
+    [templateItems]
+  );
+
   /**
    * 能不能從這台設備移除某一項。
    *
-   * 仍連著範本的主要檢查功能不可移除：那是依廠牌套用的，移掉下次開啟又會補回來。
-   * 細項（逐台決定）與範本已刪除的孤兒項目（source_item_id 為空）才可以移除。
+   * 依廠牌自動套用的項目不可移除：移掉下次開啟又會被補回來。
+   * 逐台加入的細項、以及範本已刪除的孤兒項目（source_item_id 為空）才可以移除。
    */
-  const canRemove = (row) => row.kind === KIND_DETAIL || !row.source_item_id;
+  const canRemove = (row) => !row.source_item_id || !autoAppliedSourceIds.has(row.source_item_id);
 
   const handleRemoveItem = async (row) => {
     if (!window.confirm(`確定要從這台設備的檢查表移除 [${row.item_name}] 嗎？`)) return;
