@@ -568,6 +568,48 @@ describe('出機檢查表：範本維護頁', () => {
       await waitFor(() => expect(called('syncAssetChecklistOrderBySource').length).toBeGreaterThan(0));
     });
 
+    /**
+     * 使用者回報「順序會亂跳」。
+     *
+     * 調整順序只改 sort_order、不動 items 陣列的排列，而畫面顯示的是排序後的
+     * 結果。若拿陣列原順序當基準，第一次拖完兩者就對不起來，第二次拖會依舊的
+     * 順序去算，落點自然莫名其妙。
+     */
+    it('連續拖曳兩次，第二次的基準是畫面上看到的順序', async () => {
+      items = [
+        ...TEMPLATE_ITEMS,
+        { id: 25, group_id: 2, kind: 'MAIN', name: '韌體版本', group_name: 'SecretHFT 出機檢查' },
+      ];
+      const { container } = renderPage();
+      await userEvent.click(await screen.findByText('SecretHFT 出機檢查'));
+      await screen.findByText('韌體版本');
+
+      // 初始 21 → 22 → 25；把 21 拖到 25 的位置
+      dragOnto(container, 'BIOS 設定', '韌體版本');
+      await waitFor(() => expect(called('reorderChecklistItems')[0].params).toEqual(['22,25,21']));
+
+      // 此時畫面是 22 → 25 → 21；把 22 拖到 21 的位置
+      dragOnto(container, '網路設定', 'BIOS 設定');
+      await waitFor(() => expect(called('reorderChecklistItems')).toHaveLength(2));
+      expect(called('reorderChecklistItems')[1].params).toEqual(['25,21,22']);
+    });
+
+    it('拖曳後畫面立刻換成新的順序，不必等伺服器', async () => {
+      const { container } = renderPage();
+      await userEvent.click(await screen.findByText('SecretHFT 出機檢查'));
+      await screen.findByText('BIOS 設定');
+
+      dragOnto(container, 'BIOS 設定', '網路設定');
+
+      await waitFor(() => {
+        const names = [...container.querySelectorAll('[draggable="true"]')]
+          .map((r) => r.textContent)
+          .filter((t) => t.includes('BIOS 設定') || t.includes('網路設定'));
+        expect(names[0]).toContain('網路設定');
+        expect(names[1]).toContain('BIOS 設定');
+      });
+    });
+
     it('主要檢查功能與細項不會互相拖曳', async () => {
       const { container } = renderPage();
       await userEvent.click(await screen.findByText('SecretHFT 出機檢查'));

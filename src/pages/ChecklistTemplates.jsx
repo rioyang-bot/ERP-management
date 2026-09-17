@@ -229,7 +229,12 @@ const ChecklistTemplates = () => {
     setDragOverId(null);
     if (!source || source.kind !== target.kind || source.id === target.id) return;
 
-    const sameKind = items.filter((i) => i.group_id === target.group_id && i.kind === target.kind);
+    // 基準一定要與畫面上看到的順序相同。
+    // 調整順序只改 sort_order、不動 items 陣列的排列，若直接拿陣列原順序當基準，
+    // 第一次拖完之後兩者就對不起來，第二次拖就會跳到莫名其妙的位置。
+    const sameKind = items
+      .filter((i) => i.group_id === target.group_id && i.kind === target.kind)
+      .sort(bySortOrder);
     const reordered = moveItem(sameKind, source.id, target.id);
     const orderById = new Map(reordered.map((i, idx) => [i.id, idx]));
 
