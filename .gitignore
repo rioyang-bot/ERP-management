@@ -36,3 +36,6 @@ ssl/*.srl
 ssl/*.csr
 # 暫存腳本
 scratch/
+
+# 本機預覽用的開發伺服器設定，不進版本庫
+.claude/launch.json
