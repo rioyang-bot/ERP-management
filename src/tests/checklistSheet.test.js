@@ -80,11 +80,10 @@ describe('列印內容一定要有的欄位', () => {
     expect(body).toContain('共通檢查');
   });
 
-  it('標示主要項數與完成數，細項另計', () => {
-    // 細項不勾選，不該被算進完成度
-    expect(body).toContain('主要 3 項');
+  it('檢查項目的統計只算主要檢查功能', () => {
+    // 細項獨立成一區，不勾選也不計入完成度
+    expect(body).toContain('共 3 項');
     expect(body).toContain('已完成 1 項');
-    expect(body).toContain('細項 1 項');
   });
 
   it('留下檢查人員與日期的簽核欄位', () => {
@@ -116,13 +115,19 @@ describe('表格版面', () => {
     expect(body).toContain('colspan="3"');
   });
 
-  it('檢查項目表有項次、類別、項目、結果與備註欄', () => {
-    ['項次', '類別', '檢查項目', '檢查結果', '備註'].forEach((h) => expect(body).toContain(h));
+  it('檢查項目表有項次、項目、結果與備註欄', () => {
+    ['項次', '檢查項目', '檢查結果', '備註'].forEach((h) => expect(body).toContain(h));
   });
 
-  it('項次連號，跨主項目也不重來', () => {
-    const seqCells = [...body.matchAll(/<td class="col-seq">(\d+)<\/td>/g)].map((m) => Number(m[1]));
-    expect(seqCells).toEqual([1, 2, 3, 4]);
+  it('檢查項目表不再有類別欄，因為這一區只有主要檢查功能', () => {
+    expect(body).not.toContain('col-kind');
+  });
+
+  it('檢查項目的項次連號，跨主項目也不重來', () => {
+    const table = body.match(/<table class="check-table">[\s\S]*?<\/table>/)[0];
+    const seqCells = [...table.matchAll(/<td class="col-seq">(\d+)<\/td>/g)].map((m) => Number(m[1]));
+    // 三個主要檢查功能；細項不在這張表裡
+    expect(seqCells).toEqual([1, 2, 3]);
   });
 
   it('主項目在表格中以整列標題呈現', () => {
@@ -146,43 +151,64 @@ describe('表格版面', () => {
 });
 
 /**
- * 細項記錄的是「這台設備實際是什麼」而不是「做完了沒有」，
- * 例如細項「OS」內容「RH9.6」，因此不勾選、改為印出內容。
+ * 細項是這台設備個別的內容（例如「OS」→「RH9.6」），不是主要檢查功能底下的
+ * 分支，因此列印時獨立成「細項紀錄」一區，不與檢查項目混在同一張表。
  */
-describe('細項印的是內容而不是勾選', () => {
+describe('細項紀錄獨立成一區', () => {
   const WITH_CONTENT = [
     { group_name: 'G', kind: 'MAIN', item_name: 'BIOS 設定', is_checked: true },
     { group_name: 'G', kind: 'DETAIL', item_name: 'OS', content: 'RH9.6', is_checked: false },
-    { group_name: 'G', kind: 'DETAIL', item_name: '網卡韌體', content: '', is_checked: false },
+    { group_name: 'G2', kind: 'DETAIL', item_name: '網卡韌體', content: '', is_checked: false },
   ];
   const { body } = buildChecklistSheet(DEVICE, WITH_CONTENT);
+  const detailTable = body.match(/<table class="detail-table">[\s\S]*?<\/table>/)?.[0] || '';
+  const checkTable = body.match(/<table class="check-table">[\s\S]*?<\/table>/)[0];
+
+  it('有獨立的細項紀錄區塊', () => {
+    expect(body).toContain('細項紀錄');
+    expect(detailTable).toBeTruthy();
+  });
+
+  it('細項紀錄只有項次、項目與內容三欄，沒有勾選欄', () => {
+    expect(detailTable).toContain('項目');
+    expect(detailTable).toContain('內容');
+    expect(detailTable).not.toContain('☐');
+    expect(detailTable).not.toContain('☑');
+    expect(detailTable).not.toContain('檢查結果');
+  });
 
   it('細項的內容印在內容欄', () => {
-    expect(body).toContain('<td class="col-note">RH9.6</td>');
+    expect(detailTable).toContain('RH9.6');
   });
 
-  it('細項的檢查結果欄留白，不印勾選框', () => {
-    const rows = body.match(/<tr>\s*<td class="col-seq">\d+[\s\S]*?<\/tr>/g);
-    const osRow = rows.find((r) => r.includes('>OS<'));
-    expect(osRow).toContain('<td class="col-result"></td>');
-    expect(osRow).not.toContain('☐');
-    expect(osRow).not.toContain('☑');
+  it('細項不會出現在檢查項目表裡', () => {
+    // 用整格比對：BIOS 設定本身就含有 OS 這兩個字
+    expect(checkTable).not.toContain('<td class="col-item">OS</td>');
+    expect(checkTable).not.toContain('網卡韌體');
+    expect(checkTable).toContain('BIOS 設定');
   });
 
-  it('主要檢查功能仍然印勾選結果', () => {
-    const rows = body.match(/<tr>\s*<td class="col-seq">\d+[\s\S]*?<\/tr>/g);
-    const mainRow = rows.find((r) => r.includes('BIOS 設定'));
-    expect(mainRow).toContain('☑');
+  it('細項不分主項目，平鋪呈現', () => {
+    // 細項是個別內容，不跟著主項目分段
+    expect(detailTable).not.toContain('group-row');
+  });
+
+  it('細項自己的項次從 1 開始，與檢查項目各算各的', () => {
+    const seq = [...detailTable.matchAll(/<td class="col-seq">(\d+)<\/td>/g)].map((m) => Number(m[1]));
+    expect(seq).toEqual([1, 2]);
   });
 
   it('沒填內容的細項留白供現場手寫', () => {
-    const rows = body.match(/<tr>\s*<td class="col-seq">\d+[\s\S]*?<\/tr>/g);
-    const blankRow = rows.find((r) => r.includes('網卡韌體'));
-    expect(blankRow).toContain('<td class="col-note"></td>');
+    const rows = detailTable.match(/<tr>[\s\S]*?<\/tr>/g);
+    const blank = rows.find((r) => r.includes('網卡韌體'));
+    expect(blank).toContain('<td></td>');
   });
 
-  it('欄名寫明是內容欄', () => {
-    expect(body).toContain('內容 / 備註');
+  it('沒有任何細項時不會印出空的細項紀錄區', () => {
+    const noDetail = buildChecklistSheet(DEVICE, [
+      { group_name: 'G', kind: 'MAIN', item_name: 'A', is_checked: false },
+    ]);
+    expect(noDetail.body).not.toContain('細項紀錄');
   });
 
   it('內容同樣會逸出，不會變成標籤', () => {
@@ -193,10 +219,9 @@ describe('細項印的是內容而不是勾選', () => {
     expect(sheet.body).toContain('&lt;img src=x&gt;');
   });
 
-  it('完成度只算主要檢查功能', () => {
-    expect(body).toContain('主要 1 項');
+  it('檢查項目的完成度不受細項影響', () => {
+    expect(body).toContain('共 1 項');
     expect(body).toContain('已完成 1 項');
-    expect(body).toContain('細項 2 項');
   });
 });
 

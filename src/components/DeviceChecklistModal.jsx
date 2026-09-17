@@ -248,16 +248,19 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
     }
   };
 
-  // 已套用的項目依主項目分組呈現
+  // 主要檢查功能依主項目分組呈現
   const appliedByGroup = useMemo(() => {
     const map = new Map();
-    applied.forEach((row) => {
+    applied.filter((r) => r.kind === KIND_MAIN).forEach((row) => {
       const key = row.group_name || '未分類';
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(row);
     });
     return [...map.entries()];
   }, [applied]);
+
+  // 細項是這台設備個別的內容，不是主要檢查功能底下的分支，因此獨立成一區、不分組
+  const appliedDetails = useMemo(() => applied.filter((r) => r.kind === KIND_DETAIL), [applied]);
 
   // 細項是填內容不是勾選，因此不列入完成度
   const mainRows = applied.filter((a) => a.kind === KIND_MAIN);
@@ -439,13 +442,13 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
                 <section>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', flexWrap: 'wrap' }}>
                     <CheckCircle2 size={17} color="#10b981" />
-                    <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 900, color: 'var(--text-main)' }}>這台設備的檢查項目</h3>
+                    <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 900, color: 'var(--text-main)' }}>檢查項目</h3>
                     <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 700 }}>
-                      （主要 {autoCount} 項，已完成 {doneCount}；細項 {applied.length - autoCount} 項）
+                      （共 {autoCount} 項，已完成 {doneCount}）
                     </span>
                   </div>
 
-                  {applied.length === 0 ? (
+                  {appliedByGroup.length === 0 ? (
                     <div style={{ ...card, padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
                       這台設備目前沒有任何檢查項目。請先到「報表中心 → 出機檢查表」為
                       {device.brand ? `「${device.brand}」` : '這個廠牌'}建立主項目與主要檢查功能。
@@ -469,46 +472,21 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
                           )}
                         </div>
                         {rows.map((row) => {
-                          const isDetail = row.kind === KIND_DETAIL;
                           return (
                           <div
                             key={row.id}
-                            style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 8px', borderRadius: '8px', backgroundColor: (!isDetail && row.is_checked) ? 'rgba(16, 185, 129, 0.07)' : 'transparent' }}
+                            style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 8px', borderRadius: '8px', backgroundColor: row.is_checked ? 'rgba(16, 185, 129, 0.07)' : 'transparent' }}
                           >
-                            {isDetail ? (
-                              // 細項記錄的是內容而不是做完沒有，因此沒有勾選框
-                              <span style={{ width: '17px', flexShrink: 0 }} />
-                            ) : (
-                              <input
-                                type="checkbox"
-                                checked={!!row.is_checked}
-                                onChange={() => handleToggleChecked(row)}
-                                aria-label={`${row.item_name} 檢查完成`}
-                                style={{ width: '17px', height: '17px', cursor: 'pointer', flexShrink: 0 }}
-                              />
-                            )}
-                            <span style={{
-                              fontSize: '11px', fontWeight: 800, padding: '1px 7px', borderRadius: '8px', whiteSpace: 'nowrap',
-                              backgroundColor: !isDetail ? 'rgba(8, 145, 178, 0.12)' : 'rgba(124, 58, 237, 0.12)',
-                              color: !isDetail ? '#0891b2' : '#7c3aed',
-                            }}>
-                              {!isDetail ? '主要' : '細項'}
-                            </span>
-                            <span style={{ flex: isDetail ? '0 0 150px' : 1, fontSize: '13px', color: 'var(--text-main)', fontWeight: 600, wordBreak: 'break-word', textDecoration: (!isDetail && row.is_checked) ? 'line-through' : 'none', opacity: (!isDetail && row.is_checked) ? 0.7 : 1 }}>
+                            <input
+                              type="checkbox"
+                              checked={!!row.is_checked}
+                              onChange={() => handleToggleChecked(row)}
+                              aria-label={`${row.item_name} 檢查完成`}
+                              style={{ width: '17px', height: '17px', cursor: 'pointer', flexShrink: 0 }}
+                            />
+                            <span style={{ flex: 1, fontSize: '13px', color: 'var(--text-main)', fontWeight: 600, wordBreak: 'break-word', textDecoration: row.is_checked ? 'line-through' : 'none', opacity: row.is_checked ? 0.7 : 1 }}>
                               {row.item_name}
                             </span>
-                            {isDetail && (
-                              <input
-                                type="text"
-                                value={contentDraft[row.id] !== undefined ? contentDraft[row.id] : (row.content || '')}
-                                onChange={(e) => handleContentChange(row.id, e.target.value)}
-                                onBlur={() => handleContentCommit(row)}
-                                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } }}
-                                placeholder="內容，例如：RH9.6"
-                                aria-label={`${row.item_name} 內容`}
-                                style={{ flex: 1, minWidth: 0, padding: '5px 9px', borderRadius: '6px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', fontSize: '13px', outline: 'none' }}
-                              />
-                            )}
                             {canRemove(row) ? (
                               <button
                                 type="button"
@@ -537,11 +515,67 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.7, marginTop: '4px' }}>
                     <Info size={14} style={{ flexShrink: 0, marginTop: '2px' }} />
                     <span>
-                      標示「主要」的是依廠牌自動套用的檢查功能，勾選表示檢查完成；要增減請到「報表中心 → 出機檢查表」調整範本。
-                      標示「細項」的不勾選，直接在右邊填寫這台設備的實際內容（例如「OS」填「RH9.6」），離開欄位即自動儲存。
+                      這一區是依廠牌自動套用的主要檢查功能，勾選表示檢查完成；要增減請到「報表中心 → 出機檢查表」調整範本。
                     </span>
                   </div>
                 </section>
+
+                {/* 細項紀錄：這台設備個別的內容，與檢查項目分開 */}
+                {appliedDetails.length > 0 && (
+                  <section>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', flexWrap: 'wrap' }}>
+                      <Tag size={17} color="#7c3aed" />
+                      <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 900, color: 'var(--text-main)' }}>細項紀錄</h3>
+                      <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 700 }}>
+                        （{appliedDetails.length} 項，填寫這台設備的實際內容）
+                      </span>
+                    </div>
+
+                    <div style={{ ...card, padding: '14px' }}>
+                      {appliedDetails.map((row) => (
+                        <div key={row.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 8px' }}>
+                          <span style={{ flex: '0 0 160px', fontSize: '13px', color: 'var(--text-main)', fontWeight: 700, wordBreak: 'break-word' }}>
+                            {row.item_name}
+                          </span>
+                          <input
+                            type="text"
+                            value={contentDraft[row.id] !== undefined ? contentDraft[row.id] : (row.content || '')}
+                            onChange={(e) => handleContentChange(row.id, e.target.value)}
+                            onBlur={() => handleContentCommit(row)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } }}
+                            aria-label={`${row.item_name} 內容`}
+                            style={{ flex: 1, minWidth: 0, padding: '5px 9px', borderRadius: '6px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', fontSize: '13px', outline: 'none' }}
+                          />
+                          {canRemove(row) ? (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveItem(row)}
+                              title="移除此細項"
+                              aria-label={`移除 ${row.item_name}`}
+                              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '26px', height: '26px', padding: 0, borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: '#ef4444', cursor: 'pointer', flexShrink: 0 }}
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          ) : (
+                            <span
+                              title="依廠牌自動套用的細項，需到「報表中心 → 出機檢查表」調整範本"
+                              style={{ fontSize: '11px', color: 'var(--text-subtle)', fontWeight: 700, whiteSpace: 'nowrap', width: '26px', textAlign: 'center' }}
+                            >
+                              自動
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.7, marginTop: '8px' }}>
+                      <Info size={14} style={{ flexShrink: 0, marginTop: '2px' }} />
+                      <span>
+                        細項不勾選，記錄的是這台設備個別的內容（例如「OS」填「RH9.6」），離開欄位即自動儲存；不列入上方的完成度。
+                      </span>
+                    </div>
+                  </section>
+                )}
               </>
             )}
           </div>

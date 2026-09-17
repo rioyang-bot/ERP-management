@@ -5,11 +5,13 @@
  * 產生 HTML 而不是 JSX，是因為列印走獨立的 iframe（直接 window.print()
  * 會把整個應用程式的版面也帶進去，印出頂部位移與空白頁）。
  *
- * 版面是整張表格：設備資訊採「標題｜內容」兩組併排的格狀排版（一列兩組），
- * 檢查項目則是有項次、類別、項目、結果與內容欄的表格，方便現場拿著筆勾填。
+ * 版面是整張表格：設備資訊採「標題｜內容」兩組併排的格狀排版（一列兩組）。
  *
- * 主要檢查功能印勾選結果（☑／☐）；細項記錄的是實際內容而不是做完沒有，
- * 因此結果欄留白、把填好的內容印在內容欄（例如「OS」→「RH9.6」）。
+ * 檢查項目與細項各自獨立成一區，不混在同一張表 —— 細項記錄的是這台設備
+ * 個別的內容（例如「OS」→「RH9.6」），不是主要檢查功能底下的分支：
+ *
+ *   檢查項目：主要檢查功能，依主項目分段，勾選 ☑／☐ 表示檢查完成
+ *   細項紀錄：項目與內容兩欄，沒有勾選欄
  */
 
 /** 表頭固定要出現的欄位，順序即是印出來的順序（由左至右、由上而下） */
@@ -111,33 +113,58 @@ export function buildChecklistSheet(device, items = []) {
   const mainRows = all.filter((i) => i.kind !== 'DETAIL');
   const total = mainRows.length;
   const done = mainRows.filter((i) => i.is_checked).length;
-  const detailCount = all.length - mainRows.length;
 
-  // 檢查項目：項次、類別、項目、結果、備註
+
+  // 檢查項目：只放主要檢查功能，依主項目分段
   let seq = 0;
-  const checklistRows = groups.map((g) => {
+  const mainGroups = groups
+    .map((g) => ({ name: g.name, rows: g.rows.filter((r) => r.kind !== 'DETAIL') }))
+    .filter((g) => g.rows.length > 0);
+
+  const checklistRows = mainGroups.map((g) => {
     const head = `
       <tr class="group-row">
-        <td colspan="5">${escapeHtml(g.name)}</td>
+        <td colspan="4">${escapeHtml(g.name)}</td>
       </tr>`;
     const rows = g.rows.map((row) => {
       seq += 1;
-      const isDetail = row.kind === 'DETAIL';
       return `
       <tr>
         <td class="col-seq">${seq}</td>
-        <td class="col-kind">${isDetail ? '細項' : '主要'}</td>
         <td class="col-item">${escapeHtml(row.item_name)}</td>
-        <td class="col-result">${isDetail ? '' : (row.is_checked ? '☑' : '☐')}</td>
-        <td class="col-note">${isDetail ? escapeHtml(row.content || '') : ''}</td>
+        <td class="col-result">${row.is_checked ? '☑' : '☐'}</td>
+        <td class="col-note"></td>
       </tr>`;
     }).join('');
     return head + rows;
   }).join('');
 
-  const checklistHtml = groups.length === 0
-    ? '<tr><td colspan="5" class="empty">尚未套用任何檢查項目</td></tr>'
+  const checklistHtml = mainGroups.length === 0
+    ? '<tr><td colspan="4" class="empty">尚未套用任何檢查項目</td></tr>'
     : checklistRows;
+
+  // 細項紀錄：這台設備個別的內容，獨立一區，沒有勾選欄
+  const detailRows = all.filter((r) => r.kind === 'DETAIL');
+  const detailHtml = detailRows.length === 0 ? '' : `
+      <div class="section-title">細項紀錄</div>
+
+      <table class="detail-table">
+        <thead>
+          <tr>
+            <th class="col-seq">項次</th>
+            <th class="col-name">項目</th>
+            <th>內容</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${detailRows.map((row, idx) => `
+          <tr>
+            <td class="col-seq">${idx + 1}</td>
+            <td class="col-name">${escapeHtml(row.item_name)}</td>
+            <td>${escapeHtml(row.content || '')}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
 
   const body = `
     <div class="checklist-sheet">
@@ -156,22 +183,22 @@ export function buildChecklistSheet(device, items = []) {
         </tbody>
       </table>
 
-      <div class="section-title">檢查項目（主要 ${total} 項，已完成 ${done} 項${detailCount > 0 ? `；細項 ${detailCount} 項` : ''}）</div>
+      <div class="section-title">檢查項目（共 ${total} 項，已完成 ${done} 項）</div>
 
       <table class="check-table">
         <thead>
           <tr>
             <th class="col-seq">項次</th>
-            <th class="col-kind">類別</th>
             <th class="col-item">檢查項目</th>
             <th class="col-result">檢查結果</th>
-            <th class="col-note">內容 / 備註</th>
+            <th class="col-note">備註</th>
           </tr>
         </thead>
         <tbody>
           ${checklistHtml}
         </tbody>
       </table>
+${detailHtml}
 
       <table class="sign-table">
         <tbody>
@@ -207,13 +234,13 @@ export function buildChecklistSheet(device, items = []) {
 
     .section-title { font-size: 13px; font-weight: 800; margin: 16px 0 6px; border-left: 4px solid #000; padding-left: 8px; }
 
-    .check-table thead th { background: #f1f5f9; font-weight: 700; text-align: center; white-space: nowrap; }
-    .check-table .col-seq { width: 40px; text-align: center; }
-    .check-table .col-kind { width: 50px; text-align: center; white-space: nowrap; }
+    .check-table thead th, .detail-table thead th { background: #f1f5f9; font-weight: 700; text-align: center; white-space: nowrap; }
+    .check-table .col-seq, .detail-table .col-seq { width: 40px; text-align: center; }
     .check-table .col-result { width: 62px; text-align: center; font-size: 15px; }
     .check-table .col-note { width: 160px; }
     .check-table .group-row td { background: #e2e8f0; font-weight: 800; text-align: left; }
     .check-table .empty { text-align: center; color: #666; padding: 20px; }
+    .detail-table .col-name { width: 180px; font-weight: 700; }
 
     .sign-table { margin-top: 20px; }
     .sign-table th { width: 78px; background: #f1f5f9; font-weight: 700; white-space: nowrap; }
