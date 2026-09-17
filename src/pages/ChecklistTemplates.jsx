@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
-  ClipboardCheck, Plus, Trash2, Pencil, Check, X, Layers, ListChecks, Info, Tag, RefreshCw,
+  ClipboardCheck, Plus, Trash2, Pencil, Check, X, Layers, ListChecks, Info, Tag, RefreshCw, GripVertical,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { logCreate, logDelete, logUpdate } from '../utils/auditLogger';
+import { moveItem, buildOrderParam } from '../utils/reorderList';
 
 /**
  * 出機檢查表範本 (Pre-delivery Checklist Templates)
@@ -40,6 +41,9 @@ const ChecklistTemplates = () => {
   const [editingItem, setEditingItem] = useState(null); // { id, name }
   // 「已套用到 N 台設備」的提示，讓使用者看得到自動套用真的發生了
   const [syncNotice, setSyncNotice] = useState('');
+  // 拖曳排序中的項目
+  const [draggingItem, setDraggingItem] = useState(null); // { id, kind }
+  const [dragOverId, setDragOverId] = useState(null);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -91,8 +95,9 @@ const ChecklistTemplates = () => {
     () => items.filter((i) => i.group_id === selectedGroupId),
     [items, selectedGroupId]
   );
-  const mainItems = groupItems.filter((i) => i.kind === KIND_MAIN);
-  const detailItems = groupItems.filter((i) => i.kind === KIND_DETAIL);
+  const bySortOrder = (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.id - b.id;
+  const mainItems = groupItems.filter((i) => i.kind === KIND_MAIN).sort(bySortOrder);
+  const detailItems = groupItems.filter((i) => i.kind === KIND_DETAIL).sort(bySortOrder);
 
   // --- 主項目 ---
   const handleAddGroup = async (e) => {
@@ -194,6 +199,53 @@ const ChecklistTemplates = () => {
     }
   };
 
+  // --- 拖曳排序 ---
+  const handleItemDragStart = (e, item) => {
+    setDraggingItem({ id: item.id, kind: item.kind });
+    e.dataTransfer.effectAllowed = 'move';
+    // 某些瀏覽器要有資料才會啟動拖曳
+    e.dataTransfer.setData('text/plain', String(item.id));
+  };
+
+  const handleItemDragOver = (e, item) => {
+    if (!draggingItem || draggingItem.kind !== item.kind) return;
+    e.preventDefault();
+    setDragOverId(item.id);
+  };
+
+  const handleItemDragEnd = () => {
+    setDraggingItem(null);
+    setDragOverId(null);
+  };
+
+  /**
+   * 放開時把新的順序寫回去。
+   * 畫面先換好順序再送出，拖完不必等伺服器才看到結果；失敗則重新讀回。
+   */
+  const handleItemDrop = async (e, target) => {
+    e.preventDefault();
+    const source = draggingItem;
+    setDraggingItem(null);
+    setDragOverId(null);
+    if (!source || source.kind !== target.kind || source.id === target.id) return;
+
+    const sameKind = items.filter((i) => i.group_id === target.group_id && i.kind === target.kind);
+    const reordered = moveItem(sameKind, source.id, target.id);
+    const orderById = new Map(reordered.map((i, idx) => [i.id, idx]));
+
+    setItems((prev) => prev.map((i) => (orderById.has(i.id) ? { ...i, sort_order: orderById.get(i.id) } : i)));
+
+    try {
+      const res = await window.electronAPI.namedQuery('reorderChecklistItems', [buildOrderParam(reordered)]);
+      if (!res.success) throw new Error(res.error || '排序失敗');
+      // 設備上已套用的項目跟著換順序，列印出來才與範本一致
+      await window.electronAPI.namedQuery('syncAssetChecklistOrderBySource');
+    } catch (err) {
+      alert(`調整順序失敗：${err.message}`);
+      await fetchAll();
+    }
+  };
+
   const handleSaveItem = async () => {
     const name = (editingItem.name || '').trim();
     if (!name) return;
@@ -259,6 +311,7 @@ const ChecklistTemplates = () => {
           {isMain
             ? '新增後立即套用到所有符合廠牌的設備，勾選表示檢查完成。'
             : '這裡定義的是欄位名稱（例如「OS」），由每台設備填寫內容（例如「RH9.6」）。勾選前面的框，就跟主要檢查功能一樣自動套用到該廠牌的每一台設備。'}
+          {list.length > 1 && '　拖曳左側的握把即可調整順序，設備上與列印的先後會跟著改。'}
         </p>
 
         <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
@@ -296,12 +349,27 @@ const ChecklistTemplates = () => {
           ) : list.map((item, idx) => (
             <div
               key={item.id}
+              draggable={!editingItem}
+              onDragStart={(e) => handleItemDragStart(e, item)}
+              onDragOver={(e) => handleItemDragOver(e, item)}
+              onDrop={(e) => handleItemDrop(e, item)}
+              onDragEnd={handleItemDragEnd}
               style={{
                 display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px',
-                borderRadius: '8px', border: '1px solid var(--border-color)',
+                borderRadius: '8px',
+                border: dragOverId === item.id && draggingItem?.id !== item.id
+                  ? `2px solid ${accent}`
+                  : '1px solid var(--border-color)',
                 backgroundColor: 'var(--bg-surface-subtle)',
+                opacity: draggingItem?.id === item.id ? 0.4 : 1,
               }}
             >
+              <span
+                title="按住拖曳可調整順序"
+                style={{ display: 'flex', alignItems: 'center', color: 'var(--text-subtle)', cursor: 'grab', flexShrink: 0 }}
+              >
+                <GripVertical size={14} />
+              </span>
               {isMain ? (
                 <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--text-subtle)', minWidth: '18px' }}>
                   {idx + 1}.

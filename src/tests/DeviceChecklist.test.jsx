@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
@@ -514,6 +514,70 @@ describe('出機檢查表：範本維護頁', () => {
       renderPage();
       await userEvent.click(await screen.findByText('SecretHFT 出機檢查'));
       expect(await screen.findByText('自動套用')).toBeInTheDocument();
+    });
+  });
+
+  /**
+   * 拖曳排序
+   *
+   * 排序規則本身有另一支單元測試，這裡驗證的是「畫面真的有接上」——
+   * 規則對但沒接上，使用者拖了半天順序還是原樣。
+   */
+  describe('拖曳調整順序', () => {
+    /** 以假的 dataTransfer 模擬把某一列拖到另一列上 */
+    const dragOnto = (container, sourceText, targetText) => {
+      const rows = [...container.querySelectorAll('[draggable="true"]')];
+      const source = rows.find((r) => r.textContent.includes(sourceText));
+      const target = rows.find((r) => r.textContent.includes(targetText));
+      expect(source).toBeTruthy();
+      expect(target).toBeTruthy();
+      const dataTransfer = { setData: vi.fn(), getData: () => '', effectAllowed: '' };
+      fireEvent.dragStart(source, { dataTransfer });
+      fireEvent.dragOver(target, { dataTransfer });
+      fireEvent.drop(target, { dataTransfer });
+    };
+
+    it('主要檢查功能可以拖曳，而且順序寫得回去', async () => {
+      const { container } = renderPage();
+      await userEvent.click(await screen.findByText('SecretHFT 出機檢查'));
+      await screen.findByText('BIOS 設定');
+
+      dragOnto(container, 'BIOS 設定', '網路設定');
+
+      // 21 = BIOS 設定、22 = 網路設定；拖到網路設定的位置後兩者互換
+      await waitFor(() => expect(called('reorderChecklistItems')[0].params).toEqual(['22,21']));
+    });
+
+    it('細項也可以拖曳排序', async () => {
+      const { container } = renderPage();
+      await userEvent.click(await screen.findByText('SecretHFT 出機檢查'));
+      await screen.findByText('開機順序');
+
+      dragOnto(container, 'SR-IOV 開啟', '開機順序');
+
+      await waitFor(() => expect(called('reorderChecklistItems')[0].params).toEqual(['24,23']));
+    });
+
+    it('排完順序會一併同步到設備上已套用的項目', async () => {
+      const { container } = renderPage();
+      await userEvent.click(await screen.findByText('SecretHFT 出機檢查'));
+      await screen.findByText('BIOS 設定');
+
+      dragOnto(container, 'BIOS 設定', '網路設定');
+
+      await waitFor(() => expect(called('syncAssetChecklistOrderBySource').length).toBeGreaterThan(0));
+    });
+
+    it('主要檢查功能與細項不會互相拖曳', async () => {
+      const { container } = renderPage();
+      await userEvent.click(await screen.findByText('SecretHFT 出機檢查'));
+      await screen.findByText('BIOS 設定');
+
+      // 把主要檢查功能拖到細項上
+      dragOnto(container, 'BIOS 設定', '開機順序');
+
+      await waitFor(() => {});
+      expect(called('reorderChecklistItems')).toHaveLength(0);
     });
   });
 

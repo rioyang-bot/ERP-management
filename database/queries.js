@@ -262,6 +262,28 @@ export const queries = {
   setChecklistItemAutoApply: `
     UPDATE checklist_items SET auto_apply = $1 WHERE id = $2 RETURNING id, auto_apply`,
   deleteChecklistItem: `DELETE FROM checklist_items WHERE id = $1 RETURNING id`,
+  // 拖曳排序：一次把整組的順序寫回去。
+  // id 以逗號分隔的字串傳入而不是陣列 —— 具名查詢的參數前處理會把陣列
+  // 轉成 JSON 字串，::integer[] 收到 ["1","2"] 會轉型失敗。
+  // 順序就是字串裡的先後（WITH ORDINALITY）。
+  reorderChecklistItems: `
+    UPDATE checklist_items ci
+    SET sort_order = o.idx
+    FROM (
+      SELECT t.val::integer AS id, t.ord::integer AS idx
+      FROM unnest(string_to_array($1, ',')) WITH ORDINALITY AS t(val, ord)
+    ) o
+    WHERE ci.id = o.id
+    RETURNING ci.id`,
+  // 範本重新排序後，讓設備上仍連著範本的項目跟著換順序，
+  // 否則畫面與列印出來的先後會與範本對不起來。
+  // 範本已刪除的孤兒項目（source_item_id 為空）維持原順序。
+  syncAssetChecklistOrderBySource: `
+    UPDATE asset_checklist_items a
+    SET sort_order = i.sort_order, updated_at = CURRENT_TIMESTAMP
+    FROM checklist_items i
+    WHERE a.source_item_id = i.id AND a.sort_order IS DISTINCT FROM i.sort_order
+    RETURNING a.id`,
 
   // --- 設備實際套用的檢查表 ---
   fetchAssetChecklist: `
