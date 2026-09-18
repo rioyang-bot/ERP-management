@@ -14,7 +14,7 @@ import WarrantyBadge from '../components/WarrantyBadge';
 import { isFullyOutOfWarranty } from '../utils/warranty';
 import { getActiveSnTerm, filterMountableHw, getCommittedSns, toggleMountedSn } from '../utils/mountedHwFilter';
 import { useColumnPreferences } from '../hooks/useColumnPreferences';
-import { joinParts } from '../utils/assetColumns';
+import AssetIdentityCell from '../components/common/AssetIdentityCell';
 import { useCardLayoutByMode } from '../hooks/useCardLayout';
 import DeviceChecklistModal from '../components/DeviceChecklistModal';
 
@@ -1078,19 +1078,16 @@ const DeviceList = ({ isSplitMode = false }) => {
                           return (
                             <tr key={item.id} style={{ borderBottom: '1px solid var(--table-border)', backgroundColor: item.status === 'SCRAPPED' ? 'rgba(239, 68, 68, 0.08)' : 'transparent' }}>
                               <td style={{ ...tdStyle, maxWidth: '220px' }}>
-                                <div style={{ fontWeight: 800, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
-                                  {joinParts(item.type, item.brand)}
-                                  {item.ownership === 'COMPANY' && (
-                                    <span style={{ fontSize: '10px', padding: '2px 6px', backgroundColor: '#8b5cf6', color: 'white', borderRadius: '4px', whiteSpace: 'nowrap' }}>公司資產</span>
-                                  )}
-                                </div>
-                                {/* 規格可能很長，截斷並以 title 顯示全文，免得整欄被撐開 */}
-                                <div
-                                  style={{ fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-                                  title={joinParts(item.model, item.specification)}
+                                <AssetIdentityCell
+                                  type={item.type}
+                                  brand={item.brand}
+                                  model={item.model}
+                                  specification={item.specification}
                                 >
-                                  {joinParts(item.model, item.specification)}
-                                </div>
+                                  {item.ownership === 'COMPANY' && (
+                                    <span style={{ fontSize: '10px', padding: '2px 6px', backgroundColor: '#8b5cf6', color: 'white', borderRadius: '4px', whiteSpace: 'nowrap', marginLeft: '4px' }}>公司資產</span>
+                                  )}
+                                </AssetIdentityCell>
                               </td>
                               <td style={{ ...tdStyle, fontWeight: 800, fontFamily: 'monospace', color: 'var(--primary-color)', whiteSpace: 'nowrap', ...hideCol('sn') }}>
                                 {item.sn}

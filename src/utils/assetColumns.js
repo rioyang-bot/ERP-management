@@ -23,3 +23,15 @@ export function joinParts(...parts) {
 }
 
 export default joinParts;
+
+/**
+ * 首欄四個識別欄位各自的顏色。
+ *
+ * 取自主題變數而非寫死色碼，深淺色主題各有一組值（見 index.css）。
+ */
+export const ASSET_PART_COLORS = {
+  type: 'var(--asset-type-color)',
+  brand: 'var(--asset-brand-color)',
+  model: 'var(--asset-model-color)',
+  specification: 'var(--asset-spec-color)',
+};

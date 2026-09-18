@@ -12,7 +12,7 @@ import ColumnVisibilityModal from '../components/ColumnVisibilityModal';
 import CardAggregationLegend from '../components/CardAggregationLegend';
 import { isFullyOutOfWarranty } from '../utils/warranty';
 import { useColumnPreferences } from '../hooks/useColumnPreferences';
-import { joinParts } from '../utils/assetColumns';
+import AssetIdentityCell from '../components/common/AssetIdentityCell';
 import { useCardLayoutByMode } from '../hooks/useCardLayout';
 
 // 硬體列表的欄位清單：id 對應表格的每一欄，always 代表不可隱藏
@@ -942,19 +942,16 @@ const HwList = ({ isSplitMode = false }) => {
             return (
               <tr key={nic.id} style={{ borderBottom: '1px solid var(--table-border)', backgroundColor: nic.status === 'SCRAPPED' ? 'rgba(239, 68, 68, 0.08)' : 'transparent' }}>
                 <td style={{ ...tdStyle, maxWidth: '220px' }}>
-                  <div style={{ fontWeight: 800, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
-                    {joinParts(nic.type, nic.brand)}
-                    {nic.ownership === 'COMPANY' && (
-                      <span style={{ fontSize: '10px', padding: '2px 6px', backgroundColor: '#8b5cf6', color: 'white', borderRadius: '4px', whiteSpace: 'nowrap' }}>公司資產</span>
-                    )}
-                  </div>
-                  {/* 規格可能很長，截斷並以 title 顯示全文，免得整欄被撐開 */}
-                  <div
-                    style={{ fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-                    title={joinParts(nic.model, nic.specification)}
+                  <AssetIdentityCell
+                    type={nic.type}
+                    brand={nic.brand}
+                    model={nic.model}
+                    specification={nic.specification}
                   >
-                    {joinParts(nic.model, nic.specification)}
-                  </div>
+                    {nic.ownership === 'COMPANY' && (
+                      <span style={{ fontSize: '10px', padding: '2px 6px', backgroundColor: '#8b5cf6', color: 'white', borderRadius: '4px', whiteSpace: 'nowrap', marginLeft: '4px' }}>公司資產</span>
+                    )}
+                  </AssetIdentityCell>
                 </td>
                 <td style={{ ...tdStyle, fontWeight: 800, fontFamily: 'monospace', color: 'var(--primary-color)', whiteSpace: 'nowrap', ...hideCol('sn') }}>{nic.sn || '(未設定)'}</td>
                 <td style={{ ...tdStyle, fontWeight: 700, color: 'var(--text-main)', ...hideCol('project') }}>

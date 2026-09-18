@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import DeviceList from '../pages/DeviceList';
@@ -73,8 +73,11 @@ describe('設備／硬體列表的欄位編排', () => {
 
   it('設備列表首欄上行是類型與廠牌，下行是型號與規格', async () => {
     await showDevices();
-    expect(screen.getByText('SERVER / BLACKCORE')).toBeInTheDocument();
-    expect(screen.getByText('BCHFT-1PC / 56C')).toBeInTheDocument();
+    const cell = screen.getByText('X0344311').closest('tr').querySelector('td');
+    // 分隔線的左右間距來自 CSS margin，textContent 裡不含空白
+    const lines = [...cell.children].map((el) => el.textContent.replace(/s+/g, ' ').trim());
+    expect(lines[0]).toContain('SERVER/BLACKCORE');
+    expect(lines[1]).toBe('BCHFT-1PC/56C');
   });
 
   it('設備列表不再有獨立的規格欄與 End-user 欄', async () => {
@@ -98,8 +101,12 @@ describe('設備／硬體列表的欄位編排', () => {
     expect(screen.getByRole('columnheader', { name: '類型 / 廠牌 / 型號 / 規格' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: '客戶 / End-user' })).toBeInTheDocument();
     expect(screen.queryByRole('columnheader', { name: '規格 (Spec)' })).not.toBeInTheDocument();
-    expect(screen.getByText('NIC / MELLANOX')).toBeInTheDocument();
-    expect(screen.getByText('CX556A / 100G')).toBeInTheDocument();
+
+    const cell = screen.getAllByText('HW-001').find((el) => el.closest('tr'))
+      .closest('tr').querySelector('td');
+    const lines = [...cell.children].map((el) => el.textContent.replace(/s+/g, ' ').trim());
+    expect(lines[0]).toContain('NIC/MELLANOX');
+    expect(lines[1]).toBe('CX556A/100G');
   });
 });
 
@@ -128,5 +135,97 @@ describe('欄位值的組合', () => {
 
   it('數字 0 要保留，不能當成空值', () => {
     expect(joinParts(0, 'X')).toBe('0 / X');
+  });
+});
+
+/**
+ * 首欄四個欄位的配色
+ *
+ * 併成一欄之後，四段文字擠在兩行裡，全黑就看不出斷點在哪。
+ * 上行走青色系、下行走琥珀色系（兩行分得開），每一行左淺右深
+ * （同一行內分得出哪一段是哪個欄位）。
+ * 色碼取自主題變數，深淺主題各一組，不是寫死在元件裡。
+ */
+describe('首欄的配色', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.electronAPI = {
+      namedQuery: vi.fn((query) => {
+        if (query === 'fetchAssetsList' || query === 'fetchAssetsListByBrand') {
+          return Promise.resolve({ success: true, rows: [DEVICE] });
+        }
+        return Promise.resolve({ success: true, rows: [] });
+      }),
+      runTransaction: vi.fn(),
+      saveFile: vi.fn(),
+      getDashboardStats: vi.fn(),
+      getUserPreference: vi.fn().mockResolvedValue({ success: true, value: null }),
+      setUserPreference: vi.fn().mockResolvedValue({ success: true }),
+    };
+  });
+
+  const renderRow = async () => {
+    render(<MemoryRouter initialEntries={['/devices?brand=BLACKCORE']}><DeviceList /></MemoryRouter>);
+    await screen.findByText('X0344311');
+  };
+
+  /** 首欄的儲存格；頁面其他地方（聚合卡片、篩選標籤）也有同樣的字，必須限縮範圍 */
+  const identityCell = () => screen.getByText('X0344311').closest('tr').querySelector('td');
+
+  it.each([
+    ['類型', 'SERVER', 'var(--asset-type-color)'],
+    ['廠牌', 'BLACKCORE', 'var(--asset-brand-color)'],
+    ['型號', 'BCHFT-1PC', 'var(--asset-model-color)'],
+    ['規格', '56C', 'var(--asset-spec-color)'],
+  ])('%s 用自己的顏色', async (_label, text, cssVar) => {
+    await renderRow();
+    expect(within(identityCell()).getByText(text)).toHaveStyle({ color: cssVar });
+  });
+
+  it('四段各自獨立，不是併成一串文字', async () => {
+    await renderRow();
+    // 併成一串的話這四個就找不到個別的節點
+    ['SERVER', 'BLACKCORE', 'BCHFT-1PC', '56C'].forEach((t) => {
+      expect(within(identityCell()).getByText(t)).toBeInTheDocument();
+    });
+  });
+
+  it('分隔線不跟著染色，維持中性灰', async () => {
+    await renderRow();
+    const separators = [...identityCell().querySelectorAll('span')].filter((el) => el.textContent === '/');
+    expect(separators).toHaveLength(2);
+    separators.forEach((el) => expect(el).toHaveStyle({ color: 'var(--text-subtle)' }));
+  });
+
+  it('缺值時不會留下孤立的分隔線', async () => {
+    const noSpec = { ...DEVICE, specification: '' };
+    window.electronAPI.namedQuery = vi.fn((query) =>
+      Promise.resolve({ success: true, rows: (query === 'fetchAssetsList' || query === 'fetchAssetsListByBrand') ? [noSpec] : [] }));
+    await renderRow();
+
+    const line = screen.getByText('BCHFT-1PC').closest('div');
+    expect(line.textContent.replace(/s+/g, ' ').trim()).toBe('BCHFT-1PC');
+  });
+});
+
+describe('配色的來源', () => {
+  it('四個欄位各自對應一個主題變數，沒有寫死色碼', async () => {
+    const { ASSET_PART_COLORS } = await import('../utils/assetColumns');
+    expect(Object.values(ASSET_PART_COLORS)).toEqual([
+      'var(--asset-type-color)',
+      'var(--asset-brand-color)',
+      'var(--asset-model-color)',
+      'var(--asset-spec-color)',
+    ]);
+    Object.values(ASSET_PART_COLORS).forEach((c) => expect(c).not.toMatch(/#[0-9a-f]{3,6}/i));
+  });
+
+  it('深淺兩種主題各定義一組色碼', async () => {
+    const fs = await import('fs');
+    const css = fs.readFileSync('src/index.css', 'utf8');
+    for (const name of ['--asset-type-color', '--asset-brand-color', '--asset-model-color', '--asset-spec-color']) {
+      // 一組給預設（淺色），一組給 [data-theme='dark']
+      expect(css.split(`${name}:`).length - 1).toBe(2);
+    }
   });
 });
