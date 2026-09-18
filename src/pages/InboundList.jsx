@@ -83,6 +83,8 @@ const InboundList = ({ isSplitMode = false }) => {
     setEditData({
       partner_id: order.partner_id || '',
       invoice_no: order.invoice_no || '',
+      // 舊資料可能沒有 order_date，退回建檔當天，日期欄位才不會是空的
+      order_date: (order.effective_date || order.order_date || order.created_at || '').toString().slice(0, 10),
       attachments: parsedAttachments
     });
     setIsDetailLoading(true);
@@ -144,24 +146,27 @@ const InboundList = ({ isSplitMode = false }) => {
       const res = await window.electronAPI.namedQuery('updateInboundOrderHeader', [
         editData.partner_id || null, 
         editData.invoice_no || null, 
-        JSON.stringify(editData.attachments), 
-        selectedOrder.id
+        JSON.stringify(editData.attachments),
+        selectedOrder.id,
+        editData.order_date || null
       ]);
       if (res.success) {
         logUpdate(
           'INBOUND',
           selectedOrder.order_no,
           selectedOrder.partner_name || '進貨單',
-          `修改進貨單 [${selectedOrder.order_no}] 發票/供應商/附件`,
-          { orderNo: selectedOrder.order_no, partnerId: editData.partner_id, invoiceNo: editData.invoice_no, attachmentsCount: editData.attachments.length }
+          `修改進貨單 [${selectedOrder.order_no}] 進貨日期/發票/供應商/附件`,
+          { orderNo: selectedOrder.order_no, orderDate: editData.order_date, partnerId: editData.partner_id, invoiceNo: editData.invoice_no, attachmentsCount: editData.attachments.length }
         );
         alert('儲存成功！');
         setIsEditing(false);
         fetchRecords();
         setSelectedOrder(prev => ({
-           ...prev, 
+           ...prev,
            partner_id: editData.partner_id,
            invoice_no: editData.invoice_no,
+           order_date: editData.order_date,
+           effective_date: editData.order_date,
            attachments: JSON.stringify(editData.attachments),
            // 清空供應商時要一併清掉顯示的名稱，不能沿用舊值
            partner_name: editData.partner_id
@@ -320,7 +325,8 @@ const InboundList = ({ isSplitMode = false }) => {
               <thead style={{ position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)' }}>
                 <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--border-color)', backgroundColor: 'var(--table-header-bg)' }}>
                   <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>進貨單號</th>
-                  <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>進貨建立時間</th>
+                  <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>進貨日期</th>
+                  <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>建立時間</th>
                   <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>供應商</th>
                   <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>發票號碼</th>
                   <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>操作</th>
@@ -328,13 +334,16 @@ const InboundList = ({ isSplitMode = false }) => {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan="5" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>讀取中...</td></tr>
+                  <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>讀取中...</td></tr>
                 ) : currentRecords.length === 0 ? (
-                  <tr><td colSpan="5" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>目前尚無進貨單資料</td></tr>
+                  <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>目前尚無進貨單資料</td></tr>
                 ) : currentRecords.map(order => (
                   <tr key={order.id} className="row-hover" style={{ borderBottom: '1px solid var(--table-border)', color: 'var(--text-main)' }}>
                     <td style={{ padding: '12px', fontWeight: 700, color: 'var(--text-main)' }}>{order.order_no}</td>
-                    <td style={{ padding: '12px', color: 'var(--text-muted)' }}>{new Date(order.created_at).toLocaleString()}</td>
+                    <td style={{ padding: '12px', color: 'var(--text-main)', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                      {(order.effective_date || order.order_date || order.created_at || '').toString().slice(0, 10)}
+                    </td>
+                    <td style={{ padding: '12px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{new Date(order.created_at).toLocaleString()}</td>
                     <td style={{ padding: '12px', color: order.partner_name ? 'var(--text-main)' : 'var(--text-subtle)', fontWeight: 600 }}>{order.partner_name || '待補填'}</td>
                     <td style={{ padding: '12px', color: order.invoice_no ? 'var(--text-main)' : 'var(--text-subtle)' }}>{order.invoice_no || '--'}</td>
                     <td style={{ padding: '12px', whiteSpace: 'nowrap' }}>
@@ -402,7 +411,8 @@ const InboundList = ({ isSplitMode = false }) => {
                   {isEditing && <span style={{fontSize: '0.9rem', color: '#16a34a', backgroundColor: 'rgba(22, 163, 74, 0.15)', padding: '4px 8px', borderRadius: '6px'}}>編輯模式</span>}
                 </h2>
                 <div style={{ display: 'flex', gap: '20px', color: 'var(--text-muted)', fontSize: '0.9rem', fontWeight: 500 }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Calendar size={14} /> 建立時間：{new Date(selectedOrder.created_at).toLocaleString()}</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Calendar size={14} /> 進貨日期：{(selectedOrder.effective_date || selectedOrder.order_date || selectedOrder.created_at || '').toString().slice(0, 10)}</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>建立時間：{new Date(selectedOrder.created_at).toLocaleString()}</span>
                   {!isEditing && <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><FileText size={14} /> 供應商：{selectedOrder.partner_name || '待補填'}</span>}
                 </div>
               </div>
@@ -418,6 +428,16 @@ const InboundList = ({ isSplitMode = false }) => {
               {isEditing ? (
                  <div style={{ marginBottom: '24px', display: 'flex', gap: '16px', flexDirection: 'column' }}>
                     <div style={{ display: 'flex', gap: '16px' }}>
+                       <div style={{ flex: 1 }}>
+                          <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, color: 'var(--text-muted)' }} htmlFor="edit-inbound-date">進貨日期</label>
+                          <input
+                            id="edit-inbound-date"
+                            type="date"
+                            value={editData.order_date || ''}
+                            onChange={e => setEditData({ ...editData, order_date: e.target.value })}
+                            style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', outline: 'none' }}
+                          />
+                       </div>
                        <div style={{ flex: 1 }}>
                           <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, color: 'var(--text-muted)' }}>發票號碼</label>
                           <input type="text" value={editData.invoice_no} onChange={e => setEditData({...editData, invoice_no: e.target.value})} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', outline: 'none' }} />

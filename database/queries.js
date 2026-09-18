@@ -740,8 +740,12 @@ export const queries = {
   `,
   insertInboundItemMaster: `INSERT INTO item_master (specification, type, brand, unit, category_id, purchase_price) VALUES ($1, UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g'))), UPPER(TRIM(REGEXP_REPLACE(COALESCE($3, ''), '[[:space:]]+', ' ', 'g'))), $4, (SELECT id FROM categories WHERE name = $5), 0) RETURNING id`,
   countInboundOrders: `WITH seqs AS (SELECT CAST(SUBSTRING(order_no FROM '-([0-9]+)$') AS INTEGER) as sq FROM inbound_orders WHERE order_no LIKE $1 || '%') SELECT s.val as count FROM generate_series(1, 1000) as s(val) WHERE NOT EXISTS (SELECT 1 FROM seqs WHERE seqs.sq = s.val) ORDER BY s.val ASC LIMIT 1`,
-  insertInboundOrder: `INSERT INTO inbound_orders (order_no, partner_id, invoice_no, status, attachments) VALUES ($1, $2, $3, $4, $5::jsonb) RETURNING id`,
-  updateInboundOrderHeader: `UPDATE inbound_orders SET partner_id = $1, invoice_no = $2, attachments = $3::jsonb WHERE id = $4`,
+  // 進貨日期要真的存下來：先前只拿畫面上的日期編單號，order_date 落到
+  // 資料庫預設的今天，補登舊貨時單號是舊的、日期卻是今天。
+  insertInboundOrder: `INSERT INTO inbound_orders (order_no, partner_id, invoice_no, status, attachments, order_date) VALUES ($1, $2, $3, $4, $5::jsonb, COALESCE($6::date, CURRENT_DATE)) RETURNING id`,
+  // 日期打錯要改得回來，與供應商、發票號碼同一個編輯入口。
+  // 只改單頭，不會動到明細、庫存或採購單的已入庫數量。
+  updateInboundOrderHeader: `UPDATE inbound_orders SET partner_id = $1, invoice_no = $2, attachments = $3::jsonb, order_date = COALESCE($5::date, order_date) WHERE id = $4 RETURNING id`,
   insertInboundAssets: `INSERT INTO assets (sn, item_master_id, status, custom_attributes) VALUES ($1, $2, 'ACTIVE', jsonb_build_object('project_name', $3::text))`,
   insertInboundItems: `INSERT INTO inbound_items (inbound_order_id, item_id, sn, quantity, purchase_record_id, unit_price) VALUES ($1, $2, $3, $4, $5, 0)`,
   updateStockQtyOnInbound: `UPDATE item_master SET stock_qty = stock_qty + $1 WHERE id = $2`,
@@ -760,7 +764,7 @@ export const queries = {
   // 刪除進貨單時把入庫加上的庫存扣回來
   reverseStockQtyOnInboundDelete: `UPDATE item_master SET stock_qty = GREATEST(COALESCE(stock_qty, 0) - $1, 0) WHERE id = $2 RETURNING id`,
   updatePurchaseRecordStatus: `UPDATE purchase_records SET received_quantity = COALESCE(received_quantity, 0) + $1, status = CASE WHEN COALESCE(received_quantity, 0) + $1 >= quantity THEN 'COMPLETED' ELSE 'PARTIAL' END, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
-  fetchInboundList: `SELECT io.*, p.name as partner_name, (SELECT pr.project_name FROM inbound_items ii JOIN purchase_records pr ON ii.purchase_record_id = pr.id WHERE ii.inbound_order_id = io.id AND pr.project_name IS NOT NULL LIMIT 1) as project_name FROM inbound_orders io LEFT JOIN partners p ON io.partner_id = p.id ORDER BY io.created_at DESC`,
+  fetchInboundList: `SELECT io.*, COALESCE(io.order_date, io.created_at::date) AS effective_date, p.name as partner_name, (SELECT pr.project_name FROM inbound_items ii JOIN purchase_records pr ON ii.purchase_record_id = pr.id WHERE ii.inbound_order_id = io.id AND pr.project_name IS NOT NULL LIMIT 1) as project_name FROM inbound_orders io LEFT JOIN partners p ON io.partner_id = p.id ORDER BY io.created_at DESC`,
   fetchInboundItems: `
       SELECT ii.*, im.specification, im.brand, im.model, c.name as category_name, pr.order_no as po_order_no
       FROM inbound_items ii 

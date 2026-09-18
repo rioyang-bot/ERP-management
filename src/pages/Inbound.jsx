@@ -348,7 +348,7 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
       steps.push({
         id: 'order',
         queryName: 'insertInboundOrder',
-        params: [orderNo, partnerId || null, invoiceNo, 'COMPLETED', JSON.stringify(attachments)],
+        params: [orderNo, partnerId || null, invoiceNo, 'COMPLETED', JSON.stringify(attachments), inboundDate || null],
       });
 
       items.forEach((item, idx) => {
