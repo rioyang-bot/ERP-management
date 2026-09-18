@@ -142,12 +142,27 @@ describe('進貨單：快速建檔品項', () => {
       .toEqual({ spec: '26C / 256G', type: 'SERVER', brand: 'SUPERMICRO', model: 'SYS-1029P' });
   });
 
-  it('切換類別會改讀該類別的既有值，單位也跟著換', async () => {
+  it('切換類別會改讀該類別的既有值', async () => {
     await openQuickAdd();
 
     await userEvent.click(screen.getByRole('radio', { name: /耗材/ }));
 
     await waitFor(() => expect(called('fetchExistingCards').some((c) => c.params[0] === '耗材')).toBe(true));
-    expect(screen.getByPlaceholderText('台 / 個 / 條').value).toBe('個');
+  });
+
+  it('不必填單位，依類別自動帶入', async () => {
+    await openQuickAdd();
+    // 單位由類別決定，畫面上不出現這個欄位
+    expect(screen.queryByText(/單位 (Unit)/)).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('radio', { name: /耗材/ }));
+    await userEvent.type(screen.getByPlaceholderText('例如：SUPERMICRO'), 'METECH');
+    await userEvent.type(screen.getByPlaceholderText('例如：SERVER'), '光纖線');
+    await userEvent.type(screen.getByPlaceholderText('例如：SYS-1029P'), 'LC-LC-OM4-3M');
+    await userEvent.click(screen.getByRole('button', { name: /儲存並帶入單據/ }));
+
+    await waitFor(() => expect(called('insertItemMaster')).toHaveLength(1));
+    // 耗材論個、設備論台
+    expect(called('insertItemMaster')[0].params[4]).toBe('個');
   });
 });

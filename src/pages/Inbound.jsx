@@ -20,7 +20,7 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
   // 先前只有一個「品項名稱」，它被寫進規格欄位，廠牌與類型存成空字串、
   // 型號根本沒寫入，建出來的品項在清單上會變成「未知／未分類／未設定型號」。
   const [quickAddData, setQuickAddData] = useState({
-    type_cat: '設備', brand: '', type: '', model: '', spec: '', unit: '台',
+    type_cat: '設備', brand: '', type: '', model: '', spec: '',
   });
   // 既有品項的廠牌/類型/型號/規格，供輸入建議使用（避免打錯字又生出新的一張卡）
   const [quickAddOptions, setQuickAddOptions] = useState([]);
@@ -279,6 +279,9 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
     return () => { cancelled = true; };
   }, [showQuickAdd, quickAddData.type_cat]);
 
+  // 單位不需要使用者填：設備論台、其餘論個，與系統其他建檔的預設一致
+  const unitForCategory = (cat) => (cat === '設備' ? '台' : '個');
+
   const handleQuickAddSave = async () => {
     const brand = quickAddData.brand.trim();
     const type = quickAddData.type.trim();
@@ -291,14 +294,14 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
 
     const res = await window.electronAPI.namedQuery(
       'insertItemMaster',
-      [quickAddData.spec.trim(), type, brand, model, quickAddData.unit.trim() || '個', quickAddData.type_cat]
+      [quickAddData.spec.trim(), type, brand, model, unitForCategory(quickAddData.type_cat), quickAddData.type_cat]
     );
     if (res.success) {
       const newId = res.rows[0].id;
       await fetchData();
-      setItems(items.map(row => row.id === activeRowId ? { ...row, itemId: newId, cat_name: quickAddData.type_cat, unit: quickAddData.unit } : row));
+      setItems(items.map(row => row.id === activeRowId ? { ...row, itemId: newId, cat_name: quickAddData.type_cat, unit: unitForCategory(quickAddData.type_cat) } : row));
       setShowQuickAdd(false);
-      setQuickAddData({ type_cat: '設備', brand: '', type: '', model: '', spec: '', unit: '台' });
+      setQuickAddData({ type_cat: '設備', brand: '', type: '', model: '', spec: '' });
     } else {
       alert('新增失敗：' + res.error);
     }
@@ -779,11 +782,7 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
                       <input
                         type="radio"
                         checked={quickAddData.type_cat === cat}
-                        onChange={() => setQuickAddData({
-                          ...quickAddData,
-                          type_cat: cat,
-                          unit: cat === '設備' ? '台' : '個',
-                        })}
+                        onChange={() => setQuickAddData({ ...quickAddData, type_cat: cat })}
                       /> {cat}
                     </label>
                   ))}
@@ -862,16 +861,6 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
                 </datalist>
               </div>
 
-              <div>
-                <label style={labelStyle}>單位 (Unit)</label>
-                <input
-                  type="text"
-                  value={quickAddData.unit}
-                  onChange={(e) => setQuickAddData({ ...quickAddData, unit: e.target.value })}
-                  placeholder="台 / 個 / 條"
-                  style={inputStyle}
-                />
-              </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '32px' }}>
               <button onClick={() => setShowQuickAdd(false)} style={modalCancelButtonStyle}>取消</button>
