@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import InboundList from '../pages/InboundList';
-import { buildSnRenameSteps, validateSnRename, isSameSn } from '../utils/snRename';
+import { buildSnRenameSteps, validateSnRename, isSameSn, summariseSnRename } from '../utils/snRename';
 
 /**
  * 從進貨單上更正序號
@@ -49,7 +49,7 @@ describe('進貨單明細：更正序號', () => {
       if (query === 'fetchInboundItems') return Promise.resolve({ success: true, rows: ITEMS });
       return Promise.resolve({ success: true, rows: [] });
     });
-    runTransaction.mockResolvedValue({ success: true, results: {} });
+    runTransaction.mockResolvedValue({ success: true, results: { asset: { rowCount: 1 }, inbound: { rowCount: 1 } } });
     window.electronAPI = {
       namedQuery,
       runTransaction,
@@ -89,6 +89,7 @@ describe('進貨單明細：更正序號', () => {
     await waitFor(() => expect(runTransaction).toHaveBeenCalledTimes(1));
     const steps = runTransaction.mock.calls[0][0];
     expect(steps.map((s) => s.queryName)).toEqual([
+      'assertAssetSnFree',
       'renameAssetSn',
       'updateMountedHardwareServerSn',
       'renameMountedHwSnOnDevices',
@@ -96,13 +97,40 @@ describe('進貨單明細：更正序號', () => {
       'updateOutboundItemsSn',
       'updateRepairItemsSn',
     ]);
-    steps.forEach((s) => expect(s.params).toEqual(['U5M16V560126', 'U5M16V560125']));
+    steps.slice(1).forEach((s) => expect(s.params).toEqual(['U5M16V560126', 'U5M16V560125']));
   });
 
-  it('資產那一步改不到時整批退回，不會只改掉單據', async () => {
-    const steps = buildSnRenameSteps('U5M16V560125', 'U5M16V560126');
-    expect(steps[0].expectRows).toBe(1);
-    expect(steps[0].errorMessage).toMatch(/未變更/);
+  it('告訴使用者實際改了哪些地方，不是只說成功', async () => {
+    runTransaction.mockResolvedValue({ success: true, results: {
+      asset: { rowCount: 1 }, devices: { rowCount: 1 }, inbound: { rowCount: 1 }, outbound: { rowCount: 2 },
+    } });
+    await renameTo('U5M16V560126');
+
+    await waitFor(() => expect(window.alert).toHaveBeenCalled());
+    const msg = window.alert.mock.calls.at(-1)[0];
+    expect(msg).toContain('資產 1 筆');
+    expect(msg).toContain('設備的硬體清單 1 筆');
+    expect(msg).toContain('出貨明細 2 筆');
+  });
+
+  it('資產列表沒有這個序號時，單據照樣更正，並提醒去確認資產', async () => {
+    runTransaction.mockResolvedValue({ success: true, results: { asset: { rowCount: 0 }, inbound: { rowCount: 1 } } });
+    await renameTo('U5M16V560126');
+
+    await waitFor(() => expect(window.alert).toHaveBeenCalled());
+    const msg = window.alert.mock.calls.at(-1)[0];
+    expect(msg).toContain('資產列表中沒有序號 [U5M16V560125]');
+    expect(msg).toContain('進貨明細 1 筆');
+  });
+
+  it('交易失敗時把原因原樣告訴使用者', async () => {
+    runTransaction.mockResolvedValue({ success: false, error: '序號 [X] 已經被其他資產使用，請改用別的序號；這次未做任何變更。' });
+    await renameTo('U5M16V560126');
+
+    await waitFor(() => expect(window.alert).toHaveBeenCalledWith(
+      expect.stringContaining('已經被其他資產使用')));
+    // 失敗就不要重抓明細，畫面維持原狀
+    expect(calls.filter((c) => c.query === 'fetchInboundItems')).toHaveLength(1);
   });
 
   it('成功後重新讀取明細，畫面顯示新序號', async () => {
@@ -154,6 +182,50 @@ describe('序號更正的輸入檢查', () => {
 
   it('送進交易的序號已去掉前後空白', () => {
     const steps = buildSnRenameSteps('  OLD  ', '  NEW  ');
-    expect(steps[0].params).toEqual(['NEW', 'OLD']);
+    expect(steps.find((x) => x.id === 'asset').params).toEqual(['NEW', 'OLD']);
+    expect(steps.find((x) => x.id === 'guard').params).toEqual(['NEW']);
+  });
+});
+
+describe('更正結果的回報', () => {
+  it('把每一步的異動筆數整理成一句話', () => {
+    const { text, assetChanged } = summariseSnRename({
+      asset: { rowCount: 1 }, mountedHw: { rowCount: 3 }, inbound: { rowCount: 1 },
+      outbound: { rowCount: 0 }, repair: { rowCount: 0 },
+    });
+    expect(text).toBe('資產 1 筆、底下掛載的硬體 3 筆、進貨明細 1 筆');
+    expect(assetChanged).toBe(true);
+  });
+
+  it('資產沒有異動時會標示出來', () => {
+    expect(summariseSnRename({ inbound: { rowCount: 1 } }).assetChanged).toBe(false);
+  });
+
+  it('結果缺漏也不會出錯', () => {
+    expect(summariseSnRename(undefined).text).toBe('沒有任何資料符合');
+  });
+});
+
+describe('更正序號的護欄', () => {
+  const steps = buildSnRenameSteps('OLD-1', 'NEW-1');
+  const byId = (id) => steps.find((s) => s.id === id);
+
+  it('新序號被別的資產用走時整批退回', () => {
+    expect(byId('guard').queryName).toBe('assertAssetSnFree');
+    expect(byId('guard').expectRows).toBe(1);
+    expect(byId('guard').errorMessage).toMatch(/未做任何變更/);
+  });
+
+  it('這張單據上沒有該序號時整批退回', () => {
+    expect(byId('inbound').expectRows).toBe(1);
+    expect(byId('inbound').errorMessage).toMatch(/未做任何變更/);
+  });
+
+  it('資產列表沒有該序號不算失敗 —— 單據本身仍需更正', () => {
+    expect(byId('asset').expectRows).toBeUndefined();
+  });
+
+  it('每一步都有 id，結果才留得住供回報', () => {
+    expect(steps.every((s) => typeof s.id === 'string' && s.id)).toBe(true);
   });
 });

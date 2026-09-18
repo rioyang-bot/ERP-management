@@ -4,7 +4,7 @@ import { ArrowDownToLine, Search, Filter, Eye, RefreshCw, AlertCircle, Trash2, C
 import { logUpdate } from '../utils/auditLogger';
 import InboundRegistrationModal from '../components/InboundRegistrationModal';
 import { usePageSize } from '../utils/usePageSize';
-import { buildSnRenameSteps, validateSnRename } from '../utils/snRename';
+import { buildSnRenameSteps, validateSnRename, summariseSnRename } from '../utils/snRename';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 
 const InboundList = ({ isSplitMode = false }) => {
@@ -161,6 +161,20 @@ const InboundList = ({ isSplitMode = false }) => {
     try {
       const res = await window.electronAPI.runTransaction(buildSnRenameSteps(oldSn, newSn));
       if (!res.success) throw new Error(res.error || '更正失敗');
+
+      // 回報實際改了哪些地方 —— 只說「成功」的話，使用者無從判斷
+      // 其他單據到底有沒有一起變更
+      const { text, assetChanged } = summariseSnRename(res.results);
+      alert(assetChanged
+        ? `序號已更正為 [${newSn}]。
+
+已一併更新：${text}`
+        : `序號已更正為 [${newSn}]。
+
+已一併更新：${text}
+
+請注意：資產列表中沒有序號 [${oldSn}] 的資料，`
+          + '這次只更正了單據。該筆入庫當初可能建成了別的序號，請到資產列表另行確認。');
 
       logUpdate(
         'INBOUND',

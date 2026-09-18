@@ -90,6 +90,11 @@ export const queries = {
   updateMountedHardwareStatus: `UPDATE assets SET status = $1 WHERE custom_attributes->>'server_sn' = $2`,
   checkAssetSnExistsExcludeSelf: `SELECT id, sn FROM assets WHERE TRIM(sn) = TRIM($1) AND id != $2 LIMIT 1`,
   checkAssetSnExists: `SELECT id, sn FROM assets WHERE TRIM(sn) = TRIM($1) LIMIT 1`,
+  // 新序號還沒被任何資產用走時回一筆，被占用時回 0 筆。
+  // 交易以 expectRows 擋在最前面，避免撞上唯一鍵才失敗。
+  assertAssetSnFree: `
+    SELECT 1 AS ok
+    WHERE NOT EXISTS (SELECT 1 FROM assets WHERE UPPER(TRIM(sn)) = UPPER(TRIM($1)))`,
   // 以序號更名資產。新序號已被占用時不做事（回 0 筆），
   // 交易的 expectRows 會據此整批退回並說明原因 ——
   // 比讓唯一鍵拋例外更能講清楚是哪裡不對。
@@ -801,7 +806,10 @@ export const queries = {
       LEFT JOIN item_master im ON ii.item_id = im.id 
       LEFT JOIN categories c ON im.category_id = c.id 
       LEFT JOIN purchase_records pr ON ii.purchase_record_id = pr.id
-      WHERE ii.inbound_order_id = $1`,
+      WHERE ii.inbound_order_id = $1
+      -- 沒有 ORDER BY 時回的是堆積順序：某一列被 UPDATE 過就會跑到最後面，
+      -- 明細看起來像是「改完不見了」。固定以建立順序呈現。
+      ORDER BY ii.id`,
 
   // MainLayout.jsx (使用上方已定義的同名查詢)
 
