@@ -171,6 +171,7 @@ const HwList = ({ isSplitMode = false }) => {
     }
     setEditItem({
       ...nic,
+      _origSn: nic.sn || '',
       _origModel: nic.model || '',
       _origBrand: nic.brand || '',
       _origType: nic.type || '',
@@ -279,7 +280,22 @@ const HwList = ({ isSplitMode = false }) => {
       editItem.temp_end_user !== undefined ? editItem.temp_end_user : (editItem.end_user || editItem.custom_attributes?.end_user || null),
       editItem.remarks ?? null
     ]);
-    if (res.success) { 
+    if (res.success) {
+      // 序號改掉時，所有以序號字串記錄的關聯都要跟著改：
+      // 掛載它的設備清單、維修單明細、出貨明細、進貨明細。
+      // 否則那些地方會留著一個已經不存在的序號。
+      const origSn = (editItem._origSn || '').trim();
+      const newSn = (editItem.sn || '').trim();
+      if (origSn && newSn && origSn.toUpperCase() !== newSn.toUpperCase()) {
+        for (const queryName of ['renameMountedHwSnOnDevices', 'updateRepairItemsSn', 'updateOutboundItemsSn', 'updateInboundItemsSn']) {
+          try {
+            await window.electronAPI.namedQuery(queryName, [newSn, origSn]);
+          } catch (e) {
+            console.error(`[${queryName}] 序號連動失敗:`, e);
+          }
+        }
+      }
+
       // 雙向連動設備端的 mounted_hw_sns
       const origServerSn = (editItem.server_sn || '').trim();
       const newServerSn = (editItem.temp_server_sn || '').trim();

@@ -450,6 +450,7 @@ const DeviceList = ({ isSplitMode = false }) => {
         await window.electronAPI.namedQuery('updateMountedHardwareServerSn', [newSn, origSn]);
         await window.electronAPI.namedQuery('updateRepairItemsSn', [newSn, origSn]);
         await window.electronAPI.namedQuery('updateOutboundItemsSn', [newSn, origSn]);
+        await window.electronAPI.namedQuery('updateInboundItemsSn', [newSn, origSn]);
       }
 
       // 處理搭載硬體 SN 的連動綁定與解綁

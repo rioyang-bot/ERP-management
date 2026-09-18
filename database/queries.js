@@ -172,6 +172,28 @@ export const queries = {
   `,
   updateRepairItemsSn: `UPDATE repair_items SET sn = $1 WHERE sn IS NOT NULL AND TRIM(sn) = TRIM($2)`,
   updateOutboundItemsSn: `UPDATE outbound_items SET sn = $1 WHERE sn IS NOT NULL AND TRIM(sn) = TRIM($2)`,
+  // 進貨明細也記著序號，改序號時一起帶過去，否則進貨單上留著一個已經
+  // 不存在的序號，日後對帳會對不起來。
+  updateInboundItemsSn: `UPDATE inbound_items SET sn = $1 WHERE sn IS NOT NULL AND TRIM(sn) = TRIM($2) RETURNING id`,
+  // 設備端的 mounted_hw_sns 是「以逗號分隔的硬體序號字串」。
+  // 硬體改序號時這份清單不會自己更新，設備的編輯視窗就會看到一個
+  // 已經不存在的序號，存檔時還會把正確的那筆解綁掉。
+  // 逐筆比對後替換，不用字串取代 —— 序號互為子字串時會誤傷。
+  renameMountedHwSnOnDevices: `
+    UPDATE assets d
+    SET custom_attributes = COALESCE(d.custom_attributes, '{}'::jsonb) || jsonb_build_object(
+          'mounted_hw_sns',
+          (SELECT string_agg(CASE WHEN UPPER(TRIM(p)) = UPPER(TRIM($2)) THEN TRIM($1) ELSE TRIM(p) END, ', ')
+           FROM unnest(string_to_array(d.custom_attributes->>'mounted_hw_sns', ',')) AS p
+           WHERE TRIM(p) <> '')
+        ),
+        updated_at = CURRENT_TIMESTAMP
+    WHERE d.custom_attributes->>'mounted_hw_sns' IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM unnest(string_to_array(d.custom_attributes->>'mounted_hw_sns', ',')) AS p
+        WHERE UPPER(TRIM(p)) = UPPER(TRIM($2))
+      )
+    RETURNING d.id, d.sn`,
   // 品項主檔的識別欄位（廠牌／類型／型號／規格）一次更新。
   // 廠牌與類型改為可編輯後，只改型號與規格的 updateItemMasterSpecs 已不夠用。
   // 正規化方式與新增時一致：去除頭尾與重複空白、英文轉大寫，
