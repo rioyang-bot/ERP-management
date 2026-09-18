@@ -113,6 +113,11 @@
       "file": "migration_repair_contact.sql",
       "type": "schema",
       "note": "維修單聯絡人與聯絡電話欄位"
+    },
+    {
+      "file": "migration_inbound_creator.sql",
+      "type": "schema",
+      "note": "進貨單建立者欄位，比照出貨/維修單的 creator_id"
     }
   ]
 }

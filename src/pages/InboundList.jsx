@@ -384,14 +384,16 @@ const InboundList = ({ isSplitMode = false }) => {
                   <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>建立時間</th>
                   <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>供應商</th>
                   <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>發票號碼</th>
+                  <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>項目數</th>
+                  <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>建立者</th>
                   <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>操作</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>讀取中...</td></tr>
+                  <tr><td colSpan="8" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>讀取中...</td></tr>
                 ) : currentRecords.length === 0 ? (
-                  <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>目前尚無進貨單資料</td></tr>
+                  <tr><td colSpan="8" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>目前尚無進貨單資料</td></tr>
                 ) : currentRecords.map(order => (
                   <tr key={order.id} className="row-hover" style={{ borderBottom: '1px solid var(--table-border)', color: 'var(--text-main)' }}>
                     <td style={{ padding: '12px', fontWeight: 700, color: 'var(--text-main)' }}>{order.order_no}</td>
@@ -401,6 +403,15 @@ const InboundList = ({ isSplitMode = false }) => {
                     <td style={{ padding: '12px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{new Date(order.created_at).toLocaleString()}</td>
                     <td style={{ padding: '12px', color: order.partner_name ? 'var(--text-main)' : 'var(--text-subtle)', fontWeight: 600 }}>{order.partner_name || '待補填'}</td>
                     <td style={{ padding: '12px', color: order.invoice_no ? 'var(--text-main)' : 'var(--text-subtle)' }}>{order.invoice_no || '--'}</td>
+                    <td style={{ padding: '12px', whiteSpace: 'nowrap' }}>
+                      <span style={{ display: 'inline-block', minWidth: '28px', textAlign: 'center', padding: '2px 8px', borderRadius: '10px', backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-main)', fontWeight: 700, fontSize: '0.85rem' }}>
+                        {Number(order.item_count) || 0}
+                      </span>
+                    </td>
+                    {/* 舊單據沒有記錄建立者，回填不了，顯示為 － */}
+                    <td style={{ padding: '12px', color: order.creator_name ? 'var(--text-muted)' : 'var(--text-subtle)', fontSize: '0.9rem', whiteSpace: 'nowrap' }}>
+                      {order.creator_name || '－'}
+                    </td>
                     <td style={{ padding: '12px', whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'flex', gap: '6px', alignItems: 'center', whiteSpace: 'nowrap' }}>
                         <button

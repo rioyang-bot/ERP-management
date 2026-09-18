@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Trash2, Save, FileText, ShoppingBag, Layers, AlertCircle, ArrowDownToLine, Search, Package } from 'lucide-react';
 import InboundItemSelectModal from '../components/InboundItemSelectModal';
-import { logCreate } from '../utils/auditLogger';
+import { logCreate, getCurrentUser } from '../utils/auditLogger';
 import { parseSnLines, validateSnBatch } from '../utils/snBatch';
 
 const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) => {
@@ -348,7 +348,8 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
       steps.push({
         id: 'order',
         queryName: 'insertInboundOrder',
-        params: [orderNo, partnerId || null, invoiceNo, 'COMPLETED', JSON.stringify(attachments), inboundDate || null],
+        // 記下建立者，列表才查得出這批貨是誰入的
+        params: [orderNo, partnerId || null, invoiceNo, 'COMPLETED', JSON.stringify(attachments), inboundDate || null, getCurrentUser().id],
       });
 
       items.forEach((item, idx) => {
