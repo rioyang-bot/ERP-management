@@ -1813,6 +1813,7 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
                         <th style={{ padding: '8px 12px', color: 'var(--text-muted)', fontWeight: '700', whiteSpace: 'nowrap' }}>客戶保固到期</th>
                         <th style={{ padding: '8px 12px', color: 'var(--text-muted)', fontWeight: '700', whiteSpace: 'nowrap' }}>系統日期</th>
                         <th style={{ padding: '8px 12px', color: 'var(--text-muted)', fontWeight: '700', whiteSpace: 'nowrap' }}>原廠保固到期</th>
+                        <th style={{ padding: '8px 12px', color: 'var(--text-muted)', fontWeight: '700' }}>備註 (Remarks)</th>
                         {customFieldDefs.filter(f => customFieldMapping[f.id]).map(f => (
                           <th key={f.id} style={{ padding: '8px 12px', color: f.color || 'var(--primary-color)', fontWeight: '700', whiteSpace: 'nowrap' }}>
                             {f.label} <span style={{ fontSize: '10px', opacity: 0.8 }}>(自訂)</span>
@@ -1971,6 +1972,15 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
                                 )}
                               </td>
                             ))}
+                            <td style={{ padding: '8px 12px', maxWidth: '200px' }}>
+                              {row.remarks ? (
+                                <span style={{ fontSize: '11px', color: 'var(--text-main)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', display: 'block' }} title={row.remarks}>
+                                  {row.remarks}
+                                </span>
+                              ) : (
+                                <span style={{ color: 'var(--text-muted)' }}>-</span>
+                              )}
+                            </td>
                             {customFieldDefs.filter(f => customFieldMapping[f.id]).map(f => (
                               <td key={f.id} style={{ padding: '8px 12px', color: 'var(--text-main)', whiteSpace: 'nowrap' }}>
                                 {row.custom_attributes?.[f.id] || <span style={{ color: 'var(--text-muted)' }}>--</span>}
