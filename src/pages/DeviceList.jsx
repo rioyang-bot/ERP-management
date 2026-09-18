@@ -14,19 +14,18 @@ import WarrantyBadge from '../components/WarrantyBadge';
 import { isFullyOutOfWarranty } from '../utils/warranty';
 import { getActiveSnTerm, filterMountableHw, getCommittedSns, toggleMountedSn } from '../utils/mountedHwFilter';
 import { useColumnPreferences } from '../hooks/useColumnPreferences';
+import { joinParts } from '../utils/assetColumns';
 import { useCardLayoutByMode } from '../hooks/useCardLayout';
 import DeviceChecklistModal from '../components/DeviceChecklistModal';
 
 // 設備列表的欄位清單：id 對應表格的每一欄，always 代表不可隱藏
 const DEVICE_COLUMNS = [
-  { id: 'brand', label: '廠牌 / 型號 / 類型', always: true },
+  { id: 'brand', label: '類型 / 廠牌 / 型號 / 規格', always: true },
   { id: 'sn', label: '序號 (SN)' },
-  { id: 'spec', label: '規格 (Spec)' },
   { id: 'project', label: '專案編號/名稱 (Project)' },
   { id: 'hostname', label: '主機名稱' },
   { id: 'components', label: '搭載硬體' },
-  { id: 'client', label: '客戶' },
-  { id: 'end_user', label: 'End-user' },
+  { id: 'client', label: '客戶 / End-user' },
   { id: 'location', label: '位置' },
   { id: 'remarks', label: '備註' },
   { id: 'warranty', label: '保固資訊 (P/S/W/C)' },
@@ -864,7 +863,7 @@ const DeviceList = ({ isSplitMode = false }) => {
   const editInputStyle = { width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', outline: 'none', fontSize: '13px' };
   const navBtnStyle = { padding: '6px 14px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-main)', cursor: 'pointer', fontWeight: '700', fontSize: '12px' };
   const thStyle = { 
-    padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', 
+    padding: 'var(--table-cell-padding-y, 8px) calc(var(--table-cell-padding-x, 10px) * 0.6)', 
     fontSize: '12px', 
     color: 'var(--table-header-text)', 
     fontWeight: '900',
@@ -876,7 +875,7 @@ const DeviceList = ({ isSplitMode = false }) => {
     whiteSpace: 'nowrap'
   };
   const tdStyle = { 
-    padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', 
+    padding: 'var(--table-cell-padding-y, 8px) calc(var(--table-cell-padding-x, 10px) * 0.6)', 
     fontSize: '13px', 
     color: 'var(--text-main)' 
   };
@@ -1052,14 +1051,12 @@ const DeviceList = ({ isSplitMode = false }) => {
                     <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
                       <thead style={{ position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)' }}>
                         <tr style={{ borderBottom: '2px solid var(--border-color)', backgroundColor: 'var(--table-header-bg)' }}>
-                          <th style={{ ...thStyle, textAlign: 'left', width: '200px' }}>廠牌 / 型號 / 類型</th>
+                          <th style={{ ...thStyle, textAlign: 'left', width: '220px' }}>類型 / 廠牌 / 型號 / 規格</th>
                           <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('sn') }}>序號 (SN)</th>
-                          <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('spec') }}>規格 (Spec)</th>
                           <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('project') }}>專案編號/名稱 (Project)</th>
                           <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('hostname') }}>主機名稱</th>
                           <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('components') }}>搭載硬體</th>
-                          <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('client') }}>客戶</th>
-                          <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('end_user') }}>End-user</th>
+                          <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('client') }}>客戶 / End-user</th>
                           <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('location') }}>位置</th>
                           <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('remarks') }}>備註</th>
                           <th
@@ -1080,19 +1077,24 @@ const DeviceList = ({ isSplitMode = false }) => {
                           
                           return (
                             <tr key={item.id} style={{ borderBottom: '1px solid var(--table-border)', backgroundColor: item.status === 'SCRAPPED' ? 'rgba(239, 68, 68, 0.08)' : 'transparent' }}>
-                              <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                                <div style={{ fontWeight: 800, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                  {item.brand}
+                              <td style={{ ...tdStyle, maxWidth: '220px' }}>
+                                <div style={{ fontWeight: 800, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
+                                  {joinParts(item.type, item.brand)}
                                   {item.ownership === 'COMPANY' && (
                                     <span style={{ fontSize: '10px', padding: '2px 6px', backgroundColor: '#8b5cf6', color: 'white', borderRadius: '4px', whiteSpace: 'nowrap' }}>公司資產</span>
                                   )}
                                 </div>
-                                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{item.type} - {item.model}</div>
+                                {/* 規格可能很長，截斷並以 title 顯示全文，免得整欄被撐開 */}
+                                <div
+                                  style={{ fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                                  title={joinParts(item.model, item.specification)}
+                                >
+                                  {joinParts(item.model, item.specification)}
+                                </div>
                               </td>
                               <td style={{ ...tdStyle, fontWeight: 800, fontFamily: 'monospace', color: 'var(--primary-color)', whiteSpace: 'nowrap', ...hideCol('sn') }}>
                                 {item.sn}
                               </td>
-                              <td style={{ ...tdStyle, fontSize: '11px', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', ...hideCol('spec') }} title={item.specification}>{item.specification || '--'}</td>
                               <td style={{ ...tdStyle, fontWeight: 700, color: 'var(--text-main)', ...hideCol('project') }}>
                                 {(() => {
                                   const pName = attrs.project_name;
@@ -1158,11 +1160,12 @@ const DeviceList = ({ isSplitMode = false }) => {
                                       {item.partner_contact} {item.partner_phone}
                                     </div>
                                   )}
-                                </div>
-                              </td>
-                              <td style={{ ...tdStyle, ...hideCol('end_user') }}>
-                                <div style={{ fontWeight: 700, color: 'var(--text-main)' }}>
-                                  {item.end_user || attrs.end_user || '--'}
+                                  {/* End-user 原本自成一欄，移到客戶底下；沒有標籤會跟聯絡人混淆 */}
+                                  {(item.end_user || attrs.end_user) && (
+                                    <div style={{ fontSize: '11px', paddingLeft: '18px', color: 'var(--text-muted)' }}>
+                                      End-user：<span style={{ fontWeight: 700, color: 'var(--text-main)' }}>{item.end_user || attrs.end_user}</span>
+                                    </div>
+                                  )}
                                 </div>
                               </td>
                               <td style={{ ...tdStyle, ...hideCol('location') }}>

@@ -12,19 +12,18 @@ import ColumnVisibilityModal from '../components/ColumnVisibilityModal';
 import CardAggregationLegend from '../components/CardAggregationLegend';
 import { isFullyOutOfWarranty } from '../utils/warranty';
 import { useColumnPreferences } from '../hooks/useColumnPreferences';
+import { joinParts } from '../utils/assetColumns';
 import { useCardLayoutByMode } from '../hooks/useCardLayout';
 
 // 硬體列表的欄位清單：id 對應表格的每一欄，always 代表不可隱藏
 const HW_COLUMNS = [
-  { id: 'brand', label: '廠牌 / 型號 / 類型', always: true },
+  { id: 'brand', label: '類型 / 廠牌 / 型號 / 規格', always: true },
   { id: 'sn', label: '序號 (SN)' },
-  { id: 'spec', label: '規格 (Spec)' },
   { id: 'project', label: '專案編號/名稱 (Project)' },
   { id: 'order_source', label: '訂單來源 (OrderSource)' },
   { id: 'shipping_date', label: '出貨日期' },
   { id: 'server', label: '對應伺服器' },
-  { id: 'client', label: '客戶' },
-  { id: 'end_user', label: 'End-user' },
+  { id: 'client', label: '客戶 / End-user' },
   { id: 'location', label: '位置' },
   { id: 'remarks', label: '備註' },
   { id: 'status', label: '狀態' },
@@ -411,7 +410,7 @@ const HwList = ({ isSplitMode = false }) => {
   };
   const thStyle = { 
     textAlign: 'left', 
-    padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', 
+    padding: 'var(--table-cell-padding-y, 8px) calc(var(--table-cell-padding-x, 10px) * 0.6)', 
     borderBottom: '2px solid var(--border-color)', 
     color: 'var(--table-header-text)', 
     fontSize: '12px', 
@@ -424,7 +423,7 @@ const HwList = ({ isSplitMode = false }) => {
     whiteSpace: 'nowrap'
   };
   const tdStyle = { 
-    padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', 
+    padding: 'var(--table-cell-padding-y, 8px) calc(var(--table-cell-padding-x, 10px) * 0.6)', 
     borderBottom: '1px solid var(--table-border)', 
     fontSize: '12px', 
     color: 'var(--text-main)' 
@@ -915,15 +914,13 @@ const HwList = ({ isSplitMode = false }) => {
       <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
         <thead style={{ position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)' }}>
           <tr style={{ borderBottom: '2px solid var(--border-color)', backgroundColor: 'var(--table-header-bg)' }}>
-            <th style={{ ...thStyle, textAlign: 'left', width: '200px' }}>廠牌 / 型號 / 類型</th>
+            <th style={{ ...thStyle, textAlign: 'left', width: '220px' }}>類型 / 廠牌 / 型號 / 規格</th>
             <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('sn') }}>序號 (SN)</th>
-            <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('spec') }}>規格 (Spec)</th>
             <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('project') }}>專案編號/名稱 (Project)</th>
             <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('order_source') }}>訂單來源 (OrderSource)</th>
             <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('shipping_date') }}>出貨日期</th>
             <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('server') }}>對應伺服器</th>
-            <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('client') }}>客戶</th>
-            <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('end_user') }}>End-user</th>
+            <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('client') }}>客戶 / End-user</th>
             <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('location') }}>位置</th>
             <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('remarks') }}>備註</th>
             <th style={{ ...thStyle, textAlign: 'left', width: '100px' , ...hideCol('status') }}>狀態</th>
@@ -944,17 +941,22 @@ const HwList = ({ isSplitMode = false }) => {
             }
             return (
               <tr key={nic.id} style={{ borderBottom: '1px solid var(--table-border)', backgroundColor: nic.status === 'SCRAPPED' ? 'rgba(239, 68, 68, 0.08)' : 'transparent' }}>
-                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                  <div style={{ fontWeight: 800, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    {nic.brand}
+                <td style={{ ...tdStyle, maxWidth: '220px' }}>
+                  <div style={{ fontWeight: 800, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
+                    {joinParts(nic.type, nic.brand)}
                     {nic.ownership === 'COMPANY' && (
                       <span style={{ fontSize: '10px', padding: '2px 6px', backgroundColor: '#8b5cf6', color: 'white', borderRadius: '4px', whiteSpace: 'nowrap' }}>公司資產</span>
                     )}
                   </div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{nic.type} - {nic.model}</div>
+                  {/* 規格可能很長，截斷並以 title 顯示全文，免得整欄被撐開 */}
+                  <div
+                    style={{ fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                    title={joinParts(nic.model, nic.specification)}
+                  >
+                    {joinParts(nic.model, nic.specification)}
+                  </div>
                 </td>
                 <td style={{ ...tdStyle, fontWeight: 800, fontFamily: 'monospace', color: 'var(--primary-color)', whiteSpace: 'nowrap', ...hideCol('sn') }}>{nic.sn || '(未設定)'}</td>
-                <td style={{ ...tdStyle, fontSize: '11px', color: 'var(--text-muted)', ...hideCol('spec') }}>{nic.specification || '--'}</td>
                 <td style={{ ...tdStyle, fontWeight: 700, color: 'var(--text-main)', ...hideCol('project') }}>
                   {(() => {
                     const pName = nic.custom_attributes?.project_name;
@@ -1011,11 +1013,14 @@ const HwList = ({ isSplitMode = false }) => {
                         {nic.partner_contact} {nic.partner_phone}
                       </div>
                     )}
-                  </div>
-                </td>
-                <td style={{ ...tdStyle, ...hideCol('end_user') }}>
-                  <div style={{ fontWeight: 700, color: 'var(--text-main)' }}>
-                    {nic.server_end_user || serverAttrs.end_user || nic.end_user || nic.custom_attributes?.end_user || '--'}
+                    {/* End-user 原本自成一欄，移到客戶底下；沒有標籤會跟聯絡人混淆 */}
+                    {(nic.server_end_user || serverAttrs.end_user || nic.end_user || nic.custom_attributes?.end_user) && (
+                      <div style={{ fontSize: '11px', paddingLeft: '18px', color: 'var(--text-muted)' }}>
+                        End-user：<span style={{ fontWeight: 700, color: 'var(--text-main)' }}>
+                          {nic.server_end_user || serverAttrs.end_user || nic.end_user || nic.custom_attributes?.end_user}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </td>
                 <td style={{ ...tdStyle, ...hideCol('location') }}>
