@@ -2,13 +2,13 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Wrench, Search, Plus, Printer, Trash2, CheckCircle, AlertCircle, 
   Truck, PackageCheck, RotateCcw, ExternalLink, RefreshCw, FileText,
-  Calendar, Building2, Cpu, Server, ChevronRight, Eye
+  Calendar, Building2, Cpu, Server, ChevronRight, Eye, Home
 } from 'lucide-react';
 import RepairOrderRegistrationModal from '../components/RepairOrderRegistrationModal';
 import RepairActionModal from '../components/RepairActionModal';
 import RepairOrderPrintModal from '../components/RepairOrderPrintModal';
 import RepairOrderDetailModal from '../components/RepairOrderDetailModal';
-import { logDelete } from '../utils/auditLogger';
+import { logDelete, logUpdate } from '../utils/auditLogger';
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 
@@ -86,6 +86,41 @@ const RepairList = () => {
     } catch (err) {
       console.error('Delete repair order error:', err);
       alert('刪除失敗：' + err.message);
+    }
+  };
+
+  /**
+   * 標記或取消「不需送回原廠」。
+   *
+   * 只在現場處理階段可改 —— 已經送出原廠的單再宣稱不需送修並不合理，
+   * 查詢本身也帶了同樣的條件，改不到時會回 0 筆。
+   */
+  const handleToggleNoOem = async (order) => {
+    const turnOn = !order.no_oem_required;
+    const msg = turnOn
+      ? `確定維修單 [${order.repair_no}] 不需送回原廠嗎？
+
+改為由 IT 人員自行處理，修復後填寫維修結果即可完工結案。`
+      : `確定要取消維修單 [${order.repair_no}] 的「不需送回原廠」標記嗎？
+
+取消後會恢復送修原廠的流程。`;
+    if (!window.confirm(msg)) return;
+
+    try {
+      const res = await window.electronAPI.namedQuery('setRepairNoOemRequired', [turnOn, order.id]);
+      if (!res.success) throw new Error(res.error || '未知錯誤');
+      if (!res.rows || res.rows.length === 0) {
+        alert('這張維修單已不在「現場處理」階段，無法變更送修方式。');
+        return;
+      }
+      await logUpdate(
+        'REPAIR', order.repair_no, order.customer_name,
+        turnOn ? `維修單 [${order.repair_no}] 標記為不需送回原廠（由 IT 自行處理）`
+               : `維修單 [${order.repair_no}] 取消不需送回原廠標記`
+      );
+      fetchRecords();
+    } catch (err) {
+      alert('變更失敗：' + err.message);
     }
   };
 
@@ -578,6 +613,24 @@ const RepairList = () => {
                         }}>
                           {statusInfo.label}
                         </span>
+                        {/* 不送原廠的單要一眼看得出來，否則會以為流程卡住了 */}
+                        {order.no_oem_required && (
+                          <div style={{ marginTop: '4px' }}>
+                            <span style={{
+                              padding: '3px 8px',
+                              borderRadius: '20px',
+                              backgroundColor: 'rgba(13, 148, 136, 0.12)',
+                              color: '#0d9488',
+                              fontWeight: 800,
+                              fontSize: '10px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '3px'
+                            }}>
+                              <Home size={10} /> 不需送回原廠
+                            </span>
+                          </div>
+                        )}
                       </td>
 
                       {/* 操作流程按鈕 */}
@@ -604,8 +657,54 @@ const RepairList = () => {
                             <Eye size={13} color="var(--primary-color)" /> 檢視
                           </button>
 
-                          {/* 階段 1 ➔ 階段 2：送修原廠 */}
+                          {/* 現場處理階段可選擇不送原廠，改由 IT 自行修復 */}
                           {order.status === 'ON_SITE_HANDLING' && (
+                            <button
+                              onClick={() => handleToggleNoOem(order)}
+                              style={{
+                                padding: '6px 10px',
+                                borderRadius: '8px',
+                                border: order.no_oem_required ? 'none' : '1px solid #0d9488',
+                                backgroundColor: order.no_oem_required ? 'var(--bg-surface)' : 'rgba(13, 148, 136, 0.12)',
+                                color: order.no_oem_required ? 'var(--text-muted)' : '#0d9488',
+                                fontWeight: 700,
+                                fontSize: '12px',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px'
+                              }}
+                              title={order.no_oem_required ? '取消標記，恢復送修原廠流程' : '這張單不需送回原廠，由 IT 人員自行處理'}
+                            >
+                              <Home size={13} /> {order.no_oem_required ? '取消不送原廠' : '不需送回原廠'}
+                            </button>
+                          )}
+
+                          {/* 不送原廠：現場處理 ➔ 直接完工結案 */}
+                          {order.status === 'ON_SITE_HANDLING' && order.no_oem_required && (
+                            <button
+                              onClick={() => setActionModal({ isOpen: true, order, type: 'IN_HOUSE_COMPLETE' })}
+                              style={{
+                                padding: '6px 10px',
+                                borderRadius: '8px',
+                                border: 'none',
+                                backgroundColor: '#0d9488',
+                                color: '#fff',
+                                fontWeight: 700,
+                                fontSize: '12px',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px'
+                              }}
+                              title="IT 自行修復完成，填寫維修結果後結案出貨"
+                            >
+                              <Wrench size={13} /> 自行維修完工
+                            </button>
+                          )}
+
+                          {/* 階段 1 ➔ 階段 2：送修原廠（標記不送原廠時就不該再出現） */}
+                          {order.status === 'ON_SITE_HANDLING' && !order.no_oem_required && (
                             <button
                               onClick={() => setActionModal({ isOpen: true, order, type: 'SEND_OEM' })}
                               style={{

@@ -25,6 +25,10 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
   };
 
   // 時間軸階段定義
+  // 不送原廠的單，原廠那兩個階段不適用；仍然列出來但標示為不適用，
+  // 直接抽掉會讓時間軸的階段數在兩種單之間不一致，反而難比對。
+  const noOem = !!repairOrder.no_oem_required;
+
   const steps = [
     {
       key: 'ON_SITE',
@@ -40,25 +44,27 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
       key: 'SEND_OEM',
       title: '送修原廠',
       date: repairOrder.send_oem_date,
-      statusDesc: repairOrder.send_oem_date ? '已送往原廠檢測' : '尚未送修',
+      statusDesc: noOem ? '不適用 (不需送回原廠)' : (repairOrder.send_oem_date ? '已送往原廠檢測' : '尚未送修'),
       assetStatus: 'REPAIRING (維修中)',
       icon: <Truck size={18} />,
-      active: !!repairOrder.send_oem_date || repairOrder.status === 'SENT_OEM' || repairOrder.status === 'OEM_RETURNED' || repairOrder.status === 'COMPLETED',
+      active: !noOem && (!!repairOrder.send_oem_date || repairOrder.status === 'SENT_OEM' || repairOrder.status === 'OEM_RETURNED' || repairOrder.status === 'COMPLETED'),
       color: '#d97706'
     },
     {
       key: 'OEM_RETURN',
       title: '原廠返還 / 修復',
       date: repairOrder.oem_return_date,
-      statusDesc: repairOrder.results ? `結果: ${repairOrder.results}` : (repairOrder.oem_return_date ? '已返還在庫' : '原廠處理中'),
+      statusDesc: noOem
+        ? (repairOrder.results ? `IT 自行維修: ${repairOrder.results}` : '不適用 (由 IT 自行處理)')
+        : (repairOrder.results ? `結果: ${repairOrder.results}` : (repairOrder.oem_return_date ? '已返還在庫' : '原廠處理中')),
       assetStatus: 'ACTIVE (在庫)',
       icon: <Wrench size={18} />,
-      active: !!repairOrder.oem_return_date || repairOrder.status === 'OEM_RETURNED' || repairOrder.status === 'COMPLETED',
+      active: !noOem && (!!repairOrder.oem_return_date || repairOrder.status === 'OEM_RETURNED' || repairOrder.status === 'COMPLETED'),
       color: '#8b5cf6'
     },
     {
       key: 'COMPLETED',
-      title: '客戶完工出貨',
+      title: noOem ? '自行維修完工出貨' : '客戶完工出貨',
       date: repairOrder.completion_date,
       statusDesc: repairOrder.completion_date ? '已交付客戶結案' : '待完工出貨',
       assetStatus: 'SHIPPED (出庫)',
@@ -447,7 +453,31 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
 
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
             {/* 流程推進快捷按鈕 */}
-            {repairOrder.status === 'ON_SITE_HANDLING' && onOpenAction && (
+            {repairOrder.status === 'ON_SITE_HANDLING' && noOem && onOpenAction && (
+              <button
+                onClick={() => {
+                  onClose();
+                  onOpenAction(repairOrder, 'IN_HOUSE_COMPLETE');
+                }}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  backgroundColor: '#0d9488',
+                  color: '#fff',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <Wrench size={15} /> 自行維修完工
+              </button>
+            )}
+
+            {repairOrder.status === 'ON_SITE_HANDLING' && !noOem && onOpenAction && (
               <button
                 onClick={() => {
                   onClose();

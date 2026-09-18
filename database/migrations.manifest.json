@@ -118,6 +118,11 @@
       "file": "migration_inbound_creator.sql",
       "type": "schema",
       "note": "進貨單建立者欄位，比照出貨/維修單的 creator_id"
+    },
+    {
+      "file": "migration_repair_no_oem.sql",
+      "type": "schema",
+      "note": "維修單「不需送回原廠」旗標，供 IT 自行維修結案使用"
     }
   ]
 }

@@ -1652,6 +1652,27 @@ export const queries = {
     WHERE id = $4 
     RETURNING *
   `,
+  // 標記/取消「不需送回原廠」。只有還在現場處理階段才允許改，
+  // 已經送出原廠的單不該再宣稱不需送修；改不到時回 0 筆，由呼叫端說明原因。
+  setRepairNoOemRequired: `
+    UPDATE repair_orders
+    SET no_oem_required = $1,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = $2 AND status = 'ON_SITE_HANDLING'
+    RETURNING id, no_oem_required
+  `,
+  // IT 自行維修完工結案：不經過原廠，一步從現場處理直接結案。
+  // 條件帶上目前狀態與旗標，避免重複送出或在已送修的單上誤觸。
+  updateRepairCompletedInHouse: `
+    UPDATE repair_orders
+    SET status = 'COMPLETED',
+        completion_date = $1,
+        results = $2,
+        remarks = COALESCE($3, remarks),
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = $4 AND status = 'ON_SITE_HANDLING' AND no_oem_required = TRUE
+    RETURNING *
+  `,
   updateRepairCompleted: `
     UPDATE repair_orders 
     SET status = 'COMPLETED', 

@@ -182,3 +182,74 @@ describe('rmaService 核心更換服務單元測試', () => {
     });
   });
 });
+
+/**
+ * 換號時所有以序號字串記錄的關聯都要跟著改
+ *
+ * 序號在這套系統裡被好幾個地方各自以字串記著。先前就地換號只連動了
+ * 掛載硬體、維修明細與出貨明細，漏掉「設備的硬體清單」與「進貨明細」——
+ * 換號後那台設備仍列著一個已經不存在的序號。
+ * 而且整段被 try/catch 吞掉，連動失敗只在主控台留一行警告。
+ */
+describe('RMA 換號的關聯連動', () => {
+  const ASSET = { id: 42, sn: 'OLD_SN_001', item_master_id: 3, ownership: 'FOR_SALE', custom_attributes: {} };
+  let seen;
+
+  beforeEach(() => {
+    seen = [];
+    window.electronAPI = {
+      runTransaction: (steps) => createRunTransactionMock(window.electronAPI.namedQuery)(steps),
+      namedQuery: vi.fn().mockImplementation((query, params) => {
+        seen.push({ query, params });
+        if (query === 'checkAssetSnExists' || query === 'checkAssetSnExistsExcludeSelf') {
+          return Promise.resolve({ success: true, rows: [] });
+        }
+        if (query === 'insertRmaAssetRecord') {
+          return Promise.resolve({ success: true, rows: [{ id: 888, sn: params[1] }] });
+        }
+        return Promise.resolve({ success: true, rows: [{ id: 1 }] });
+      }),
+    };
+  });
+
+  const ran = (name) => seen.filter((s) => s.query === name);
+
+  it.each([
+    ['掛在這台設備底下的硬體', 'updateMountedHardwareServerSn'],
+    ['列有這顆硬體的設備清單', 'renameMountedHwSnOnDevices'],
+    ['維修明細', 'updateRepairItemsSn'],
+    ['出貨明細', 'updateOutboundItemsSn'],
+    ['進貨明細', 'updateInboundItemsSn'],
+  ])('就地換號時 %s 也跟著改', async (_label, queryName) => {
+    await performInPlaceReplacement(ASSET, 'NEW_SN_001', { date: '2026-09-18' });
+
+    expect(ran(queryName)).toHaveLength(1);
+    expect(ran(queryName)[0].params).toEqual(['NEW_SN_001', 'OLD_SN_001']);
+  });
+
+  it('連動失敗時明確報錯，不會只在主控台留警告', async () => {
+    window.electronAPI.namedQuery.mockImplementation((query, params) => {
+      seen.push({ query, params });
+      if (query === 'checkAssetSnExistsExcludeSelf') return Promise.resolve({ success: true, rows: [] });
+      if (query === 'renameMountedHwSnOnDevices') return Promise.resolve({ success: false, error: '資料庫忙碌' });
+      return Promise.resolve({ success: true, rows: [{ id: 1 }] });
+    });
+
+    await expect(performInPlaceReplacement(ASSET, 'NEW_SN_001', { date: '2026-09-18' }))
+      .rejects.toThrow(/renameMountedHwSnOnDevices/);
+  });
+
+  it('一換一時，掛著這顆零件的設備清單也指向新序號', async () => {
+    await performOneToOneReplacement(
+      { ...ASSET, sn: 'OLD_SRV_777' }, 'NEW_SRV_888', { date: '2026-09-18' });
+
+    expect(ran('renameMountedHwSnOnDevices')[0].params).toEqual(['NEW_SRV_888', 'OLD_SRV_777']);
+  });
+
+  it('一換一不改進貨明細 —— 舊品已報廢，當初那筆進貨本來就是舊序號', async () => {
+    await performOneToOneReplacement(
+      { ...ASSET, sn: 'OLD_SRV_777' }, 'NEW_SRV_888', { date: '2026-09-18' });
+
+    expect(ran('updateInboundItemsSn')).toHaveLength(0);
+  });
+});
