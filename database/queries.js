@@ -8,7 +8,7 @@ export const queries = {
          AND a.sn IS NOT NULL AND a.sn <> '' AND oi.sn = a.sn) as lent_request_no,
       COALESCE(a.custom_attributes->>'contact_person', p.contact_person) as partner_contact,
       COALESCE(a.custom_attributes->>'contact_phone', p.phone) as partner_phone,
-      (SELECT json_agg(json_build_object('brand', comp.brand, 'model', comp.model, 'sn', comp.sn)) 
+      (SELECT json_agg(json_build_object('brand', comp.brand, 'model', comp.model, 'sn', comp.sn) ORDER BY NULLIF(comp.model, '') ASC NULLS LAST, NULLIF(comp.brand, '') ASC NULLS LAST, comp.sn) 
        FROM (
          SELECT COALESCE(hi.brand, '') as brand, COALESCE(hi.model, '') as model, ha.sn
          FROM assets ha 
@@ -50,7 +50,7 @@ export const queries = {
          AND a.sn IS NOT NULL AND a.sn <> '' AND oi.sn = a.sn) as lent_request_no,
       COALESCE(a.custom_attributes->>'contact_person', p.contact_person) as partner_contact,
       COALESCE(a.custom_attributes->>'contact_phone', p.phone) as partner_phone,
-      (SELECT json_agg(json_build_object('brand', comp.brand, 'model', comp.model, 'sn', comp.sn)) 
+      (SELECT json_agg(json_build_object('brand', comp.brand, 'model', comp.model, 'sn', comp.sn) ORDER BY NULLIF(comp.model, '') ASC NULLS LAST, NULLIF(comp.brand, '') ASC NULLS LAST, comp.sn) 
        FROM (
          SELECT COALESCE(hi.brand, '') as brand, COALESCE(hi.model, '') as model, ha.sn
          FROM assets ha 
@@ -970,7 +970,7 @@ export const queries = {
         'sn', comp.sn, 
         'type', comp.type, 
         'specification', comp.specification
-      )) 
+      ) ORDER BY NULLIF(comp.model, '') ASC NULLS LAST, NULLIF(comp.brand, '') ASC NULLS LAST, comp.sn) 
      FROM (
        SELECT ha.item_master_id, COALESCE(hi.brand, '') as brand, COALESCE(hi.model, '') as model, ha.sn, COALESCE(hi.type, '') as type, COALESCE(hi.specification, '') as specification
        FROM assets ha 
@@ -1027,7 +1027,7 @@ export const queries = {
         'sn', ha.sn, 
         'type', hi.type, 
         'specification', hi.specification
-      )) 
+      ) ORDER BY NULLIF(hi.model, '') ASC NULLS LAST, NULLIF(hi.brand, '') ASC NULLS LAST, ha.sn) 
      FROM assets ha JOIN item_master hi ON ha.item_master_id = hi.id 
      WHERE ha.custom_attributes->>'server_sn' IS NOT NULL 
      AND TRIM(ha.custom_attributes->>'server_sn') = TRIM(a.sn)) as components
