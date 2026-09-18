@@ -90,6 +90,14 @@ export const queries = {
   updateMountedHardwareStatus: `UPDATE assets SET status = $1 WHERE custom_attributes->>'server_sn' = $2`,
   checkAssetSnExistsExcludeSelf: `SELECT id, sn FROM assets WHERE TRIM(sn) = TRIM($1) AND id != $2 LIMIT 1`,
   checkAssetSnExists: `SELECT id, sn FROM assets WHERE TRIM(sn) = TRIM($1) LIMIT 1`,
+  // 以序號更名資產。新序號已被占用時不做事（回 0 筆），
+  // 交易的 expectRows 會據此整批退回並說明原因 ——
+  // 比讓唯一鍵拋例外更能講清楚是哪裡不對。
+  renameAssetSn: `
+    UPDATE assets SET sn = TRIM($1), updated_at = CURRENT_TIMESTAMP
+    WHERE UPPER(TRIM(sn)) = UPPER(TRIM($2))
+      AND NOT EXISTS (SELECT 1 FROM assets x WHERE UPPER(TRIM(x.sn)) = UPPER(TRIM($1)))
+    RETURNING id, sn`,
   fetchAssetBySn: `
     SELECT a.*, im.brand, im.model, im.type, im.specification, c.name as category_name
     FROM assets a
@@ -108,7 +116,7 @@ export const queries = {
     ) RETURNING id, sn, status
   `,
   updateAssetStatusAndAttributes: `UPDATE assets SET status = $1, custom_attributes = $2 WHERE id = $3`,
-  updateMountedHardwareServerSn: `UPDATE assets SET custom_attributes = (CASE WHEN custom_attributes IS NOT NULL AND jsonb_typeof(custom_attributes) = 'object' THEN custom_attributes ELSE '{}'::jsonb END) || jsonb_build_object('server_sn', $1::text) WHERE custom_attributes->>'server_sn' IS NOT NULL AND TRIM(LOWER(custom_attributes->>'server_sn')) = TRIM(LOWER($2))`,
+  updateMountedHardwareServerSn: `UPDATE assets SET custom_attributes = (CASE WHEN custom_attributes IS NOT NULL AND jsonb_typeof(custom_attributes) = 'object' THEN custom_attributes ELSE '{}'::jsonb END) || jsonb_build_object('server_sn', $1::text) WHERE custom_attributes->>'server_sn' IS NOT NULL AND TRIM(LOWER(custom_attributes->>'server_sn')) = TRIM(LOWER($2)) RETURNING id`,
   bindHardwareToServerSn: `UPDATE assets SET custom_attributes = (CASE WHEN custom_attributes IS NOT NULL AND jsonb_typeof(custom_attributes) = 'object' THEN custom_attributes ELSE '{}'::jsonb END) || jsonb_build_object('server_sn', $1::text), client = COALESCE($3, client), location = COALESCE($4, location), ownership = COALESCE($5, ownership) WHERE sn IS NOT NULL AND TRIM(LOWER(sn)) = TRIM(LOWER($2)) RETURNING id, sn`,
   unbindHardwareServerSn: `UPDATE assets SET custom_attributes = (CASE WHEN custom_attributes IS NOT NULL AND jsonb_typeof(custom_attributes) = 'object' THEN custom_attributes ELSE '{}'::jsonb END) - 'server_sn' WHERE sn IS NOT NULL AND TRIM(LOWER(sn)) = TRIM(LOWER($1)) RETURNING id, sn`,
   findDeviceByMountedHwSn: `
@@ -170,11 +178,11 @@ export const queries = {
     WHERE c.name = '硬體' AND a.sn IS NOT NULL AND TRIM(LOWER(a.sn)) = TRIM(LOWER($1))
     LIMIT 1
   `,
-  updateRepairItemsSn: `UPDATE repair_items SET sn = $1 WHERE sn IS NOT NULL AND TRIM(sn) = TRIM($2)`,
-  updateOutboundItemsSn: `UPDATE outbound_items SET sn = $1 WHERE sn IS NOT NULL AND TRIM(sn) = TRIM($2)`,
+  updateRepairItemsSn: `UPDATE repair_items SET sn = TRIM($1) WHERE sn IS NOT NULL AND UPPER(TRIM(sn)) = UPPER(TRIM($2)) RETURNING id`,
+  updateOutboundItemsSn: `UPDATE outbound_items SET sn = TRIM($1) WHERE sn IS NOT NULL AND UPPER(TRIM(sn)) = UPPER(TRIM($2)) RETURNING id`,
   // 進貨明細也記著序號，改序號時一起帶過去，否則進貨單上留著一個已經
   // 不存在的序號，日後對帳會對不起來。
-  updateInboundItemsSn: `UPDATE inbound_items SET sn = $1 WHERE sn IS NOT NULL AND TRIM(sn) = TRIM($2) RETURNING id`,
+  updateInboundItemsSn: `UPDATE inbound_items SET sn = TRIM($1) WHERE sn IS NOT NULL AND UPPER(TRIM(sn)) = UPPER(TRIM($2)) RETURNING id`,
   // 設備端的 mounted_hw_sns 是「以逗號分隔的硬體序號字串」。
   // 硬體改序號時這份清單不會自己更新，設備的編輯視窗就會看到一個
   // 已經不存在的序號，存檔時還會把正確的那筆解綁掉。
