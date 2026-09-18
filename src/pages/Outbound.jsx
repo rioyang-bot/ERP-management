@@ -4,6 +4,7 @@ import { RoleContext } from '../context/RoleContext';
 import { useNavigate } from 'react-router-dom';
 import { logCreate, logUpdate } from '../utils/auditLogger';
 import DeliveryReceiptPrintModal from '../components/DeliveryReceiptPrintModal';
+import { toReceiptItems } from '../utils/deliveryReceiptItems';
 import './Outbound.css';
 
 /**
@@ -511,7 +512,9 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null, ed
           project_name: cleanProject,
           creator_name: authUser?.full_name
         };
-        const currentItems = [...outboundItems];
+        // 畫面上的清單數量欄是 qty，簽收單讀的是 quantity。
+        // 不轉的話剛建立時每一列都會顯示成 1。
+        const currentItems = toReceiptItems(outboundItems);
 
         // 清除清單與快取（編輯既有單據時草稿不屬於這張單，不能動）
         if (!isEditing) {
