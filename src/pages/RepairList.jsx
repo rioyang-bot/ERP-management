@@ -100,7 +100,8 @@ const RepairList = () => {
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase().trim();
       const matchNo = (order.repair_no || '').toLowerCase().includes(term);
-      const matchCust = (order.customer_name || '').toLowerCase().includes(term);
+      const matchCust = (order.customer_name || '').toLowerCase().includes(term)
+        || (order.contact_person || '').toLowerCase().includes(term);
       const matchStatus = (order.on_site_status || '').toLowerCase().includes(term);
       const matchResults = (order.results || '').toLowerCase().includes(term);
       const matchSummary = (order.item_summary || '').toLowerCase().includes(term);
@@ -430,6 +431,11 @@ const RepairList = () => {
                           <Building2 size={14} color="var(--text-muted)" />
                           {order.customer_name}
                         </div>
+                        {order.contact_person && (
+                          <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', marginTop: '3px', paddingLeft: '20px' }}>
+                            {order.contact_person}
+                          </div>
+                        )}
                       </td>
 
                       {/* 設備明細 */}

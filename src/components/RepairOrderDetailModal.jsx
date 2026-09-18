@@ -174,6 +174,12 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
                 <Building2 size={16} color="var(--primary-color)" />
                 {repairOrder.customer_name || '未指定客戶'}
               </div>
+              {repairOrder.contact_person && (
+                <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  聯絡人：<b style={{ color: 'var(--text-main)' }}>{repairOrder.contact_person}</b>
+                  {repairOrder.contact_phone ? `（${repairOrder.contact_phone}）` : ''}
+                </div>
+              )}
             </div>
 
             <div>

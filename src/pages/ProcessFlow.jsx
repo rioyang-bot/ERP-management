@@ -182,7 +182,7 @@ const ProcessFlow = () => {
       icon: <Wrench size={24} />,
       desc: '管理客戶設備報修、現場取件、送修原廠、原廠修復或良品換新 (RMA) 與完工交付出庫，全自動同步設備狀態、連動明細序號與轉移掛載硬體。',
       subModules: [
-        { name: '維修單列表 (Repair List)', path: '/repair-list', desc: '追蹤 RMA 案件進度、四階段狀態推進、原廠換新品序號處理、套印 RMA 單據' }
+        { name: '維修單列表 (Repair List)', path: '/repair-list', desc: '追蹤 RMA 案件進度、四階段狀態推進、原廠換新品序號處理、套印 RMA 單據；建單時可指定客戶底下的聯絡人（同一家公司多位聯絡人可個別選取），單據與列印均會標示' }
       ],
       inputs: ['客戶報修申請', '現場取回設備序號 (SN)', '原廠維修結果', '原廠更換良品/新品序號 (New SN)'],
       outputs: ['維修單號 (RMA-YYYYMMDD-01)', '設備狀態連動 (ACTIVE / REPAIRING / SHIPPED / SCRAPPED)', 'RMA 換號歷程紀錄', '完工交件證明'],

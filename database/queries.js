@@ -1564,11 +1564,13 @@ export const queries = {
     WHERE ri.repair_id = $1
     ORDER BY ri.id ASC
   `,
+  // 同一家公司常有多位聯絡人，單上要記得住是對誰處理的
   createRepairOrder: `
     INSERT INTO repair_orders (
       repair_no, customer_name, status, on_site_date, on_site_status,
-      creator_id, remarks
-    ) VALUES ($1, $2, 'ON_SITE_HANDLING', $3, $4, $5, $6)
+      creator_id, remarks, contact_person, contact_phone
+    ) VALUES ($1, $2, 'ON_SITE_HANDLING', $3, $4, $5, $6,
+              NULLIF(TRIM(COALESCE($7, '')), ''), NULLIF(TRIM(COALESCE($8, '')), ''))
     RETURNING *
   `,
   createRepairOrderItem: `

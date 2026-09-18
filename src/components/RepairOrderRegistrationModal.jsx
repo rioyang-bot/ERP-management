@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { 
   X, Wrench, Search, Plus, Trash2, CheckCircle, AlertCircle, 
   Cpu, Monitor, Server, Calendar, Building2, FileText, User
 } from 'lucide-react';
 import { logStatusChange, logCreate } from '../utils/auditLogger';
+import { getCustomerNames, getContactsForCustomer, findContactPhone } from '../utils/partnerContacts';
 
 const QUICK_STATUS_TAGS = [
   '取回 重灌OS',
@@ -18,6 +19,11 @@ const QUICK_STATUS_TAGS = [
 const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   const [repairNo, setRepairNo] = useState('');
   const [customerName, setCustomerName] = useState('');
+  // 同一家公司常有多位聯絡人，單上要記得住是對誰處理的
+  const [contactPerson, setContactPerson] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
+  // 這個客戶底下沒有建檔的聯絡人時，改成直接輸入
+  const [manualContact, setManualContact] = useState(false);
   const [onSiteDate, setOnSiteDate] = useState(new Date().toISOString().split('T')[0]);
   const [onSiteStatus, setOnSiteStatus] = useState('');
   const [remarks, setRemarks] = useState('');
@@ -80,10 +86,41 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
     }
   }, []);
 
+  // 目前這家公司底下有哪些聯絡人
+  const availableContacts = useMemo(
+    () => getContactsForCustomer(customerList, customerName),
+    [customerList, customerName]
+  );
+
+  // 換了客戶就不能沿用上一家的聯絡人；只有一位時直接帶入，省一次點選
+  useEffect(() => {
+    const names = availableContacts.map((c) => c.contact.trim().toUpperCase());
+    const current = contactPerson.trim().toUpperCase();
+
+    if (availableContacts.length === 0) {
+      // 這家公司沒有建檔聯絡人，改成手動輸入，但不要清掉使用者已經打的字
+      setManualContact(true);
+      return;
+    }
+    setManualContact(false);
+    if (current && names.includes(current)) return;
+    if (availableContacts.length === 1) {
+      setContactPerson(availableContacts[0].contact);
+      setContactPhone(availableContacts[0].phone);
+    } else if (current) {
+      setContactPerson('');
+      setContactPhone('');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [availableContacts]);
+
   useEffect(() => {
     if (isOpen) {
       const today = new Date().toISOString().split('T')[0];
       setCustomerName('');
+      setContactPerson('');
+      setContactPhone('');
+      setManualContact(false);
       setOnSiteDate(today);
       setOnSiteStatus('');
       setRemarks('');
@@ -226,7 +263,9 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
         onSiteDate,
         onSiteStatus.trim(),
         creatorId,
-        remarks.trim() || null
+        remarks.trim() || null,
+        contactPerson.trim() || null,
+        contactPhone.trim() || null
       ]);
 
       if (!orderRes.success || !orderRes.rows || orderRes.rows.length === 0) {
@@ -259,7 +298,7 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
       }
 
       // 3. 記錄維修單主檔建檔日誌
-      await logCreate('REPAIR', repairNo, customerName, `建立維修單 [${repairNo}]，客戶: ${customerName}，包含 ${selectedItems.length} 台設備`);
+      await logCreate('REPAIR', repairNo, customerName, `建立維修單 [${repairNo}]，客戶: ${customerName}${contactPerson.trim() ? `（聯絡人: ${contactPerson.trim()}）` : ''}，包含 ${selectedItems.length} 台設備`);
 
       alert(`✅ 維修單 [${repairNo}] 建立成功！\n已將 ${selectedItems.length} 台設備狀態同步更新為「在庫 (ACTIVE)」。`);
       if (onSuccess) onSuccess();
@@ -436,10 +475,69 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                   }}
                 />
                 <datalist id="customer-suggestions">
-                  {customerList.map((c, i) => (
-                    <option key={i} value={c.name} />
+                  {/* 公司名稱去重：partners 是一位聯絡人一列，直接列會看到一堆同名 */}
+                  {getCustomerNames(customerList).map((name) => (
+                    <option key={name} value={name} />
                   ))}
                 </datalist>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '6px' }} htmlFor="repair-contact-person">
+                  聯絡人 (Contact)
+                  {availableContacts.length > 0 && (
+                    <span style={{ marginLeft: '6px', fontWeight: 500, color: 'var(--text-subtle)' }}>
+                      此客戶有 {availableContacts.length} 位聯絡人
+                    </span>
+                  )}
+                </label>
+                {availableContacts.length > 0 && !manualContact ? (
+                  <select
+                    id="repair-contact-person"
+                    value={contactPerson}
+                    onChange={(e) => {
+                      if (e.target.value === '__MANUAL__') {
+                        setManualContact(true);
+                        setContactPerson('');
+                        setContactPhone('');
+                        return;
+                      }
+                      setContactPerson(e.target.value);
+                      setContactPhone(findContactPhone(customerList, customerName, e.target.value));
+                    }}
+                    style={{
+                      width: '100%', padding: '10px 14px', borderRadius: '8px',
+                      border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)',
+                      color: 'var(--text-main)', fontSize: '14px'
+                    }}
+                  >
+                    <option value="">請選擇聯絡人...</option>
+                    {availableContacts.map((c) => (
+                      <option key={c.contact} value={c.contact}>
+                        {c.contact}{c.phone ? `（${c.phone}）` : ''}
+                      </option>
+                    ))}
+                    <option value="__MANUAL__">⌨ 手動輸入未建檔的聯絡人</option>
+                  </select>
+                ) : (
+                  <input
+                    id="repair-contact-person"
+                    type="text"
+                    value={contactPerson}
+                    onChange={(e) => setContactPerson(e.target.value)}
+                    placeholder={customerName.trim() ? '此客戶尚未建檔聯絡人，可直接輸入' : '請先填寫客戶名稱'}
+                    style={{
+                      width: '100%', padding: '10px 14px', borderRadius: '8px',
+                      border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)',
+                      color: 'var(--text-main)', fontSize: '14px'
+                    }}
+                  />
+                )}
+                {contactPhone && (
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                    聯絡電話：{contactPhone}
+                  </div>
+                )}
               </div>
 
               <div>

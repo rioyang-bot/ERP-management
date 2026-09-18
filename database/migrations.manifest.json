@@ -108,6 +108,11 @@
       "file": "migration_checklist_detail_auto_apply.sql",
       "type": "schema",
       "note": "出機檢查表細項的自動套用旗標"
+    },
+    {
+      "file": "migration_repair_contact.sql",
+      "type": "schema",
+      "note": "維修單聯絡人與聯絡電話欄位"
     }
   ]
 }
