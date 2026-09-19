@@ -169,3 +169,82 @@ describe('聚合規則的定義', () => {
     expect(getConsumableGroupField('SPEC')).toBe('type');
   });
 });
+
+/**
+ * 工具列的編排
+ *
+ * 聚合規則決定上方卡片怎麼分，是先看的東西，位置排在搜尋框左邊。
+ * 耗材的「自訂標籤」已移除 —— 那是另一套只存在瀏覽器本機的篩選方式，
+ * 與搜尋框功能重疊，換一台電腦就不見，維護成本大於用處。
+ */
+describe('耗材工具列', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    window.alert = vi.fn();
+    window.electronAPI = {
+      namedQuery: vi.fn((query) => {
+        if (query === 'fetchConsumablesList' || query === 'fetchConsumablesListByType') {
+          return Promise.resolve({ success: true, rows: CONSUMABLES });
+        }
+        return Promise.resolve({ success: true, rows: [] });
+      }),
+      runTransaction: vi.fn(),
+      saveFile: vi.fn(),
+      getDashboardStats: vi.fn(),
+      getUserPreference: vi.fn().mockResolvedValue({ success: true, value: null }),
+      setUserPreference: vi.fn().mockResolvedValue({ success: true }),
+    };
+  });
+
+  const show = async () => {
+    render(<MemoryRouter><ConsumableList /></MemoryRouter>);
+    await screen.findByLabelText('聚合規則:');
+  };
+
+  it('聚合規則排在搜尋框左邊', async () => {
+    await show();
+    const select = screen.getByLabelText('聚合規則:');
+    const search = screen.getByPlaceholderText(/快速搜尋/);
+
+    // compareDocumentPosition：FOLLOWING 代表 search 在 select 之後
+    expect(select.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('自訂標籤功能已移除', async () => {
+    await show();
+    expect(screen.queryByText('自訂標籤')).not.toBeInTheDocument();
+    expect(document.querySelector('[data-testid="open-custom-tags-btn"]')).toBeNull();
+    expect(document.querySelector('[data-testid="custom-tags-container"]')).toBeNull();
+  });
+
+  it('搜尋框仍然可用 —— 標籤原本做的事，搜尋框本來就做得到', async () => {
+    await show();
+    await userEvent.type(screen.getByPlaceholderText(/快速搜尋/), 'PANDUIT');
+
+    await waitFor(() => expect(screen.getByPlaceholderText(/快速搜尋/)).toHaveValue('PANDUIT'));
+  });
+});
+
+describe('設備與硬體工具列', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    window.electronAPI = {
+      namedQuery: vi.fn(() => Promise.resolve({ success: true, rows: [] })),
+      runTransaction: vi.fn(),
+      saveFile: vi.fn(),
+      getDashboardStats: vi.fn(),
+      getUserPreference: vi.fn().mockResolvedValue({ success: true, value: null }),
+      setUserPreference: vi.fn().mockResolvedValue({ success: true }),
+    };
+  });
+
+  it('設備列表的聚合規則同樣排在搜尋框左邊', async () => {
+    render(<MemoryRouter><DeviceList /></MemoryRouter>);
+    const select = await screen.findByLabelText('聚合規則:');
+    const search = screen.getByPlaceholderText('快速搜尋...');
+
+    expect(select.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});

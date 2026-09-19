@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Search, Edit2, Trash2, X, Save, MoreHorizontal, ArrowLeftRight, ClipboardList, ShoppingBag, AlertTriangle, Archive, RotateCcw, Package, History, Layers, Tag } from 'lucide-react';
+import { Search, Edit2, Trash2, X, Save, MoreHorizontal, ArrowLeftRight, ClipboardList, ShoppingBag, AlertTriangle, Archive, RotateCcw, Package, History, Layers } from 'lucide-react';
 import ItemLedgerModal from '../components/ItemLedgerModal';
 import ConsumableRegistrationModal from '../components/ConsumableRegistrationModal';
 import ConsumableBatchImportModal from '../components/ConsumableBatchImportModal';
-import ConsumableCustomTagsModal from '../components/ConsumableCustomTagsModal';
 import { logUpdate, logDelete } from '../utils/auditLogger';
 import { usePageSize } from '../utils/usePageSize';
 import { useCardOrderByMode } from '../hooks/useCardLayout';
@@ -49,33 +48,6 @@ const ConsumableList = ({ isSplitMode = false }) => {
   const [ledgerItem, setLedgerItem] = useState(null);
 
   // 自訂查詢標籤相關狀態（依登入者帳號隔離）
-  const [currentUser, setCurrentUser] = useState('default');
-  const [customTags, setCustomTags] = useState([]);
-  const [showCustomTagsModal, setShowCustomTagsModal] = useState(false);
-
-  // 讀取當前登入者帳號與其專屬標籤
-  useEffect(() => {
-    try {
-      const session = JSON.parse(localStorage.getItem('erp_session') || '{}');
-      const user = session.username || session.id || 'default';
-      setCurrentUser(user);
-      const stored = localStorage.getItem(`consumable_custom_tags_${user}`);
-      if (stored) {
-        setCustomTags(JSON.parse(stored));
-      }
-    } catch (e) {
-      console.error('Failed to load custom tags:', e);
-    }
-  }, []);
-
-  const handleUpdateCustomTags = (newTags) => {
-    setCustomTags(newTags);
-    try {
-      localStorage.setItem(`consumable_custom_tags_${currentUser}`, JSON.stringify(newTags));
-    } catch (e) {
-      console.error('Failed to save custom tags:', e);
-    }
-  };
 
   // 當側邊欄分類變動時，清除搜尋關鍵字並同步選取類型
   useEffect(() => {
@@ -661,96 +633,16 @@ const ConsumableList = ({ isSplitMode = false }) => {
           </div>
 
           <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-            {/* 搜尋列左邊：自訂查詢標籤 (點擊直接帶入搜尋列) */}
-            {customTags.length > 0 && (
-              <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }} data-testid="custom-tags-container">
-                {customTags.map((tag, idx) => {
-                  const isActive = searchTerm === tag;
-                  return (
-                    <button
-                      key={`${tag}-${idx}`}
-                      type="button"
-                      onClick={() => {
-                        if (isActive) {
-                          setSearchTerm('');
-                        } else {
-                          setSearchTerm(tag);
-                          setCurrentPage(1);
-                        }
-                      }}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        padding: '6px 12px',
-                        borderRadius: '20px',
-                        fontSize: '12px',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        border: isActive ? '1.5px solid var(--primary-color)' : '1px solid var(--border-color)',
-                        backgroundColor: isActive ? 'var(--primary-color)' : 'var(--bg-surface-subtle)',
-                        color: isActive ? '#ffffff' : 'var(--text-main)',
-                        boxShadow: isActive ? '0 2px 8px rgba(37, 99, 235, 0.3)' : 'none',
-                        transition: 'all 0.15s ease'
-                      }}
-                      title={isActive ? `點擊取消篩選「${tag}」` : `點擊篩選「${tag}」`}
-                      data-testid={`custom-tag-btn-${tag}`}
-                    >
-                      <span>🏷️</span>
-                      <span>{tag}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            <div style={{ position: 'relative' }}>
-              <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-subtle)' }} />
-              <input type="text" placeholder="快速搜尋廠牌、型號/規格、備註..." value={searchTerm} onChange={(e) => {setSearchTerm(e.target.value); setCurrentPage(1);}} style={{ padding: '10px 12px 10px 42px', borderRadius: '30px', border: '1.5px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', width: '280px' }} />
-            </div>
-
-            {/* 自訂標籤管理按鈕 */}
-            <button
-              type="button"
-              onClick={() => setShowCustomTagsModal(true)}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '8px 14px',
-                borderRadius: '20px',
-                border: '1px dashed var(--primary-border, #93c5fd)',
-                backgroundColor: 'var(--primary-bg, #eff6ff)',
-                color: 'var(--primary-color, #2563eb)',
-                fontSize: '12px',
-                fontWeight: 700,
-                cursor: 'pointer',
-                transition: 'all 0.2s ease'
-              }}
-              title="管理者自訂查詢標籤（最多10筆）"
-              data-testid="open-custom-tags-btn"
-            >
-              <Tag size={14} />
-              <span>自訂標籤</span>
-              {customTags.length > 0 && (
-                <span style={{
-                  backgroundColor: 'var(--primary-color, #2563eb)',
-                  color: '#ffffff',
-                  borderRadius: '10px',
-                  padding: '1px 6px',
-                  fontSize: '10px',
-                  lineHeight: '1.2'
-                }}>
-                  {customTags.length}
-                </span>
-              )}
-            </button>
-
             <CardAggregationSelect
               value={aggregationMode}
               onChange={handleAggregationModeChange}
               modes={CONSUMABLE_AGGREGATION_MODES}
             />
+
+            <div style={{ position: 'relative' }}>
+              <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-subtle)' }} />
+              <input type="text" placeholder="快速搜尋廠牌、型號/規格、備註..." value={searchTerm} onChange={(e) => {setSearchTerm(e.target.value); setCurrentPage(1);}} style={{ padding: '10px 12px 10px 42px', borderRadius: '30px', border: '1.5px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', width: '280px' }} />
+            </div>
 
             {(searchTerm || selectedType || typeFilter) && (
               <button 
@@ -1266,14 +1158,6 @@ const ConsumableList = ({ isSplitMode = false }) => {
         }}
       />
 
-      {/* 自訂查詢標籤管理 Modal */}
-      <ConsumableCustomTagsModal
-        isOpen={showCustomTagsModal}
-        onClose={() => setShowCustomTagsModal(false)}
-        username={currentUser}
-        tags={customTags}
-        onUpdateTags={handleUpdateCustomTags}
-      />
     </div>
   );
 };
