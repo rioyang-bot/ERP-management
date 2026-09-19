@@ -7,12 +7,13 @@ import RmaReplacementModal from '../components/RmaReplacementModal';
 import { logUpdate, logDelete, logStatusChange } from '../utils/auditLogger';
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
-import { isItemRetired, getItemAggregationKey, aggregateCards, computeNewRetiredKeys, getCardTitle, showsModelSubtitle, getCardSearchText } from '../utils/cardAggregation';
+import { isItemRetired, getItemAggregationKey, aggregateCards, computeNewRetiredKeys, getCardTitle, showsModelSubtitle, getCardSearchText, ASSET_AGGREGATION_MODES } from '../utils/cardAggregation';
 import ColumnVisibilityModal from '../components/ColumnVisibilityModal';
 import CardAggregationLegend from '../components/CardAggregationLegend';
 import { isFullyOutOfWarranty } from '../utils/warranty';
 import { useColumnPreferences } from '../hooks/useColumnPreferences';
 import AssetIdentityCell from '../components/common/AssetIdentityCell';
+import CardAggregationSelect from '../components/common/CardAggregationSelect';
 import { useCardLayoutByMode } from '../hooks/useCardLayout';
 
 // 硬體列表的欄位清單：id 對應表格的每一欄，always 代表不可隱藏
@@ -586,83 +587,11 @@ const HwList = ({ isSplitMode = false }) => {
       <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
 
         {/* 卡片聚合維度選擇器 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'var(--bg-surface-subtle)', padding: '3px 8px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
-          <span style={{ fontSize: '12px', fontWeight: '800', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>聚合規則:</span>
-          <div style={{ display: 'inline-flex', gap: '2px' }}>
-            <button
-              type="button"
-              onClick={() => handleAggregationModeChange('SPEC')}
-              style={{
-                padding: '5px 10px',
-                borderRadius: '7px',
-                border: 'none',
-                fontSize: '11px',
-                fontWeight: '800',
-                cursor: 'pointer',
-                backgroundColor: aggregationMode === 'SPEC' ? 'var(--primary-color)' : 'transparent',
-                color: aggregationMode === 'SPEC' ? '#fff' : 'var(--text-muted)',
-                transition: 'all 0.15s'
-              }}
-              title="依規格獨立生成卡片：相同廠牌、類型、型號底下，只要規格不同就獨立一張卡片"
-            >
-              🏷️ 依規格
-            </button>
-            <button
-              type="button"
-              onClick={() => handleAggregationModeChange('MODEL')}
-              style={{
-                padding: '5px 10px',
-                borderRadius: '7px',
-                border: 'none',
-                fontSize: '11px',
-                fontWeight: '800',
-                cursor: 'pointer',
-                backgroundColor: aggregationMode === 'MODEL' ? 'var(--primary-color)' : 'transparent',
-                color: aggregationMode === 'MODEL' ? '#fff' : 'var(--text-muted)',
-                transition: 'all 0.15s'
-              }}
-              title="依型號聚合：相同廠牌與型號合併統計（不分規格）"
-            >
-              📦 依型號
-            </button>
-            <button
-              type="button"
-              onClick={() => handleAggregationModeChange('TYPE')}
-              style={{
-                padding: '5px 10px',
-                borderRadius: '7px',
-                border: 'none',
-                fontSize: '11px',
-                fontWeight: '800',
-                cursor: 'pointer',
-                backgroundColor: aggregationMode === 'TYPE' ? 'var(--primary-color)' : 'transparent',
-                color: aggregationMode === 'TYPE' ? '#fff' : 'var(--text-muted)',
-                transition: 'all 0.15s'
-              }}
-              title="依類型聚合：相同類型合併統計（不分廠牌與型號，例如所有伺服器算成一張卡片）"
-            >
-              🔧 依類型
-            </button>
-            <button
-              type="button"
-              onClick={() => handleAggregationModeChange('BRAND')}
-              style={{
-                padding: '5px 10px',
-                borderRadius: '7px',
-                border: 'none',
-                fontSize: '11px',
-                fontWeight: '800',
-                cursor: 'pointer',
-                backgroundColor: aggregationMode === 'BRAND' ? 'var(--primary-color)' : 'transparent',
-                color: aggregationMode === 'BRAND' ? '#fff' : 'var(--text-muted)',
-                transition: 'all 0.15s'
-              }}
-              title="依廠牌聚合：純依廠牌合併統計（如 Mellanox、Intel 各一張卡片）"
-            >
-              🏢 依廠牌
-            </button>
-          </div>
-        </div>
+        <CardAggregationSelect
+          value={aggregationMode}
+          onChange={handleAggregationModeChange}
+          modes={ASSET_AGGREGATION_MODES}
+        />
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
         <button

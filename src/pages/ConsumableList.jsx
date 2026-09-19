@@ -7,7 +7,9 @@ import ConsumableBatchImportModal from '../components/ConsumableBatchImportModal
 import ConsumableCustomTagsModal from '../components/ConsumableCustomTagsModal';
 import { logUpdate, logDelete } from '../utils/auditLogger';
 import { usePageSize } from '../utils/usePageSize';
-import { useCardLayout } from '../hooks/useCardLayout';
+import { useCardOrderByMode } from '../hooks/useCardLayout';
+import CardAggregationSelect from '../components/common/CardAggregationSelect';
+import { CONSUMABLE_AGGREGATION_MODES, getConsumableGroupField } from '../utils/cardAggregation';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 import CardAggregationLegend from '../components/CardAggregationLegend';
 
@@ -25,7 +27,22 @@ const ConsumableList = ({ isSplitMode = false }) => {
   const [showBatchImport, setShowBatchImport] = useState(false);
   const [searchParams] = useSearchParams();
   const typeFilter = searchParams.get('type');
+  // 卡片可以依類型或依廠牌聚合；selectedType 存的是「選取的卡片值」，
+  // 在依類型時是類型名稱、依廠牌時是廠牌名稱
   const [selectedType, setSelectedType] = useState(typeFilter || null);
+  const [aggregationMode, setAggregationMode] = useState(() => {
+    return localStorage.getItem('consumable_aggregation_mode') || 'TYPE';
+  });
+  const groupField = getConsumableGroupField(aggregationMode);
+  const groupLabel = aggregationMode === 'BRAND' ? '廠牌' : '類型';
+
+  const handleAggregationModeChange = (mode) => {
+    setAggregationMode(mode);
+    localStorage.setItem('consumable_aggregation_mode', mode);
+    // 兩種規則的卡片值不同（類型名稱 vs 廠牌名稱），選取狀態不能沿用
+    setSelectedType(null);
+    setCurrentPage(1);
+  };
   const [showAll, setShowAll] = useState(false);
   const [activeMenuId, setActiveMenuId] = useState(null);
   const [menuPosition, setMenuPosition] = useState(null);
@@ -271,9 +288,12 @@ const ConsumableList = ({ isSplitMode = false }) => {
   }, [showTransferModal, transferData.itemId, fetchAssets, fetchItemLabUsage]);
 
   const filteredItems = items.filter(item => {
-    // 1. 依選定之「類型卡片」或側邊欄類型進行篩選
-    const effectiveType = selectedType || typeFilter;
-    if (effectiveType && (item.type || '').trim() !== effectiveType.trim()) {
+    // 1. 依選定的卡片篩選。側邊欄傳進來的 typeFilter 一律是類型，
+    //    與卡片的聚合欄位未必相同，因此兩者分開比對。
+    if (typeFilter && (item.type || '').trim() !== typeFilter.trim()) {
+      return false;
+    }
+    if (selectedType && (item[groupField] || '').trim() !== selectedType.trim()) {
       return false;
     }
 
@@ -294,7 +314,7 @@ const ConsumableList = ({ isSplitMode = false }) => {
 
   // --- 儀表板拖曳排序邏輯 ---
   // 卡片排列以登入身分為範圍存在伺服器端，每個人各自一份
-  const [typeOrder, setTypeOrder] = useCardLayout('cardOrder:consumableList', [], 'consumable_type_order');
+  const [typeOrder, setTypeOrder] = useCardOrderByMode('cardOrder:consumableList', aggregationMode, 'consumable_type_order');
   const [draggingCardKey, setDraggingCardKey] = useState(null);
 
   const [retiredKeys, setRetiredKeys] = useState(() => {
@@ -356,12 +376,12 @@ const ConsumableList = ({ isSplitMode = false }) => {
   };
 
   const renderStats = () => {
-    // 依「類型 (Type)」分組匯總
+    // 依目前的聚合規則分組匯總：依類型看 type，依廠牌看 brand
     const statsMap = items.reduce((acc, curr) => {
       if (typeFilter && (curr.type || '').trim() !== typeFilter.trim()) {
         return acc;
       }
-      const key = (curr.type || '未分類').trim();
+      const key = (curr[groupField] || (aggregationMode === 'BRAND' ? '未知廠牌' : '未分類')).trim();
 
       if (!acc[key]) {
         acc[key] = {
@@ -369,6 +389,7 @@ const ConsumableList = ({ isSplitMode = false }) => {
           type: key,
           models: new Set(),
           brands: new Set(),
+          types: new Set(),
           specs: new Set(),
           stock_qty: 0,
           lab_qty: 0,
@@ -379,6 +400,7 @@ const ConsumableList = ({ isSplitMode = false }) => {
       }
       if (curr.model) acc[key].models.add(curr.model);
       if (curr.brand) acc[key].brands.add(curr.brand);
+      if (curr.type) acc[key].types.add(curr.type);
       if (curr.specification) acc[key].specs.add(curr.specification);
 
       const stock = Number(curr.stock_qty || 0);
@@ -398,6 +420,7 @@ const ConsumableList = ({ isSplitMode = false }) => {
     Object.values(statsMap).forEach(st => {
       st.modelsCount = st.models.size;
       st.brandsCount = st.brands.size;
+      st.typesCount = st.types.size;
       st.specsCount = st.specs.size;
     });
 
@@ -485,7 +508,10 @@ const ConsumableList = ({ isSplitMode = false }) => {
             </div>
 
             <div style={{ color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', fontSize: '12px', fontWeight: '600', marginTop: '4px', paddingLeft: '23px' }}>
-              {st.brandsCount} 個廠牌 · {st.modelsCount} 款型號
+              {/* 依廠牌聚合時「N 個廠牌」恆為 1，講有幾種類型才有資訊量 */}
+              {aggregationMode === 'BRAND'
+                ? `${st.typesCount} 種類型 · ${st.modelsCount} 款型號`
+                : `${st.brandsCount} 個廠牌 · ${st.modelsCount} 款型號`}
             </div>
           </div>
 
@@ -720,6 +746,12 @@ const ConsumableList = ({ isSplitMode = false }) => {
               )}
             </button>
 
+            <CardAggregationSelect
+              value={aggregationMode}
+              onChange={handleAggregationModeChange}
+              modes={CONSUMABLE_AGGREGATION_MODES}
+            />
+
             {(searchTerm || selectedType || typeFilter) && (
               <button 
                 onClick={() => { setSearchTerm(''); setSelectedType(null); navigate('?'); }}
@@ -738,14 +770,14 @@ const ConsumableList = ({ isSplitMode = false }) => {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'var(--primary-bg)', border: '1px solid var(--primary-border)', padding: '10px 18px', borderRadius: '12px', marginBottom: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--primary-color)', fontWeight: 800, fontSize: '14px' }}>
               <Layers size={18} color="var(--primary-color)" />
-              目前鎖定類型：<span style={{ color: 'var(--primary-color)', fontSize: '14px' }}>{selectedType}</span>
+              目前鎖定{groupLabel}：<span style={{ color: 'var(--primary-color)', fontSize: '14px' }}>{selectedType}</span>
               <span style={{ color: 'var(--text-muted)', fontSize: '12px', fontWeight: 500, marginLeft: '6px' }}>（共 {filteredItems.length} 項品項）</span>
             </div>
             <button 
               onClick={() => setSelectedType(null)} 
               style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '6px 12px', color: 'var(--text-main)', cursor: 'pointer', fontSize: '12px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px', boxShadow: 'var(--card-shadow)' }}
             >
-              <X size={14} /> 清除類型篩選
+              <X size={14} /> 清除{groupLabel}篩選
             </button>
           </div>
         )}
@@ -927,7 +959,7 @@ const ConsumableList = ({ isSplitMode = false }) => {
         ) : (
           <div style={{ textAlign: 'center', padding: '60px 20px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '16px', border: '1px dashed var(--border-color)', marginTop: '20px' }}>
             <Package size={40} color="var(--text-subtle)" style={{ marginBottom: '12px' }} />
-            <div style={{ color: 'var(--text-main)', fontSize: '15px', fontWeight: '700' }}>請點擊上方「類型卡片」查看該分類下的所有廠牌與型號</div>
+            <div style={{ color: 'var(--text-main)', fontSize: '15px', fontWeight: '700' }}>請點擊上方「{groupLabel}卡片」查看該分類下的所有品項</div>
             <div style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '6px', marginBottom: '16px' }}>您也可以直接使用搜尋框關鍵字尋找，或點擊下方按鈕展開完整清單</div>
             <button 
               onClick={() => setShowAll(true)}
@@ -938,8 +970,12 @@ const ConsumableList = ({ isSplitMode = false }) => {
           </div>
         )}
 
-        {/* 耗材卡片聚合規則說明（三個列表共用同一份說明；耗材固定依類型） */}
-        <CardAggregationLegend unit="耗材" mode="TYPE" fixed />
+        {/* 耗材卡片聚合規則說明（三個列表共用同一份說明） */}
+        <CardAggregationLegend
+          unit="耗材"
+          mode={aggregationMode}
+          availableModes={CONSUMABLE_AGGREGATION_MODES.map((m) => m.value)}
+        />
       </div>
 
       {showEditModal && editItem && (

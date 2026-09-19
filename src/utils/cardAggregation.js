@@ -172,3 +172,25 @@ export function getCardSearchText(stat) {
     ...(stat.brands || []), ...(stat.models || []), ...(stat.specs || []),
   ].filter(Boolean).join(' ').toLowerCase();
 }
+
+/**
+ * 聚合規則的選單內容
+ *
+ * 由粗到細排列，與本檔開頭的說明同一套定義。
+ * 設備與硬體四種都適用；耗材只有類型與廠牌 ——
+ * 耗材以數量計、沒有逐筆序號，再細分到型號與規格就失去彙總的意義。
+ */
+export const ASSET_AGGREGATION_MODES = [
+  { value: 'SPEC', label: '🏷️ 依規格', title: '依規格獨立生成卡片：相同廠牌、類型、型號底下，只要規格不同就獨立一張卡片' },
+  { value: 'MODEL', label: '📦 依型號', title: '依型號聚合：相同廠牌與型號合併統計（不分規格）' },
+  { value: 'TYPE', label: '🔧 依類型', title: '依類型聚合：相同類型合併統計（不分廠牌與型號，例如所有伺服器算成一張卡片）' },
+  { value: 'BRAND', label: '🏢 依廠牌', title: '依廠牌聚合：純依廠牌合併統計（如 Dell、HP 各一張卡片）' },
+];
+
+export const CONSUMABLE_AGGREGATION_MODES = [
+  { value: 'TYPE', label: '🔧 依類型', title: '依類型聚合：相同類型合併統計（例如所有網路線算成一張卡片）' },
+  { value: 'BRAND', label: '🏢 依廠牌', title: '依廠牌聚合：相同廠牌合併統計（如 PANDUIT、METECH 各一張卡片）' },
+];
+
+/** 耗材卡片的欄位：依類型看 type，依廠牌看 brand */
+export const getConsumableGroupField = (mode) => (mode === 'BRAND' ? 'brand' : 'type');

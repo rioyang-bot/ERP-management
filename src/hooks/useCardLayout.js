@@ -122,4 +122,33 @@ export function useCardLayoutByMode(prefKey, mode, legacyKey) {
   return [layout, setLayout, loaded];
 }
 
+/**
+ * 卡片「順序」的依維度版本。
+ *
+ * useCardLayoutByMode 存的是位置對照表（物件），這支存的是排列順序（陣列）——
+ * 耗材列表用的是後者。兩者都依聚合維度各存一份，切換規則時順序不會互相蓋掉。
+ *
+ * 耗材原本固定依類型、只存一份陣列，因此讀到陣列時視為「依類型」那一份，
+ * 既有的排列不會因為這次改版而消失。
+ *
+ * @param {string} prefKey
+ * @param {string} mode      目前的聚合維度
+ * @param {string} [legacyKey] 舊的 localStorage 鍵值
+ * @returns {[string[], (next: string[]) => void, boolean]}
+ */
+export function useCardOrderByMode(prefKey, mode, legacyKey) {
+  const [stored, setStored, loaded] = useCardLayout(prefKey, {}, legacyKey);
+
+  const isFlat = Array.isArray(stored);
+  const byMode = isFlat ? { TYPE: stored } : (stored || {});
+  const order = Array.isArray(byMode[mode]) ? byMode[mode] : [];
+
+  const setOrder = useCallback(
+    (next) => setStored({ ...(Array.isArray(stored) ? { TYPE: stored } : (stored || {})), [mode]: next }),
+    [setStored, stored, mode]
+  );
+
+  return [order, setOrder, loaded];
+}
+
 export default useCardLayout;
