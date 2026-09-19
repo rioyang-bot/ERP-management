@@ -1212,23 +1212,78 @@ export const queries = {
   `,
 
   // --- Stocktaking (盤點總表) ---
+  // 分組多加 i.id：品項主檔與「廠牌+型號+規格」在現行資料是一對一，
+  // 列數不變，但每一列有了 item_master_id 才對得上每月結存
   fetchStocktakingAssets: `
     SELECT 
+      i.id AS item_master_id,
       c.name as category_name, 
       i.type, 
       i.brand, 
       i.model, 
       i.specification, 
-      COUNT(a.id) as stock_qty
+      COUNT(a.id) as stock_qty,
+      EXISTS (
+        SELECT 1 FROM outbound_items oi
+        JOIN outbound_requests o ON oi.request_id = o.id
+        WHERE oi.item_id = i.id
+          AND o.status IN ('SHIPPED', 'RETURNED')
+          AND COALESCE(o.shipping_date, o.created_at::date) >= (CURRENT_DATE - INTERVAL '3 months')
+      ) AS has_recent_outbound
     FROM assets a 
     JOIN item_master i ON a.item_master_id = i.id 
     JOIN categories c ON i.category_id = c.id 
     WHERE a.status = 'ACTIVE' AND c.name IN ('設備', '硬體')
-    GROUP BY c.name, i.type, i.brand, i.model, i.specification
+    GROUP BY i.id, c.name, i.type, i.brand, i.model, i.specification
     ORDER BY c.name DESC, i.brand ASC, i.type ASC, i.model ASC
   `,
+  // --- 每月結餘庫存 ---
+  // 產生某個月的結存。以「目前庫存」寫入指定月份，因此必須在該月結束後
+  // 才執行（每月 1 日跑上個月）。同月重複執行不會覆蓋既有紀錄。
+  generateMonthlyBalances: `
+    INSERT INTO inventory_monthly_balances (item_master_id, balance_month, stock_qty, lab_qty, lent_qty)
+    SELECT
+      im.id,
+      $1::date,
+      CASE WHEN c.name = '耗材' THEN COALESCE(im.stock_qty, 0)
+           ELSE (SELECT COUNT(*) FROM assets a WHERE a.item_master_id = im.id AND a.status = 'ACTIVE') END,
+      CASE WHEN c.name = '耗材' THEN COALESCE(im.lab_qty, 0) ELSE 0 END,
+      CASE WHEN c.name = '耗材' THEN COALESCE(im.lent_qty, 0)
+           ELSE (SELECT COUNT(*) FROM assets a WHERE a.item_master_id = im.id AND a.status = 'LENT') END
+    FROM item_master im
+    LEFT JOIN categories c ON im.category_id = c.id
+    ON CONFLICT ON CONSTRAINT inventory_monthly_balances_unique DO NOTHING
+    RETURNING id
+  `,
+  // 已經記錄到哪一個月；沒有任何紀錄時回傳 NULL
+  fetchLatestBalanceMonth: `
+    SELECT MAX(balance_month) AS latest_month FROM inventory_monthly_balances
+  `,
+  // 盤點表要用的近三個月結存，一次撈齊後由前端對應到各列
+  fetchRecentMonthlyBalances: `
+    SELECT
+      b.item_master_id,
+      to_char(b.balance_month, 'YYYY-MM') AS month,
+      b.stock_qty,
+      b.lab_qty,
+      b.lent_qty
+    FROM inventory_monthly_balances b
+    WHERE b.balance_month IN (
+      SELECT DISTINCT balance_month FROM inventory_monthly_balances
+      ORDER BY balance_month DESC LIMIT 3
+    )
+    ORDER BY b.balance_month DESC
+  `,
   fetchStocktakingConsumables: `
-    SELECT i.id, i.brand, i.model, i.specification, i.type, i.stock_qty, i.lab_qty, i.unit, c.name as category_name 
+    SELECT i.id, i.id AS item_master_id, i.brand, i.model, i.specification, i.type,
+           i.stock_qty, i.lab_qty, i.unit, c.name as category_name,
+           EXISTS (
+             SELECT 1 FROM outbound_items oi
+             JOIN outbound_requests o ON oi.request_id = o.id
+             WHERE oi.item_id = i.id
+               AND o.status IN ('SHIPPED', 'RETURNED')
+               AND COALESCE(o.shipping_date, o.created_at::date) >= (CURRENT_DATE - INTERVAL '3 months')
+           ) AS has_recent_outbound
     FROM item_master i 
     JOIN categories c ON i.category_id = c.id 
     WHERE c.name = '耗材' AND (i.stock_qty > 0 OR i.lab_qty > 0)

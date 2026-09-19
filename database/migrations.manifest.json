@@ -123,6 +123,11 @@
       "file": "migration_repair_no_oem.sql",
       "type": "schema",
       "note": "維修單「不需送回原廠」旗標，供 IT 自行維修結案使用"
+    },
+    {
+      "file": "migration_monthly_balances.sql",
+      "type": "schema",
+      "note": "每月結餘庫存表，供實體庫存盤點表列出近三個月"
     }
   ]
 }

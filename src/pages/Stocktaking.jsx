@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Download, ClipboardList, RotateCw, Server, Package, Cpu } from 'lucide-react';
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
+import { getBalanceMonths, indexBalances, getBalance } from '../utils/monthlyBalanceView';
 import './Stocktaking.css';
 
 const Stocktaking = () => {
@@ -14,6 +15,13 @@ const Stocktaking = () => {
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
+  // 只看近三個月有出貨異動的品項：盤點時通常先清這些
+  const [onlyRecentOutbound, setOnlyRecentOutbound] = useState(false);
+
+  // 近三個月的月結存（每月 1 日由伺服器記錄上個月的結餘）
+  const [balanceRows, setBalanceRows] = useState([]);
+  const balanceMonths = useMemo(() => getBalanceMonths(balanceRows), [balanceRows]);
+  const balances = useMemo(() => indexBalances(balanceRows), [balanceRows]);
 
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = usePageSize('stocktaking', 10);
@@ -38,6 +46,12 @@ const Stocktaking = () => {
           setConsumables(res.rows);
         }
       }
+
+      // 公司資產是逐台列序號的清單，沒有「每月幾個」可言
+      if (activeTab !== 'company') {
+        const bal = await window.electronAPI.namedQuery('fetchRecentMonthlyBalances');
+        setBalanceRows(bal.success ? bal.rows : []);
+      }
     } catch (err) {
       console.error('Fetch error:', err);
       alert('無法取得盤點資料');
@@ -56,6 +70,7 @@ const Stocktaking = () => {
       const targetCategory = activeTab === 'devices' ? '設備' : '硬體';
       return assets.filter(item => {
         if (item.category_name !== targetCategory) return false;
+        if (onlyRecentOutbound && !item.has_recent_outbound) return false;
         if (searchTerm) {
           const term = searchTerm.toLowerCase();
           return (
@@ -82,6 +97,7 @@ const Stocktaking = () => {
       });
     } else {
       return consumables.filter(item => {
+        if (onlyRecentOutbound && !item.has_recent_outbound) return false;
         if (searchTerm) {
           const term = searchTerm.toLowerCase();
           return (
@@ -94,11 +110,11 @@ const Stocktaking = () => {
         return true;
       });
     }
-  }, [assets, consumables, companyAssets, activeTab, searchTerm]);
+  }, [assets, consumables, companyAssets, activeTab, searchTerm, onlyRecentOutbound]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [activeTab, searchTerm]);
+  }, [activeTab, searchTerm, onlyRecentOutbound]);
 
   const totalPages = Math.ceil(filteredData.length / itemsPerPage) || 1;
   const paginatedData = filteredData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
@@ -116,7 +132,8 @@ const Stocktaking = () => {
 
     if (activeTab === 'devices' || activeTab === 'hardware') {
       filename = `${activeTab === 'devices' ? '設備' : '硬體'}盤點單_${today}.csv`;
-      headers = ['分類', '類型', '廠牌', '型號', '規格說明', '系統庫存總數', '實盤總數量', '盤點備註'];
+      headers = ['分類', '類型', '廠牌', '型號', '規格說明', '系統庫存總數',
+        ...balanceMonths.map((m) => `${m} 結餘`), '近期異動', '實盤總數量', '盤點備註'];
 
       csvRows = filteredData.map(item => [
         item.category_name || '',
@@ -125,6 +142,11 @@ const Stocktaking = () => {
         item.model || '',
         (item.specification || '').replace(/,/g, '，').replace(/\n/g, ' '),
         item.stock_qty || 0,
+        ...balanceMonths.map((m) => {
+          const qty = getBalance(balances, item.item_master_id, m);
+          return qty === null ? '' : qty;
+        }),
+        item.has_recent_outbound ? '是' : '',
         '', // 留空給現場人員填寫
         ''  // 留空給現場人員填寫
       ]);
@@ -144,7 +166,8 @@ const Stocktaking = () => {
       ]);
     } else {
       filename = `耗材盤點單_${today}.csv`;
-      headers = ['分類', '類型', '廠牌', '型號', '規格說明', '系統庫存量', '實驗室暫存量', '實盤總數量', '盤點備註'];
+      headers = ['分類', '類型', '廠牌', '型號', '規格說明', '系統庫存量', '實驗室暫存量',
+        ...balanceMonths.map((m) => `${m} 結餘`), '近期異動', '實盤總數量', '盤點備註'];
 
       csvRows = filteredData.map(item => [
         item.category_name || '',
@@ -154,6 +177,11 @@ const Stocktaking = () => {
         (item.specification || '').replace(/,/g, '，').replace(/\n/g, ' '),
         item.stock_qty || 0,
         item.lab_qty || 0,
+        ...balanceMonths.map((m) => {
+          const qty = getBalance(balances, item.item_master_id, m);
+          return qty === null ? '' : qty;
+        }),
+        item.has_recent_outbound ? '是' : '',
         '', // 留空給現場人員填寫
         ''  // 留空給現場人員填寫
       ]);
@@ -246,6 +274,20 @@ const Stocktaking = () => {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
+          {/* 公司資產是逐台列序號的清單，沒有品項層級的出貨統計 */}
+          {activeTab !== 'company' && (
+            <div className="st-filter-item">
+              <label className="st-filter-label">異動篩選</label>
+              <label className="st-checkbox">
+                <input
+                  type="checkbox"
+                  checked={onlyRecentOutbound}
+                  onChange={(e) => setOnlyRecentOutbound(e.target.checked)}
+                />
+                <span>只看近三個月有出貨異動</span>
+              </label>
+            </div>
+          )}
         </div>
       </div>
 
@@ -283,6 +325,12 @@ const Stocktaking = () => {
                   {activeTab === 'consumables' && (
                     <th style={{ width: '100px', textAlign: 'right' }}>實驗室庫存</th>
                   )}
+                  {/* 每月 1 日記錄的上個月結餘；尚未累積到的月份不會出現欄位 */}
+                  {balanceMonths.map((m) => (
+                    <th key={m} style={{ width: '90px', textAlign: 'right' }} className="st-month-col">
+                      {m} 結餘
+                    </th>
+                  ))}
                   <th style={{ width: '120px', textAlign: 'center' }}>實盤總數</th>
                   <th style={{ width: '150px' }}>盤點備註</th>
                 </tr>
@@ -329,6 +377,9 @@ const Stocktaking = () => {
                       </td>
                       <td style={{ fontSize: '12px', color: '#64748b', maxWidth: '300px' }}>
                         {item.specification}
+                        {item.has_recent_outbound && (
+                          <span className="st-recent-tag" title="近三個月內有出貨或借還異動">近期異動</span>
+                        )}
                       </td>
                       <td style={{ textAlign: 'right', fontWeight: '700', color: 'var(--text-main)' }}>
                         {item.stock_qty}
@@ -338,6 +389,15 @@ const Stocktaking = () => {
                           {item.lab_qty}
                         </td>
                       )}
+                      {balanceMonths.map((m) => {
+                        const qty = getBalance(balances, item.item_master_id, m);
+                        return (
+                          <td key={m} style={{ textAlign: 'right', color: '#64748b' }} className="st-month-col">
+                            {/* 還沒開始記錄的月份顯示破折號；顯示 0 會被誤讀成當時庫存為零 */}
+                            {qty === null ? <span style={{ color: '#cbd5e1' }}>—</span> : qty}
+                          </td>
+                        );
+                      })}
                       <td style={{ textAlign: 'center' }}><span className="st-print-blank"></span></td>
                       <td><span className="st-print-blank" style={{ width: '100%' }}></span></td>
                     </tr>
@@ -345,7 +405,7 @@ const Stocktaking = () => {
                 })
               ) : (
                 <tr>
-                  <td colSpan={activeTab === 'consumables' ? 7 : (activeTab === 'company' ? 7 : 6)} className="st-empty">
+                  <td colSpan={(activeTab === 'consumables' ? 7 : (activeTab === 'company' ? 7 : 6)) + (activeTab === 'company' ? 0 : balanceMonths.length)} className="st-empty">
                     {`沒有符合的${activeTab === 'devices' ? '設備' : activeTab === 'hardware' ? '硬體' : activeTab === 'company' ? '公司資產' : '耗材'}`}
                   </td>
                 </tr>
@@ -361,6 +421,35 @@ const Stocktaking = () => {
             <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(prev => prev + 1)} style={{ ...navBtnStyle, opacity: currentPage === totalPages ? 0.5 : 1 }}>下一頁</button>
           </div>
         )}
+      </div>
+
+      {/* 頁面說明：印出來的表要怎麼用、欄位各自代表什麼 */}
+      <div className="st-notes">
+        <div className="st-notes-title">實體庫存盤點表說明</div>
+        <div className="st-notes-body">
+          <div>
+            • <b>系統庫存</b>：目前系統帳面上的數量。設備與硬體算的是狀態為「在庫」的台數，
+            耗材算的是庫存數量，實驗室暫存量另外一欄。
+          </div>
+          <div>
+            • <b>每月結餘</b>：每月 1 日由系統記下上個月底的庫存，作為對帳用的歷史基準。
+            系統沒有逐筆的異動流水可以回推，因此這些數字是從啟用這項功能之後才開始累積的，
+            先前的月份會是「—」，不是 0。若伺服器在月初幾天沒有開機，該月的數字會是實際記錄當下的庫存，
+            與月底會有幾天的落差。
+          </div>
+          <div>
+            • <b>近期異動</b>：近三個月內有出貨或借還紀錄的品項。上方可勾選只顯示這些品項，
+            盤點時通常先清這一批。
+          </div>
+          <div>
+            • <b>實盤總數與盤點備註</b>：這兩欄<b>刻意留白，供列印後手寫</b>。
+            系統不會儲存這兩欄的內容，畫面上也不能輸入 ——
+            盤點結果請在紙本上填寫，若要更正系統庫存，回到各自的列表修改。
+          </div>
+          <div>
+            • <b>匯出</b>：右上角可匯出 CSV，欄位與畫面一致，同樣保留實盤與備註兩個空欄。
+          </div>
+        </div>
       </div>
     </div>
   );

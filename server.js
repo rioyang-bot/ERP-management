@@ -13,6 +13,7 @@ import { createAuthRoutes } from './server/authRoutes.js';
 import { createPreferenceRoutes } from './server/preferenceRoutes.js';
 import { prepareQueryParams } from './server/queryParams.js';
 import { runTransaction } from './server/transaction.js';
+import { ensureMonthlyBalances } from './server/monthlyBalance.js';
 
 const { Pool } = pg;
 const __filename = fileURLToPath(import.meta.url);
@@ -276,6 +277,17 @@ const auth = createAuth(pool);
 // 逾期連線階段清理：啟動時執行一次，之後每小時一次
 auth.purgeExpired().catch(() => {});
 setInterval(() => { auth.purgeExpired().catch(() => {}); }, 3600 * 1000).unref?.();
+
+// 每月結餘庫存：沿用同一個每小時的節奏檢查「上個月記了沒」，沒記就補。
+// 如此一來 1 日當天沒開機也不會漏掉，開機後第一次檢查就會補上。
+const runMonthlyBalance = () =>
+  ensureMonthlyBalances({ pool, namedQueries })
+    .then(({ generated }) => {
+      if (generated.length > 0) console.log(`[MonthlyBalance] 已產生結餘庫存: ${generated.join(', ')}`);
+    })
+    .catch((e) => console.error('[MonthlyBalance] 產生失敗:', e.message));
+runMonthlyBalance();
+setInterval(runMonthlyBalance, 3600 * 1000).unref?.();
 
 // 上傳檔案需登入後才能取用
 app.use('/uploads', auth.requireAuth, express.static(uploadsDir));

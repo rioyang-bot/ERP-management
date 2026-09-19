@@ -275,3 +275,58 @@
   border-bottom: 1px dashed var(--border-color);
   display: inline-block;
 }
+
+/* 只看近期有出貨異動 */
+.st-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+  cursor: pointer;
+  white-space: nowrap;
+  padding: 8px 0;
+}
+.st-checkbox input { cursor: pointer; }
+
+/* 近三個月的結餘欄位，比目前庫存淡一階，避免與當下的數字混淆 */
+.st-month-col {
+  background-color: var(--bg-surface-subtle);
+  font-size: 12px;
+}
+
+.st-recent-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background-color: rgba(217, 119, 6, 0.12);
+  color: #b45309;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+/* 頁面說明 */
+.st-notes {
+  margin-top: 20px;
+  padding: 14px 18px;
+  background-color: var(--bg-surface-subtle);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.7;
+}
+.st-notes-title {
+  font-weight: 800;
+  color: var(--text-main);
+  margin-bottom: 6px;
+}
+.st-notes-body { display: flex; flex-direction: column; gap: 4px; }
+
+/* 列印時說明不需要出現，紙上要留給盤點的人寫字 */
+@media print {
+  .st-notes, .st-checkbox { display: none; }
+}
