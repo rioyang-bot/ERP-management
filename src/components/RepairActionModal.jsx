@@ -76,12 +76,12 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
       case 'OEM_RETURN':
         return {
           title: '原廠修復寄回確認 (OEM Return)',
-          subtitle: '確認原廠已修復寄回，系統將寫入「OEM Return Date」與「Results」，並將設備狀態設為「在庫 (ACTIVE)」。',
+          subtitle: '確認原廠已修復寄回，系統將寫入「OEM Return Date」與「Results」。設備仍在維修流程中，狀態維持「維修中」，要到完工出貨才解除。',
           icon: <Wrench size={22} />,
           themeColor: '#10b981',
           themeBg: 'rgba(16, 185, 129, 0.12)',
           dateLabel: '原廠修復寄回日期 (OEM Return Date) *',
-          submitText: '確認原廠返還 (設為在庫)'
+          submitText: '確認原廠返還 (維持維修中)'
         };
       case 'IN_HOUSE_COMPLETE':
         return {
@@ -216,14 +216,16 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
         ]);
         if (!res.success) throw new Error(res.error || '更新原廠返還狀態失敗');
 
-        // 2. 將該維修單下的設備序號全部改為 ACTIVE (在庫)
+        // 2. 設備還在維修單上，維持 REPAIRING —— 原廠寄回只是流程中的一站，
+        //    還沒交回客戶手上。RMA 換號建立的新資產原本是 ACTIVE，這裡一併改過來，
+        //    否則同一張單上的設備會有兩種狀態。
         for (const item of items) {
           const effectiveSn = (isRmaReplacement && replacementSns[item.sn]?.trim())
             ? replacementSns[item.sn].trim()
             : item.sn;
           if (effectiveSn) {
-            await window.electronAPI.namedQuery('updateAssetStatusBySn', ['ACTIVE', effectiveSn.trim()]);
-            await logStatusChange('DEVICE', effectiveSn.trim(), effectiveSn.trim(), 'REPAIRING', 'ACTIVE', `維修單 [${repairOrder.repair_no}] 原廠修復寄回入庫檢測`);
+            await window.electronAPI.namedQuery('updateAssetStatusBySn', ['REPAIRING', effectiveSn.trim()]);
+            await logStatusChange('DEVICE', effectiveSn.trim(), effectiveSn.trim(), 'REPAIRING', 'REPAIRING', `維修單 [${repairOrder.repair_no}] 原廠修復寄回，待完工出貨`);
           }
         }
       } else if (actionType === 'IN_HOUSE_COMPLETE') {

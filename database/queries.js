@@ -1752,6 +1752,19 @@ export const queries = {
     RETURNING *
   `,
   deleteRepairOrder: `DELETE FROM repair_orders WHERE id = $1`,
+  // 刪除維修單前，把還停在維修中的設備放回在庫。
+  // 建單時會標記 REPAIRING，單據刪掉卻不還原的話，設備就永遠卡在維修中。
+  // 只還原 REPAIRING 的：已完工出貨（SHIPPED）或已報廢的不該被改動。
+  restoreAssetsFromRepair: `
+    UPDATE assets a
+    SET status = 'ACTIVE', updated_at = CURRENT_TIMESTAMP
+    FROM repair_items ri
+    WHERE ri.repair_id = $1
+      AND ri.sn IS NOT NULL AND TRIM(ri.sn) <> ''
+      AND UPPER(TRIM(a.sn)) = UPPER(TRIM(ri.sn))
+      AND a.status = 'REPAIRING'
+    RETURNING a.id, a.sn
+  `,
   fetchAssetsForRepairSelection: `
     SELECT 
       a.id as asset_id,

@@ -75,10 +75,17 @@ const RepairList = () => {
     }
 
     try {
+      // 先把還在維修中的設備放回在庫。明細會隨單據 CASCADE 刪除，
+      // 順序反過來就找不到要還原哪些設備了。
+      const restored = await window.electronAPI.namedQuery('restoreAssetsFromRepair', [order.id]);
+      const restoredCount = restored.success ? (restored.rows?.length || 0) : 0;
+
       const res = await window.electronAPI.namedQuery('deleteRepairOrder', [order.id]);
       if (res.success) {
         await logDelete('REPAIR', order.repair_no, order.customer_name, `刪除維修單 [${order.repair_no}]`);
-        alert(`維修單 [${order.repair_no}] 已刪除。`);
+        alert(restoredCount > 0
+          ? `維修單 [${order.repair_no}] 已刪除，${restoredCount} 台設備已改回「在庫」。`
+          : `維修單 [${order.repair_no}] 已刪除。`);
         fetchRecords();
       } else {
         alert('刪除失敗：' + (res.error || '未知錯誤'));

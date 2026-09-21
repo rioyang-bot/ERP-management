@@ -275,7 +275,9 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
       const newRepairOrder = orderRes.rows[0];
       const repairId = newRepairOrder.id;
 
-      // 2. 逐筆寫入維修單設備明細，並將該序號設備狀態連動設為 在庫 (ACTIVE)
+      // 2. 逐筆寫入維修單設備明細，並把設備標記為維修中。
+      //    設備一旦進了維修單就不該再算成可動用的在庫 —— 從建單到完工出貨
+      //    整段期間都維持 REPAIRING，卡片上的「維修」數量才反映得出實際情形。
       for (const item of selectedItems) {
         await window.electronAPI.namedQuery('createRepairOrderItem', [
           repairId,
@@ -288,19 +290,19 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
           item.sn.trim()
         ]);
 
-        // 連動更新設備/硬體資產狀態為 ACTIVE (在庫)
+        // 連動更新設備/硬體資產狀態為 REPAIRING (維修中)
         if (item.sn) {
-          await window.electronAPI.namedQuery('updateAssetStatusBySn', ['ACTIVE', item.sn.trim()]);
+          await window.electronAPI.namedQuery('updateAssetStatusBySn', ['REPAIRING', item.sn.trim()]);
           
           // 寫入資產狀態變更日誌
-          await logStatusChange('DEVICE', item.sn.trim(), item.sn.trim(), item.original_status || 'UNKNOWN', 'ACTIVE', `建立維修單 [${repairNo}]，自客戶端取回放置在庫檢測`);
+          await logStatusChange('DEVICE', item.sn.trim(), item.sn.trim(), item.original_status || 'UNKNOWN', 'REPAIRING', `建立維修單 [${repairNo}]，自客戶端取回進入維修流程`);
         }
       }
 
       // 3. 記錄維修單主檔建檔日誌
       await logCreate('REPAIR', repairNo, customerName, `建立維修單 [${repairNo}]，客戶: ${customerName}${contactPerson.trim() ? `（聯絡人: ${contactPerson.trim()}）` : ''}，包含 ${selectedItems.length} 台設備`);
 
-      alert(`✅ 維修單 [${repairNo}] 建立成功！\n已將 ${selectedItems.length} 台設備狀態同步更新為「在庫 (ACTIVE)」。`);
+      alert(`✅ 維修單 [${repairNo}] 建立成功！\n已將 ${selectedItems.length} 台設備狀態同步更新為「維修中」，完工出貨後才會解除。`);
       if (onSuccess) onSuccess();
       onClose();
     } catch (err) {

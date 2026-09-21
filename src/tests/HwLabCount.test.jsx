@@ -136,8 +136,8 @@ describe('卡片計數的標籤', () => {
   });
 
   it.each([
-    ['硬體列表', 'src/pages/HwList.jsx', ['在庫', '出貨', '借出', '故障', '報廢', 'LAB']],
-    ['設備列表', 'src/pages/DeviceList.jsx', ['在庫', '出貨', '借出', '故障', '報廢']],
+    ['硬體列表', 'src/pages/HwList.jsx', ['在庫', 'LAB', '出貨', '借出', '維修', '報廢']],
+    ['設備列表', 'src/pages/DeviceList.jsx', ['在庫', '出貨', '借出', '維修', '報廢']],
   ])('%s 每一種版面的計數項目都一致', async (_label, file, expected) => {
     const src = await read(file);
     // 以「在庫」為每一組計數的起點，往下取到該組結束
