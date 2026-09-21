@@ -9,7 +9,7 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
   const [pendingPurchases, setPendingPurchases] = useState([]);
   const [orderNo, setOrderNo] = useState('');
   const [inboundDate, setInboundDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [items, setItems] = useState([{ id: 1, selectedOrderNo: '', itemId: '', purchaseRecordId: '', cat_name: '', unit: '', sn: '', qty: 1 }]);
+  const [items, setItems] = useState([{ id: 1, selectedOrderNo: '', itemId: '', purchaseRecordId: '', cat_name: '', orderSource: '', unit: '', sn: '', qty: 1 }]);
   const [invoiceNo, setInvoiceNo] = useState('');
   const [attachments, setAttachments] = useState([]);
   const [previewFile, setPreviewFile] = useState(null);
@@ -76,7 +76,7 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
   }, [fetchData]);
 
   const handleAddItem = () => {
-    setItems([...items, { id: Date.now(), selectedOrderNo: '', itemId: '', purchaseRecordId: '', cat_name: '', unit: '', sn: '', qty: 1 }]);
+    setItems([...items, { id: Date.now(), selectedOrderNo: '', itemId: '', purchaseRecordId: '', cat_name: '', orderSource: '', unit: '', sn: '', qty: 1 }]);
   };
 
 
@@ -136,6 +136,7 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
       id: Date.now() + idx,
       selectedOrderNo: '',
       purchaseRecordId: '',
+      orderSource: '',
       itemId: item.id,
       cat_name: item.cat_name || '',
       unit: item.unit || '個',
@@ -372,7 +373,7 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
         if (item.cat_name === '設備' || item.cat_name === '硬體') {
           const qty = parseInt(item.qty, 10) || 1;
           for (let n = 0; n < qty; n++) {
-            steps.push({ queryName: 'insertInboundAssets', params: [item.sn || null, itemIdRef, null] });
+            steps.push({ queryName: 'insertInboundAssets', params: [item.sn || null, itemIdRef, null, item.orderSource || null] });
           }
         }
         steps.push({
@@ -396,7 +397,7 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
           { orderNo, partnerId, partnerName: partner?.name, invoiceNo, itemsCount: items.length, items: items.map(i => ({ itemId: i.itemId, sn: i.sn, qty: i.qty, poNo: i.selectedOrderNo })) }
         );
         alert('進貨入庫成功！');
-        setItems([{ id: Date.now(), selectedOrderNo: '', itemId: '', purchaseRecordId: '', cat_name: '', unit: '', sn: '', qty: 1 }]);
+        setItems([{ id: Date.now(), selectedOrderNo: '', itemId: '', purchaseRecordId: '', cat_name: '', orderSource: '', unit: '', sn: '', qty: 1 }]);
         setInvoiceNo('');
         setAttachments([]);
         setOrderNo(''); // Reset to generate new order no
@@ -522,6 +523,7 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
             <th style={thStyle}>入庫設備項目</th>
             <th style={{ ...thStyle, width: '80px' }}>類別</th>
             <th style={thStyle}>序號(SN)</th>
+            <th style={thStyle}>訂單來源</th>
             <th style={thStyle}>數量</th>
             <th style={{ ...thStyle, textAlign: 'center' }}>移除</th>
           </tr>
@@ -639,6 +641,15 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
                 {row.cat_name ? <span style={{ padding: '4px 10px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '6px', fontSize: '0.8rem', color: 'var(--text-main)', border: '1px solid var(--border-color)', fontWeight: 600 }}>{row.cat_name}</span> : <span style={{ color: 'var(--text-subtle)', fontSize: '0.8rem' }}>--</span>}
               </td>
               <td style={tdStyle}>{(row.cat_name === '設備' || row.cat_name === '硬體') ? <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><input placeholder="SN / 序號" value={row.sn} onChange={(e) => handleRowChange(row.id, 'sn', e.target.value)} style={{ ...inputStyle, border: '1px solid var(--input-border)' }} />{row.qty > 1 && <button onClick={() => openSnBatch(row.id)} title="批次序號清單（每行一個序號）" style={expandButtonStyle}><Layers size={16} /></button>}</div> : <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>耗材無需序號</span>}</td>
+              <td style={tdStyle}>{row.cat_name === '硬體'
+                ? <input
+                    placeholder="例如：PO-2026-001"
+                    value={row.orderSource || ''}
+                    onChange={(e) => handleRowChange(row.id, 'orderSource', e.target.value)}
+                    style={{ ...inputStyle, width: '150px' }}
+                    title="硬體的訂單來源，與硬體建檔頁的同一個欄位"
+                  />
+                : <span style={{ color: 'var(--text-subtle)', fontSize: '0.85rem' }}>—</span>}</td>
               <td style={tdStyle}><input type="number" value={row.qty} onChange={(e) => handleRowChange(row.id,'qty', parseInt(e.target.value)||0)} style={{ ...inputStyle, width: '80px' }} /></td>
               <td style={{ ...tdStyle, textAlign: 'center' }}><button onClick={() => handleRemove(row.id)} style={deleteButtonStyle}><Trash2 size={20} /></button></td>
             </tr>

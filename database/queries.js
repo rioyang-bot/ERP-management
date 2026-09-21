@@ -809,7 +809,18 @@ export const queries = {
   // 日期打錯要改得回來，與供應商、發票號碼同一個編輯入口。
   // 只改單頭，不會動到明細、庫存或採購單的已入庫數量。
   updateInboundOrderHeader: `UPDATE inbound_orders SET partner_id = $1, invoice_no = $2, attachments = $3::jsonb, order_date = COALESCE($5::date, order_date) WHERE id = $4 RETURNING id`,
-  insertInboundAssets: `INSERT INTO assets (sn, item_master_id, status, custom_attributes) VALUES ($1, $2, 'ACTIVE', jsonb_build_object('project_name', $3::text))`,
+  // 訂單來源：硬體建檔頁本來就有這一欄，從進貨入庫進來的硬體先前填不了，
+  // 同一批貨用不同入口建檔就會少掉這個資訊。空值不寫進 custom_attributes，
+  // 免得留下一堆 "order_source": null 的雜訊。
+  insertInboundAssets: `
+    INSERT INTO assets (sn, item_master_id, status, custom_attributes)
+    VALUES (
+      $1, $2, 'ACTIVE',
+      jsonb_strip_nulls(jsonb_build_object(
+        'project_name', NULLIF(TRIM(COALESCE($3, '')), ''),
+        'order_source', NULLIF(TRIM(COALESCE($4, '')), '')
+      ))
+    )`,
   insertInboundItems: `INSERT INTO inbound_items (inbound_order_id, item_id, sn, quantity, purchase_record_id, unit_price) VALUES ($1, $2, $3, $4, $5, 0)`,
   updateStockQtyOnInbound: `UPDATE item_master SET stock_qty = stock_qty + $1 WHERE id = $2`,
   // 刪除進貨單時把採購單的已入庫數量退回來，狀態依退回後的數量重算。
