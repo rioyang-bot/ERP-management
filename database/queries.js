@@ -540,6 +540,31 @@ export const queries = {
       ORDER BY m.name ASC`,
   insertDeviceType: `INSERT INTO item_types (category_id, name) VALUES ((SELECT id FROM categories WHERE name = $1), UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g')))) ON CONFLICT DO NOTHING`,
   deleteDeviceType: `DELETE FROM item_types WHERE name = $1 AND category_id = (SELECT id FROM categories WHERE name = $2)`,
+  // 有幾筆品項正在用這個類型。刪除前先問，才能說清楚為什麼不給刪。
+  countItemMasterByType: `
+    SELECT COUNT(*)::int AS used
+    FROM item_master im
+    JOIN categories c ON im.category_id = c.id
+    WHERE c.name = $2
+      AND UPPER(TRIM(COALESCE(im.type, ''))) = UPPER(TRIM($1))
+  `,
+  // 沒有任何品項在用才刪得掉。條件寫在 SQL 裡而不是只靠前端先查一次：
+  // 兩者之間別人可能剛好新增了一筆，而 item_models.type_id 是 ON DELETE CASCADE，
+  // 誤刪會連帶把該類型底下的型號一起帶走。
+  deleteItemTypeIfUnused: `
+    DELETE FROM item_types t
+    USING categories c
+    WHERE t.category_id = c.id
+      AND c.name = $2
+      AND UPPER(TRIM(t.name)) = UPPER(TRIM($1))
+      AND NOT EXISTS (
+        SELECT 1 FROM item_master im
+        JOIN categories c2 ON im.category_id = c2.id
+        WHERE c2.name = $2
+          AND UPPER(TRIM(COALESCE(im.type, ''))) = UPPER(TRIM($1))
+      )
+    RETURNING t.id, t.name
+  `,
   insertDeviceModel: `
       INSERT INTO item_models (brand_id, name) 
       SELECT b.id, UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g'))) FROM item_brands b 

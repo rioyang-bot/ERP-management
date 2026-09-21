@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Save, Settings2, Trash2, X, Monitor, User, MapPin, ListFilter, Layers, Server, FileSpreadsheet } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { logCreate } from '../utils/auditLogger';
+import { deleteItemType } from '../utils/deleteItemType';
 import DeviceBatchImportModal from '../components/DeviceBatchImportModal';
 import { normalizeMasterName } from '../utils/normalizeMasterData';
 
@@ -106,6 +107,22 @@ const Devices = ({ isSplitMode = false }) => {
     };
     initData();
   }, [fetchCustomers, fetchSettings, fetchTypes, fetchBrands, fetchProjects]);
+
+
+  // 類型打錯字之後原本沒有任何地方能移除，只能一直留在下拉選單裡。
+  // 有品項在用就不給刪 —— 刪掉會連帶帶走它底下的型號（CASCADE）。
+  const handleDeleteType = async () => {
+    const name = formData.type;
+    if (!name) return alert('請先在上方選擇要移除的類型');
+    if (!window.confirm(`確定要移除類型「${name}」嗎？\n\n只有在沒有任何設備使用它時才會移除。`)) return;
+
+    const result = await deleteItemType(window.electronAPI, name, '設備');
+    alert(result.message);
+    if (result.ok) {
+      setFormData(prev => ({ ...prev, type: '' }));
+      await fetchTypes();
+    }
+  };
 
   const handleAddType = async () => {
     const name = normalizeMasterName(validateAndSanitize(newTypeName, '類型名稱'));
@@ -340,7 +357,15 @@ const Devices = ({ isSplitMode = false }) => {
                     <option value="">請選擇類型</option>
                     {types.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
-                  <button onClick={() => setShowAddType(!showAddType)} style={iconButtonStyle}><Plus size={18} /></button>
+                  <button onClick={() => setShowAddType(!showAddType)} title="新增類型" style={iconButtonStyle}><Plus size={18} /></button>
+                  <button
+                    onClick={handleDeleteType}
+                    disabled={!formData.type}
+                    title={formData.type ? `移除類型「${formData.type}」（僅限沒有設備使用時）` : '請先選擇要移除的類型'}
+                    style={{ ...iconButtonStyle, color: formData.type ? '#ef4444' : 'var(--text-subtle)', cursor: formData.type ? 'pointer' : 'not-allowed' }}
+                  >
+                    <Trash2 size={18} />
+                  </button>
                 </div>
                 {showAddType && <div style={{ marginTop: '8px', display: 'flex', gap: '4px' }}><input type="text" value={newTypeName} onChange={e => setNewTypeName(e.target.value)} style={inputStyle} /><button onClick={handleAddType} style={{ ...iconButtonStyle, background: 'var(--primary-color)', color: '#fff' }}><Plus size={18} /></button></div>}
               </div>
