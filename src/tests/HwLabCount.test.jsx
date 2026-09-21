@@ -110,3 +110,47 @@ describe('LAB 的計算', () => {
     expect(st.active).toBe(1);
   });
 });
+
+/**
+ * 每個計數都要有標籤
+ *
+ * 三種卡片版面中有兩種的「報廢」只寫了數字、沒有標籤，畫面上就是一個
+ * 沒頭沒尾的 0。原本它排在最後一個還不明顯，LAB 加進來之後夾在中間，
+ * 看起來就像多跑出一個 0。
+ */
+describe('卡片計數的標籤', () => {
+  const read = async (file) => {
+    const fs = await import('fs');
+    return fs.readFileSync(file, 'utf8');
+  };
+
+  it.each([
+    ['硬體列表', 'src/pages/HwList.jsx'],
+    ['設備列表', 'src/pages/DeviceList.jsx'],
+  ])('%s 的每一個報廢計數都有標籤', async (_label, file) => {
+    const src = await read(file);
+    const rows = src.split('\n').filter((l) => l.includes('{st.scrapped}'));
+
+    expect(rows.length).toBeGreaterThan(0);
+    rows.forEach((row) => expect(row).toContain('>報廢</span>'));
+  });
+
+  it.each([
+    ['硬體列表', 'src/pages/HwList.jsx', ['在庫', '出貨', '借出', '故障', '報廢', 'LAB']],
+    ['設備列表', 'src/pages/DeviceList.jsx', ['在庫', '出貨', '借出', '故障', '報廢']],
+  ])('%s 每一種版面的計數項目都一致', async (_label, file, expected) => {
+    const src = await read(file);
+    // 以「在庫」為每一組計數的起點，往下取到該組結束
+    const groups = src.split('\n').reduce((acc, line) => {
+      if (line.includes('{st.active}')) acc.push([]);
+      if (acc.length > 0) {
+        const m = line.match(/>([^<>]{1,4})<\/span><span style=\{\{ color: '[^']+', fontWeight: '800' \}\}>/);
+        if (m) acc[acc.length - 1].push(m[1]);
+      }
+      return acc;
+    }, []);
+
+    expect(groups.length).toBe(3);
+    groups.forEach((g) => expect(g).toEqual(expected));
+  });
+});

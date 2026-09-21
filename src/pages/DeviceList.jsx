@@ -686,7 +686,7 @@ const DeviceList = ({ isSplitMode = false }) => {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}><span style={{ color: 'var(--text-muted)' }}>出貨</span><span style={{ color: '#3b82f6', fontWeight: '800' }}>{st.shipped}</span></div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}><span style={{ color: 'var(--text-muted)' }}>借出</span><span style={{ color: '#d97706', fontWeight: '800' }}>{st.lent || 0}</span></div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}><span style={{ color: 'var(--text-muted)' }}>故障</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}><span style={{ color: 'var(--text-muted)' }}>報廢</span><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
                   </div>
                 </div>
               );
@@ -766,7 +766,7 @@ const DeviceList = ({ isSplitMode = false }) => {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>出貨</span><span style={{ color: '#3b82f6', fontWeight: '800' }}>{st.shipped}</span></div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>借出</span><span style={{ color: '#d97706', fontWeight: '800' }}>{st.lent || 0}</span></div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>故障</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>報廢</span><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
                   </div>
                 </div>
               )}
