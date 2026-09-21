@@ -138,3 +138,74 @@ describe('自行維修結案的資料庫護欄', () => {
     expect(sql).not.toContain('oem_return_date');
   });
 });
+
+/**
+ * 操作欄的按鈕排版
+ *
+ * 按鈕沒有 nowrap，「不需送回原廠」六個字被折成三行，整列高度被撐開，
+ * 每顆按鈕高度還不一樣。加上「自行維修完工」之後這一欄更擠。
+ */
+describe('維修單列表的操作按鈕', () => {
+  const ORDERS = [{
+    id: 7, repair_no: 'RMA-20260921-01', customer_name: '元大Yuanta',
+    status: 'ON_SITE_HANDLING', no_oem_required: false, item_count: 1,
+    items: [{ id: 1, sn: 'SRV-001' }], created_at: '2026-09-21T00:00:00.000Z',
+  }];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.alert = vi.fn();
+    window.electronAPI = {
+      namedQuery: vi.fn((query) =>
+        Promise.resolve({ success: true, rows: query === 'fetchRepairOrders' ? ORDERS : [] })),
+      runTransaction: vi.fn(),
+      saveFile: vi.fn(),
+      getUserPreference: vi.fn().mockResolvedValue({ success: true, value: null }),
+      setUserPreference: vi.fn().mockResolvedValue({ success: true }),
+    };
+  });
+
+  const showList = async () => {
+    const { default: RepairList } = await import('../pages/RepairList');
+    const { MemoryRouter } = await import('react-router-dom');
+    render(<MemoryRouter><RepairList /></MemoryRouter>);
+    await screen.findByText('RMA-20260921-01');
+  };
+
+  it('每一顆操作按鈕都不折行', async () => {
+    await showList();
+    const row = screen.getByText('RMA-20260921-01').closest('tr');
+    const buttons = [...row.querySelectorAll('button')];
+
+    expect(buttons.length).toBeGreaterThan(2);
+    buttons.forEach((b) => expect(b).toHaveStyle({ whiteSpace: 'nowrap' }));
+  });
+
+  it('按鈕文字縮短，完整說明留在 title', async () => {
+    await showList();
+    const btn = screen.getByRole('button', { name: /免送原廠/ });
+
+    expect(btn.textContent.trim()).toBe('免送原廠');
+    expect(btn.getAttribute('title')).toMatch(/不需送回原廠/);
+  });
+
+  it('標記之後文字改為恢復送原廠', async () => {
+    window.electronAPI.namedQuery = vi.fn((query) =>
+      Promise.resolve({
+        success: true,
+        rows: query === 'fetchRepairOrders' ? [{ ...ORDERS[0], no_oem_required: true }] : [],
+      }));
+    await showList();
+
+    expect(screen.getByRole('button', { name: /恢復送原廠/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /送修原廠$/ })).not.toBeInTheDocument();
+  });
+
+  it('空間不足時整顆按鈕換行，不會把字拆開', async () => {
+    await showList();
+    const row = screen.getByText('RMA-20260921-01').closest('tr');
+    const container = row.querySelector('button').parentElement;
+
+    expect(container).toHaveStyle({ flexWrap: 'wrap' });
+  });
+});

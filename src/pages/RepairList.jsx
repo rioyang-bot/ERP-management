@@ -642,12 +642,13 @@ const RepairList = () => {
 
                       {/* 操作流程按鈕 */}
                       <td style={{ padding: '14px 16px', textAlign: 'right' }}>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
                           {/* 檢視詳細資料 */}
                           <button
                             onClick={() => setDetailModal({ isOpen: true, order })}
                             style={{
                               padding: '6px 10px',
+                                whiteSpace: 'nowrap',
                               borderRadius: '8px',
                               border: '1px solid var(--border-color)',
                               backgroundColor: 'var(--bg-surface)',
@@ -670,6 +671,7 @@ const RepairList = () => {
                               onClick={() => handleToggleNoOem(order)}
                               style={{
                                 padding: '6px 10px',
+                                whiteSpace: 'nowrap',
                                 borderRadius: '8px',
                                 border: order.no_oem_required ? 'none' : '1px solid #0d9488',
                                 backgroundColor: order.no_oem_required ? 'var(--bg-surface)' : 'rgba(13, 148, 136, 0.12)',
@@ -683,7 +685,7 @@ const RepairList = () => {
                               }}
                               title={order.no_oem_required ? '取消標記，恢復送修原廠流程' : '這張單不需送回原廠，由 IT 人員自行處理'}
                             >
-                              <Home size={13} /> {order.no_oem_required ? '取消不送原廠' : '不需送回原廠'}
+                              <Home size={13} /> {order.no_oem_required ? '恢復送原廠' : '免送原廠'}
                             </button>
                           )}
 
@@ -693,6 +695,7 @@ const RepairList = () => {
                               onClick={() => setActionModal({ isOpen: true, order, type: 'IN_HOUSE_COMPLETE' })}
                               style={{
                                 padding: '6px 10px',
+                                whiteSpace: 'nowrap',
                                 borderRadius: '8px',
                                 border: 'none',
                                 backgroundColor: '#0d9488',
@@ -716,6 +719,7 @@ const RepairList = () => {
                               onClick={() => setActionModal({ isOpen: true, order, type: 'SEND_OEM' })}
                               style={{
                                 padding: '6px 10px',
+                                whiteSpace: 'nowrap',
                                 borderRadius: '8px',
                                 border: 'none',
                                 backgroundColor: '#d97706',
@@ -739,6 +743,7 @@ const RepairList = () => {
                               onClick={() => setActionModal({ isOpen: true, order, type: 'OEM_RETURN' })}
                               style={{
                                 padding: '6px 10px',
+                                whiteSpace: 'nowrap',
                                 borderRadius: '8px',
                                 border: 'none',
                                 backgroundColor: '#8b5cf6',
@@ -762,6 +767,7 @@ const RepairList = () => {
                               onClick={() => setActionModal({ isOpen: true, order, type: 'COMPLETE' })}
                               style={{
                                 padding: '6px 10px',
+                                whiteSpace: 'nowrap',
                                 borderRadius: '8px',
                                 border: 'none',
                                 backgroundColor: '#3b82f6',
@@ -801,6 +807,7 @@ const RepairList = () => {
                             onClick={() => setPrintModal({ isOpen: true, order })}
                             style={{
                               padding: '6px 8px',
+                              whiteSpace: 'nowrap',
                               borderRadius: '8px',
                               border: '1px solid var(--border-color)',
                               backgroundColor: 'var(--bg-surface)',
@@ -819,6 +826,7 @@ const RepairList = () => {
                             onClick={() => handleDeleteOrder(order)}
                             style={{
                               padding: '6px 8px',
+                              whiteSpace: 'nowrap',
                               borderRadius: '8px',
                               border: '1px solid var(--border-color)',
                               backgroundColor: 'var(--bg-surface)',
