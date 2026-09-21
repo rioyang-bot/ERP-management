@@ -24,7 +24,8 @@
     "migrate:status": "node scripts/migrate.mjs --status",
     "migrate:baseline": "node scripts/migrate.mjs --baseline",
     "fix:excel-dates": "node scripts/fix-excel-date-text.mjs",
-    "fix:repair-status": "node scripts/align-repair-status.mjs"
+    "fix:repair-status": "node scripts/align-repair-status.mjs",
+    "fix:repair-status:apply": "node scripts/align-repair-status.mjs --apply"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
