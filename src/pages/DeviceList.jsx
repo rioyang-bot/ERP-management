@@ -1,30 +1,32 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Search, Columns3, Edit2, X, Save, MoreHorizontal, MoreVertical, MapPin, User, Trash2, CheckCircle, ShoppingBag, Wrench, ShieldAlert, Cpu, Archive, RotateCcw, Server, Send, History, Building2, RefreshCw, Plus } from 'lucide-react';
+import { Search, Columns3, Edit2, X, Save, MoreHorizontal, MoreVertical, MapPin, User, Trash2, CheckCircle, ShoppingBag, Wrench, ShieldAlert, Cpu, Archive, RotateCcw, Server, Send, History, Building2, RefreshCw, Plus, ClipboardCheck } from 'lucide-react';
 import ItemLedgerModal from '../components/ItemLedgerModal';
 import DeviceRegistrationModal from '../components/DeviceRegistrationModal';
 import RmaReplacementModal from '../components/RmaReplacementModal';
 import { logUpdate, logDelete, logStatusChange } from '../utils/auditLogger';
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
-import { isItemRetired, getItemAggregationKey, aggregateCards, computeNewRetiredKeys, getCardTitle, showsModelSubtitle, getCardSearchText } from '../utils/cardAggregation';
+import { isItemRetired, getItemAggregationKey, aggregateCards, computeNewRetiredKeys, getCardTitle, showsModelSubtitle, getCardSearchText, ASSET_AGGREGATION_MODES } from '../utils/cardAggregation';
 import ColumnVisibilityModal from '../components/ColumnVisibilityModal';
 import CardAggregationLegend from '../components/CardAggregationLegend';
 import WarrantyBadge from '../components/WarrantyBadge';
 import { isFullyOutOfWarranty } from '../utils/warranty';
 import { getActiveSnTerm, filterMountableHw, getCommittedSns, toggleMountedSn } from '../utils/mountedHwFilter';
 import { useColumnPreferences } from '../hooks/useColumnPreferences';
+import AssetIdentityCell from '../components/common/AssetIdentityCell';
+import CardAggregationSelect from '../components/common/CardAggregationSelect';
+import { useCardLayoutByMode } from '../hooks/useCardLayout';
+import DeviceChecklistModal from '../components/DeviceChecklistModal';
 
 // 設備列表的欄位清單：id 對應表格的每一欄，always 代表不可隱藏
 const DEVICE_COLUMNS = [
-  { id: 'brand', label: '廠牌 / 型號 / 類型', always: true },
+  { id: 'brand', label: '類型 / 廠牌 / 型號 / 規格', always: true },
   { id: 'sn', label: '序號 (SN)' },
-  { id: 'spec', label: '規格 (Spec)' },
   { id: 'project', label: '專案編號/名稱 (Project)' },
   { id: 'hostname', label: '主機名稱' },
   { id: 'components', label: '搭載硬體' },
-  { id: 'client', label: '客戶' },
-  { id: 'end_user', label: 'End-user' },
+  { id: 'client', label: '客戶 / End-user' },
   { id: 'location', label: '位置' },
   { id: 'remarks', label: '備註' },
   { id: 'warranty', label: '保固資訊 (P/S/W/C)' },
@@ -44,7 +46,10 @@ const DeviceList = ({ isSplitMode = false }) => {
   const [brandOptions, setBrandOptions] = useState([]);
   const [typeOptions, setTypeOptions] = useState([]);
   const [projects, setProjects] = useState([]);
-  const [activeMenuId, setActiveMenuId] = useState(null); 
+  const [activeMenuId, setActiveMenuId] = useState(null);
+  // 出機檢查表：目前開啟的設備，以及各設備的完成度（asset_id -> { total, done }）
+  const [checklistDevice, setChecklistDevice] = useState(null);
+  const [checklistSummary, setChecklistSummary] = useState(() => new Map());
   const [menuPosition, setMenuPosition] = useState(null);
   const brandFilter = searchParams.get('brand');
   const [selectedCardKey, setSelectedCardKey] = useState(null);
@@ -55,6 +60,20 @@ const DeviceList = ({ isSplitMode = false }) => {
     const saved = localStorage.getItem('device_list_retired_keys');
     return saved ? JSON.parse(saved) : [];
   });
+
+  const loadChecklistSummary = useCallback(async () => {
+    try {
+      const res = await window.electronAPI.namedQuery('fetchAssetChecklistSummary');
+      if (!res.success) return;
+      const map = new Map();
+      (res.rows || []).forEach((r) => map.set(r.asset_id, { total: Number(r.total) || 0, done: Number(r.done) || 0 }));
+      setChecklistSummary(map);
+    } catch {
+      // 尚未套用資料庫變更時讀不到，這時不顯示進度即可，不影響設備列表
+    }
+  }, []);
+
+  useEffect(() => { loadChecklistSummary(); }, [loadChecklistSummary]);
 
   const handleAggregationModeChange = (mode) => {
     setAggregationMode(mode);
@@ -431,6 +450,7 @@ const DeviceList = ({ isSplitMode = false }) => {
         await window.electronAPI.namedQuery('updateMountedHardwareServerSn', [newSn, origSn]);
         await window.electronAPI.namedQuery('updateRepairItemsSn', [newSn, origSn]);
         await window.electronAPI.namedQuery('updateOutboundItemsSn', [newSn, origSn]);
+        await window.electronAPI.namedQuery('updateInboundItemsSn', [newSn, origSn]);
       }
 
       // 處理搭載硬體 SN 的連動綁定與解綁
@@ -541,10 +561,9 @@ const DeviceList = ({ isSplitMode = false }) => {
   const totalPages = Math.ceil(sortedItems.length / itemsPerPage);
   const paginatedItems = sortedItems.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
-  const [layoutMap, setLayoutMap] = useState(() => {
-    const saved = localStorage.getItem('device_list_layout_map');
-    return saved ? JSON.parse(saved) : {};
-  });
+  // 卡片排列以登入身分為範圍存在伺服器端，每個人各自一份
+  // 排列依聚合維度分開存放：切到別的維度時卡片整批換掉，共用一份會被清光
+  const [layoutMap, setLayoutMap, layoutLoaded] = useCardLayoutByMode('cardLayout:deviceList', aggregationMode, 'device_list_layout_map');
   const [draggingCardKey, setDraggingCardKey] = useState(null);
 
   const handleSlotDragOver = (e) => { e.preventDefault(); };
@@ -559,7 +578,6 @@ const DeviceList = ({ isSplitMode = false }) => {
     if (newMap[targetSlotIdx]) { if (oldSlotIdx !== undefined) newMap[oldSlotIdx] = newMap[targetSlotIdx]; }
     newMap[targetSlotIdx] = key;
     setLayoutMap(newMap);
-    localStorage.setItem('asset_list_layout_map', JSON.stringify(newMap));
     setDraggingCardKey(null);
   };
 
@@ -667,8 +685,8 @@ const DeviceList = ({ isSplitMode = false }) => {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}><span style={{ color: 'var(--text-muted)' }}>在庫</span><span style={{ color: '#16a34a', fontWeight: '800' }}>{st.active}</span></div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}><span style={{ color: 'var(--text-muted)' }}>出貨</span><span style={{ color: '#3b82f6', fontWeight: '800' }}>{st.shipped}</span></div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}><span style={{ color: 'var(--text-muted)' }}>借出</span><span style={{ color: '#d97706', fontWeight: '800' }}>{st.lent || 0}</span></div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}><span style={{ color: 'var(--text-muted)' }}>故障</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}><span style={{ color: 'var(--text-muted)' }}>維修</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}><span style={{ color: 'var(--text-muted)' }}>報廢</span><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
                   </div>
                 </div>
               );
@@ -698,9 +716,10 @@ const DeviceList = ({ isSplitMode = false }) => {
         while (updatedMap[currentIdx]) currentIdx++;
         updatedMap[currentIdx] = key;
       });
-      setLayoutMap(updatedMap);
-      localStorage.setItem('device_list_layout_map', JSON.stringify(updatedMap));
       currentLayoutMap = updatedMap;
+      // 伺服器上的排列還沒回來前不要回寫，否則會把使用者存好的位置
+      // 蓋成這次剛算出來的預設位置
+      if (layoutLoaded) setLayoutMap(updatedMap);
     }
 
     // 3. 根據清理後的佈局計算實際需要的行數
@@ -746,8 +765,8 @@ const DeviceList = ({ isSplitMode = false }) => {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>在庫</span><span style={{ color: '#16a34a', fontWeight: '800' }}>{st.active}</span></div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>出貨</span><span style={{ color: '#3b82f6', fontWeight: '800' }}>{st.shipped}</span></div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>借出</span><span style={{ color: '#d97706', fontWeight: '800' }}>{st.lent || 0}</span></div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>故障</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>維修</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>報廢</span><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
                   </div>
                 </div>
               )}
@@ -813,7 +832,7 @@ const DeviceList = ({ isSplitMode = false }) => {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>在庫</span><span style={{ color: '#16a34a', fontWeight: '800' }}>{st.active}</span></div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>出貨</span><span style={{ color: '#3b82f6', fontWeight: '800' }}>{st.shipped}</span></div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>借出</span><span style={{ color: '#d97706', fontWeight: '800' }}>{st.lent || 0}</span></div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>故障</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>維修</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>報廢</span><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
                 </div>
               </div>
@@ -845,7 +864,7 @@ const DeviceList = ({ isSplitMode = false }) => {
   const editInputStyle = { width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', outline: 'none', fontSize: '13px' };
   const navBtnStyle = { padding: '6px 14px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-main)', cursor: 'pointer', fontWeight: '700', fontSize: '12px' };
   const thStyle = { 
-    padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', 
+    padding: 'var(--table-cell-padding-y, 8px) calc(var(--table-cell-padding-x, 10px) * 0.6)', 
     fontSize: '12px', 
     color: 'var(--table-header-text)', 
     fontWeight: '900',
@@ -857,7 +876,7 @@ const DeviceList = ({ isSplitMode = false }) => {
     whiteSpace: 'nowrap'
   };
   const tdStyle = { 
-    padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', 
+    padding: 'var(--table-cell-padding-y, 8px) calc(var(--table-cell-padding-x, 10px) * 0.6)', 
     fontSize: '13px', 
     color: 'var(--text-main)' 
   };
@@ -915,83 +934,11 @@ const DeviceList = ({ isSplitMode = false }) => {
           </div>
           <div style={{ display: 'flex', gap: '14px', alignItems: 'center' }}>
             {/* 卡片聚合維度選擇器 */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'var(--bg-surface-subtle)', padding: '3px 8px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
-              <span style={{ fontSize: '12px', fontWeight: '800', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>聚合規則:</span>
-              <div style={{ display: 'inline-flex', gap: '2px' }}>
-                <button
-                  type="button"
-                  onClick={() => handleAggregationModeChange('SPEC')}
-                  style={{
-                    padding: '5px 10px',
-                    borderRadius: '7px',
-                    border: 'none',
-                    fontSize: '11px',
-                    fontWeight: '800',
-                    cursor: 'pointer',
-                    backgroundColor: aggregationMode === 'SPEC' ? 'var(--primary-color)' : 'transparent',
-                    color: aggregationMode === 'SPEC' ? '#fff' : 'var(--text-muted)',
-                    transition: 'all 0.15s'
-                  }}
-                  title="依規格獨立生成卡片：相同廠牌、類型、型號底下，只要規格不同就獨立一張卡片"
-                >
-                  🏷️ 依規格
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleAggregationModeChange('MODEL')}
-                  style={{
-                    padding: '5px 10px',
-                    borderRadius: '7px',
-                    border: 'none',
-                    fontSize: '11px',
-                    fontWeight: '800',
-                    cursor: 'pointer',
-                    backgroundColor: aggregationMode === 'MODEL' ? 'var(--primary-color)' : 'transparent',
-                    color: aggregationMode === 'MODEL' ? '#fff' : 'var(--text-muted)',
-                    transition: 'all 0.15s'
-                  }}
-                  title="依型號聚合：相同廠牌與型號合併統計（不分規格）"
-                >
-                  📦 依型號
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleAggregationModeChange('TYPE')}
-                  style={{
-                    padding: '5px 10px',
-                    borderRadius: '7px',
-                    border: 'none',
-                    fontSize: '11px',
-                    fontWeight: '800',
-                    cursor: 'pointer',
-                    backgroundColor: aggregationMode === 'TYPE' ? 'var(--primary-color)' : 'transparent',
-                    color: aggregationMode === 'TYPE' ? '#fff' : 'var(--text-muted)',
-                    transition: 'all 0.15s'
-                  }}
-                  title="依類型聚合：相同類型合併統計（不分廠牌與型號，例如所有伺服器算成一張卡片）"
-                >
-                  🔧 依類型
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleAggregationModeChange('BRAND')}
-                  style={{
-                    padding: '5px 10px',
-                    borderRadius: '7px',
-                    border: 'none',
-                    fontSize: '11px',
-                    fontWeight: '800',
-                    cursor: 'pointer',
-                    backgroundColor: aggregationMode === 'BRAND' ? 'var(--primary-color)' : 'transparent',
-                    color: aggregationMode === 'BRAND' ? '#fff' : 'var(--text-muted)',
-                    transition: 'all 0.15s'
-                  }}
-                  title="依廠牌聚合：純依廠牌合併統計（如 Dell、HP 各一張卡片）"
-                >
-                  🏢 依廠牌
-                </button>
-              </div>
-            </div>
+            <CardAggregationSelect
+              value={aggregationMode}
+              onChange={handleAggregationModeChange}
+              modes={ASSET_AGGREGATION_MODES}
+            />
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <button
@@ -1033,14 +980,12 @@ const DeviceList = ({ isSplitMode = false }) => {
                     <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
                       <thead style={{ position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)' }}>
                         <tr style={{ borderBottom: '2px solid var(--border-color)', backgroundColor: 'var(--table-header-bg)' }}>
-                          <th style={{ ...thStyle, textAlign: 'left', width: '200px' }}>廠牌 / 型號 / 類型</th>
+                          <th style={{ ...thStyle, textAlign: 'left', width: '220px' }}>類型 / 廠牌 / 型號 / 規格</th>
                           <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('sn') }}>序號 (SN)</th>
-                          <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('spec') }}>規格 (Spec)</th>
                           <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('project') }}>專案編號/名稱 (Project)</th>
                           <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('hostname') }}>主機名稱</th>
                           <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('components') }}>搭載硬體</th>
-                          <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('client') }}>客戶</th>
-                          <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('end_user') }}>End-user</th>
+                          <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('client') }}>客戶 / End-user</th>
                           <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('location') }}>位置</th>
                           <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('remarks') }}>備註</th>
                           <th
@@ -1061,19 +1006,21 @@ const DeviceList = ({ isSplitMode = false }) => {
                           
                           return (
                             <tr key={item.id} style={{ borderBottom: '1px solid var(--table-border)', backgroundColor: item.status === 'SCRAPPED' ? 'rgba(239, 68, 68, 0.08)' : 'transparent' }}>
-                              <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                                <div style={{ fontWeight: 800, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                  {item.brand}
+                              <td style={{ ...tdStyle, maxWidth: '220px' }}>
+                                <AssetIdentityCell
+                                  type={item.type}
+                                  brand={item.brand}
+                                  model={item.model}
+                                  specification={item.specification}
+                                >
                                   {item.ownership === 'COMPANY' && (
-                                    <span style={{ fontSize: '10px', padding: '2px 6px', backgroundColor: '#8b5cf6', color: 'white', borderRadius: '4px', whiteSpace: 'nowrap' }}>公司資產</span>
+                                    <span style={{ fontSize: '10px', padding: '2px 6px', backgroundColor: '#8b5cf6', color: 'white', borderRadius: '4px', whiteSpace: 'nowrap', marginLeft: '4px' }}>公司資產</span>
                                   )}
-                                </div>
-                                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{item.type} - {item.model}</div>
+                                </AssetIdentityCell>
                               </td>
                               <td style={{ ...tdStyle, fontWeight: 800, fontFamily: 'monospace', color: 'var(--primary-color)', whiteSpace: 'nowrap', ...hideCol('sn') }}>
                                 {item.sn}
                               </td>
-                              <td style={{ ...tdStyle, fontSize: '11px', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', ...hideCol('spec') }} title={item.specification}>{item.specification || '--'}</td>
                               <td style={{ ...tdStyle, fontWeight: 700, color: 'var(--text-main)', ...hideCol('project') }}>
                                 {(() => {
                                   const pName = attrs.project_name;
@@ -1139,11 +1086,12 @@ const DeviceList = ({ isSplitMode = false }) => {
                                       {item.partner_contact} {item.partner_phone}
                                     </div>
                                   )}
-                                </div>
-                              </td>
-                              <td style={{ ...tdStyle, ...hideCol('end_user') }}>
-                                <div style={{ fontWeight: 700, color: 'var(--text-main)' }}>
-                                  {item.end_user || attrs.end_user || '--'}
+                                  {/* End-user 原本自成一欄，移到客戶底下；沒有標籤會跟聯絡人混淆 */}
+                                  {(item.end_user || attrs.end_user) && (
+                                    <div style={{ fontSize: '11px', paddingLeft: '18px', color: 'var(--text-muted)' }}>
+                                      End-user：<span style={{ fontWeight: 700, color: 'var(--text-main)' }}>{item.end_user || attrs.end_user}</span>
+                                    </div>
+                                  )}
                                 </div>
                               </td>
                               <td style={{ ...tdStyle, ...hideCol('location') }}>
@@ -1197,6 +1145,27 @@ const DeviceList = ({ isSplitMode = false }) => {
                                     借用單 {item.lent_request_no}
                                   </div>
                                 )}
+                                {(() => {
+                                  const cl = checklistSummary.get(item.id);
+                                  if (!cl || cl.total === 0) return null;
+                                  const allDone = cl.done >= cl.total;
+                                  return (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); setChecklistDevice(item); }}
+                                      title={`出機檢查表：${cl.done} / ${cl.total} 項已完成（點擊開啟）`}
+                                      style={{
+                                        marginTop: '4px', padding: '1px 8px', borderRadius: '10px', cursor: 'pointer',
+                                        fontSize: '10px', fontWeight: 800, whiteSpace: 'nowrap',
+                                        border: `1px solid ${allDone ? 'rgba(16, 185, 129, 0.4)' : 'rgba(8, 145, 178, 0.4)'}`,
+                                        backgroundColor: allDone ? 'rgba(16, 185, 129, 0.12)' : 'rgba(8, 145, 178, 0.12)',
+                                        color: allDone ? '#10b981' : '#0891b2',
+                                      }}
+                                    >
+                                      檢查 {cl.done}/{cl.total}
+                                    </button>
+                                  );
+                                })()}
                               </td>
                               <td style={{ ...tdStyle, textAlign: 'center', width: '80px', position: 'relative' }}>
                                 <button 
@@ -1253,6 +1222,13 @@ const DeviceList = ({ isSplitMode = false }) => {
                                       style={{ ...menuButtonStyle, color: 'var(--text-main)' }}
                                     >
                                       <History size={14} /> 履歷 (History)
+                                    </button>
+                                    <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '2px 0' }} />
+                                    <button
+                                      onClick={() => { setActiveMenuId(null); setMenuPosition(null); setChecklistDevice(item); }}
+                                      style={{ ...menuButtonStyle, color: '#0891b2', fontWeight: '700' }}
+                                    >
+                                      <ClipboardCheck size={14} /> 出機檢查表
                                     </button>
                                     <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '2px 0' }} />
                                     <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); handleEditClick(item); }} style={menuButtonStyle}><Edit2 size={14} /> 編輯詳細資訊</button>
@@ -1326,6 +1302,14 @@ const DeviceList = ({ isSplitMode = false }) => {
             </div>
           </div>
         )}
+
+        {/* 單一設備的出機檢查表：套用項目、勾選完成與列印 */}
+        <DeviceChecklistModal
+          isOpen={!!checklistDevice}
+          device={checklistDevice}
+          onClose={() => setChecklistDevice(null)}
+          onChanged={loadChecklistSummary}
+        />
 
         {/* 設備卡片聚合規則說明（三個列表共用同一份說明） */}
         <CardAggregationLegend unit="設備" mode={aggregationMode} />

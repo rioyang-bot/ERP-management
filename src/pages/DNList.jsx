@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   FileText, Search, Filter, Eye, RefreshCw, AlertCircle, Trash2, Calendar, 
-  Printer, Paperclip, Upload, FileCheck, ExternalLink, X 
+  Printer, Paperclip, Upload, FileCheck, ExternalLink, X, Pencil 
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { logStatusChange, logDelete, logUpdate } from '../utils/auditLogger';
@@ -19,6 +19,8 @@ const DNList = ({ isSplitMode = false }) => {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
+  // 尚未確認出貨的單據可以修改：帶入該張單據即開啟同一個建檔視窗的編輯模式
+  const [editingDn, setEditingDn] = useState(null);
 
   const searchOptions = [
     { value: 'all', label: '全部欄位' },
@@ -577,6 +579,16 @@ const DNList = ({ isSplitMode = false }) => {
                         <Eye size={16} />
                       </button>
                       {dn.status === 'PENDING' && (
+                        <button
+                          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', padding: 0, backgroundColor: 'rgba(245, 158, 11, 0.12)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.25)', borderRadius: '6px', cursor: 'pointer', flexShrink: 0 }}
+                          title="修改單據"
+                          aria-label="編輯"
+                          onClick={() => setEditingDn(dn)}
+                        >
+                          <Pencil size={16} />
+                        </button>
+                      )}
+                      {dn.status === 'PENDING' && (
                         <button 
                           style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', padding: 0, backgroundColor: 'rgba(239, 68, 68, 0.12)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '6px', cursor: 'pointer', flexShrink: 0 }}
                           title="刪除單據"
@@ -819,6 +831,14 @@ const DNList = ({ isSplitMode = false }) => {
       <OutboundRegistrationModal
         isOpen={showAddModal}
         onClose={() => setShowAddModal(false)}
+        onSuccess={fetchRecords}
+      />
+
+      {/* 修改待出貨單據：沿用同一個建檔視窗，傳入 editingDn 即為編輯模式 */}
+      <OutboundRegistrationModal
+        isOpen={!!editingDn}
+        editingDn={editingDn}
+        onClose={() => setEditingDn(null)}
         onSuccess={fetchRecords}
       />
 

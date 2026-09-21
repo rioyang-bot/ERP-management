@@ -192,7 +192,7 @@ describe('維修單管理系統 (Repair Orders / RMA List) 四階段流程與設
     });
   });
 
-  it('2. 階段 1 建立維修單：寫入 On-site handling Date 與 Status，並將設備狀態設為 在庫 (ACTIVE)', async () => {
+  it('2. 階段 1 建立維修單：寫入 On-site handling Date 與 Status，並將設備標記為維修中 (REPAIRING)', async () => {
     const onSuccessMock = vi.fn();
     render(
       <RepairOrderRegistrationModal
@@ -229,7 +229,7 @@ describe('維修單管理系統 (Repair Orders / RMA List) 四階段流程與設
       // 驗證將設備序號狀態改為 ACTIVE (在庫)
       expect(window.electronAPI.namedQuery).toHaveBeenCalledWith(
         'updateAssetStatusBySn',
-        ['ACTIVE', 'X0342639']
+        ['REPAIRING', 'X0342639']
       );
 
       expect(onSuccessMock).toHaveBeenCalled();
@@ -267,7 +267,7 @@ describe('維修單管理系統 (Repair Orders / RMA List) 四階段流程與設
     });
   });
 
-  it('4. 階段 3 原廠返還確認：寫入 OEM Return Date 與 Results，並將設備狀態設為 在庫 (ACTIVE)', async () => {
+  it('4. 階段 3 原廠返還確認：寫入 OEM Return Date 與 Results，設備仍維持維修中 (REPAIRING)', async () => {
     const onSuccessMock = vi.fn();
     render(
       <RepairActionModal
@@ -295,7 +295,7 @@ describe('維修單管理系統 (Repair Orders / RMA List) 四階段流程與設
       );
       expect(window.electronAPI.namedQuery).toHaveBeenCalledWith(
         'updateAssetStatusBySn',
-        ['ACTIVE', 'BC025778']
+        ['REPAIRING', 'BC025778']
       );
       expect(onSuccessMock).toHaveBeenCalled();
     });
@@ -372,7 +372,7 @@ describe('維修單管理系統 (Repair Orders / RMA List) 四階段流程與設
       // 應將新序號設為 ACTIVE 在庫
       expect(window.electronAPI.namedQuery).toHaveBeenCalledWith(
         'updateAssetStatusBySn',
-        ['ACTIVE', 'BC025778_NEW_RMA']
+        ['REPAIRING', 'BC025778_NEW_RMA']
       );
       expect(onSuccessMock).toHaveBeenCalled();
     });

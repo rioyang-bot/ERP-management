@@ -115,6 +115,11 @@ const RepairOrderPrintModal = ({ isOpen, onClose, repairOrder }) => {
               <div>
                 <span style={{ fontSize: '11px', color: '#64748b', display: 'block', fontWeight: 700 }}>客戶名稱 (Customer)</span>
                 <span style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>{repairOrder.customer_name}</span>
+                {repairOrder.contact_person && (
+                  <span style={{ fontSize: '12px', color: '#475569', display: 'block', marginTop: '2px' }}>
+                    聯絡人：{repairOrder.contact_person}{repairOrder.contact_phone ? `（${repairOrder.contact_phone}）` : ''}
+                  </span>
+                )}
               </div>
               <div>
                 <span style={{ fontSize: '11px', color: '#64748b', display: 'block', fontWeight: 700 }}>現場處理/取回日期 (On-site handling Date)</span>

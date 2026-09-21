@@ -41,12 +41,18 @@ const AGGREGATION_RULES = [
 ];
 
 /**
- * @param {string} unit     列表名稱，例如「設備」「硬體」「耗材」
- * @param {string} mode     目前套用的聚合規則
- * @param {boolean} fixed   此列表的聚合規則是固定的、沒有切換按鈕（耗材）
+ * @param {string} unit  列表名稱，例如「設備」「硬體」「耗材」
+ * @param {string} mode  目前套用的聚合規則
+ * @param {string[]} [availableModes]
+ *        這個列表實際提供哪些規則。耗材只有依類型與依廠牌，
+ *        列出用不到的規則只會讓人去找不存在的選項。預設為全部。
  */
-const CardAggregationLegend = ({ unit = '資產', mode = 'SPEC', fixed = false }) => {
-  const rules = fixed ? AGGREGATION_RULES.filter((r) => r.mode === mode) : AGGREGATION_RULES;
+const CardAggregationLegend = ({ unit = '資產', mode = 'SPEC', availableModes }) => {
+  const rules = Array.isArray(availableModes) && availableModes.length > 0
+    ? AGGREGATION_RULES.filter((r) => availableModes.includes(r.mode))
+    : AGGREGATION_RULES;
+  // 只有一種規則時，就沒有「切換規則」這回事，相關說明不必出現
+  const switchable = rules.length > 1;
 
   return (
     <div style={{
@@ -70,9 +76,9 @@ const CardAggregationLegend = ({ unit = '資產', mode = 'SPEC', fixed = false }
 
         <div style={{ marginBottom: '8px' }}>
           上方的統計卡片是把明細清單「同一類的併成一張」之後的結果。
-          {fixed
-            ? `${unit}固定依類型聚合，沒有其他切換方式。`
-            : '要用哪一種方式合併，可於右上方自由切換；切換只影響卡片怎麼分，不會更動任何資料。'}
+          {switchable
+            ? '要用哪一種方式合併，可於右上方的下拉選單切換；切換只影響卡片怎麼分，不會更動任何資料。'
+            : `${unit}只提供這一種聚合方式。`}
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -89,7 +95,7 @@ const CardAggregationLegend = ({ unit = '資產', mode = 'SPEC', fixed = false }
                 • {rule.icon} <b>{rule.label}</b>
                 <span style={{ color: 'var(--text-subtle)' }}>（{rule.formula}）</span>
                 ：{rule.detail}
-                {isCurrent && !fixed && (
+                {isCurrent && switchable && (
                   <span style={{
                     marginLeft: '6px', fontSize: '11px', fontWeight: 800,
                     color: '#fff', backgroundColor: 'var(--primary-color)',
@@ -112,8 +118,14 @@ const CardAggregationLegend = ({ unit = '資產', mode = 'SPEC', fixed = false }
             • <b>連動篩選</b>：點擊任一張卡片，下方明細只顯示該卡片涵蓋的{unit}；再點一次取消篩選。
           </div>
           <div>
+            • <b>自訂排列</b>：按住卡片拖曳即可換位置{switchable && '，空格也可以留著不放'}。
+            排列依登入帳號各自記住並存在伺服器上，換一台電腦登入一樣看到自己排好的位置，
+            同一台電腦由不同人登入也不會互相覆蓋
+            {switchable && '；每一種聚合規則各記一份排列'}。
+          </div>
+          <div>
             • <b>汰舊區</b>：卡片上的封存鈕會把整張卡片移到下方汰舊區，之後就不再計入正常使用的統計
-            {!fixed && '（切換到任何一種聚合規則都一樣）'}。
+            {switchable && '（切換到任何一種聚合規則都一樣）'}。
             移出的只是統計呈現，明細資料仍然存在，隨時可以復原。
           </div>
         </div>

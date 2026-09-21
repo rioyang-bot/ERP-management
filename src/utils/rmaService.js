@@ -104,14 +104,35 @@ export async function performInPlaceReplacement(asset, newSn, rmaDetails = {}) {
   // 將狀態設為在庫 (ACTIVE)
   await window.electronAPI.namedQuery('updateAssetStatus', ['ACTIVE', asset.id]);
 
-  // 4. 連動更新掛載零組件、維修明細與出庫明細
+  // 4. 連動更新所有以序號字串記錄的關聯。
+  //    少改一處就會留下一個指向不存在序號的紀錄 —— 例如這張卡被換號後，
+  //    掛載它的設備清單還列著舊序號，編輯設備時會把正確的那張當成要解綁的對象。
+  //    先前這裡漏了設備的硬體清單與進貨明細，而且整段被 try/catch 吞掉，
+  //    連動失敗只會在主控台留一行警告，使用者完全不知道資料已經對不起來。
   if (oldSn) {
-    try {
-      await window.electronAPI.namedQuery('updateMountedHardwareServerSn', [cleanNewSn, oldSn]);
-      await window.electronAPI.namedQuery('updateRepairItemsSn', [cleanNewSn, oldSn]);
-      await window.electronAPI.namedQuery('updateOutboundItemsSn', [cleanNewSn, oldSn]);
-    } catch (syncErr) {
-      console.warn('Mounted hardware sync note:', syncErr);
+    const syncQueries = [
+      'updateMountedHardwareServerSn', // 掛在這台設備底下的硬體
+      'renameMountedHwSnOnDevices',    // 列有這顆硬體的設備清單
+      'updateRepairItemsSn',
+      'updateOutboundItemsSn',
+      'updateInboundItemsSn',
+    ];
+    const failed = [];
+    for (const queryName of syncQueries) {
+      try {
+        const syncRes = await window.electronAPI.namedQuery(queryName, [cleanNewSn, oldSn]);
+        if (!syncRes.success) failed.push(queryName);
+      } catch (syncErr) {
+        console.error(`[${queryName}] 序號連動失敗:`, syncErr);
+        failed.push(queryName);
+      }
+    }
+    if (failed.length > 0) {
+      throw new Error(
+        `資產序號已更新為 [${cleanNewSn}]，但下列關聯未能同步：${failed.join('、')}。
+`
+        + '請確認後手動更正，否則這些地方仍留著舊序號。'
+      );
     }
   }
 
@@ -236,6 +257,8 @@ export async function performOneToOneReplacement(asset, newSn, rmaDetails = {}) 
   //    舊機沒有掛載任何硬體時為 0 筆異動，屬正常情況，因此不設 expectRows。
   if (oldSn) {
     steps.push({ queryName: 'updateMountedHardwareServerSn', params: [cleanNewSn, oldSn] });
+    // 這顆零件若是掛在別台設備上，那台設備的硬體清單也要指向新序號
+    steps.push({ queryName: 'renameMountedHwSnOnDevices', params: [cleanNewSn, oldSn] });
     steps.push({ queryName: 'updateRepairItemsSn', params: [cleanNewSn, oldSn] });
   }
 

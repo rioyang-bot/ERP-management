@@ -8,7 +8,7 @@ export const queries = {
          AND a.sn IS NOT NULL AND a.sn <> '' AND oi.sn = a.sn) as lent_request_no,
       COALESCE(a.custom_attributes->>'contact_person', p.contact_person) as partner_contact,
       COALESCE(a.custom_attributes->>'contact_phone', p.phone) as partner_phone,
-      (SELECT json_agg(json_build_object('brand', comp.brand, 'model', comp.model, 'sn', comp.sn)) 
+      (SELECT json_agg(json_build_object('brand', comp.brand, 'model', comp.model, 'sn', comp.sn) ORDER BY NULLIF(comp.model, '') ASC NULLS LAST, NULLIF(comp.brand, '') ASC NULLS LAST, comp.sn) 
        FROM (
          SELECT COALESCE(hi.brand, '') as brand, COALESCE(hi.model, '') as model, ha.sn
          FROM assets ha 
@@ -50,7 +50,7 @@ export const queries = {
          AND a.sn IS NOT NULL AND a.sn <> '' AND oi.sn = a.sn) as lent_request_no,
       COALESCE(a.custom_attributes->>'contact_person', p.contact_person) as partner_contact,
       COALESCE(a.custom_attributes->>'contact_phone', p.phone) as partner_phone,
-      (SELECT json_agg(json_build_object('brand', comp.brand, 'model', comp.model, 'sn', comp.sn)) 
+      (SELECT json_agg(json_build_object('brand', comp.brand, 'model', comp.model, 'sn', comp.sn) ORDER BY NULLIF(comp.model, '') ASC NULLS LAST, NULLIF(comp.brand, '') ASC NULLS LAST, comp.sn) 
        FROM (
          SELECT COALESCE(hi.brand, '') as brand, COALESCE(hi.model, '') as model, ha.sn
          FROM assets ha 
@@ -90,6 +90,19 @@ export const queries = {
   updateMountedHardwareStatus: `UPDATE assets SET status = $1 WHERE custom_attributes->>'server_sn' = $2`,
   checkAssetSnExistsExcludeSelf: `SELECT id, sn FROM assets WHERE TRIM(sn) = TRIM($1) AND id != $2 LIMIT 1`,
   checkAssetSnExists: `SELECT id, sn FROM assets WHERE TRIM(sn) = TRIM($1) LIMIT 1`,
+  // 新序號還沒被任何資產用走時回一筆，被占用時回 0 筆。
+  // 交易以 expectRows 擋在最前面，避免撞上唯一鍵才失敗。
+  assertAssetSnFree: `
+    SELECT 1 AS ok
+    WHERE NOT EXISTS (SELECT 1 FROM assets WHERE UPPER(TRIM(sn)) = UPPER(TRIM($1)))`,
+  // 以序號更名資產。新序號已被占用時不做事（回 0 筆），
+  // 交易的 expectRows 會據此整批退回並說明原因 ——
+  // 比讓唯一鍵拋例外更能講清楚是哪裡不對。
+  renameAssetSn: `
+    UPDATE assets SET sn = TRIM($1), updated_at = CURRENT_TIMESTAMP
+    WHERE UPPER(TRIM(sn)) = UPPER(TRIM($2))
+      AND NOT EXISTS (SELECT 1 FROM assets x WHERE UPPER(TRIM(x.sn)) = UPPER(TRIM($1)))
+    RETURNING id, sn`,
   fetchAssetBySn: `
     SELECT a.*, im.brand, im.model, im.type, im.specification, c.name as category_name
     FROM assets a
@@ -108,7 +121,7 @@ export const queries = {
     ) RETURNING id, sn, status
   `,
   updateAssetStatusAndAttributes: `UPDATE assets SET status = $1, custom_attributes = $2 WHERE id = $3`,
-  updateMountedHardwareServerSn: `UPDATE assets SET custom_attributes = (CASE WHEN custom_attributes IS NOT NULL AND jsonb_typeof(custom_attributes) = 'object' THEN custom_attributes ELSE '{}'::jsonb END) || jsonb_build_object('server_sn', $1::text) WHERE custom_attributes->>'server_sn' IS NOT NULL AND TRIM(LOWER(custom_attributes->>'server_sn')) = TRIM(LOWER($2))`,
+  updateMountedHardwareServerSn: `UPDATE assets SET custom_attributes = (CASE WHEN custom_attributes IS NOT NULL AND jsonb_typeof(custom_attributes) = 'object' THEN custom_attributes ELSE '{}'::jsonb END) || jsonb_build_object('server_sn', $1::text) WHERE custom_attributes->>'server_sn' IS NOT NULL AND TRIM(LOWER(custom_attributes->>'server_sn')) = TRIM(LOWER($2)) RETURNING id`,
   bindHardwareToServerSn: `UPDATE assets SET custom_attributes = (CASE WHEN custom_attributes IS NOT NULL AND jsonb_typeof(custom_attributes) = 'object' THEN custom_attributes ELSE '{}'::jsonb END) || jsonb_build_object('server_sn', $1::text), client = COALESCE($3, client), location = COALESCE($4, location), ownership = COALESCE($5, ownership) WHERE sn IS NOT NULL AND TRIM(LOWER(sn)) = TRIM(LOWER($2)) RETURNING id, sn`,
   unbindHardwareServerSn: `UPDATE assets SET custom_attributes = (CASE WHEN custom_attributes IS NOT NULL AND jsonb_typeof(custom_attributes) = 'object' THEN custom_attributes ELSE '{}'::jsonb END) - 'server_sn' WHERE sn IS NOT NULL AND TRIM(LOWER(sn)) = TRIM(LOWER($1)) RETURNING id, sn`,
   findDeviceByMountedHwSn: `
@@ -170,8 +183,30 @@ export const queries = {
     WHERE c.name = '硬體' AND a.sn IS NOT NULL AND TRIM(LOWER(a.sn)) = TRIM(LOWER($1))
     LIMIT 1
   `,
-  updateRepairItemsSn: `UPDATE repair_items SET sn = $1 WHERE sn IS NOT NULL AND TRIM(sn) = TRIM($2)`,
-  updateOutboundItemsSn: `UPDATE outbound_items SET sn = $1 WHERE sn IS NOT NULL AND TRIM(sn) = TRIM($2)`,
+  updateRepairItemsSn: `UPDATE repair_items SET sn = TRIM($1) WHERE sn IS NOT NULL AND UPPER(TRIM(sn)) = UPPER(TRIM($2)) RETURNING id`,
+  updateOutboundItemsSn: `UPDATE outbound_items SET sn = TRIM($1) WHERE sn IS NOT NULL AND UPPER(TRIM(sn)) = UPPER(TRIM($2)) RETURNING id`,
+  // 進貨明細也記著序號，改序號時一起帶過去，否則進貨單上留著一個已經
+  // 不存在的序號，日後對帳會對不起來。
+  updateInboundItemsSn: `UPDATE inbound_items SET sn = TRIM($1) WHERE sn IS NOT NULL AND UPPER(TRIM(sn)) = UPPER(TRIM($2)) RETURNING id`,
+  // 設備端的 mounted_hw_sns 是「以逗號分隔的硬體序號字串」。
+  // 硬體改序號時這份清單不會自己更新，設備的編輯視窗就會看到一個
+  // 已經不存在的序號，存檔時還會把正確的那筆解綁掉。
+  // 逐筆比對後替換，不用字串取代 —— 序號互為子字串時會誤傷。
+  renameMountedHwSnOnDevices: `
+    UPDATE assets d
+    SET custom_attributes = COALESCE(d.custom_attributes, '{}'::jsonb) || jsonb_build_object(
+          'mounted_hw_sns',
+          (SELECT string_agg(CASE WHEN UPPER(TRIM(p)) = UPPER(TRIM($2)) THEN TRIM($1) ELSE TRIM(p) END, ', ')
+           FROM unnest(string_to_array(d.custom_attributes->>'mounted_hw_sns', ',')) AS p
+           WHERE TRIM(p) <> '')
+        ),
+        updated_at = CURRENT_TIMESTAMP
+    WHERE d.custom_attributes->>'mounted_hw_sns' IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM unnest(string_to_array(d.custom_attributes->>'mounted_hw_sns', ',')) AS p
+        WHERE UPPER(TRIM(p)) = UPPER(TRIM($2))
+      )
+    RETURNING d.id, d.sn`,
   // 品項主檔的識別欄位（廠牌／類型／型號／規格）一次更新。
   // 廠牌與類型改為可編輯後，只改型號與規格的 updateItemMasterSpecs 已不夠用。
   // 正規化方式與新增時一致：去除頭尾與重複空白、英文轉大寫，
@@ -218,9 +253,206 @@ export const queries = {
   getSystemSetting: `SELECT value FROM system_settings WHERE key = $1`,
   upsertSystemSetting: `INSERT INTO system_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
   
+  // ==========================================================================
+  // 出機檢查表 (Pre-delivery Checklist)
+  // --------------------------------------------------------------------------
+  // 範本（主項目 + 項目）與設備實際套用的內容是分開的兩塊：
+  // 設備套用時把名稱「快照」下來，範本日後被刪掉也不會讓已套用的檢查表消失。
+  // ==========================================================================
+
+  // --- 範本：主項目 ---
+  fetchChecklistGroups: `
+    SELECT g.*,
+           (SELECT COUNT(*) FROM checklist_items i WHERE i.group_id = g.id AND i.kind = 'MAIN') AS main_count,
+           (SELECT COUNT(*) FROM checklist_items i WHERE i.group_id = g.id AND i.kind = 'DETAIL') AS detail_count
+    FROM checklist_groups g
+    ORDER BY COALESCE(NULLIF(TRIM(g.brand), ''), 'zzz') ASC, g.sort_order ASC, g.id ASC
+  `,
+  insertChecklistGroup: `
+    INSERT INTO checklist_groups (name, brand, sort_order)
+    VALUES (TRIM($1), NULLIF(TRIM(COALESCE($2, '')), ''), COALESCE($3, 0))
+    RETURNING id, name, brand`,
+  updateChecklistGroup: `
+    UPDATE checklist_groups
+    SET name = TRIM($1), brand = NULLIF(TRIM(COALESCE($2, '')), ''), updated_at = CURRENT_TIMESTAMP
+    WHERE id = $3
+    RETURNING id`,
+  // 主項目刪除會連帶刪掉底下的項目（外鍵 CASCADE），
+  // 但設備已經套用出去的內容是快照，不受影響。
+  deleteChecklistGroup: `DELETE FROM checklist_groups WHERE id = $1 RETURNING id`,
+
+  // --- 範本：項目（MAIN 主要檢查功能 / DETAIL 細項）---
+  fetchChecklistItems: `
+    SELECT i.*, g.name AS group_name, g.brand AS group_brand
+    FROM checklist_items i
+    JOIN checklist_groups g ON i.group_id = g.id
+    ORDER BY i.group_id ASC, i.kind DESC, i.sort_order ASC, i.id ASC
+  `,
+  insertChecklistItem: `
+    INSERT INTO checklist_items (group_id, kind, name, sort_order)
+    VALUES ($1, $2, TRIM($3), COALESCE($4, 0))
+    RETURNING id, name, kind`,
+  updateChecklistItemName: `UPDATE checklist_items SET name = TRIM($1) WHERE id = $2 RETURNING id`,
+  // 細項是否隨主要檢查功能一起自動套用到該廠牌的每一台設備
+  setChecklistItemAutoApply: `
+    UPDATE checklist_items SET auto_apply = $1 WHERE id = $2 RETURNING id, auto_apply`,
+  deleteChecklistItem: `DELETE FROM checklist_items WHERE id = $1 RETURNING id`,
+  // 拖曳排序：一次把整組的順序寫回去。
+  // id 以逗號分隔的字串傳入而不是陣列 —— 具名查詢的參數前處理會把陣列
+  // 轉成 JSON 字串，::integer[] 收到 ["1","2"] 會轉型失敗。
+  // 順序就是字串裡的先後（WITH ORDINALITY）。
+  reorderChecklistItems: `
+    UPDATE checklist_items ci
+    SET sort_order = o.idx
+    FROM (
+      SELECT t.val::integer AS id, t.ord::integer AS idx
+      FROM unnest(string_to_array($1, ',')) WITH ORDINALITY AS t(val, ord)
+    ) o
+    WHERE ci.id = o.id
+    RETURNING ci.id`,
+  // 範本重新排序後，讓設備上仍連著範本的項目跟著換順序，
+  // 否則畫面與列印出來的先後會與範本對不起來。
+  // 範本已刪除的孤兒項目（source_item_id 為空）維持原順序。
+  syncAssetChecklistOrderBySource: `
+    UPDATE asset_checklist_items a
+    SET sort_order = i.sort_order, updated_at = CURRENT_TIMESTAMP
+    FROM checklist_items i
+    WHERE a.source_item_id = i.id AND a.sort_order IS DISTINCT FROM i.sort_order
+    RETURNING a.id`,
+
+  // --- 設備實際套用的檢查表 ---
+  fetchAssetChecklist: `
+    SELECT * FROM asset_checklist_items
+    WHERE asset_id = $1
+    ORDER BY sort_order ASC, id ASC
+  `,
+  // 各設備的完成度，供設備列表顯示進度。
+  // 單獨一支查詢而不是併進 fetchAssetsList：尚未套用資料庫變更時
+  // 也只有這支會失敗，不會整個設備列表讀不出來。
+  fetchAssetChecklistSummary: `
+    SELECT asset_id,
+           COUNT(*)::int AS total,
+           COUNT(*) FILTER (WHERE is_checked)::int AS done
+    FROM asset_checklist_items
+    WHERE kind = 'MAIN'
+    GROUP BY asset_id
+  `,
+  // 重複套用同一個項目時不重寫，避免把已經勾好的狀態洗掉
+  insertAssetChecklistItem: `
+    INSERT INTO asset_checklist_items (asset_id, group_name, kind, item_name, source_item_id, sort_order)
+    SELECT $1::integer, TRIM($2), $3::varchar, TRIM($4), $5::integer, COALESCE($6, 0)
+    WHERE NOT EXISTS (
+      SELECT 1 FROM asset_checklist_items x
+      WHERE x.asset_id = $1::integer
+        AND UPPER(TRIM(x.group_name)) = UPPER(TRIM($2))
+        AND x.kind = $3::varchar
+        AND UPPER(TRIM(x.item_name)) = UPPER(TRIM($4))
+    )
+    RETURNING id`,
+  // 細項記錄的是實際內容而不是做完沒有（例如 OS → RH9.6），因此是填值不是勾選
+  setAssetChecklistItemContent: `
+    UPDATE asset_checklist_items
+    SET content = NULLIF(TRIM($1), ''), updated_at = CURRENT_TIMESTAMP
+    WHERE id = $2
+    RETURNING id, content`,
+  setAssetChecklistItemChecked: `
+    UPDATE asset_checklist_items
+    SET is_checked = $1, updated_at = CURRENT_TIMESTAMP
+    WHERE id = $2
+    RETURNING id, is_checked`,
+  deleteAssetChecklistItem: `DELETE FROM asset_checklist_items WHERE id = $1 RETURNING id`,
+  deleteAssetChecklistGroup: `
+    DELETE FROM asset_checklist_items
+    WHERE asset_id = $1 AND UPPER(TRIM(group_name)) = UPPER(TRIM($2))
+    RETURNING id`,
+  deleteAssetChecklistAll: `DELETE FROM asset_checklist_items WHERE asset_id = $1 RETURNING id`,
+
+  // --- 依廠牌自動套用 ---
+  // 主項目綁定廠牌之後，該廠牌的每一台設備都要有這組「主要檢查功能」，
+  // 不需要逐台按套用。這支查詢把還缺的補上（已經有的不動，勾選狀態不受影響）。
+  //
+  // 細項預設不自動套用，但勾了 auto_apply 的也一起帶入 —— 像 OS、BMC IP
+  // 這種每台都要填的欄位，逐台加太費工。帶進去之後仍然是細項（填內容）。
+  //
+  // 廠牌留空的主項目視為通用，套用到所有設備。
+  // 寫進去的是名稱而不是外鍵參照：範本日後被刪掉，設備上已套用的內容仍然留著。
+  //
+  // $1 傳入資產 id 只同步那一台，傳 null 則同步全部。
+  syncBrandChecklistToAssets: `
+    INSERT INTO asset_checklist_items (asset_id, group_name, kind, item_name, source_item_id, sort_order)
+    SELECT a.id, g.name, i.kind, i.name, i.id, COALESCE(i.sort_order, 0)
+    FROM checklist_groups g
+    JOIN checklist_items i ON i.group_id = g.id
+                          AND (i.kind = 'MAIN' OR COALESCE(i.auto_apply, FALSE))
+    JOIN item_master m ON m.category_id = (SELECT id FROM categories WHERE name = '設備' LIMIT 1)
+                      AND (
+                        COALESCE(NULLIF(TRIM(g.brand), ''), '') = ''
+                        OR UPPER(TRIM(COALESCE(m.brand, ''))) = UPPER(TRIM(g.brand))
+                      )
+    JOIN assets a ON a.item_master_id = m.id
+    WHERE ($1::integer IS NULL OR a.id = $1::integer)
+      AND NOT EXISTS (
+        SELECT 1 FROM asset_checklist_items x
+        WHERE x.asset_id = a.id
+          AND UPPER(TRIM(x.group_name)) = UPPER(TRIM(g.name))
+          AND x.kind = i.kind
+          AND UPPER(TRIM(x.item_name)) = UPPER(TRIM(i.name))
+      )
+    RETURNING id, asset_id`,
+
+  // 範本改名時讓已套用的內容跟著改。
+  // 只更新仍連著範本的那些列（source_item_id 還在）；範本已刪除的孤兒列
+  // 維持原名不動 —— 那些內容已經不歸範本管了。
+  renameAssetChecklistItemsBySource: `
+    UPDATE asset_checklist_items
+    SET item_name = TRIM($1), updated_at = CURRENT_TIMESTAMP
+    WHERE source_item_id = $2
+    RETURNING id`,
+  renameAssetChecklistGroupBySource: `
+    UPDATE asset_checklist_items
+    SET group_name = TRIM($1), updated_at = CURRENT_TIMESTAMP
+    WHERE source_item_id IN (SELECT id FROM checklist_items WHERE group_id = $2)
+    RETURNING id`,
+
   // Dashboard / Misc
   fetchCustomers: `SELECT id, name, contact_person as contact, phone, address FROM partners WHERE partner_type = 'CUSTOMER' AND COALESCE(is_active, TRUE) = true ORDER BY name ASC, contact_person ASC`,
   fetchAssetSns: `SELECT sn FROM assets WHERE sn IS NOT NULL AND sn != ''`,
+  // 重新匯入補齊空白欄位：先取出檔案裡這些序號在系統中目前的內容，
+  // 才知道哪些欄位是空的、哪些已經有值不能動。
+  //
+  // 序號以逗號分隔的「字串」傳入，不用陣列：具名查詢的參數前處理會把物件
+  // （陣列也是物件）轉成 JSON 字串，$1::text[] 收到 ["A","B"] 會轉型失敗。
+  // 分隔符號用逗號而不是換行，是因為參數過濾會把 CR/LF 濾掉。
+  fetchAssetsBySnListForFill: `
+    SELECT a.id, a.sn, a.client, a.hostname, a.location, a.remarks,
+           a.installed_date, a.customer_warranty_expire, a.system_date, a.warranty_expire,
+           a.status, a.ownership,
+           COALESCE(a.custom_attributes, '{}'::jsonb) as custom_attributes,
+           i.brand, i.type, i.model, i.specification, c.name as category_name
+    FROM assets a
+    LEFT JOIN item_master i ON a.item_master_id = i.id
+    LEFT JOIN categories c ON i.category_id = c.id
+    WHERE a.sn IS NOT NULL AND UPPER(TRIM(a.sn)) = ANY(string_to_array($1, ','))
+  `,
+  // 只補空白：每一欄都先看既有值，有值就維持原樣，空的才寫入帶進來的值。
+  // 判斷放在 SQL 而不是只靠前端比對 —— 預覽到實際寫入之間別人若剛好填了，
+  // 也不會被這次匯入蓋掉。
+  // custom_attributes 以「既有的 || 這次要補的」合併，而要補的鍵值在前端
+  // 已篩掉既有非空的鍵，因此不會動到原本就有內容的屬性。
+  fillEmptyAssetFieldsBySn: `
+    UPDATE assets SET
+      client = CASE WHEN COALESCE(TRIM(client), '') = '' THEN $2 ELSE client END,
+      hostname = CASE WHEN COALESCE(TRIM(hostname), '') = '' THEN $3 ELSE hostname END,
+      location = CASE WHEN COALESCE(TRIM(location), '') = '' THEN $4 ELSE location END,
+      remarks = CASE WHEN COALESCE(TRIM(remarks), '') = '' THEN $5 ELSE remarks END,
+      installed_date = COALESCE(installed_date, $6::date),
+      customer_warranty_expire = COALESCE(customer_warranty_expire, $7::date),
+      system_date = COALESCE(system_date, $8::date),
+      warranty_expire = COALESCE(warranty_expire, $9::date),
+      custom_attributes = COALESCE(custom_attributes, '{}'::jsonb) || $10::jsonb,
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = $1
+    RETURNING id, sn`,
   insertCustomerIfNotExist: `INSERT INTO partners (partner_type, name) SELECT 'CUSTOMER', $1 WHERE NOT EXISTS (SELECT 1 FROM partners WHERE name = $1 AND partner_type = 'CUSTOMER')`,
   
   // Assets.jsx
@@ -543,8 +775,12 @@ export const queries = {
   `,
   insertInboundItemMaster: `INSERT INTO item_master (specification, type, brand, unit, category_id, purchase_price) VALUES ($1, UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g'))), UPPER(TRIM(REGEXP_REPLACE(COALESCE($3, ''), '[[:space:]]+', ' ', 'g'))), $4, (SELECT id FROM categories WHERE name = $5), 0) RETURNING id`,
   countInboundOrders: `WITH seqs AS (SELECT CAST(SUBSTRING(order_no FROM '-([0-9]+)$') AS INTEGER) as sq FROM inbound_orders WHERE order_no LIKE $1 || '%') SELECT s.val as count FROM generate_series(1, 1000) as s(val) WHERE NOT EXISTS (SELECT 1 FROM seqs WHERE seqs.sq = s.val) ORDER BY s.val ASC LIMIT 1`,
-  insertInboundOrder: `INSERT INTO inbound_orders (order_no, partner_id, invoice_no, status, attachments) VALUES ($1, $2, $3, $4, $5::jsonb) RETURNING id`,
-  updateInboundOrderHeader: `UPDATE inbound_orders SET partner_id = $1, invoice_no = $2, attachments = $3::jsonb WHERE id = $4`,
+  // 進貨日期要真的存下來：先前只拿畫面上的日期編單號，order_date 落到
+  // 資料庫預設的今天，補登舊貨時單號是舊的、日期卻是今天。
+  insertInboundOrder: `INSERT INTO inbound_orders (order_no, partner_id, invoice_no, status, attachments, order_date, creator_id) VALUES ($1, $2, $3, $4, $5::jsonb, COALESCE($6::date, CURRENT_DATE), $7) RETURNING id`,
+  // 日期打錯要改得回來，與供應商、發票號碼同一個編輯入口。
+  // 只改單頭，不會動到明細、庫存或採購單的已入庫數量。
+  updateInboundOrderHeader: `UPDATE inbound_orders SET partner_id = $1, invoice_no = $2, attachments = $3::jsonb, order_date = COALESCE($5::date, order_date) WHERE id = $4 RETURNING id`,
   insertInboundAssets: `INSERT INTO assets (sn, item_master_id, status, custom_attributes) VALUES ($1, $2, 'ACTIVE', jsonb_build_object('project_name', $3::text))`,
   insertInboundItems: `INSERT INTO inbound_items (inbound_order_id, item_id, sn, quantity, purchase_record_id, unit_price) VALUES ($1, $2, $3, $4, $5, 0)`,
   updateStockQtyOnInbound: `UPDATE item_master SET stock_qty = stock_qty + $1 WHERE id = $2`,
@@ -563,14 +799,29 @@ export const queries = {
   // 刪除進貨單時把入庫加上的庫存扣回來
   reverseStockQtyOnInboundDelete: `UPDATE item_master SET stock_qty = GREATEST(COALESCE(stock_qty, 0) - $1, 0) WHERE id = $2 RETURNING id`,
   updatePurchaseRecordStatus: `UPDATE purchase_records SET received_quantity = COALESCE(received_quantity, 0) + $1, status = CASE WHEN COALESCE(received_quantity, 0) + $1 >= quantity THEN 'COMPLETED' ELSE 'PARTIAL' END, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
-  fetchInboundList: `SELECT io.*, p.name as partner_name, (SELECT pr.project_name FROM inbound_items ii JOIN purchase_records pr ON ii.purchase_record_id = pr.id WHERE ii.inbound_order_id = io.id AND pr.project_name IS NOT NULL LIMIT 1) as project_name FROM inbound_orders io LEFT JOIN partners p ON io.partner_id = p.id ORDER BY io.created_at DESC`,
+  fetchInboundList: `
+    SELECT io.*,
+      COALESCE(io.order_date, io.created_at::date) AS effective_date,
+      p.name as partner_name,
+      u.full_name as creator_name,
+      (SELECT COUNT(*) FROM inbound_items ii WHERE ii.inbound_order_id = io.id) as item_count,
+      (SELECT pr.project_name FROM inbound_items ii
+       JOIN purchase_records pr ON ii.purchase_record_id = pr.id
+       WHERE ii.inbound_order_id = io.id AND pr.project_name IS NOT NULL LIMIT 1) as project_name
+    FROM inbound_orders io
+    LEFT JOIN partners p ON io.partner_id = p.id
+    LEFT JOIN users u ON io.creator_id = u.id
+    ORDER BY io.created_at DESC`,
   fetchInboundItems: `
       SELECT ii.*, im.specification, im.brand, im.model, c.name as category_name, pr.order_no as po_order_no
       FROM inbound_items ii 
       LEFT JOIN item_master im ON ii.item_id = im.id 
       LEFT JOIN categories c ON im.category_id = c.id 
       LEFT JOIN purchase_records pr ON ii.purchase_record_id = pr.id
-      WHERE ii.inbound_order_id = $1`,
+      WHERE ii.inbound_order_id = $1
+      -- 沒有 ORDER BY 時回的是堆積順序：某一列被 UPDATE 過就會跑到最後面，
+      -- 明細看起來像是「改完不見了」。固定以建立順序呈現。
+      ORDER BY ii.id`,
 
   // MainLayout.jsx (使用上方已定義的同名查詢)
 
@@ -731,7 +982,7 @@ export const queries = {
         'sn', comp.sn, 
         'type', comp.type, 
         'specification', comp.specification
-      )) 
+      ) ORDER BY NULLIF(comp.model, '') ASC NULLS LAST, NULLIF(comp.brand, '') ASC NULLS LAST, comp.sn) 
      FROM (
        SELECT ha.item_master_id, COALESCE(hi.brand, '') as brand, COALESCE(hi.model, '') as model, ha.sn, COALESCE(hi.type, '') as type, COALESCE(hi.specification, '') as specification
        FROM assets ha 
@@ -788,7 +1039,7 @@ export const queries = {
         'sn', ha.sn, 
         'type', hi.type, 
         'specification', hi.specification
-      )) 
+      ) ORDER BY NULLIF(hi.model, '') ASC NULLS LAST, NULLIF(hi.brand, '') ASC NULLS LAST, ha.sn) 
      FROM assets ha JOIN item_master hi ON ha.item_master_id = hi.id 
      WHERE ha.custom_attributes->>'server_sn' IS NOT NULL 
      AND TRIM(ha.custom_attributes->>'server_sn') = TRIM(a.sn)) as components
@@ -961,23 +1212,78 @@ export const queries = {
   `,
 
   // --- Stocktaking (盤點總表) ---
+  // 分組多加 i.id：品項主檔與「廠牌+型號+規格」在現行資料是一對一，
+  // 列數不變，但每一列有了 item_master_id 才對得上每月結存
   fetchStocktakingAssets: `
     SELECT 
+      i.id AS item_master_id,
       c.name as category_name, 
       i.type, 
       i.brand, 
       i.model, 
       i.specification, 
-      COUNT(a.id) as stock_qty
+      COUNT(a.id) as stock_qty,
+      EXISTS (
+        SELECT 1 FROM outbound_items oi
+        JOIN outbound_requests o ON oi.request_id = o.id
+        WHERE oi.item_id = i.id
+          AND o.status IN ('SHIPPED', 'RETURNED')
+          AND COALESCE(o.shipping_date, o.created_at::date) >= (CURRENT_DATE - INTERVAL '3 months')
+      ) AS has_recent_outbound
     FROM assets a 
     JOIN item_master i ON a.item_master_id = i.id 
     JOIN categories c ON i.category_id = c.id 
     WHERE a.status = 'ACTIVE' AND c.name IN ('設備', '硬體')
-    GROUP BY c.name, i.type, i.brand, i.model, i.specification
+    GROUP BY i.id, c.name, i.type, i.brand, i.model, i.specification
     ORDER BY c.name DESC, i.brand ASC, i.type ASC, i.model ASC
   `,
+  // --- 每月結餘庫存 ---
+  // 產生某個月的結存。以「目前庫存」寫入指定月份，因此必須在該月結束後
+  // 才執行（每月 1 日跑上個月）。同月重複執行不會覆蓋既有紀錄。
+  generateMonthlyBalances: `
+    INSERT INTO inventory_monthly_balances (item_master_id, balance_month, stock_qty, lab_qty, lent_qty)
+    SELECT
+      im.id,
+      $1::date,
+      CASE WHEN c.name = '耗材' THEN COALESCE(im.stock_qty, 0)
+           ELSE (SELECT COUNT(*) FROM assets a WHERE a.item_master_id = im.id AND a.status = 'ACTIVE') END,
+      CASE WHEN c.name = '耗材' THEN COALESCE(im.lab_qty, 0) ELSE 0 END,
+      CASE WHEN c.name = '耗材' THEN COALESCE(im.lent_qty, 0)
+           ELSE (SELECT COUNT(*) FROM assets a WHERE a.item_master_id = im.id AND a.status = 'LENT') END
+    FROM item_master im
+    LEFT JOIN categories c ON im.category_id = c.id
+    ON CONFLICT ON CONSTRAINT inventory_monthly_balances_unique DO NOTHING
+    RETURNING id
+  `,
+  // 已經記錄到哪一個月；沒有任何紀錄時回傳 NULL
+  fetchLatestBalanceMonth: `
+    SELECT MAX(balance_month) AS latest_month FROM inventory_monthly_balances
+  `,
+  // 盤點表要用的近三個月結存，一次撈齊後由前端對應到各列
+  fetchRecentMonthlyBalances: `
+    SELECT
+      b.item_master_id,
+      to_char(b.balance_month, 'YYYY-MM') AS month,
+      b.stock_qty,
+      b.lab_qty,
+      b.lent_qty
+    FROM inventory_monthly_balances b
+    WHERE b.balance_month IN (
+      SELECT DISTINCT balance_month FROM inventory_monthly_balances
+      ORDER BY balance_month DESC LIMIT 3
+    )
+    ORDER BY b.balance_month DESC
+  `,
   fetchStocktakingConsumables: `
-    SELECT i.id, i.brand, i.model, i.specification, i.type, i.stock_qty, i.lab_qty, i.unit, c.name as category_name 
+    SELECT i.id, i.id AS item_master_id, i.brand, i.model, i.specification, i.type,
+           i.stock_qty, i.lab_qty, i.unit, c.name as category_name,
+           EXISTS (
+             SELECT 1 FROM outbound_items oi
+             JOIN outbound_requests o ON oi.request_id = o.id
+             WHERE oi.item_id = i.id
+               AND o.status IN ('SHIPPED', 'RETURNED')
+               AND COALESCE(o.shipping_date, o.created_at::date) >= (CURRENT_DATE - INTERVAL '3 months')
+           ) AS has_recent_outbound
     FROM item_master i 
     JOIN categories c ON i.category_id = c.id 
     WHERE c.name = '耗材' AND (i.stock_qty > 0 OR i.lab_qty > 0)
@@ -1367,11 +1673,13 @@ export const queries = {
     WHERE ri.repair_id = $1
     ORDER BY ri.id ASC
   `,
+  // 同一家公司常有多位聯絡人，單上要記得住是對誰處理的
   createRepairOrder: `
     INSERT INTO repair_orders (
       repair_no, customer_name, status, on_site_date, on_site_status,
-      creator_id, remarks
-    ) VALUES ($1, $2, 'ON_SITE_HANDLING', $3, $4, $5, $6)
+      creator_id, remarks, contact_person, contact_phone
+    ) VALUES ($1, $2, 'ON_SITE_HANDLING', $3, $4, $5, $6,
+              NULLIF(TRIM(COALESCE($7, '')), ''), NULLIF(TRIM(COALESCE($8, '')), ''))
     RETURNING *
   `,
   createRepairOrderItem: `
@@ -1399,6 +1707,27 @@ export const queries = {
     WHERE id = $4 
     RETURNING *
   `,
+  // 標記/取消「不需送回原廠」。只有還在現場處理階段才允許改，
+  // 已經送出原廠的單不該再宣稱不需送修；改不到時回 0 筆，由呼叫端說明原因。
+  setRepairNoOemRequired: `
+    UPDATE repair_orders
+    SET no_oem_required = $1,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = $2 AND status = 'ON_SITE_HANDLING'
+    RETURNING id, no_oem_required
+  `,
+  // IT 自行維修完工結案：不經過原廠，一步從現場處理直接結案。
+  // 條件帶上目前狀態與旗標，避免重複送出或在已送修的單上誤觸。
+  updateRepairCompletedInHouse: `
+    UPDATE repair_orders
+    SET status = 'COMPLETED',
+        completion_date = $1,
+        results = $2,
+        remarks = COALESCE($3, remarks),
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = $4 AND status = 'ON_SITE_HANDLING' AND no_oem_required = TRUE
+    RETURNING *
+  `,
   updateRepairCompleted: `
     UPDATE repair_orders 
     SET status = 'COMPLETED', 
@@ -1407,6 +1736,16 @@ export const queries = {
         updated_at = CURRENT_TIMESTAMP 
     WHERE id = $3 
     RETURNING *
+  `,
+  // 只改現場狀況這一欄。updateRepairOrderDetails 一次覆寫八個欄位，
+  // 拿來改一段描述會把其他欄位一併寫成呼叫端當下的值，風險不必要。
+  // 清空視為沒有描述（存 NULL），列表才會顯示成「-」而不是一個空白標籤。
+  updateRepairOnSiteStatus: `
+    UPDATE repair_orders
+    SET on_site_status = NULLIF(TRIM($1), ''),
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = $2
+    RETURNING id, on_site_status
   `,
   updateRepairOrderDetails: `
     UPDATE repair_orders 
@@ -1423,6 +1762,19 @@ export const queries = {
     RETURNING *
   `,
   deleteRepairOrder: `DELETE FROM repair_orders WHERE id = $1`,
+  // 刪除維修單前，把還停在維修中的設備放回在庫。
+  // 建單時會標記 REPAIRING，單據刪掉卻不還原的話，設備就永遠卡在維修中。
+  // 只還原 REPAIRING 的：已完工出貨（SHIPPED）或已報廢的不該被改動。
+  restoreAssetsFromRepair: `
+    UPDATE assets a
+    SET status = 'ACTIVE', updated_at = CURRENT_TIMESTAMP
+    FROM repair_items ri
+    WHERE ri.repair_id = $1
+      AND ri.sn IS NOT NULL AND TRIM(ri.sn) <> ''
+      AND UPPER(TRIM(a.sn)) = UPPER(TRIM(ri.sn))
+      AND a.status = 'REPAIRING'
+    RETURNING a.id, a.sn
+  `,
   fetchAssetsForRepairSelection: `
     SELECT 
       a.id as asset_id,

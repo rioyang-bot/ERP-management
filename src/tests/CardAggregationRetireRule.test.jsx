@@ -91,9 +91,8 @@ describe('卡片聚合規則與汰舊區聯動測試 (Card Aggregation & Retire 
       expect(screen.getByText(/汰舊 \/ 停用區塊/i)).toBeInTheDocument();
     });
 
-    // 切換為「依廠牌」模式
-    const brandModeBtn = screen.getByRole('button', { name: /依廠牌/i });
-    fireEvent.click(brandModeBtn);
+    // 切換為「依廠牌」模式（聚合規則已改為下拉選單）
+    fireEvent.change(screen.getByLabelText('聚合規則:'), { target: { value: 'BRAND' } });
 
     // 關鍵驗證：
     // ASUS 共有 2 台，但其中 1 台規格在汰舊區。
@@ -168,9 +167,8 @@ describe('卡片聚合規則與汰舊區聯動測試 (Card Aggregation & Retire 
       expect(screen.getByText(/汰舊 \/ 停用區塊/i)).toBeInTheDocument();
     });
 
-    // 切換為「依廠牌」模式
-    const brandModeBtn = screen.getByRole('button', { name: /依廠牌/i });
-    fireEvent.click(brandModeBtn);
+    // 切換為「依廠牌」模式（聚合規則已改為下拉選單）
+    fireEvent.change(screen.getByLabelText('聚合規則:'), { target: { value: 'BRAND' } });
 
     // 關鍵驗證：使用中卡片與汰舊區卡片皆為 1 個，不可合併成「共 2 個」
     await waitFor(() => {

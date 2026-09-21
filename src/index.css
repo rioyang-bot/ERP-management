@@ -30,6 +30,18 @@
   --primary-hover: #1d4ed8;
   --primary-bg: #eff6ff;
   --primary-border: #bfdbfe;
+
+  /* 設備／硬體列表首欄：上行青色系（類型/廠牌）、下行琥珀色系（型號/規格），
+     每一行都是左淺右深。同一行同色系，兩行之間才分得開；左右深淺不同，
+     則分得出哪一段是哪個欄位。
+     選色避開了藍（序號欄與連結already是主色藍）、紫（公司資產標籤）、
+     綠與紅（狀態與保固標籤），免得跟既有的顏色語彙混淆。
+     四個色階在白底上的對比都在 4.5:1 以上 —— 這兩行都是 11〜13px 的小字，
+     再淺一階就讀不清楚了。 */
+  --asset-type-color: #0f766e;
+  --asset-brand-color: #134e4a;
+  --asset-model-color: #b45309;
+  --asset-spec-color: #78350f;
   
   /* 輸入框與表單 */
   --input-bg: #ffffff;
@@ -89,6 +101,13 @@
   --primary-hover: #60a5fa;
   --primary-bg: rgba(59, 130, 246, 0.15);
   --primary-border: rgba(59, 130, 246, 0.3);
+
+  /* 首欄的深色版本：同樣是上青下琥珀、左淺右深，但整體提亮 ——
+     暗底上照搬淺色主題的深階會直接糊進背景。對比同樣都在 4.5:1 以上。 */
+  --asset-type-color: #5eead4;
+  --asset-brand-color: #0d9488;
+  --asset-model-color: #fcd34d;
+  --asset-spec-color: #d97706;
   
   /* 輸入框與表單 */
   --input-bg: #0c1420;

@@ -11,7 +11,8 @@ import {
   TrendingUp, 
   FileSpreadsheet, 
   ShieldCheck, 
-  Network 
+  Network,
+  ClipboardCheck
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import './Reports.css';
@@ -74,6 +75,19 @@ const Reports = () => {
       desc: '按時間序列追蹤所有進貨入庫、出庫發貨、借用撥轉與異動軌跡，提供完整歷史紀錄與稽核報表。',
       tags: ['進出歷史流水', '時間序列追蹤', '出庫稽核', '操作軌跡'],
       path: '/flow-history'
+    },
+    {
+      id: 'predelivery-checklist',
+      title: '出機檢查表 (Pre-delivery Checklist)',
+      category: 'INVENTORY',
+      categoryLabel: '庫存盤點',
+      icon: <ClipboardCheck size={28} />,
+      iconBg: 'linear-gradient(135deg, #0891b2, #0e7490)',
+      status: 'ACTIVE',
+      statusText: '已上線',
+      desc: '建立出機前的檢查項目：主項目綁定廠牌後，該廠牌所有設備自動套用其「主要檢查功能」（勾選完成）；「細項」則由每台設備自行挑選或新增並填寫內容（例如 OS → RH9.6），可單台列印。',
+      tags: ['依廠牌自動套用', '細項填寫內容', '勾選檢查完成', '單台列印', '刪除範本不影響已套用'],
+      path: '/checklist-templates'
     },
     {
       id: 'event-logs',

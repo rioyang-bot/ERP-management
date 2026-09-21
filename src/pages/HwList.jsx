@@ -7,23 +7,24 @@ import RmaReplacementModal from '../components/RmaReplacementModal';
 import { logUpdate, logDelete, logStatusChange } from '../utils/auditLogger';
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
-import { isItemRetired, getItemAggregationKey, aggregateCards, computeNewRetiredKeys, getCardTitle, showsModelSubtitle, getCardSearchText } from '../utils/cardAggregation';
+import { isItemRetired, getItemAggregationKey, aggregateCards, computeNewRetiredKeys, getCardTitle, showsModelSubtitle, getCardSearchText, ASSET_AGGREGATION_MODES } from '../utils/cardAggregation';
 import ColumnVisibilityModal from '../components/ColumnVisibilityModal';
 import CardAggregationLegend from '../components/CardAggregationLegend';
 import { isFullyOutOfWarranty } from '../utils/warranty';
 import { useColumnPreferences } from '../hooks/useColumnPreferences';
+import AssetIdentityCell from '../components/common/AssetIdentityCell';
+import CardAggregationSelect from '../components/common/CardAggregationSelect';
+import { useCardLayoutByMode } from '../hooks/useCardLayout';
 
 // 硬體列表的欄位清單：id 對應表格的每一欄，always 代表不可隱藏
 const HW_COLUMNS = [
-  { id: 'brand', label: '廠牌 / 型號 / 類型', always: true },
+  { id: 'brand', label: '類型 / 廠牌 / 型號 / 規格', always: true },
   { id: 'sn', label: '序號 (SN)' },
-  { id: 'spec', label: '規格 (Spec)' },
   { id: 'project', label: '專案編號/名稱 (Project)' },
   { id: 'order_source', label: '訂單來源 (OrderSource)' },
   { id: 'shipping_date', label: '出貨日期' },
   { id: 'server', label: '對應伺服器' },
-  { id: 'client', label: '客戶' },
-  { id: 'end_user', label: 'End-user' },
+  { id: 'client', label: '客戶 / End-user' },
   { id: 'location', label: '位置' },
   { id: 'remarks', label: '備註' },
   { id: 'status', label: '狀態' },
@@ -170,6 +171,7 @@ const HwList = ({ isSplitMode = false }) => {
     }
     setEditItem({
       ...nic,
+      _origSn: nic.sn || '',
       _origModel: nic.model || '',
       _origBrand: nic.brand || '',
       _origType: nic.type || '',
@@ -278,7 +280,22 @@ const HwList = ({ isSplitMode = false }) => {
       editItem.temp_end_user !== undefined ? editItem.temp_end_user : (editItem.end_user || editItem.custom_attributes?.end_user || null),
       editItem.remarks ?? null
     ]);
-    if (res.success) { 
+    if (res.success) {
+      // 序號改掉時，所有以序號字串記錄的關聯都要跟著改：
+      // 掛載它的設備清單、維修單明細、出貨明細、進貨明細。
+      // 否則那些地方會留著一個已經不存在的序號。
+      const origSn = (editItem._origSn || '').trim();
+      const newSn = (editItem.sn || '').trim();
+      if (origSn && newSn && origSn.toUpperCase() !== newSn.toUpperCase()) {
+        for (const queryName of ['renameMountedHwSnOnDevices', 'updateRepairItemsSn', 'updateOutboundItemsSn', 'updateInboundItemsSn']) {
+          try {
+            await window.electronAPI.namedQuery(queryName, [newSn, origSn]);
+          } catch (e) {
+            console.error(`[${queryName}] 序號連動失敗:`, e);
+          }
+        }
+      }
+
       // 雙向連動設備端的 mounted_hw_sns
       const origServerSn = (editItem.server_sn || '').trim();
       const newServerSn = (editItem.temp_server_sn || '').trim();
@@ -370,7 +387,10 @@ const HwList = ({ isSplitMode = false }) => {
     switch (status) {
       case 'SHIPPED': return { label: '已出貨', color: '#3b82f6', bgColor: 'rgba(59, 130, 246, 0.15)', borderColor: 'rgba(59, 130, 246, 0.3)' };
       case 'LENT': return { label: '借出/借用', color: '#f59e0b', bgColor: 'rgba(245, 158, 11, 0.15)', borderColor: 'rgba(245, 158, 11, 0.3)' };
-      case 'REPAIR': return { label: '故障', color: '#ef4444', bgColor: 'rgba(239, 68, 68, 0.15)', borderColor: 'rgba(239, 68, 68, 0.3)' };
+      // REPAIRING 是維修流程寫入的值；REPAIR 是硬體列表早期自己用的寫法，
+      // 兩者同義，一併認得才不會有資料顯示成「在庫」
+      case 'REPAIRING':
+      case 'REPAIR': return { label: '維修中', color: '#ef4444', bgColor: 'rgba(239, 68, 68, 0.15)', borderColor: 'rgba(239, 68, 68, 0.3)' };
       case 'SCRAPPED': return { label: '已報廢', color: 'var(--text-subtle)', bgColor: 'rgba(100, 116, 139, 0.15)', borderColor: 'rgba(100, 116, 139, 0.3)' };
       default: return { label: '在庫', color: '#10b981', bgColor: 'rgba(16, 185, 129, 0.15)', borderColor: 'rgba(16, 185, 129, 0.3)' };
     }
@@ -394,7 +414,7 @@ const HwList = ({ isSplitMode = false }) => {
   };
   const thStyle = { 
     textAlign: 'left', 
-    padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', 
+    padding: 'var(--table-cell-padding-y, 8px) calc(var(--table-cell-padding-x, 10px) * 0.6)', 
     borderBottom: '2px solid var(--border-color)', 
     color: 'var(--table-header-text)', 
     fontSize: '12px', 
@@ -407,7 +427,7 @@ const HwList = ({ isSplitMode = false }) => {
     whiteSpace: 'nowrap'
   };
   const tdStyle = { 
-    padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', 
+    padding: 'var(--table-cell-padding-y, 8px) calc(var(--table-cell-padding-x, 10px) * 0.6)', 
     borderBottom: '1px solid var(--table-border)', 
     fontSize: '12px', 
     color: 'var(--text-main)' 
@@ -426,7 +446,7 @@ const HwList = ({ isSplitMode = false }) => {
   // 隱藏的欄位直接不佔版面，表格就會變窄、不必左右捲動
   const hideCol = (id) => (isVisible(id) ? null : { display: 'none' });
 
-  const statusPriority = { 'REPAIR': 1, 'LENT': 2, 'ACTIVE': 3, 'SHIPPED': 4, 'SCRAPPED': 5 };
+  const statusPriority = { 'REPAIRING': 1, 'REPAIR': 1, 'LENT': 2, 'ACTIVE': 3, 'SHIPPED': 4, 'SCRAPPED': 5 };
 
   // 排序用的基準日：整次排序共用同一個，避免跨午夜時前後比較不一致
   const sortToday = new Date();
@@ -467,10 +487,9 @@ const HwList = ({ isSplitMode = false }) => {
   const totalPages = Math.ceil(filteredNics.length / itemsPerPage);
   const paginatedNics = filteredNics.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
-  const [layoutMap, setLayoutMap] = useState(() => {
-    const saved = localStorage.getItem('hw_list_layout_map');
-    return saved ? JSON.parse(saved) : {};
-  });
+  // 卡片排列以登入身分為範圍存在伺服器端，每個人各自一份
+  // 排列依聚合維度分開存放：切到別的維度時卡片整批換掉，共用一份會被清光
+  const [layoutMap, setLayoutMap, layoutLoaded] = useCardLayoutByMode('cardLayout:hwList', aggregationMode, 'hw_list_layout_map');
 
   const handleAggregationModeChange = (mode) => {
     setAggregationMode(mode);
@@ -496,7 +515,6 @@ const HwList = ({ isSplitMode = false }) => {
     if (newMap[targetSlotIdx]) { if (oldSlotIdx !== undefined) newMap[oldSlotIdx] = newMap[targetSlotIdx]; }
     newMap[targetSlotIdx] = key;
     setLayoutMap(newMap);
-    localStorage.setItem('hw_list_layout_map', JSON.stringify(newMap));
     setDraggingCardKey(null);
   };
 
@@ -572,83 +590,11 @@ const HwList = ({ isSplitMode = false }) => {
       <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
 
         {/* 卡片聚合維度選擇器 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'var(--bg-surface-subtle)', padding: '3px 8px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
-          <span style={{ fontSize: '12px', fontWeight: '800', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>聚合規則:</span>
-          <div style={{ display: 'inline-flex', gap: '2px' }}>
-            <button
-              type="button"
-              onClick={() => handleAggregationModeChange('SPEC')}
-              style={{
-                padding: '5px 10px',
-                borderRadius: '7px',
-                border: 'none',
-                fontSize: '11px',
-                fontWeight: '800',
-                cursor: 'pointer',
-                backgroundColor: aggregationMode === 'SPEC' ? 'var(--primary-color)' : 'transparent',
-                color: aggregationMode === 'SPEC' ? '#fff' : 'var(--text-muted)',
-                transition: 'all 0.15s'
-              }}
-              title="依規格獨立生成卡片：相同廠牌、類型、型號底下，只要規格不同就獨立一張卡片"
-            >
-              🏷️ 依規格
-            </button>
-            <button
-              type="button"
-              onClick={() => handleAggregationModeChange('MODEL')}
-              style={{
-                padding: '5px 10px',
-                borderRadius: '7px',
-                border: 'none',
-                fontSize: '11px',
-                fontWeight: '800',
-                cursor: 'pointer',
-                backgroundColor: aggregationMode === 'MODEL' ? 'var(--primary-color)' : 'transparent',
-                color: aggregationMode === 'MODEL' ? '#fff' : 'var(--text-muted)',
-                transition: 'all 0.15s'
-              }}
-              title="依型號聚合：相同廠牌與型號合併統計（不分規格）"
-            >
-              📦 依型號
-            </button>
-            <button
-              type="button"
-              onClick={() => handleAggregationModeChange('TYPE')}
-              style={{
-                padding: '5px 10px',
-                borderRadius: '7px',
-                border: 'none',
-                fontSize: '11px',
-                fontWeight: '800',
-                cursor: 'pointer',
-                backgroundColor: aggregationMode === 'TYPE' ? 'var(--primary-color)' : 'transparent',
-                color: aggregationMode === 'TYPE' ? '#fff' : 'var(--text-muted)',
-                transition: 'all 0.15s'
-              }}
-              title="依類型聚合：相同類型合併統計（不分廠牌與型號，例如所有伺服器算成一張卡片）"
-            >
-              🔧 依類型
-            </button>
-            <button
-              type="button"
-              onClick={() => handleAggregationModeChange('BRAND')}
-              style={{
-                padding: '5px 10px',
-                borderRadius: '7px',
-                border: 'none',
-                fontSize: '11px',
-                fontWeight: '800',
-                cursor: 'pointer',
-                backgroundColor: aggregationMode === 'BRAND' ? 'var(--primary-color)' : 'transparent',
-                color: aggregationMode === 'BRAND' ? '#fff' : 'var(--text-muted)',
-                transition: 'all 0.15s'
-              }}
-              title="依廠牌聚合：純依廠牌合併統計（如 Mellanox、Intel 各一張卡片）"
-            >
-              🏢 依廠牌
-            </button>
-          </div>
-        </div>
+        <CardAggregationSelect
+          value={aggregationMode}
+          onChange={handleAggregationModeChange}
+          modes={ASSET_AGGREGATION_MODES}
+        />
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
         <button
@@ -722,9 +668,10 @@ const HwList = ({ isSplitMode = false }) => {
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '3px 6px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>在庫</span><span style={{ color: '#16a34a', fontWeight: '800' }}>{st.active}</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }} title="已掛載於設備、尚未出貨；不計入在庫"><span style={{ color: 'var(--text-muted)' }}>LAB</span><span style={{ color: '#8b5cf6', fontWeight: '800' }}>{st.lab || 0}</span></div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>出貨</span><span style={{ color: '#3b82f6', fontWeight: '800' }}>{st.shipped}</span></div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>借出</span><span style={{ color: '#d97706', fontWeight: '800' }}>{st.lent || 0}</span></div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>故障</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>維修</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>報廢</span><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
                   </div>
                 </div>
@@ -802,10 +749,11 @@ const HwList = ({ isSplitMode = false }) => {
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '3px 6px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>在庫</span><span style={{ color: '#16a34a', fontWeight: '800' }}>{st.active}</span></div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }} title="已掛載於設備、尚未出貨；不計入在庫"><span style={{ color: 'var(--text-muted)' }}>LAB</span><span style={{ color: '#8b5cf6', fontWeight: '800' }}>{st.lab || 0}</span></div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>出貨</span><span style={{ color: '#3b82f6', fontWeight: '800' }}>{st.shipped}</span></div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>借出</span><span style={{ color: '#d97706', fontWeight: '800' }}>{st.lent || 0}</span></div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>故障</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>維修</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>報廢</span><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
                     </div>
                   </div>
                 );
@@ -834,9 +782,10 @@ const HwList = ({ isSplitMode = false }) => {
         while (updatedMap[currentIdx]) currentIdx++;
         updatedMap[currentIdx] = key;
       });
-      setLayoutMap(updatedMap);
-      localStorage.setItem('hw_list_layout_map', JSON.stringify(updatedMap));
       currentLayoutMap = updatedMap;
+      // 伺服器上的排列還沒回來前不要回寫，否則會把使用者存好的位置
+      // 蓋成這次剛算出來的預設位置
+      if (layoutLoaded) setLayoutMap(updatedMap);
     }
 
     const maxOccupiedIdx = Object.keys(currentLayoutMap).reduce((max, current) => Math.max(max, parseInt(current)), -1);
@@ -879,10 +828,11 @@ const HwList = ({ isSplitMode = false }) => {
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '3px 6px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>在庫</span><span style={{ color: '#16a34a', fontWeight: '800' }}>{st.active}</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }} title="已掛載於設備、尚未出貨；不計入在庫"><span style={{ color: 'var(--text-muted)' }}>LAB</span><span style={{ color: '#8b5cf6', fontWeight: '800' }}>{st.lab || 0}</span></div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>出貨</span><span style={{ color: '#3b82f6', fontWeight: '800' }}>{st.shipped}</span></div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>借出</span><span style={{ color: '#d97706', fontWeight: '800' }}>{st.lent || 0}</span></div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>故障</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>維修</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>報廢</span><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
                   </div>
                 </div>
               )}
@@ -899,15 +849,13 @@ const HwList = ({ isSplitMode = false }) => {
       <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
         <thead style={{ position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)' }}>
           <tr style={{ borderBottom: '2px solid var(--border-color)', backgroundColor: 'var(--table-header-bg)' }}>
-            <th style={{ ...thStyle, textAlign: 'left', width: '200px' }}>廠牌 / 型號 / 類型</th>
+            <th style={{ ...thStyle, textAlign: 'left', width: '220px' }}>類型 / 廠牌 / 型號 / 規格</th>
             <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('sn') }}>序號 (SN)</th>
-            <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('spec') }}>規格 (Spec)</th>
             <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('project') }}>專案編號/名稱 (Project)</th>
             <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('order_source') }}>訂單來源 (OrderSource)</th>
             <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('shipping_date') }}>出貨日期</th>
             <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('server') }}>對應伺服器</th>
-            <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('client') }}>客戶</th>
-            <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('end_user') }}>End-user</th>
+            <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('client') }}>客戶 / End-user</th>
             <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('location') }}>位置</th>
             <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('remarks') }}>備註</th>
             <th style={{ ...thStyle, textAlign: 'left', width: '100px' , ...hideCol('status') }}>狀態</th>
@@ -928,17 +876,19 @@ const HwList = ({ isSplitMode = false }) => {
             }
             return (
               <tr key={nic.id} style={{ borderBottom: '1px solid var(--table-border)', backgroundColor: nic.status === 'SCRAPPED' ? 'rgba(239, 68, 68, 0.08)' : 'transparent' }}>
-                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                  <div style={{ fontWeight: 800, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    {nic.brand}
+                <td style={{ ...tdStyle, maxWidth: '220px' }}>
+                  <AssetIdentityCell
+                    type={nic.type}
+                    brand={nic.brand}
+                    model={nic.model}
+                    specification={nic.specification}
+                  >
                     {nic.ownership === 'COMPANY' && (
-                      <span style={{ fontSize: '10px', padding: '2px 6px', backgroundColor: '#8b5cf6', color: 'white', borderRadius: '4px', whiteSpace: 'nowrap' }}>公司資產</span>
+                      <span style={{ fontSize: '10px', padding: '2px 6px', backgroundColor: '#8b5cf6', color: 'white', borderRadius: '4px', whiteSpace: 'nowrap', marginLeft: '4px' }}>公司資產</span>
                     )}
-                  </div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{nic.type} - {nic.model}</div>
+                  </AssetIdentityCell>
                 </td>
                 <td style={{ ...tdStyle, fontWeight: 800, fontFamily: 'monospace', color: 'var(--primary-color)', whiteSpace: 'nowrap', ...hideCol('sn') }}>{nic.sn || '(未設定)'}</td>
-                <td style={{ ...tdStyle, fontSize: '11px', color: 'var(--text-muted)', ...hideCol('spec') }}>{nic.specification || '--'}</td>
                 <td style={{ ...tdStyle, fontWeight: 700, color: 'var(--text-main)', ...hideCol('project') }}>
                   {(() => {
                     const pName = nic.custom_attributes?.project_name;
@@ -995,11 +945,14 @@ const HwList = ({ isSplitMode = false }) => {
                         {nic.partner_contact} {nic.partner_phone}
                       </div>
                     )}
-                  </div>
-                </td>
-                <td style={{ ...tdStyle, ...hideCol('end_user') }}>
-                  <div style={{ fontWeight: 700, color: 'var(--text-main)' }}>
-                    {nic.server_end_user || serverAttrs.end_user || nic.end_user || nic.custom_attributes?.end_user || '--'}
+                    {/* End-user 原本自成一欄，移到客戶底下；沒有標籤會跟聯絡人混淆 */}
+                    {(nic.server_end_user || serverAttrs.end_user || nic.end_user || nic.custom_attributes?.end_user) && (
+                      <div style={{ fontSize: '11px', paddingLeft: '18px', color: 'var(--text-muted)' }}>
+                        End-user：<span style={{ fontWeight: 700, color: 'var(--text-main)' }}>
+                          {nic.server_end_user || serverAttrs.end_user || nic.end_user || nic.custom_attributes?.end_user}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </td>
                 <td style={{ ...tdStyle, ...hideCol('location') }}>
@@ -1113,7 +1066,7 @@ const HwList = ({ isSplitMode = false }) => {
                       <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); handleUpdateStatus(nic.id, nic.sn, 'ACTIVE', '在庫'); }} style={{ ...menuButtonStyle, color: '#10b981' }}><CheckCircle size={14} /> 標記為在庫</button>
                       <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); handleUpdateStatus(nic.id, nic.sn, 'SHIPPED', '已出貨'); }} style={{ ...menuButtonStyle, color: '#3b82f6' }}><ShoppingBag size={14} /> 標記為出貨</button>
                       <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); handleUpdateStatus(nic.id, nic.sn, 'LENT', '借出'); }} style={{ ...menuButtonStyle, color: '#f59e0b' }}><Send size={14} /> 標記為借出</button>
-                      <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); handleUpdateStatus(nic.id, nic.sn, 'REPAIR', '故障'); }} style={{ ...menuButtonStyle, color: '#ef4444' }}><AlertTriangle size={14} /> 標記為故障</button>
+                      <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); handleUpdateStatus(nic.id, nic.sn, 'REPAIRING', '維修'); }} style={{ ...menuButtonStyle, color: '#ef4444' }}><AlertTriangle size={14} /> 標記為維修</button>
                       <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); handleUpdateStatus(nic.id, nic.sn, 'SCRAPPED', '報廢'); }} style={{ ...menuButtonStyle, color: 'var(--text-subtle)' }}><ShieldAlert size={14} /> 標記為報廢</button>
                       <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '4px 0' }} />
                       <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); handleDelete(nic); }} style={{ ...menuButtonStyle, color: '#f43f5e' }}><Trash2 size={14} /> 刪除紀錄</button>

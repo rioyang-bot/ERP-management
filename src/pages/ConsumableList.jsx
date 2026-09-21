@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Search, Edit2, Trash2, X, Save, MoreHorizontal, ArrowLeftRight, ClipboardList, ShoppingBag, AlertTriangle, Archive, RotateCcw, Package, History, Layers, Tag } from 'lucide-react';
+import { Search, Edit2, Trash2, X, Save, MoreHorizontal, ArrowLeftRight, ClipboardList, ShoppingBag, AlertTriangle, Archive, RotateCcw, Package, History, Layers } from 'lucide-react';
 import ItemLedgerModal from '../components/ItemLedgerModal';
 import ConsumableRegistrationModal from '../components/ConsumableRegistrationModal';
 import ConsumableBatchImportModal from '../components/ConsumableBatchImportModal';
-import ConsumableCustomTagsModal from '../components/ConsumableCustomTagsModal';
 import { logUpdate, logDelete } from '../utils/auditLogger';
 import { usePageSize } from '../utils/usePageSize';
+import { useCardOrderByMode } from '../hooks/useCardLayout';
+import CardAggregationSelect from '../components/common/CardAggregationSelect';
+import { CONSUMABLE_AGGREGATION_MODES, getConsumableGroupField } from '../utils/cardAggregation';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 import CardAggregationLegend from '../components/CardAggregationLegend';
 
@@ -24,40 +26,28 @@ const ConsumableList = ({ isSplitMode = false }) => {
   const [showBatchImport, setShowBatchImport] = useState(false);
   const [searchParams] = useSearchParams();
   const typeFilter = searchParams.get('type');
+  // 卡片可以依類型或依廠牌聚合；selectedType 存的是「選取的卡片值」，
+  // 在依類型時是類型名稱、依廠牌時是廠牌名稱
   const [selectedType, setSelectedType] = useState(typeFilter || null);
+  const [aggregationMode, setAggregationMode] = useState(() => {
+    return localStorage.getItem('consumable_aggregation_mode') || 'TYPE';
+  });
+  const groupField = getConsumableGroupField(aggregationMode);
+  const groupLabel = aggregationMode === 'BRAND' ? '廠牌' : '類型';
+
+  const handleAggregationModeChange = (mode) => {
+    setAggregationMode(mode);
+    localStorage.setItem('consumable_aggregation_mode', mode);
+    // 兩種規則的卡片值不同（類型名稱 vs 廠牌名稱），選取狀態不能沿用
+    setSelectedType(null);
+    setCurrentPage(1);
+  };
   const [showAll, setShowAll] = useState(false);
   const [activeMenuId, setActiveMenuId] = useState(null);
   const [menuPosition, setMenuPosition] = useState(null);
   const [ledgerItem, setLedgerItem] = useState(null);
 
   // 自訂查詢標籤相關狀態（依登入者帳號隔離）
-  const [currentUser, setCurrentUser] = useState('default');
-  const [customTags, setCustomTags] = useState([]);
-  const [showCustomTagsModal, setShowCustomTagsModal] = useState(false);
-
-  // 讀取當前登入者帳號與其專屬標籤
-  useEffect(() => {
-    try {
-      const session = JSON.parse(localStorage.getItem('erp_session') || '{}');
-      const user = session.username || session.id || 'default';
-      setCurrentUser(user);
-      const stored = localStorage.getItem(`consumable_custom_tags_${user}`);
-      if (stored) {
-        setCustomTags(JSON.parse(stored));
-      }
-    } catch (e) {
-      console.error('Failed to load custom tags:', e);
-    }
-  }, []);
-
-  const handleUpdateCustomTags = (newTags) => {
-    setCustomTags(newTags);
-    try {
-      localStorage.setItem(`consumable_custom_tags_${currentUser}`, JSON.stringify(newTags));
-    } catch (e) {
-      console.error('Failed to save custom tags:', e);
-    }
-  };
 
   // 當側邊欄分類變動時，清除搜尋關鍵字並同步選取類型
   useEffect(() => {
@@ -270,9 +260,12 @@ const ConsumableList = ({ isSplitMode = false }) => {
   }, [showTransferModal, transferData.itemId, fetchAssets, fetchItemLabUsage]);
 
   const filteredItems = items.filter(item => {
-    // 1. 依選定之「類型卡片」或側邊欄類型進行篩選
-    const effectiveType = selectedType || typeFilter;
-    if (effectiveType && (item.type || '').trim() !== effectiveType.trim()) {
+    // 1. 依選定的卡片篩選。側邊欄傳進來的 typeFilter 一律是類型，
+    //    與卡片的聚合欄位未必相同，因此兩者分開比對。
+    if (typeFilter && (item.type || '').trim() !== typeFilter.trim()) {
+      return false;
+    }
+    if (selectedType && (item[groupField] || '').trim() !== selectedType.trim()) {
       return false;
     }
 
@@ -292,14 +285,8 @@ const ConsumableList = ({ isSplitMode = false }) => {
   const paginatedItems = filteredItems.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   // --- 儀表板拖曳排序邏輯 ---
-  const [typeOrder, setTypeOrder] = useState(() => {
-    try {
-      const saved = localStorage.getItem('consumable_type_order');
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      return [];
-    }
-  });
+  // 卡片排列以登入身分為範圍存在伺服器端，每個人各自一份
+  const [typeOrder, setTypeOrder] = useCardOrderByMode('cardOrder:consumableList', aggregationMode, 'consumable_type_order');
   const [draggingCardKey, setDraggingCardKey] = useState(null);
 
   const [retiredKeys, setRetiredKeys] = useState(() => {
@@ -330,7 +317,6 @@ const ConsumableList = ({ isSplitMode = false }) => {
       newOrder.splice(sourceIdx, 1);
       newOrder.splice(targetIdx, 0, sourceKey);
       setTypeOrder(newOrder);
-      localStorage.setItem('consumable_type_order', JSON.stringify(newOrder));
     }
     setDraggingCardKey(null);
   };
@@ -362,12 +348,12 @@ const ConsumableList = ({ isSplitMode = false }) => {
   };
 
   const renderStats = () => {
-    // 依「類型 (Type)」分組匯總
+    // 依目前的聚合規則分組匯總：依類型看 type，依廠牌看 brand
     const statsMap = items.reduce((acc, curr) => {
       if (typeFilter && (curr.type || '').trim() !== typeFilter.trim()) {
         return acc;
       }
-      const key = (curr.type || '未分類').trim();
+      const key = (curr[groupField] || (aggregationMode === 'BRAND' ? '未知廠牌' : '未分類')).trim();
 
       if (!acc[key]) {
         acc[key] = {
@@ -375,6 +361,7 @@ const ConsumableList = ({ isSplitMode = false }) => {
           type: key,
           models: new Set(),
           brands: new Set(),
+          types: new Set(),
           specs: new Set(),
           stock_qty: 0,
           lab_qty: 0,
@@ -385,6 +372,7 @@ const ConsumableList = ({ isSplitMode = false }) => {
       }
       if (curr.model) acc[key].models.add(curr.model);
       if (curr.brand) acc[key].brands.add(curr.brand);
+      if (curr.type) acc[key].types.add(curr.type);
       if (curr.specification) acc[key].specs.add(curr.specification);
 
       const stock = Number(curr.stock_qty || 0);
@@ -404,6 +392,7 @@ const ConsumableList = ({ isSplitMode = false }) => {
     Object.values(statsMap).forEach(st => {
       st.modelsCount = st.models.size;
       st.brandsCount = st.brands.size;
+      st.typesCount = st.types.size;
       st.specsCount = st.specs.size;
     });
 
@@ -491,7 +480,10 @@ const ConsumableList = ({ isSplitMode = false }) => {
             </div>
 
             <div style={{ color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', fontSize: '12px', fontWeight: '600', marginTop: '4px', paddingLeft: '23px' }}>
-              {st.brandsCount} 個廠牌 · {st.modelsCount} 款型號
+              {/* 依廠牌聚合時「N 個廠牌」恆為 1，講有幾種類型才有資訊量 */}
+              {aggregationMode === 'BRAND'
+                ? `${st.typesCount} 種類型 · ${st.modelsCount} 款型號`
+                : `${st.brandsCount} 個廠牌 · ${st.modelsCount} 款型號`}
             </div>
           </div>
 
@@ -641,90 +633,16 @@ const ConsumableList = ({ isSplitMode = false }) => {
           </div>
 
           <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-            {/* 搜尋列左邊：自訂查詢標籤 (點擊直接帶入搜尋列) */}
-            {customTags.length > 0 && (
-              <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }} data-testid="custom-tags-container">
-                {customTags.map((tag, idx) => {
-                  const isActive = searchTerm === tag;
-                  return (
-                    <button
-                      key={`${tag}-${idx}`}
-                      type="button"
-                      onClick={() => {
-                        if (isActive) {
-                          setSearchTerm('');
-                        } else {
-                          setSearchTerm(tag);
-                          setCurrentPage(1);
-                        }
-                      }}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        padding: '6px 12px',
-                        borderRadius: '20px',
-                        fontSize: '12px',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        border: isActive ? '1.5px solid var(--primary-color)' : '1px solid var(--border-color)',
-                        backgroundColor: isActive ? 'var(--primary-color)' : 'var(--bg-surface-subtle)',
-                        color: isActive ? '#ffffff' : 'var(--text-main)',
-                        boxShadow: isActive ? '0 2px 8px rgba(37, 99, 235, 0.3)' : 'none',
-                        transition: 'all 0.15s ease'
-                      }}
-                      title={isActive ? `點擊取消篩選「${tag}」` : `點擊篩選「${tag}」`}
-                      data-testid={`custom-tag-btn-${tag}`}
-                    >
-                      <span>🏷️</span>
-                      <span>{tag}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+            <CardAggregationSelect
+              value={aggregationMode}
+              onChange={handleAggregationModeChange}
+              modes={CONSUMABLE_AGGREGATION_MODES}
+            />
 
             <div style={{ position: 'relative' }}>
               <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-subtle)' }} />
               <input type="text" placeholder="快速搜尋廠牌、型號/規格、備註..." value={searchTerm} onChange={(e) => {setSearchTerm(e.target.value); setCurrentPage(1);}} style={{ padding: '10px 12px 10px 42px', borderRadius: '30px', border: '1.5px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', width: '280px' }} />
             </div>
-
-            {/* 自訂標籤管理按鈕 */}
-            <button
-              type="button"
-              onClick={() => setShowCustomTagsModal(true)}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '8px 14px',
-                borderRadius: '20px',
-                border: '1px dashed var(--primary-border, #93c5fd)',
-                backgroundColor: 'var(--primary-bg, #eff6ff)',
-                color: 'var(--primary-color, #2563eb)',
-                fontSize: '12px',
-                fontWeight: 700,
-                cursor: 'pointer',
-                transition: 'all 0.2s ease'
-              }}
-              title="管理者自訂查詢標籤（最多10筆）"
-              data-testid="open-custom-tags-btn"
-            >
-              <Tag size={14} />
-              <span>自訂標籤</span>
-              {customTags.length > 0 && (
-                <span style={{
-                  backgroundColor: 'var(--primary-color, #2563eb)',
-                  color: '#ffffff',
-                  borderRadius: '10px',
-                  padding: '1px 6px',
-                  fontSize: '10px',
-                  lineHeight: '1.2'
-                }}>
-                  {customTags.length}
-                </span>
-              )}
-            </button>
 
             {(searchTerm || selectedType || typeFilter) && (
               <button 
@@ -744,14 +662,14 @@ const ConsumableList = ({ isSplitMode = false }) => {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'var(--primary-bg)', border: '1px solid var(--primary-border)', padding: '10px 18px', borderRadius: '12px', marginBottom: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--primary-color)', fontWeight: 800, fontSize: '14px' }}>
               <Layers size={18} color="var(--primary-color)" />
-              目前鎖定類型：<span style={{ color: 'var(--primary-color)', fontSize: '14px' }}>{selectedType}</span>
+              目前鎖定{groupLabel}：<span style={{ color: 'var(--primary-color)', fontSize: '14px' }}>{selectedType}</span>
               <span style={{ color: 'var(--text-muted)', fontSize: '12px', fontWeight: 500, marginLeft: '6px' }}>（共 {filteredItems.length} 項品項）</span>
             </div>
             <button 
               onClick={() => setSelectedType(null)} 
               style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '6px 12px', color: 'var(--text-main)', cursor: 'pointer', fontSize: '12px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px', boxShadow: 'var(--card-shadow)' }}
             >
-              <X size={14} /> 清除類型篩選
+              <X size={14} /> 清除{groupLabel}篩選
             </button>
           </div>
         )}
@@ -933,7 +851,7 @@ const ConsumableList = ({ isSplitMode = false }) => {
         ) : (
           <div style={{ textAlign: 'center', padding: '60px 20px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '16px', border: '1px dashed var(--border-color)', marginTop: '20px' }}>
             <Package size={40} color="var(--text-subtle)" style={{ marginBottom: '12px' }} />
-            <div style={{ color: 'var(--text-main)', fontSize: '15px', fontWeight: '700' }}>請點擊上方「類型卡片」查看該分類下的所有廠牌與型號</div>
+            <div style={{ color: 'var(--text-main)', fontSize: '15px', fontWeight: '700' }}>請點擊上方「{groupLabel}卡片」查看該分類下的所有品項</div>
             <div style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '6px', marginBottom: '16px' }}>您也可以直接使用搜尋框關鍵字尋找，或點擊下方按鈕展開完整清單</div>
             <button 
               onClick={() => setShowAll(true)}
@@ -944,8 +862,12 @@ const ConsumableList = ({ isSplitMode = false }) => {
           </div>
         )}
 
-        {/* 耗材卡片聚合規則說明（三個列表共用同一份說明；耗材固定依類型） */}
-        <CardAggregationLegend unit="耗材" mode="TYPE" fixed />
+        {/* 耗材卡片聚合規則說明（三個列表共用同一份說明） */}
+        <CardAggregationLegend
+          unit="耗材"
+          mode={aggregationMode}
+          availableModes={CONSUMABLE_AGGREGATION_MODES.map((m) => m.value)}
+        />
       </div>
 
       {showEditModal && editItem && (
@@ -1236,14 +1158,6 @@ const ConsumableList = ({ isSplitMode = false }) => {
         }}
       />
 
-      {/* 自訂查詢標籤管理 Modal */}
-      <ConsumableCustomTagsModal
-        isOpen={showCustomTagsModal}
-        onClose={() => setShowCustomTagsModal(false)}
-        username={currentUser}
-        tags={customTags}
-        onUpdateTags={handleUpdateCustomTags}
-      />
     </div>
   );
 };

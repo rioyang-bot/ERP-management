@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Trash2, Save, FileText, ShoppingBag, Layers, AlertCircle, ArrowDownToLine, Search, Package } from 'lucide-react';
 import InboundItemSelectModal from '../components/InboundItemSelectModal';
-import { logCreate } from '../utils/auditLogger';
+import { logCreate, getCurrentUser } from '../utils/auditLogger';
 import { parseSnLines, validateSnBatch } from '../utils/snBatch';
 
 const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) => {
@@ -16,10 +16,14 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
   const [partnerId, setPartnerId] = useState('');
   const [partners, setPartners] = useState([]);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
-  const [quickAddData, setQuickAddData] = useState({ 
-    name: '', type_cat: '設備', type: '', brand: '', 
-    custodian: '', spec: '', unit: '個' 
+  // 品項主檔實際上是「廠牌＋類型＋型號＋規格」，因此這裡就照這個結構收。
+  // 先前只有一個「品項名稱」，它被寫進規格欄位，廠牌與類型存成空字串、
+  // 型號根本沒寫入，建出來的品項在清單上會變成「未知／未分類／未設定型號」。
+  const [quickAddData, setQuickAddData] = useState({
+    type_cat: '設備', brand: '', type: '', model: '', spec: '',
   });
+  // 既有品項的廠牌/類型/型號/規格，供輸入建議使用（避免打錯字又生出新的一張卡）
+  const [quickAddOptions, setQuickAddOptions] = useState([]);
   const [activeRowId, setActiveRowId] = useState(null);
   const [showItemSelectModal, setShowItemSelectModal] = useState(false);
 
@@ -260,19 +264,44 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
     return window.getMediaUrl ? window.getMediaUrl(rawUrl) : rawUrl;
   };
 
+  // 開啟視窗或切換類別時，載入該類別既有的廠牌/類型/型號供建議
+  useEffect(() => {
+    if (!showQuickAdd) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await window.electronAPI.namedQuery('fetchExistingCards', [quickAddData.type_cat]);
+        if (!cancelled && res.success) setQuickAddOptions(res.rows || []);
+      } catch (e) {
+        console.error('讀取既有品項失敗:', e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [showQuickAdd, quickAddData.type_cat]);
+
+  // 單位不需要使用者填：設備論台、其餘論個，與系統其他建檔的預設一致
+  const unitForCategory = (cat) => (cat === '設備' ? '台' : '個');
+
   const handleQuickAddSave = async () => {
-    if (!quickAddData.name) return alert('請輸入品項名稱');
-    const fullSpec = `${quickAddData.name} ${quickAddData.spec ? `(${quickAddData.spec})` : ''}`.trim();
+    const brand = quickAddData.brand.trim();
+    const type = quickAddData.type.trim();
+    const model = quickAddData.model.trim();
+    // 與系統其他建檔一致：廠牌／類型／型號缺一不建立，
+    // 否則清單上會出現「未知／未分類／未設定型號」的卡片。規格為選填。
+    if (!brand) return alert('請輸入廠牌 (Brand)');
+    if (!type) return alert('請輸入類型 (Type)');
+    if (!model) return alert('請輸入型號 (Model)');
+
     const res = await window.electronAPI.namedQuery(
-      'insertInboundItemMaster',
-      [fullSpec, quickAddData.type, quickAddData.brand, quickAddData.unit, quickAddData.type_cat]
+      'insertItemMaster',
+      [quickAddData.spec.trim(), type, brand, model, unitForCategory(quickAddData.type_cat), quickAddData.type_cat]
     );
     if (res.success) {
       const newId = res.rows[0].id;
       await fetchData();
-      setItems(items.map(row => row.id === activeRowId ? { ...row, itemId: newId, cat_name: quickAddData.type_cat, unit: quickAddData.unit } : row));
+      setItems(items.map(row => row.id === activeRowId ? { ...row, itemId: newId, cat_name: quickAddData.type_cat, unit: unitForCategory(quickAddData.type_cat) } : row));
       setShowQuickAdd(false);
-      setQuickAddData({ name: '', type_cat: '設備', type: '', brand: '', custodian: '', spec: '', unit: '個' });
+      setQuickAddData({ type_cat: '設備', brand: '', type: '', model: '', spec: '' });
     } else {
       alert('新增失敗：' + res.error);
     }
@@ -319,7 +348,8 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
       steps.push({
         id: 'order',
         queryName: 'insertInboundOrder',
-        params: [orderNo, partnerId || null, invoiceNo, 'COMPLETED', JSON.stringify(attachments)],
+        // 記下建立者，列表才查得出這批貨是誰入的
+        params: [orderNo, partnerId || null, invoiceNo, 'COMPLETED', JSON.stringify(attachments), inboundDate || null, getCurrentUser().id],
       });
 
       items.forEach((item, idx) => {
@@ -739,17 +769,99 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
       {showQuickAdd && (
         <div style={modalOverlayStyle}>
           <div className="card-surface" style={{ width: '420px', padding: '32px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '16px' }}>
-            <h2 style={{ marginBottom: '24px', fontSize: '1.2rem', fontWeight: 800 }}>快速建檔品項範本</h2>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <div><label style={labelStyle}>品項名稱 *</label><input type="text" value={quickAddData.name} onChange={(e) => setQuickAddData({...quickAddData, name: e.target.value})} style={inputStyle} /></div>
+            <h2 style={{ marginBottom: '6px', fontSize: '1.2rem', fontWeight: 800 }}>快速建檔品項範本</h2>
+            <p style={{ margin: '0 0 20px 0', fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.7 }}>
+              品項主檔是以「廠牌＋類型＋型號＋規格」識別的，四者相同才算同一個品項。
+              輸入時會提示該類別既有的值，沿用既有的就不會多生出一張卡片。
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
                 <label style={labelStyle}>類別</label>
                 <div style={{ display: 'flex', gap: '16px', marginTop: '8px' }}>
-                  <label style={radioLabelStyle}><input type="radio" checked={quickAddData.type_cat === '設備'} onChange={() => setQuickAddData({...quickAddData, type_cat: '設備'})} /> 設備</label>
-                  <label style={radioLabelStyle}><input type="radio" checked={quickAddData.type_cat === '硬體'} onChange={() => setQuickAddData({...quickAddData, type_cat: '硬體'})} /> 硬體</label>
-                  <label style={radioLabelStyle}><input type="radio" checked={quickAddData.type_cat === '耗材'} onChange={() => setQuickAddData({...quickAddData, type_cat: '耗材'})} /> 耗材</label>
+                  {['設備', '硬體', '耗材'].map((cat) => (
+                    <label key={cat} style={radioLabelStyle}>
+                      <input
+                        type="radio"
+                        checked={quickAddData.type_cat === cat}
+                        onChange={() => setQuickAddData({ ...quickAddData, type_cat: cat })}
+                      /> {cat}
+                    </label>
+                  ))}
                 </div>
               </div>
+
+              <div>
+                <label style={labelStyle}>廠牌 (Brand) *</label>
+                <input
+                  type="text"
+                  list="quickadd-brands"
+                  value={quickAddData.brand}
+                  onChange={(e) => setQuickAddData({ ...quickAddData, brand: e.target.value })}
+                  placeholder="例如：SUPERMICRO"
+                  style={inputStyle}
+                />
+                <datalist id="quickadd-brands">
+                  {[...new Set(quickAddOptions.map((o) => o.brand).filter(Boolean))].map((b) => (
+                    <option key={b} value={b} />
+                  ))}
+                </datalist>
+              </div>
+
+              <div>
+                <label style={labelStyle}>類型 (Type) *</label>
+                <input
+                  type="text"
+                  list="quickadd-types"
+                  value={quickAddData.type}
+                  onChange={(e) => setQuickAddData({ ...quickAddData, type: e.target.value })}
+                  placeholder="例如：SERVER"
+                  style={inputStyle}
+                />
+                <datalist id="quickadd-types">
+                  {[...new Set(quickAddOptions.map((o) => o.type).filter(Boolean))].map((t) => (
+                    <option key={t} value={t} />
+                  ))}
+                </datalist>
+              </div>
+
+              <div>
+                <label style={labelStyle}>型號 (Model) *</label>
+                <input
+                  type="text"
+                  list="quickadd-models"
+                  value={quickAddData.model}
+                  onChange={(e) => setQuickAddData({ ...quickAddData, model: e.target.value })}
+                  placeholder="例如：SYS-1029P"
+                  style={inputStyle}
+                />
+                <datalist id="quickadd-models">
+                  {/* 已選廠牌時只提示該廠牌的型號，清單才不會又臭又長 */}
+                  {[...new Set(quickAddOptions
+                    .filter((o) => !quickAddData.brand.trim()
+                      || (o.brand || '').trim().toUpperCase() === quickAddData.brand.trim().toUpperCase())
+                    .map((o) => o.model).filter(Boolean))].map((m) => (
+                      <option key={m} value={m} />
+                    ))}
+                </datalist>
+              </div>
+
+              <div>
+                <label style={labelStyle}>規格 (Spec)<span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>（選填）</span></label>
+                <input
+                  type="text"
+                  list="quickadd-specs"
+                  value={quickAddData.spec}
+                  onChange={(e) => setQuickAddData({ ...quickAddData, spec: e.target.value })}
+                  placeholder="例如：26C / 256G DDR5"
+                  style={inputStyle}
+                />
+                <datalist id="quickadd-specs">
+                  {[...new Set(quickAddOptions.map((o) => o.specification).filter(Boolean))].map((sp) => (
+                    <option key={sp} value={sp} />
+                  ))}
+                </datalist>
+              </div>
+
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '32px' }}>
               <button onClick={() => setShowQuickAdd(false)} style={modalCancelButtonStyle}>取消</button>

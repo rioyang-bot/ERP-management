@@ -93,6 +93,41 @@
       "file": "migration_consumable_lent_qty.sql",
       "type": "schema",
       "note": "耗材借出中數量欄位，並回填既有未歸還的借用單"
+    },
+    {
+      "file": "migration_predelivery_checklist.sql",
+      "type": "schema",
+      "note": "出機檢查表：主項目、檢查項目與設備套用紀錄"
+    },
+    {
+      "file": "migration_checklist_detail_content.sql",
+      "type": "schema",
+      "note": "出機檢查表細項的內容欄位（細項改為填寫內容而非勾選）"
+    },
+    {
+      "file": "migration_checklist_detail_auto_apply.sql",
+      "type": "schema",
+      "note": "出機檢查表細項的自動套用旗標"
+    },
+    {
+      "file": "migration_repair_contact.sql",
+      "type": "schema",
+      "note": "維修單聯絡人與聯絡電話欄位"
+    },
+    {
+      "file": "migration_inbound_creator.sql",
+      "type": "schema",
+      "note": "進貨單建立者欄位，比照出貨/維修單的 creator_id"
+    },
+    {
+      "file": "migration_repair_no_oem.sql",
+      "type": "schema",
+      "note": "維修單「不需送回原廠」旗標，供 IT 自行維修結案使用"
+    },
+    {
+      "file": "migration_monthly_balances.sql",
+      "type": "schema",
+      "note": "每月結餘庫存表，供實體庫存盤點表列出近三個月"
     }
   ]
 }

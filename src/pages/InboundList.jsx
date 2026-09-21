@@ -4,6 +4,7 @@ import { ArrowDownToLine, Search, Filter, Eye, RefreshCw, AlertCircle, Trash2, C
 import { logUpdate } from '../utils/auditLogger';
 import InboundRegistrationModal from '../components/InboundRegistrationModal';
 import { usePageSize } from '../utils/usePageSize';
+import { buildSnRenameSteps, validateSnRename, summariseSnRename } from '../utils/snRename';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 
 const InboundList = ({ isSplitMode = false }) => {
@@ -32,6 +33,9 @@ const InboundList = ({ isSplitMode = false }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [partners, setPartners] = useState([]);
   const [isEditing, setIsEditing] = useState(false);
+  // 進貨時序號打錯，直接在明細上改；相關單據與掛載關係會一起帶過去
+  const [snEdit, setSnEdit] = useState(null); // { itemId, value }
+  const [snSaving, setSnSaving] = useState(false);
   const [editData, setEditData] = useState({ partner_id: '', invoice_no: '', attachments: [] });
   const [previewFile, setPreviewFile] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -83,6 +87,8 @@ const InboundList = ({ isSplitMode = false }) => {
     setEditData({
       partner_id: order.partner_id || '',
       invoice_no: order.invoice_no || '',
+      // 舊資料可能沒有 order_date，退回建檔當天，日期欄位才不會是空的
+      order_date: (order.effective_date || order.order_date || order.created_at || '').toString().slice(0, 10),
       attachments: parsedAttachments
     });
     setIsDetailLoading(true);
@@ -137,6 +143,57 @@ const InboundList = ({ isSplitMode = false }) => {
     return window.getMediaUrl ? window.getMediaUrl(rawUrl) : rawUrl;
   };
 
+  /**
+   * 更正明細上的序號。
+   *
+   * 序號被資產本身、掛載關係與進出貨／維修單據各自以字串記著，
+   * 因此整組放在同一個交易裡；資產那一步改不到就整批退回，
+   * 不會只改掉單據、留下對不上的資產。
+   */
+  const handleSaveSn = async (item) => {
+    const oldSn = (item.sn || '').trim();
+    const newSn = (snEdit?.value || '').trim();
+    const invalid = validateSnRename(oldSn, newSn);
+    if (invalid) { alert(invalid); return; }
+    if (!window.confirm(`確定要把序號 [${oldSn}] 改成 [${newSn}] 嗎？\n\n資產本身、掛載關係，以及進貨／出貨／維修單上的這個序號都會一起更新。`)) return;
+
+    setSnSaving(true);
+    try {
+      const res = await window.electronAPI.runTransaction(buildSnRenameSteps(oldSn, newSn));
+      if (!res.success) throw new Error(res.error || '更正失敗');
+
+      // 回報實際改了哪些地方 —— 只說「成功」的話，使用者無從判斷
+      // 其他單據到底有沒有一起變更
+      const { text, assetChanged } = summariseSnRename(res.results);
+      alert(assetChanged
+        ? `序號已更正為 [${newSn}]。
+
+已一併更新：${text}`
+        : `序號已更正為 [${newSn}]。
+
+已一併更新：${text}
+
+請注意：資產列表中沒有序號 [${oldSn}] 的資料，`
+          + '這次只更正了單據。該筆入庫當初可能建成了別的序號，請到資產列表另行確認。');
+
+      logUpdate(
+        'INBOUND',
+        selectedOrder?.order_no,
+        selectedOrder?.partner_name || '進貨單',
+        `更正序號 [${oldSn}] → [${newSn}]（資產、掛載關係與相關單據一併更新）`,
+        { orderNo: selectedOrder?.order_no, oldSn, newSn }
+      );
+
+      setSnEdit(null);
+      const itemsRes = await window.electronAPI.namedQuery('fetchInboundItems', [selectedOrder.id]);
+      if (itemsRes.success) setOrderItems(itemsRes.rows);
+    } catch (e) {
+      alert(`更正序號失敗：${e.message}`);
+    } finally {
+      setSnSaving(false);
+    }
+  };
+
   const handleSaveEdit = async () => {
     if (!selectedOrder) return;
     setIsSaving(true);
@@ -144,24 +201,27 @@ const InboundList = ({ isSplitMode = false }) => {
       const res = await window.electronAPI.namedQuery('updateInboundOrderHeader', [
         editData.partner_id || null, 
         editData.invoice_no || null, 
-        JSON.stringify(editData.attachments), 
-        selectedOrder.id
+        JSON.stringify(editData.attachments),
+        selectedOrder.id,
+        editData.order_date || null
       ]);
       if (res.success) {
         logUpdate(
           'INBOUND',
           selectedOrder.order_no,
           selectedOrder.partner_name || '進貨單',
-          `修改進貨單 [${selectedOrder.order_no}] 發票/供應商/附件`,
-          { orderNo: selectedOrder.order_no, partnerId: editData.partner_id, invoiceNo: editData.invoice_no, attachmentsCount: editData.attachments.length }
+          `修改進貨單 [${selectedOrder.order_no}] 進貨日期/發票/供應商/附件`,
+          { orderNo: selectedOrder.order_no, orderDate: editData.order_date, partnerId: editData.partner_id, invoiceNo: editData.invoice_no, attachmentsCount: editData.attachments.length }
         );
         alert('儲存成功！');
         setIsEditing(false);
         fetchRecords();
         setSelectedOrder(prev => ({
-           ...prev, 
+           ...prev,
            partner_id: editData.partner_id,
            invoice_no: editData.invoice_no,
+           order_date: editData.order_date,
+           effective_date: editData.order_date,
            attachments: JSON.stringify(editData.attachments),
            // 清空供應商時要一併清掉顯示的名稱，不能沿用舊值
            partner_name: editData.partner_id
@@ -320,23 +380,38 @@ const InboundList = ({ isSplitMode = false }) => {
               <thead style={{ position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)' }}>
                 <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--border-color)', backgroundColor: 'var(--table-header-bg)' }}>
                   <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>進貨單號</th>
-                  <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>進貨建立時間</th>
+                  <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>進貨日期</th>
+                  <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>建立時間</th>
                   <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>供應商</th>
                   <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>發票號碼</th>
+                  <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>項目數</th>
+                  <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>建立者</th>
                   <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontSize: '0.88rem', color: 'var(--table-header-text)', fontWeight: 800, position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>操作</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan="5" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>讀取中...</td></tr>
+                  <tr><td colSpan="8" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>讀取中...</td></tr>
                 ) : currentRecords.length === 0 ? (
-                  <tr><td colSpan="5" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>目前尚無進貨單資料</td></tr>
+                  <tr><td colSpan="8" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>目前尚無進貨單資料</td></tr>
                 ) : currentRecords.map(order => (
                   <tr key={order.id} className="row-hover" style={{ borderBottom: '1px solid var(--table-border)', color: 'var(--text-main)' }}>
                     <td style={{ padding: '12px', fontWeight: 700, color: 'var(--text-main)' }}>{order.order_no}</td>
-                    <td style={{ padding: '12px', color: 'var(--text-muted)' }}>{new Date(order.created_at).toLocaleString()}</td>
+                    <td style={{ padding: '12px', color: 'var(--text-main)', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                      {(order.effective_date || order.order_date || order.created_at || '').toString().slice(0, 10)}
+                    </td>
+                    <td style={{ padding: '12px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{new Date(order.created_at).toLocaleString()}</td>
                     <td style={{ padding: '12px', color: order.partner_name ? 'var(--text-main)' : 'var(--text-subtle)', fontWeight: 600 }}>{order.partner_name || '待補填'}</td>
                     <td style={{ padding: '12px', color: order.invoice_no ? 'var(--text-main)' : 'var(--text-subtle)' }}>{order.invoice_no || '--'}</td>
+                    <td style={{ padding: '12px', whiteSpace: 'nowrap' }}>
+                      <span style={{ display: 'inline-block', minWidth: '28px', textAlign: 'center', padding: '2px 8px', borderRadius: '10px', backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-main)', fontWeight: 700, fontSize: '0.85rem' }}>
+                        {Number(order.item_count) || 0}
+                      </span>
+                    </td>
+                    {/* 舊單據沒有記錄建立者，回填不了，顯示為 － */}
+                    <td style={{ padding: '12px', color: order.creator_name ? 'var(--text-muted)' : 'var(--text-subtle)', fontSize: '0.9rem', whiteSpace: 'nowrap' }}>
+                      {order.creator_name || '－'}
+                    </td>
                     <td style={{ padding: '12px', whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'flex', gap: '6px', alignItems: 'center', whiteSpace: 'nowrap' }}>
                         <button
@@ -402,7 +477,8 @@ const InboundList = ({ isSplitMode = false }) => {
                   {isEditing && <span style={{fontSize: '0.9rem', color: '#16a34a', backgroundColor: 'rgba(22, 163, 74, 0.15)', padding: '4px 8px', borderRadius: '6px'}}>編輯模式</span>}
                 </h2>
                 <div style={{ display: 'flex', gap: '20px', color: 'var(--text-muted)', fontSize: '0.9rem', fontWeight: 500 }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Calendar size={14} /> 建立時間：{new Date(selectedOrder.created_at).toLocaleString()}</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Calendar size={14} /> 進貨日期：{(selectedOrder.effective_date || selectedOrder.order_date || selectedOrder.created_at || '').toString().slice(0, 10)}</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>建立時間：{new Date(selectedOrder.created_at).toLocaleString()}</span>
                   {!isEditing && <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><FileText size={14} /> 供應商：{selectedOrder.partner_name || '待補填'}</span>}
                 </div>
               </div>
@@ -418,6 +494,16 @@ const InboundList = ({ isSplitMode = false }) => {
               {isEditing ? (
                  <div style={{ marginBottom: '24px', display: 'flex', gap: '16px', flexDirection: 'column' }}>
                     <div style={{ display: 'flex', gap: '16px' }}>
+                       <div style={{ flex: 1 }}>
+                          <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, color: 'var(--text-muted)' }} htmlFor="edit-inbound-date">進貨日期</label>
+                          <input
+                            id="edit-inbound-date"
+                            type="date"
+                            value={editData.order_date || ''}
+                            onChange={e => setEditData({ ...editData, order_date: e.target.value })}
+                            style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', outline: 'none' }}
+                          />
+                       </div>
                        <div style={{ flex: 1 }}>
                           <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, color: 'var(--text-muted)' }}>發票號碼</label>
                           <input type="text" value={editData.invoice_no} onChange={e => setEditData({...editData, invoice_no: e.target.value})} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', outline: 'none' }} />
@@ -525,10 +611,50 @@ const InboundList = ({ isSplitMode = false }) => {
                             {item.po_order_no || '無 (非採購入庫)'}
                           </td>
                           <td style={{ padding: '16px', verticalAlign: 'top' }}>
-                            {item.sn ? (
-                              <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#16a34a', backgroundColor: 'rgba(22, 163, 74, 0.15)', padding: '4px 8px', borderRadius: '6px' }}>{item.sn}</span>
-                            ) : (
+                            {!item.sn ? (
                               <span style={{ color: 'var(--text-subtle)', fontSize: '0.85rem' }}>-</span>
+                            ) : snEdit?.itemId === item.id ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <input
+                                  type="text"
+                                  value={snEdit.value}
+                                  onChange={(e) => setSnEdit({ itemId: item.id, value: e.target.value })}
+                                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSaveSn(item); } }}
+                                  aria-label={`更正序號 ${item.sn}`}
+                                  autoFocus
+                                  style={{ fontFamily: 'monospace', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', outline: 'none', width: '180px' }}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveSn(item)}
+                                  disabled={snSaving}
+                                  aria-label="儲存序號"
+                                  style={{ padding: '6px 10px', borderRadius: '6px', border: 'none', backgroundColor: snSaving ? 'var(--border-color)' : '#16a34a', color: '#fff', fontWeight: 700, fontSize: '0.8rem', cursor: snSaving ? 'wait' : 'pointer' }}
+                                >
+                                  {snSaving ? '儲存中' : '儲存'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setSnEdit(null)}
+                                  aria-label="取消更正序號"
+                                  style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-muted)', fontSize: '0.8rem', cursor: 'pointer' }}
+                                >
+                                  取消
+                                </button>
+                              </div>
+                            ) : (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#16a34a', backgroundColor: 'rgba(22, 163, 74, 0.15)', padding: '4px 8px', borderRadius: '6px' }}>{item.sn}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setSnEdit({ itemId: item.id, value: item.sn })}
+                                  title="更正序號（資產、掛載關係與相關單據會一起更新）"
+                                  aria-label={`更正序號 ${item.sn}`}
+                                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '26px', height: '26px', padding: 0, borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: '#f59e0b', cursor: 'pointer' }}
+                                >
+                                  <Edit2 size={13} />
+                                </button>
+                              </div>
                             )}
                           </td>
                           <td style={{ padding: '16px', textAlign: 'center', verticalAlign: 'top', fontWeight: 800, color: 'var(--text-main)' }}>

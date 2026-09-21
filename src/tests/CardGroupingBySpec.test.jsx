@@ -97,8 +97,7 @@ describe('設備、硬體與耗材卡片依「廠牌+類型+型號+規格」聚�
       expect(screen.getByText('設備列表 (Device List)')).toBeInTheDocument();
     });
 
-    const modelBtn = screen.getByRole('button', { name: /依型號/ });
-    await userEvent.click(modelBtn);
+    await userEvent.selectOptions(screen.getByLabelText('聚合規則:'), 'MODEL');
 
     // 切換為型號聚合後，Dell R750 應合併為 1 張卡片，共 3 台
     expect(screen.getByText('共 3 台')).toBeInTheDocument();
@@ -116,8 +115,7 @@ describe('設備、硬體與耗材卡片依「廠牌+類型+型號+規格」聚�
       expect(screen.getByText('硬體列表 (Hardware List)')).toBeInTheDocument();
     });
 
-    const brandBtn = screen.getByRole('button', { name: /依廠牌/ });
-    await userEvent.click(brandBtn);
+    await userEvent.selectOptions(screen.getByLabelText('聚合規則:'), 'BRAND');
 
     // 切換為廠牌聚合後，Intel 應合併為 1 張卡片，共 3 個
     expect(screen.getByText('共 3 個')).toBeInTheDocument();

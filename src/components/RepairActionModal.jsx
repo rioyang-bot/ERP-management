@@ -6,6 +6,17 @@ import {
 import { logStatusChange, logUpdate } from '../utils/auditLogger';
 import { validateNewSn, performInPlaceReplacement, performOneToOneReplacement } from '../utils/rmaService';
 
+// 自行維修的常用結果跟原廠是兩回事，混在一起只會讓人挑到不對的敘述
+const IN_HOUSE_RESULTS = [
+  'OS 重灌並完成 Driver 檢查',
+  '重新插拔 / 清潔金手指後測試正常',
+  '更換記憶體模組，壓力測試 Pass',
+  '更換硬碟並還原資料',
+  '更新 BIOS / BMC 韌體後正常',
+  '更換風扇 / 電源模組',
+  '設定調整，非硬體故障'
+];
+
 const QUICK_RESULTS = [
   '原廠修復寄回',
   'OS 重灌 RH 9.6 H 100 Driver check ok / Mellanx Nic Driver Check OK',
@@ -17,7 +28,10 @@ const QUICK_RESULTS = [
 
 /**
  * 維修單狀態推進確認彈窗
- * actionType: 'SEND_OEM' | 'OEM_RETURN' | 'COMPLETE'
+ * actionType: 'SEND_OEM' | 'OEM_RETURN' | 'COMPLETE' | 'IN_HOUSE_COMPLETE'
+ *
+ * IN_HOUSE_COMPLETE 是不送原廠的那條路：IT 自行排除故障後填寫維修結果，
+ * 一步從現場處理直接結案出貨，不經過送修原廠與原廠返還兩個階段。
  */
 const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess }) => {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -62,12 +76,22 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
       case 'OEM_RETURN':
         return {
           title: '原廠修復寄回確認 (OEM Return)',
-          subtitle: '確認原廠已修復寄回，系統將寫入「OEM Return Date」與「Results」，並將設備狀態設為「在庫 (ACTIVE)」。',
+          subtitle: '確認原廠已修復寄回，系統將寫入「OEM Return Date」與「Results」。設備仍在維修流程中，狀態維持「維修中」，要到完工出貨才解除。',
           icon: <Wrench size={22} />,
           themeColor: '#10b981',
           themeBg: 'rgba(16, 185, 129, 0.12)',
           dateLabel: '原廠修復寄回日期 (OEM Return Date) *',
-          submitText: '確認原廠返還 (設為在庫)'
+          submitText: '確認原廠返還 (維持維修中)'
+        };
+      case 'IN_HOUSE_COMPLETE':
+        return {
+          title: '自行維修完工結案 (In-house Repair)',
+          subtitle: '確認由 IT 人員自行修復完成、不送原廠，系統將寫入「維修結果」與「完工日期」，並將設備狀態設為「出庫 (SHIPPED)」。',
+          icon: <Wrench size={22} />,
+          themeColor: '#0d9488',
+          themeBg: 'rgba(13, 148, 136, 0.12)',
+          dateLabel: '完工/出貨日期 (Completion Date) *',
+          submitText: '確認自行維修完工 (設為出庫)'
         };
       case 'COMPLETE':
         return {
@@ -103,7 +127,8 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
       return;
     }
 
-    if (actionType === 'OEM_RETURN' && !results.trim()) {
+    // 自行維修沒有原廠報告，維修結果就是唯一的處理紀錄，一定要填
+    if ((actionType === 'OEM_RETURN' || actionType === 'IN_HOUSE_COMPLETE') && !results.trim()) {
       setError('請填寫維修結果 / 檢測說明 (Results)');
       return;
     }
@@ -191,14 +216,38 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
         ]);
         if (!res.success) throw new Error(res.error || '更新原廠返還狀態失敗');
 
-        // 2. 將該維修單下的設備序號全部改為 ACTIVE (在庫)
+        // 2. 設備還在維修單上，維持 REPAIRING —— 原廠寄回只是流程中的一站，
+        //    還沒交回客戶手上。RMA 換號建立的新資產原本是 ACTIVE，這裡一併改過來，
+        //    否則同一張單上的設備會有兩種狀態。
         for (const item of items) {
           const effectiveSn = (isRmaReplacement && replacementSns[item.sn]?.trim())
             ? replacementSns[item.sn].trim()
             : item.sn;
           if (effectiveSn) {
-            await window.electronAPI.namedQuery('updateAssetStatusBySn', ['ACTIVE', effectiveSn.trim()]);
-            await logStatusChange('DEVICE', effectiveSn.trim(), effectiveSn.trim(), 'REPAIRING', 'ACTIVE', `維修單 [${repairOrder.repair_no}] 原廠修復寄回入庫檢測`);
+            await window.electronAPI.namedQuery('updateAssetStatusBySn', ['REPAIRING', effectiveSn.trim()]);
+            await logStatusChange('DEVICE', effectiveSn.trim(), effectiveSn.trim(), 'REPAIRING', 'REPAIRING', `維修單 [${repairOrder.repair_no}] 原廠修復寄回，待完工出貨`);
+          }
+        }
+      } else if (actionType === 'IN_HOUSE_COMPLETE') {
+        // 1. 一步結案：寫入維修結果與完工日期。
+        //    查詢本身帶了狀態與旗標條件，改不到就是這張單已經不在現場處理階段，
+        //    此時不能讓設備狀態被改掉，所以直接中止。
+        const res = await window.electronAPI.namedQuery('updateRepairCompletedInHouse', [
+          date,
+          results.trim(),
+          remarks.trim() || null,
+          repairOrder.id
+        ]);
+        if (!res.success) throw new Error(res.error || '更新自行維修完工狀態失敗');
+        if (!res.rows || res.rows.length === 0) {
+          throw new Error('這張維修單已不在「現場處理」階段，或未標記為不需送回原廠，狀態未變更。請重新整理後再試。');
+        }
+
+        // 2. 將該維修單下的設備序號全部改為 SHIPPED (出庫)
+        for (const item of items) {
+          if (item.sn) {
+            await window.electronAPI.namedQuery('updateAssetStatusBySn', ['SHIPPED', item.sn.trim()]);
+            await logStatusChange('DEVICE', item.sn.trim(), item.sn.trim(), 'ACTIVE', 'SHIPPED', `維修單 [${repairOrder.repair_no}] IT 自行維修完工出貨返還客戶 [${repairOrder.customer_name}]`);
           }
         }
       } else if (actionType === 'COMPLETE') {
@@ -382,8 +431,8 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
             />
           </div>
 
-          {/* 若為原廠返還，需填寫維修結果 (Results) */}
-          {actionType === 'OEM_RETURN' && (
+          {/* 原廠返還與自行維修都要填寫維修結果 (Results) */}
+          {(actionType === 'OEM_RETURN' || actionType === 'IN_HOUSE_COMPLETE') && (
             <div>
               <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--text-main)', marginBottom: '6px' }}>
                 維修結果 / 檢測說明 (Results) *
@@ -393,7 +442,9 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
                 required
                 value={results}
                 onChange={(e) => setResults(e.target.value)}
-                placeholder="例如: OS 重灌 RH 9.6 H 100 Driver check ok / 原廠更換主機板修復寄回"
+                placeholder={actionType === 'IN_HOUSE_COMPLETE'
+                  ? '例如: 重新插拔記憶體後開機正常，壓力測試 Pass'
+                  : '例如: OS 重灌 RH 9.6 H 100 Driver check ok / 原廠更換主機板修復寄回'}
                 style={{
                   width: '100%',
                   padding: '10px 14px',
@@ -407,7 +458,7 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
               />
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: '6px' }}>
                 <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>常用結果：</span>
-                {QUICK_RESULTS.map((r, i) => (
+                {(actionType === 'IN_HOUSE_COMPLETE' ? IN_HOUSE_RESULTS : QUICK_RESULTS).map((r, i) => (
                   <button
                     key={i}
                     type="button"
