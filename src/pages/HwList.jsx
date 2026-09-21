@@ -669,6 +669,7 @@ const HwList = ({ isSplitMode = false }) => {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>借出</span><span style={{ color: '#d97706', fontWeight: '800' }}>{st.lent || 0}</span></div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>故障</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>報廢</span><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }} title="已掛載於設備、尚未出貨；不計入在庫"><span style={{ color: 'var(--text-muted)' }}>LAB</span><span style={{ color: '#8b5cf6', fontWeight: '800' }}>{st.lab || 0}</span></div>
                   </div>
                 </div>
               );
@@ -749,6 +750,7 @@ const HwList = ({ isSplitMode = false }) => {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>借出</span><span style={{ color: '#d97706', fontWeight: '800' }}>{st.lent || 0}</span></div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>故障</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }} title="已掛載於設備、尚未出貨；不計入在庫"><span style={{ color: 'var(--text-muted)' }}>LAB</span><span style={{ color: '#8b5cf6', fontWeight: '800' }}>{st.lab || 0}</span></div>
                     </div>
                   </div>
                 );
@@ -827,6 +829,7 @@ const HwList = ({ isSplitMode = false }) => {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>借出</span><span style={{ color: '#d97706', fontWeight: '800' }}>{st.lent || 0}</span></div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-muted)' }}>故障</span><span style={{ color: '#ef4444', fontWeight: '800' }}>{st.repair}</span></div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><span style={{ color: 'var(--text-subtle)', fontWeight: '800' }}>{st.scrapped}</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }} title="已掛載於設備、尚未出貨；不計入在庫"><span style={{ color: 'var(--text-muted)' }}>LAB</span><span style={{ color: '#8b5cf6', fontWeight: '800' }}>{st.lab || 0}</span></div>
                   </div>
                 </div>
               )}
