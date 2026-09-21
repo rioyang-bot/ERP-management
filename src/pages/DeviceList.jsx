@@ -442,7 +442,7 @@ const DeviceList = ({ isSplitMode = false }) => {
         newSn || null, editItem.client, editItem.hostname, editItem.location, editItem.installed_date || null,
         editItem.customer_warranty_expire || null, editItem.system_date || null, editItem.warranty_expire || null,
         editItem.os, editItem.nic, updatedCustomAttributes, editItem.ownership || 'FOR_SALE', editItem.id,
-        editItem.remarks || null
+        editItem.remarks || null, editItem.asset_no || null
     ]);
     if (res.success) {
       // 若序號有變更，連動更新掛載硬體以及相關明細
@@ -541,6 +541,7 @@ const DeviceList = ({ isSplitMode = false }) => {
           (item.hostname || '').toLowerCase().includes(term) || (item.brand || '').toLowerCase().includes(term) ||
           (item.model || '').toLowerCase().includes(term) || (item.client || '').toLowerCase().includes(term) ||
           (item.end_user || attrs.end_user || '').toLowerCase().includes(term) ||
+          (item.asset_no || '').toLowerCase().includes(term) ||
           (item.location || '').toLowerCase().includes(term);
       });
     })
@@ -1012,11 +1013,9 @@ const DeviceList = ({ isSplitMode = false }) => {
                                   brand={item.brand}
                                   model={item.model}
                                   specification={item.specification}
-                                >
-                                  {item.ownership === 'COMPANY' && (
-                                    <span style={{ fontSize: '10px', padding: '2px 6px', backgroundColor: '#8b5cf6', color: 'white', borderRadius: '4px', whiteSpace: 'nowrap', marginLeft: '4px' }}>公司資產</span>
-                                  )}
-                                </AssetIdentityCell>
+                                  isCompanyAsset={item.ownership === 'COMPANY'}
+                                  assetNo={item.asset_no}
+                                />
                               </td>
                               <td style={{ ...tdStyle, fontWeight: 800, fontFamily: 'monospace', color: 'var(--primary-color)', whiteSpace: 'nowrap', ...hideCol('sn') }}>
                                 {item.sn}
@@ -1415,6 +1414,20 @@ const DeviceList = ({ isSplitMode = false }) => {
                     🏢 公司資產 (COMPANY)
                   </button>
                 </div>
+                {/* 資產編號是公司自己編的財產編號，與出廠序號是兩回事；
+                    只有列為公司資產時才適用，改回一般銷售存檔時會一併清掉 */}
+                {editItem.ownership === 'COMPANY' && (
+                  <div style={{ marginTop: '10px' }}>
+                    <label style={editLabelStyle}>資產序號 (Asset No)</label>
+                    <input
+                      type="text"
+                      value={editItem.asset_no || ''}
+                      onChange={(e) => setEditItem({ ...editItem, asset_no: e.target.value })}
+                      placeholder="公司財產編號，例如 METECH-2026-001"
+                      style={editInputStyle}
+                    />
+                  </div>
+                )}
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 1fr) 1fr 1fr', gap: '16px' }}>

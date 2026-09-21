@@ -220,7 +220,9 @@ export const queries = {
   updateItemMasterSpecs: `UPDATE item_master SET specification = $1, model = UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g'))) WHERE id = $3`,
   countAssetsByMasterId: `SELECT COUNT(*) as count FROM assets WHERE item_master_id = $1`,
   updateAssetMasterId: `UPDATE assets SET item_master_id = $1 WHERE id = $2`,
-  updateAssetDetails: `UPDATE assets SET sn = $1, client = $2, hostname = $3, location = $4, installed_date = $5, customer_warranty_expire = $6, system_date = $7, warranty_expire = $8, os = $9, nic = $10, custom_attributes = $11, ownership = COALESCE($12, 'FOR_SALE'), remarks = $14 WHERE id = $13`,
+  // asset_no 只有公司資產才有意義；改為一般銷售時一併清掉，
+  // 否則畫面上看不到、資料卻還留著一組已經不適用的財產編號。
+  updateAssetDetails: `UPDATE assets SET sn = $1, client = $2, hostname = $3, location = $4, installed_date = $5, customer_warranty_expire = $6, system_date = $7, warranty_expire = $8, os = $9, nic = $10, custom_attributes = $11, ownership = COALESCE($12, 'FOR_SALE'), remarks = $14, asset_no = CASE WHEN COALESCE($12, 'FOR_SALE') = 'COMPANY' THEN NULLIF(TRIM($15), '') ELSE NULL END WHERE id = $13`,
   
   fetchCompanyAssets: `
     SELECT 

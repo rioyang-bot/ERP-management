@@ -882,11 +882,9 @@ const HwList = ({ isSplitMode = false }) => {
                     brand={nic.brand}
                     model={nic.model}
                     specification={nic.specification}
-                  >
-                    {nic.ownership === 'COMPANY' && (
-                      <span style={{ fontSize: '10px', padding: '2px 6px', backgroundColor: '#8b5cf6', color: 'white', borderRadius: '4px', whiteSpace: 'nowrap', marginLeft: '4px' }}>公司資產</span>
-                    )}
-                  </AssetIdentityCell>
+                    isCompanyAsset={nic.ownership === 'COMPANY'}
+                    assetNo={nic.asset_no}
+                  />
                 </td>
                 <td style={{ ...tdStyle, fontWeight: 800, fontFamily: 'monospace', color: 'var(--primary-color)', whiteSpace: 'nowrap', ...hideCol('sn') }}>{nic.sn || '(未設定)'}</td>
                 <td style={{ ...tdStyle, fontWeight: 700, color: 'var(--text-main)', ...hideCol('project') }}>
