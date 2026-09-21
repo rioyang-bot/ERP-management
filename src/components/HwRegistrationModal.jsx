@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { getMatchingSpecs } from '../utils/matchingSpecs';
 import { Plus, Save, Trash2, Cpu, Settings2, X, Server, FileSpreadsheet, Check, Layers } from 'lucide-react';
 import { logCreate } from '../utils/auditLogger';
 import CardPickerModal from './CardPickerModal';
@@ -43,19 +44,26 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   // 因此先暫存在這裡讓使用者選得到；按下儲存建立卡片後就會自然出現在清單中。
   // 取消建檔則什麼都不會留下。
   const [showCardPicker, setShowCardPicker] = useState(false);
-  // 既有卡片用過的規格，供「套用既有規格」下拉使用
-  const [cardSpecs, setCardSpecs] = useState([]);
+  // 既有卡片。規格的建議清單要依目前選的類型／廠牌／型號縮小範圍，
+  // 因此整份留著，不先壓成規格清單。
+  const [existingCards, setExistingCards] = useState([]);
 
   useEffect(() => {
     if (!isOpen) return;
     (async () => {
       const res = await window.electronAPI.namedQuery('fetchExistingCards', ['硬體']);
-      if (res?.success) {
-        const specs = [...new Set((res.rows || []).map(r => r.specification).filter(Boolean))];
-        setCardSpecs(specs.sort());
-      }
+      if (res?.success) setExistingCards(res.rows || []);
     })();
   }, [isOpen]);
+
+  // 只列出符合目前選取條件的規格；選得越細，候選越少。
+  // 相依只看這三個欄位 —— 用整個 formData 的話，序號、備註每打一個字都會重算。
+  const cardSpecs = useMemo(
+    () => getMatchingSpecs(existingCards, {
+      type: formData.type, brand: formData.brand, model: formData.model,
+    }),
+    [existingCards, formData.type, formData.brand, formData.model]
+  );
 
   // 從既有卡片一次帶入類型／廠牌／型號／規格。
   // 帶進來的值一定已經存在於清單中，因此不需要進暫存。
@@ -531,7 +539,7 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                   style={{ ...inputStyle, marginBottom: '6px', fontSize: '12px' }}
                   title="從既有卡片用過的規格挑一個填入"
                 >
-                  <option value="">套用既有規格…</option>
+                  <option value="">套用既有規格…（符合目前類型／廠牌／型號的 {cardSpecs.length} 筆）</option>
                   {cardSpecs.map(sp => <option key={sp} value={sp}>{sp}</option>)}
                 </select>
               )}
