@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Wrench, Search, Plus, Printer, Trash2, CheckCircle, AlertCircle, 
   Truck, PackageCheck, RotateCcw, ExternalLink, RefreshCw, FileText,
-  Calendar, Building2, Cpu, Server, ChevronRight, Eye, Home
+  Calendar, Building2, Cpu, Server, ChevronRight, Eye, Home, Edit2, Save, X
 } from 'lucide-react';
 import RepairOrderRegistrationModal from '../components/RepairOrderRegistrationModal';
 import RepairActionModal from '../components/RepairActionModal';
@@ -67,6 +67,35 @@ const RepairList = () => {
   useEffect(() => {
     fetchRecords();
   }, [fetchRecords]);
+
+  // 現場狀況／故障描述可以隨時更正 —— 這是一段描述，不是流程狀態，
+  // 打錯字或事後補充都不該被單據階段擋住
+  const [statusEdit, setStatusEdit] = useState(null); // { orderId, value }
+  const [statusSaving, setStatusSaving] = useState(false);
+
+  const handleSaveOnSiteStatus = async (order) => {
+    const next = (statusEdit?.value ?? '').trim();
+    if (next === (order.on_site_status || '').trim()) { setStatusEdit(null); return; }
+
+    setStatusSaving(true);
+    try {
+      const res = await window.electronAPI.namedQuery('updateRepairOnSiteStatus', [next, order.id]);
+      if (!res.success) throw new Error(res.error || '未知錯誤');
+      if (!res.rows || res.rows.length === 0) throw new Error('找不到這張維修單，可能已被刪除');
+
+      await logUpdate(
+        'REPAIR', order.repair_no, order.customer_name,
+        `修改維修單 [${order.repair_no}] 的現場狀況／故障描述`,
+        { orderNo: order.repair_no, before: order.on_site_status || '', after: next }
+      );
+      setStatusEdit(null);
+      fetchRecords();
+    } catch (err) {
+      alert('儲存失敗：' + err.message);
+    } finally {
+      setStatusSaving(false);
+    }
+  };
 
   // 刪除維修單
   const handleDeleteOrder = async (order) => {
@@ -510,18 +539,88 @@ const RepairList = () => {
                         ) : '-'}
                       </td>
 
-                      {/* 現場狀況 */}
-                      <td style={{ padding: '14px 16px', color: 'var(--text-main)', fontSize: '12px' }}>
-                        <span style={{
-                          padding: '3px 8px',
-                          borderRadius: '6px',
-                          backgroundColor: 'rgba(239, 68, 68, 0.08)',
-                          color: '#ef4444',
-                          fontWeight: 600,
-                          display: 'inline-block'
-                        }}>
-                          {order.on_site_status || '-'}
-                        </span>
+                      {/* 現場狀況／故障描述，可直接在列表上修改 */}
+                      <td style={{ padding: '14px 16px', color: 'var(--text-main)', fontSize: '12px', minWidth: '220px' }}>
+                        {statusEdit?.orderId === order.id ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            <textarea
+                              rows={2}
+                              value={statusEdit.value}
+                              onChange={(e) => setStatusEdit({ orderId: order.id, value: e.target.value })}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Escape') setStatusEdit(null);
+                                // 描述可能要分行，換行交給 Enter，存檔用 Ctrl/⌘+Enter
+                                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleSaveOnSiteStatus(order); }
+                              }}
+                              aria-label={`修改現場狀況 ${order.repair_no}`}
+                              autoFocus
+                              placeholder="例如：無法開機，電源指示燈不亮"
+                              style={{
+                                width: '100%', padding: '6px 8px', borderRadius: '6px',
+                                border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)',
+                                color: 'var(--input-text)', fontSize: '12px', resize: 'vertical', outline: 'none',
+                              }}
+                            />
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                              <button
+                                type="button"
+                                onClick={() => handleSaveOnSiteStatus(order)}
+                                disabled={statusSaving}
+                                aria-label="儲存現場狀況"
+                                style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: '4px',
+                                  padding: '4px 10px', borderRadius: '6px', border: 'none',
+                                  backgroundColor: statusSaving ? 'var(--border-color)' : '#16a34a',
+                                  color: '#fff', fontSize: '11px', fontWeight: 700,
+                                  cursor: statusSaving ? 'wait' : 'pointer', whiteSpace: 'nowrap',
+                                }}
+                              >
+                                <Save size={12} /> {statusSaving ? '儲存中' : '儲存'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setStatusEdit(null)}
+                                aria-label="取消修改現場狀況"
+                                style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: '4px',
+                                  padding: '4px 10px', borderRadius: '6px',
+                                  border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)',
+                                  color: 'var(--text-muted)', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap',
+                                }}
+                              >
+                                <X size={12} /> 取消
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
+                            <span style={{
+                              padding: '3px 8px',
+                              borderRadius: '6px',
+                              backgroundColor: order.on_site_status ? 'rgba(239, 68, 68, 0.08)' : 'transparent',
+                              color: order.on_site_status ? '#ef4444' : 'var(--text-subtle)',
+                              fontWeight: 600,
+                              display: 'inline-block',
+                              whiteSpace: 'pre-wrap',
+                            }}>
+                              {order.on_site_status || '-'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setStatusEdit({ orderId: order.id, value: order.on_site_status || '' })}
+                              title="修改現場狀況／故障描述"
+                              aria-label={`修改現場狀況 ${order.repair_no}`}
+                              style={{
+                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                width: '24px', height: '24px', padding: 0, flexShrink: 0,
+                                borderRadius: '6px', border: '1px solid var(--border-color)',
+                                backgroundColor: 'var(--bg-surface)', color: '#f59e0b', cursor: 'pointer',
+                              }}
+                            >
+                              <Edit2 size={12} />
+                            </button>
+                          </div>
+                        )}
                       </td>
 
                       {/* 送修與完工資訊 (整合送修、返還、結果、出貨) */}

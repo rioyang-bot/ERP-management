@@ -172,10 +172,15 @@ describe('維修單列表的操作按鈕', () => {
     await screen.findByText('RMA-20260921-01');
   };
 
+  /** 操作欄是該列的最後一格；其他欄位也有按鈕（例如現場狀況的編輯鈕） */
+  const actionCell = () => {
+    const cells = screen.getByText('RMA-20260921-01').closest('tr').querySelectorAll('td');
+    return cells[cells.length - 1];
+  };
+
   it('每一顆操作按鈕都不折行', async () => {
     await showList();
-    const row = screen.getByText('RMA-20260921-01').closest('tr');
-    const buttons = [...row.querySelectorAll('button')];
+    const buttons = [...actionCell().querySelectorAll('button')];
 
     expect(buttons.length).toBeGreaterThan(2);
     buttons.forEach((b) => expect(b).toHaveStyle({ whiteSpace: 'nowrap' }));
@@ -203,8 +208,7 @@ describe('維修單列表的操作按鈕', () => {
 
   it('空間不足時整顆按鈕換行，不會把字拆開', async () => {
     await showList();
-    const row = screen.getByText('RMA-20260921-01').closest('tr');
-    const container = row.querySelector('button').parentElement;
+    const container = actionCell().querySelector('button').parentElement;
 
     expect(container).toHaveStyle({ flexWrap: 'wrap' });
   });

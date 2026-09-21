@@ -1737,6 +1737,16 @@ export const queries = {
     WHERE id = $3 
     RETURNING *
   `,
+  // 只改現場狀況這一欄。updateRepairOrderDetails 一次覆寫八個欄位，
+  // 拿來改一段描述會把其他欄位一併寫成呼叫端當下的值，風險不必要。
+  // 清空視為沒有描述（存 NULL），列表才會顯示成「-」而不是一個空白標籤。
+  updateRepairOnSiteStatus: `
+    UPDATE repair_orders
+    SET on_site_status = NULLIF(TRIM($1), ''),
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = $2
+    RETURNING id, on_site_status
+  `,
   updateRepairOrderDetails: `
     UPDATE repair_orders 
     SET customer_name = $1, 
