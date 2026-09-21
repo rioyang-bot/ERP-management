@@ -228,6 +228,7 @@ export const queries = {
     SELECT 
       a.id, 
       a.sn, 
+      a.asset_no,
       a.status, 
       a.location, 
       i.brand, 

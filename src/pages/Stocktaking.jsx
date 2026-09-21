@@ -90,6 +90,7 @@ const Stocktaking = () => {
             (item.brand || '').toLowerCase().includes(term) ||
             (item.model || '').toLowerCase().includes(term) ||
             (item.sn || '').toLowerCase().includes(term) ||
+            (item.asset_no || '').toLowerCase().includes(term) ||
             (item.category_name || '').toLowerCase().includes(term)
           );
         }
@@ -152,12 +153,13 @@ const Stocktaking = () => {
       ]);
     } else if (activeTab === 'company') {
       filename = `公司資產盤點單_${today}.csv`;
-      headers = ['資產分類', '廠牌', '型號', '序號(S/N)', '狀態', '存放地點', '實盤確認', '盤點備註'];
+      headers = ['資產分類', '廠牌', '型號', '資產序號(Asset No)', '序號(S/N)', '狀態', '存放地點', '實盤確認', '盤點備註'];
 
       csvRows = filteredData.map(item => [
         item.category_name || '',
         item.brand || '',
         item.model || '',
+        item.asset_no || '',
         item.sn || '',
         item.status === 'ACTIVE' ? '在庫' : (item.status === 'LENT' ? '借出' : item.status),
         (item.location || '').replace(/,/g, '，'),
@@ -310,6 +312,7 @@ const Stocktaking = () => {
                 <tr>
                   <th style={{ width: '150px' }}>資產分類</th>
                   <th style={{ width: '200px' }}>廠牌 / 型號</th>
+                  <th style={{ width: '170px' }}>資產序號 (Asset No)</th>
                   <th style={{ width: '200px' }}>序號 (S/N)</th>
                   <th style={{ width: '100px', textAlign: 'center' }}>狀態</th>
                   <th>存放地點</th>
@@ -348,6 +351,10 @@ const Stocktaking = () => {
                             <span className="st-brand">{item.brand}</span>
                             <span className="st-model">{item.model}</span>
                           </div>
+                        </td>
+                        {/* 財產清冊對的是資產序號；還沒編號的要看得出來，不能只是空白 */}
+                        <td style={{ fontFamily: 'monospace', fontWeight: 700 }}>
+                          {item.asset_no || <span style={{ color: '#94a3b8', fontWeight: 400 }}>未編號</span>}
                         </td>
                         <td style={{ fontFamily: 'monospace' }}>{item.sn}</td>
                         <td style={{ textAlign: 'center' }}>
@@ -405,7 +412,7 @@ const Stocktaking = () => {
                 })
               ) : (
                 <tr>
-                  <td colSpan={(activeTab === 'consumables' ? 7 : (activeTab === 'company' ? 7 : 6)) + (activeTab === 'company' ? 0 : balanceMonths.length)} className="st-empty">
+                  <td colSpan={(activeTab === 'consumables' ? 7 : (activeTab === 'company' ? 8 : 6)) + (activeTab === 'company' ? 0 : balanceMonths.length)} className="st-empty">
                     {`沒有符合的${activeTab === 'devices' ? '設備' : activeTab === 'hardware' ? '硬體' : activeTab === 'company' ? '公司資產' : '耗材'}`}
                   </td>
                 </tr>

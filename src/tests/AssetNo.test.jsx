@@ -111,3 +111,72 @@ describe('資產編號的寫入規則', () => {
     expect(sql).toContain("NULLIF(TRIM($15), '')");
   });
 });
+
+/**
+ * 公司資產盤點也要看得到資產序號
+ *
+ * 財產清冊核對的是資產序號，不是出廠序號。這張表原本只列出廠序號，
+ * 盤點時等於少了要對的那一欄。
+ */
+describe('公司資產盤點表', () => {
+  const COMPANY_ROWS = [
+    { id: 1, sn: 'QTU5250009', asset_no: 'METECH-2026-001', brand: 'RARITAN', model: 'PX3-5466R', status: 'ACTIVE', location: 'BQDC3F', category_name: '設備' },
+    { id: 2, sn: 'A9000000009', asset_no: null, brand: 'SERVER TECHNOLOGY', model: 'C2WG24BN', status: 'LENT', location: '', category_name: '設備' },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.alert = vi.fn();
+    window.electronAPI = {
+      namedQuery: vi.fn((query) => {
+        if (query === 'fetchCompanyAssets') return Promise.resolve({ success: true, rows: COMPANY_ROWS });
+        return Promise.resolve({ success: true, rows: [] });
+      }),
+      getUserPreference: vi.fn().mockResolvedValue({ success: true, value: null }),
+      setUserPreference: vi.fn().mockResolvedValue({ success: true }),
+      saveFile: vi.fn(),
+    };
+  });
+
+  const showCompany = async () => {
+    const { default: Stocktaking } = await import('../pages/Stocktaking');
+    render(<Stocktaking />);
+    await userEvent.click(screen.getByText('公司資產盤點'));
+    await screen.findByText('QTU5250009');
+  };
+
+  it('有資產序號欄位', async () => {
+    await showCompany();
+    expect(screen.getByRole('columnheader', { name: /資產序號/ })).toBeInTheDocument();
+  });
+
+  it('顯示資產序號，排在出廠序號前面', async () => {
+    await showCompany();
+    const cells = [...screen.getByText('QTU5250009').closest('tr').querySelectorAll('td')]
+      .map((td) => td.textContent.trim());
+
+    expect(cells).toContain('METECH-2026-001');
+    expect(cells.indexOf('METECH-2026-001')).toBeLessThan(cells.indexOf('QTU5250009'));
+  });
+
+  it('沒編號的顯示「未編號」而不是空白', async () => {
+    await showCompany();
+    const row = screen.getByText('A9000000009').closest('tr');
+
+    expect(row).toHaveTextContent('未編號');
+  });
+
+  it('可以用資產序號搜尋', async () => {
+    await showCompany();
+    await userEvent.type(screen.getByPlaceholderText(/搜尋廠牌/), 'METECH-2026-001');
+
+    await waitFor(() => expect(screen.queryByText('A9000000009')).not.toBeInTheDocument());
+    expect(screen.getByText('QTU5250009')).toBeInTheDocument();
+  });
+});
+
+describe('公司資產的查詢', () => {
+  it('帶出 asset_no', () => {
+    expect(queries.fetchCompanyAssets).toContain('a.asset_no');
+  });
+});
