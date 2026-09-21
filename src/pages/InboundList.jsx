@@ -36,6 +36,9 @@ const InboundList = ({ isSplitMode = false }) => {
   // 進貨時序號打錯，直接在明細上改；相關單據與掛載關係會一起帶過去
   const [snEdit, setSnEdit] = useState(null); // { itemId, value }
   const [snSaving, setSnSaving] = useState(false);
+  // 整張單一次填寫訂單來源。這一欄存在資產上，逐筆到硬體列表改八十次不切實際。
+  const [orderSourceInput, setOrderSourceInput] = useState('');
+  const [orderSourceSaving, setOrderSourceSaving] = useState(false);
   const [editData, setEditData] = useState({ partner_id: '', invoice_no: '', attachments: [] });
   const [previewFile, setPreviewFile] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -141,6 +144,65 @@ const InboundList = ({ isSplitMode = false }) => {
   const getMediaSrc = (fileName) => {
     const rawUrl = `erp-media:///${encodeURIComponent(fileName)}`;
     return window.getMediaUrl ? window.getMediaUrl(rawUrl) : rawUrl;
+  };
+
+  /** 這張單有幾筆對得到資產、其中幾筆已經有訂單來源 */
+  const orderSourceStats = orderItems.reduce((acc, it) => {
+    if (!it.sn) return acc;
+    acc.withSn += 1;
+    if (it.order_source) acc.filled += 1;
+    return acc;
+  }, { withSn: 0, filled: 0 });
+
+  /**
+   * 整張進貨單一次填寫訂單來源。
+   *
+   * 預設只補還沒填的；已經有值的要覆蓋得再確認一次，
+   * 免得手一滑把整張單先前的內容蓋掉。
+   */
+  const handleBulkOrderSource = async () => {
+    const value = orderSourceInput.trim();
+    if (!value) { alert('請先輸入訂單來源'); return; }
+
+    const { withSn, filled } = orderSourceStats;
+    const empty = withSn - filled;
+    let overwrite = false;
+
+    if (empty === 0 && filled > 0) {
+      overwrite = window.confirm(
+        `這張單的 ${filled} 筆都已經有訂單來源了。\n\n要全部改成「${value}」嗎？`
+      );
+      if (!overwrite) return;
+    } else if (!window.confirm(
+      `要把這張單 ${empty} 筆還沒填的訂單來源設為「${value}」嗎？`
+      + (filled > 0 ? `\n\n已經有值的 ${filled} 筆會保持原樣。` : '')
+    )) return;
+
+    setOrderSourceSaving(true);
+    try {
+      const res = await window.electronAPI.namedQuery('updateOrderSourceByInboundOrder',
+        [selectedOrder.id, value, overwrite]);
+      if (!res.success) throw new Error(res.error || '未知錯誤');
+      const changed = res.rows?.length || 0;
+
+      logUpdate(
+        'INBOUND', selectedOrder?.order_no, selectedOrder?.partner_name || '進貨單',
+        `統一填寫訂單來源「${value}」，共 ${changed} 筆`,
+        { orderNo: selectedOrder?.order_no, orderSource: value, changed, overwrite }
+      );
+
+      alert(changed > 0
+        ? `已將 ${changed} 筆的訂單來源設為「${value}」。`
+        : '沒有需要更新的項目（可能都已經填過，或明細沒有對應的資產）。');
+
+      setOrderSourceInput('');
+      const itemsRes = await window.electronAPI.namedQuery('fetchInboundItems', [selectedOrder.id]);
+      if (itemsRes.success) setOrderItems(itemsRes.rows);
+    } catch (e) {
+      alert(`填寫失敗：${e.message}`);
+    } finally {
+      setOrderSourceSaving(false);
+    }
   };
 
   /**
@@ -581,7 +643,40 @@ const InboundList = ({ isSplitMode = false }) => {
                  </div>
               )}
 
-              <h3 style={{ fontSize: '1.1rem', color: 'var(--text-main)', marginBottom: '12px' }}>進貨項目 (無法修改數量)</h3>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                <h3 style={{ fontSize: '1.1rem', color: 'var(--text-main)', margin: 0 }}>進貨項目 (無法修改數量)</h3>
+                {/* 訂單來源存在資產上，逐筆到硬體列表改不切實際；整張單一次填 */}
+                {orderSourceStats.withSn > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                      訂單來源 已填 {orderSourceStats.filled} / {orderSourceStats.withSn}
+                    </span>
+                    <input
+                      type="text"
+                      value={orderSourceInput}
+                      onChange={(e) => setOrderSourceInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleBulkOrderSource(); } }}
+                      placeholder="例如：PO-2026-001"
+                      aria-label="統一填寫訂單來源"
+                      style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', fontSize: '0.85rem', width: '180px', outline: 'none' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleBulkOrderSource}
+                      disabled={orderSourceSaving || !orderSourceInput.trim()}
+                      title="把這張進貨單的訂單來源一次填寫完成"
+                      style={{
+                        padding: '6px 12px', borderRadius: '6px', border: 'none', whiteSpace: 'nowrap',
+                        backgroundColor: (orderSourceSaving || !orderSourceInput.trim()) ? 'var(--border-color)' : 'var(--primary-color)',
+                        color: '#fff', fontSize: '0.8rem', fontWeight: 700,
+                        cursor: (orderSourceSaving || !orderSourceInput.trim()) ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      {orderSourceSaving ? '填寫中…' : '統一填寫'}
+                    </button>
+                  </div>
+                )}
+              </div>
               {isDetailLoading ? (
                 <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>正在載入進貨明細資料...</div>
               ) : orderItems.length > 0 ? (
@@ -593,6 +688,7 @@ const InboundList = ({ isSplitMode = false }) => {
                         <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--table-header-text)', fontSize: '0.9rem' }}>類別</th>
                         <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--table-header-text)', fontSize: '0.9rem' }}>來源採購單</th>
                         <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--table-header-text)', fontSize: '0.9rem' }}>硬體序號 (S/N)</th>
+                        <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--table-header-text)', fontSize: '0.9rem' }}>訂單來源</th>
                         <th style={{ padding: '14px 16px', textAlign: 'center', fontWeight: 700, color: 'var(--table-header-text)', fontSize: '0.9rem' }}>數量</th>
                       </tr>
                     </thead>
@@ -656,6 +752,14 @@ const InboundList = ({ isSplitMode = false }) => {
                                 </button>
                               </div>
                             )}
+                          </td>
+                          <td style={{ padding: '16px', verticalAlign: 'top', fontSize: '0.85rem' }}>
+                            {/* 沒有序號的明細對不到資產，本來就不會有訂單來源 */}
+                            {!item.sn
+                              ? <span style={{ color: 'var(--text-subtle)' }}>-</span>
+                              : item.order_source
+                                ? <span style={{ color: 'var(--text-main)', fontWeight: 600 }}>{item.order_source}</span>
+                                : <span style={{ color: '#d97706' }}>未填</span>}
                           </td>
                           <td style={{ padding: '16px', textAlign: 'center', verticalAlign: 'top', fontWeight: 800, color: 'var(--text-main)' }}>
                             {item.quantity}

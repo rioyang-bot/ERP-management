@@ -821,6 +821,21 @@ export const queries = {
         'order_source', NULLIF(TRIM(COALESCE($4, '')), '')
       ))
     )`,
+  // 整張進貨單一次填寫訂單來源。以序號比對資產，忽略大小寫與前後空白。
+  // $3 為 true 時連已經填過的一併覆蓋；預設只補空的，重複執行才不會
+  // 默默蓋掉先前的內容。回傳實際異動的資料列，呼叫端據此回報筆數。
+  updateOrderSourceByInboundOrder: `
+    UPDATE assets a
+    SET custom_attributes = COALESCE(a.custom_attributes, '{}'::jsonb)
+                            || jsonb_build_object('order_source', TRIM($2)),
+        updated_at = CURRENT_TIMESTAMP
+    FROM inbound_items ii
+    WHERE ii.inbound_order_id = $1
+      AND ii.sn IS NOT NULL AND TRIM(ii.sn) <> ''
+      AND UPPER(TRIM(a.sn)) = UPPER(TRIM(ii.sn))
+      AND ($3::boolean OR COALESCE(a.custom_attributes->>'order_source', '') = '')
+    RETURNING a.id, a.sn
+  `,
   insertInboundItems: `INSERT INTO inbound_items (inbound_order_id, item_id, sn, quantity, purchase_record_id, unit_price) VALUES ($1, $2, $3, $4, $5, 0)`,
   updateStockQtyOnInbound: `UPDATE item_master SET stock_qty = stock_qty + $1 WHERE id = $2`,
   // 刪除進貨單時把採購單的已入庫數量退回來，狀態依退回後的數量重算。
@@ -852,11 +867,15 @@ export const queries = {
     LEFT JOIN users u ON io.creator_id = u.id
     ORDER BY io.created_at DESC`,
   fetchInboundItems: `
-      SELECT ii.*, im.specification, im.brand, im.model, c.name as category_name, pr.order_no as po_order_no
+      SELECT ii.*, im.specification, im.brand, im.model, c.name as category_name, pr.order_no as po_order_no,
+             a.custom_attributes->>'order_source' AS order_source
       FROM inbound_items ii 
       LEFT JOIN item_master im ON ii.item_id = im.id 
       LEFT JOIN categories c ON im.category_id = c.id 
       LEFT JOIN purchase_records pr ON ii.purchase_record_id = pr.id
+      -- 訂單來源存在資產上，明細要能一眼看出哪幾筆還沒填
+      LEFT JOIN assets a ON ii.sn IS NOT NULL AND TRIM(ii.sn) <> ''
+        AND UPPER(TRIM(a.sn)) = UPPER(TRIM(ii.sn))
       WHERE ii.inbound_order_id = $1
       -- 沒有 ORDER BY 時回的是堆積順序：某一列被 UPDATE 過就會跑到最後面，
       -- 明細看起來像是「改完不見了」。固定以建立順序呈現。
