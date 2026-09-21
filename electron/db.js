@@ -1,5 +1,7 @@
 import 'dotenv/config';
 import pg from 'pg';
+// DATE 以字串回傳，避免時區換算讓日期差一天（見 server/pgTypes.js）
+import '../server/pgTypes.js';
 
 const { Pool } = pg;
 
