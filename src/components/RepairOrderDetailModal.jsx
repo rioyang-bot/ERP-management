@@ -1,4 +1,5 @@
 import React from 'react';
+import { getRepairScopeLabel } from '../utils/repairScope';
 import { 
   X, FileText, Building2, Calendar, CheckCircle2, Clock, 
   Truck, Wrench, PackageCheck, Printer, ShieldAlert, Cpu
@@ -178,7 +179,7 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
               <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)' }}>客戶名稱 (Customer)</span>
               <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-main)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <Building2 size={16} color="var(--primary-color)" />
-                {repairOrder.customer_name || '未指定客戶'}
+                {getRepairScopeLabel(repairOrder)}
               </div>
               {repairOrder.contact_person && (
                 <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '4px' }}>

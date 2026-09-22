@@ -1,4 +1,5 @@
 import React, { useRef } from 'react';
+import { getRepairScopeLabel } from '../utils/repairScope';
 import { X, Printer, Download, Wrench, Building2, Calendar, FileText } from 'lucide-react';
 
 const RepairOrderPrintModal = ({ isOpen, onClose, repairOrder }) => {
@@ -113,8 +114,10 @@ const RepairOrderPrintModal = ({ isOpen, onClose, repairOrder }) => {
             {/* 單據基本資訊表格 */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '24px', backgroundColor: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
               <div>
-                <span style={{ fontSize: '11px', color: '#64748b', display: 'block', fontWeight: 700 }}>客戶名稱 (Customer)</span>
-                <span style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>{repairOrder.customer_name}</span>
+                <span style={{ fontSize: '11px', color: '#64748b', display: 'block', fontWeight: 700 }}>
+                  {repairOrder.is_internal ? '維修對象' : '客戶名稱 (Customer)'}
+                </span>
+                <span style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>{getRepairScopeLabel(repairOrder)}</span>
                 {repairOrder.contact_person && (
                   <span style={{ fontSize: '12px', color: '#475569', display: 'block', marginTop: '2px' }}>
                     聯絡人：{repairOrder.contact_person}{repairOrder.contact_phone ? `（${repairOrder.contact_phone}）` : ''}

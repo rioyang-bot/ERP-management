@@ -1732,12 +1732,21 @@ export const queries = {
     ORDER BY ri.id ASC
   `,
   // 同一家公司常有多位聯絡人，單上要記得住是對誰處理的
+  // $9 為 true 時是公司內部維修：沒有客戶，連帶也不會有客戶聯絡人。
+  // 客戶名稱與旗標是否一致由資料表的 CHECK 條件把關，不是只靠畫面擋 ——
+  // 之後任何新的寫入路徑都會被同一條規則約束。
   createRepairOrder: `
     INSERT INTO repair_orders (
       repair_no, customer_name, status, on_site_date, on_site_status,
-      creator_id, remarks, contact_person, contact_phone
-    ) VALUES ($1, $2, 'ON_SITE_HANDLING', $3, $4, $5, $6,
-              NULLIF(TRIM(COALESCE($7, '')), ''), NULLIF(TRIM(COALESCE($8, '')), ''))
+      creator_id, remarks, contact_person, contact_phone, is_internal
+    ) VALUES (
+      $1,
+      CASE WHEN $9::boolean THEN NULL ELSE NULLIF(TRIM(COALESCE($2, '')), '') END,
+      'ON_SITE_HANDLING', $3, $4, $5, $6,
+      CASE WHEN $9::boolean THEN NULL ELSE NULLIF(TRIM(COALESCE($7, '')), '') END,
+      CASE WHEN $9::boolean THEN NULL ELSE NULLIF(TRIM(COALESCE($8, '')), '') END,
+      COALESCE($9::boolean, FALSE)
+    )
     RETURNING *
   `,
   createRepairOrderItem: `
@@ -1839,6 +1848,7 @@ export const queries = {
       a.sn,
       a.status,
       a.client,
+      a.ownership,
       a.hostname,
       a.location,
       i.id as item_master_id,

@@ -19,6 +19,9 @@ const QUICK_STATUS_TAGS = [
 const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   const [repairNo, setRepairNo] = useState('');
   const [customerName, setCustomerName] = useState('');
+  // 庫存裡有幾百台設備沒有客戶（公司資產、尚未出貨的一般銷售品），
+  // 這些送修時不該被迫在必填欄位硬編一個客戶名稱。
+  const [isInternal, setIsInternal] = useState(false);
   // 同一家公司常有多位聯絡人，單上要記得住是對誰處理的
   const [contactPerson, setContactPerson] = useState('');
   const [contactPhone, setContactPhone] = useState('');
@@ -142,7 +145,11 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   const filteredAssets = availableAssets.filter(a => {
     const term = assetSearchTerm.toLowerCase().trim();
     if (!term) {
-      // 若有選擇客戶，預設先列出該客戶的設備
+      // 內部維修找的是手上還沒賣掉的：公司資產，或還沒出貨、也還沒歸屬客戶的
+      if (isInternal) {
+        return a.ownership === 'COMPANY' || !(a.client || '').trim();
+      }
+      // 客戶送修則預設先列出該客戶的設備
       if (customerName) {
         return (a.client || '').toLowerCase().includes(customerName.toLowerCase());
       }
@@ -164,8 +171,17 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
       return;
     }
 
-    // 若尚未填寫客戶，自動以該設備的客戶帶入
-    if (!customerName && asset.client) {
+    // 第一台加進來時順手判斷這是誰的東西：
+    // 有客戶就帶入客戶名稱，沒有（在庫或公司資產）就切成內部維修。
+    // 使用者仍可自行改回去，這只是省掉多數情況的手動選擇。
+    if (selectedItems.length === 0) {
+      if (asset.client) {
+        setIsInternal(false);
+        if (!customerName) setCustomerName(asset.client);
+      } else {
+        setIsInternal(true);
+      }
+    } else if (!customerName && asset.client) {
       setCustomerName(asset.client);
     }
 
@@ -224,7 +240,7 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
       setFormError('請輸入維修單號');
       return;
     }
-    if (!customerName.trim()) {
+    if (!isInternal && !customerName.trim()) {
       setFormError('請填寫客戶名稱 (Customer)');
       return;
     }
@@ -265,7 +281,8 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
         creatorId,
         remarks.trim() || null,
         contactPerson.trim() || null,
-        contactPhone.trim() || null
+        contactPhone.trim() || null,
+        isInternal
       ]);
 
       if (!orderRes.success || !orderRes.rows || orderRes.rows.length === 0) {
@@ -456,6 +473,33 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
               </div>
 
               <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '6px' }}>
+                  維修對象
+                </label>
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                  {[
+                    { internal: false, label: '客戶送修', hint: '設備在客戶端，需要填寫客戶名稱' },
+                    { internal: true, label: '公司內部', hint: '公司資產或尚未出貨的庫存品，沒有客戶' },
+                  ].map((opt) => (
+                    <button
+                      key={opt.label}
+                      type="button"
+                      onClick={() => setIsInternal(opt.internal)}
+                      title={opt.hint}
+                      style={{
+                        flex: 1, padding: '8px', borderRadius: '6px', fontWeight: 700, fontSize: '12px', cursor: 'pointer',
+                        border: isInternal === opt.internal ? '2px solid var(--primary-color)' : '1px solid var(--border-color)',
+                        backgroundColor: isInternal === opt.internal ? 'rgba(37, 99, 235, 0.1)' : 'var(--bg-surface-subtle)',
+                        color: isInternal === opt.internal ? 'var(--primary-color)' : 'var(--text-muted)',
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ display: isInternal ? 'none' : 'block' }}>
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '6px' }}>
                   客戶名稱 (Customer) *
                 </label>

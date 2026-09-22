@@ -133,6 +133,11 @@
       "file": "migration_asset_no.sql",
       "type": "schema",
       "note": "公司資產編號欄位（Asset No）"
+    },
+    {
+      "file": "migration_repair_internal.sql",
+      "type": "schema",
+      "note": "維修單公司內部維修旗標，客戶名稱改為依此決定是否必填"
     }
   ]
 }

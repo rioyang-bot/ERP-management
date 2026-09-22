@@ -9,6 +9,7 @@ import RepairActionModal from '../components/RepairActionModal';
 import RepairOrderPrintModal from '../components/RepairOrderPrintModal';
 import RepairOrderDetailModal from '../components/RepairOrderDetailModal';
 import { logDelete, logUpdate } from '../utils/auditLogger';
+import { getRepairScopeLabel, INTERNAL_LABEL } from '../utils/repairScope';
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 
@@ -171,7 +172,7 @@ const RepairList = () => {
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase().trim();
       const matchNo = (order.repair_no || '').toLowerCase().includes(term);
-      const matchCust = (order.customer_name || '').toLowerCase().includes(term)
+      const matchCust = (order.is_internal ? INTERNAL_LABEL : (order.customer_name || '')).toLowerCase().includes(term)
         || (order.contact_person || '').toLowerCase().includes(term);
       const matchStatus = (order.on_site_status || '').toLowerCase().includes(term);
       const matchResults = (order.results || '').toLowerCase().includes(term);
@@ -499,8 +500,10 @@ const RepairList = () => {
                       {/* 客戶名稱 */}
                       <td style={{ padding: '14px 16px', fontWeight: 800, color: 'var(--text-main)' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <Building2 size={14} color="var(--text-muted)" />
-                          {order.customer_name}
+                          <Building2 size={14} color={order.is_internal ? 'var(--primary-color)' : 'var(--text-muted)'} />
+                          <span style={order.is_internal ? { color: 'var(--primary-color)' } : undefined}>
+                            {getRepairScopeLabel(order)}
+                          </span>
                         </div>
                         {order.contact_person && (
                           <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', marginTop: '3px', paddingLeft: '20px' }}>
