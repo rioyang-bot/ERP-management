@@ -979,6 +979,69 @@ const RepairList = () => {
         </div>
       </div>
 
+      {/* 頁面說明：兩種維修對象的流程、各階段的設備狀態，以及幾個容易誤會的地方 */}
+      <div style={{
+        marginTop: '20px', padding: '16px 20px',
+        backgroundColor: 'var(--bg-surface-subtle)', border: '1px solid var(--border-color)',
+        borderRadius: '12px', fontSize: '13px', color: 'var(--text-muted)', lineHeight: '1.8',
+      }}>
+        <div style={{ fontWeight: 800, color: 'var(--text-main)', marginBottom: '8px' }}>
+          維修單說明
+        </div>
+
+        <div style={{ marginBottom: '10px' }}>
+          維修單分兩種對象，建單時選擇，起始階段與後續流程都跟著它走。
+          加入設備時系統會自動判斷：設備有客戶就是客戶送修，沒有（公司資產或尚未出貨的庫存品）就是公司內部，仍可自行更改。
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div>
+            <b style={{ color: 'var(--primary-color)' }}>客戶送修</b>
+            <span style={{ marginLeft: '6px' }}>設備在客戶端，需填寫客戶名稱與聯絡人。</span>
+            <div style={{ marginTop: '4px', paddingLeft: '12px', fontFamily: 'monospace', fontSize: '12px' }}>
+              現場處理<span style={{ color: '#ef4444' }}>（維修）</span>
+              {' → '}送修原廠<span style={{ color: '#ef4444' }}>（維修）</span>
+              {' → '}原廠返還<span style={{ color: '#ef4444' }}>（維修）</span>
+              {' → '}完工出貨<span style={{ color: '#3b82f6' }}>（出貨）</span>＝結案
+            </div>
+          </div>
+
+          <div>
+            <b style={{ color: '#d97706' }}>公司內部</b>
+            <span style={{ marginLeft: '6px' }}>
+              公司資產或尚未出貨的庫存品，沒有客戶。改為選擇供應商（送回哪一家原廠），來源是客戶／廠商管理裡的供應商。
+            </span>
+            <div style={{ marginTop: '4px', paddingLeft: '12px', fontFamily: 'monospace', fontSize: '12px' }}>
+              送修原廠<span style={{ color: '#ef4444' }}>（維修）</span>
+              {' → '}原廠返還<span style={{ color: '#16a34a' }}>（在庫）</span>＝結案
+            </div>
+          </div>
+        </div>
+
+        <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <div>
+            • <b>設備狀態</b>：設備一旦進了維修單就標記為「維修」，不再計入可動用的在庫。
+            客戶送修要到完工出貨才轉為「出貨」；公司內部沒有出貨這一步，原廠返還後回到「在庫」。
+          </div>
+          <div>
+            • <b>公司內部沒有現場處理</b>：東西本來就在自己手上，沒有現場可去，建單時直接從送修原廠起算。
+            詳情的流程圖會把不適用的階段標示出來。
+          </div>
+          <div>
+            • <b>不需送回原廠</b>：客戶送修若由 IT 自行修復，可在現場處理階段標記，
+            之後填寫維修結果直接完工結案，不經過原廠那兩個階段。
+          </div>
+          <div>
+            • <b>現場狀況／故障描述</b>：任何階段都可以在列表上直接修改，
+            這是描述而不是流程狀態，打錯字或事後補充都不會被單據階段擋住。
+          </div>
+          <div>
+            • <b>刪除維修單</b>：會把還停在「維修」的設備改回「在庫」，
+            否則單據沒了、設備會永遠卡在維修中。已完工出貨或已報廢的不會被更動。
+          </div>
+        </div>
+      </div>
+
       {/* 彈窗組件 */}
       <RepairOrderRegistrationModal
         isOpen={isCreateModalOpen}

@@ -335,3 +335,69 @@ describe('內部維修的終點', () => {
     expect(statuses[3]).toBe("isInternal ? 'ACTIVE (在庫)' : 'SHIPPED (出庫)'");
   });
 });
+
+/**
+ * 維修單頁面的說明
+ *
+ * 兩種維修對象走不同流程、各階段的設備狀態也不同，光看列表看不出規則。
+ * 說明放在頁面下方，並且必須與實際行為一致 —— 不一致的說明比沒有更糟。
+ */
+describe('維修單說明', () => {
+  const ORDERS = [
+    { id: 1, repair_no: 'RMA-01', customer_name: '元大證券', is_internal: false, status: 'ON_SITE_HANDLING', item_count: 1, items: [], created_at: '2026-09-22T00:00:00.000Z' },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.alert = vi.fn();
+    window.electronAPI = {
+      namedQuery: vi.fn((q) => Promise.resolve({ success: true, rows: q === 'fetchRepairOrders' ? ORDERS : [] })),
+      runTransaction: vi.fn(), saveFile: vi.fn(),
+      getUserPreference: vi.fn().mockResolvedValue({ success: true, value: null }),
+      setUserPreference: vi.fn().mockResolvedValue({ success: true }),
+    };
+  });
+
+  const show = async () => {
+    render(<MemoryRouter><RepairList /></MemoryRouter>);
+    await screen.findByText('RMA-01');
+  };
+
+  it('頁面下方有說明', async () => {
+    await show();
+    expect(screen.getByText('維修單說明')).toBeInTheDocument();
+  });
+
+  it('兩種維修對象各自的流程都寫出來', async () => {
+    await show();
+    const notes = screen.getByText('維修單說明').parentElement;
+
+    expect(notes).toHaveTextContent('客戶送修');
+    expect(notes).toHaveTextContent('公司內部');
+    // 客戶送修四階段、內部兩階段
+    expect(notes.textContent).toMatch(/現場處理（維修）\s*→\s*送修原廠（維修）\s*→\s*原廠返還（維修）\s*→\s*完工出貨（出貨）＝結案/);
+    expect(notes.textContent).toMatch(/送修原廠（維修）\s*→\s*原廠返還（在庫）＝結案/);
+  });
+
+  it('說明與實際行為一致：只有完工出貨轉出貨，內部返還回在庫', async () => {
+    await show();
+    const notes = screen.getByText('維修單說明').parentElement;
+
+    expect(notes).toHaveTextContent('客戶送修要到完工出貨才轉為「出貨」');
+    expect(notes).toHaveTextContent('公司內部沒有出貨這一步，原廠返還後回到「在庫」');
+  });
+
+  it('說明刪除單據會還原設備狀態', async () => {
+    await show();
+    const notes = screen.getByText('維修單說明').parentElement;
+
+    expect(notes).toHaveTextContent('會把還停在「維修」的設備改回「在庫」');
+  });
+
+  it('說明內部維修用供應商而不是客戶聯絡人', async () => {
+    await show();
+    const notes = screen.getByText('維修單說明').parentElement;
+
+    expect(notes).toHaveTextContent('改為選擇供應商');
+  });
+});
