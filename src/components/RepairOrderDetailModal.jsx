@@ -6,10 +6,10 @@ import {
 } from 'lucide-react';
 
 const STATUS_CONFIG = {
-  ON_SITE_HANDLING: { label: '現場處理 (在庫)', color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' },
-  SENT_OEM: { label: '送修原廠 (維修中)', color: '#d97706', bg: 'rgba(217, 119, 6, 0.12)' },
-  OEM_RETURNED: { label: '原廠返還 (在庫)', color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.12)' },
-  COMPLETED: { label: '完工出貨 (出庫)', color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.12)' }
+  ON_SITE_HANDLING: { label: '現場處理', color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' },
+  SENT_OEM: { label: '送修原廠', color: '#d97706', bg: 'rgba(217, 119, 6, 0.12)' },
+  OEM_RETURNED: { label: '原廠返還', color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.12)' },
+  COMPLETED: { label: '完工結案', color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.12)' }
 };
 
 /**

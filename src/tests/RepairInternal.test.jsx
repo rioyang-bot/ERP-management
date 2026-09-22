@@ -401,3 +401,44 @@ describe('維修單說明', () => {
     expect(notes).toHaveTextContent('改為選擇供應商');
   });
 });
+
+/**
+ * 沒有任何畫面文字宣稱錯誤的設備狀態
+ *
+ * 流程改過好幾輪，每次都留下幾句舊文案：建單說會設為在庫、階段名稱括著
+ * 已經不成立的狀態。這一組測試把它們一次釘住，而不是每次靠人再掃一遍。
+ */
+describe('設備狀態相關的文案', () => {
+  const read = async (f) => (await import('fs')).readFileSync(f, 'utf8');
+
+  it('建單按鈕說的是設為維修', async () => {
+    const src = await read('src/components/RepairOrderRegistrationModal.jsx');
+
+    expect(src).toContain('確認建立維修單 (自動設為維修)');
+    expect(src).not.toContain('自動設為在庫');
+  });
+
+  it('階段名稱不再括著設備狀態 —— 同樣是結案，兩種對象的狀態不同', async () => {
+    for (const f of ['src/pages/RepairList.jsx', 'src/components/RepairOrderDetailModal.jsx']) {
+      const src = await read(f);
+      expect(src).not.toContain("'現場處理 (在庫)'");
+      expect(src).not.toContain("'原廠返還 (在庫)'");
+      expect(src).not.toContain("'完工出貨 (出庫)'");
+    }
+  });
+
+  it('原廠返還的提示依維修對象而異', async () => {
+    const src = await read('src/pages/RepairList.jsx');
+
+    expect(src).toContain('原廠返還並結案 (設備回到在庫)');
+    expect(src).toContain('原廠返還 (設備維持維修中，待完工出貨)');
+    // 不再一律說「設為在庫」
+    expect(src).not.toContain('title="原廠返還 (將設備設為在庫)"');
+  });
+
+  it('尚未送修時不再說設備在庫', async () => {
+    const src = await read('src/pages/RepairList.jsx');
+
+    expect(src).not.toContain('現場在庫 (尚未送修)');
+  });
+});

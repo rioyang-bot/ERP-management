@@ -15,10 +15,10 @@ import PageSizeSelector from '../components/common/PageSizeSelector';
 
 const STATUS_CONFIG = {
   ALL: { label: '全部維修單', color: 'var(--text-main)', bg: 'transparent' },
-  ON_SITE_HANDLING: { label: '現場處理 (在庫)', color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' },
-  SENT_OEM: { label: '送修原廠 (維修中)', color: '#d97706', bg: 'rgba(217, 119, 6, 0.12)' },
-  OEM_RETURNED: { label: '原廠返還 (在庫)', color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.12)' },
-  COMPLETED: { label: '完工出貨 (出庫)', color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.12)' }
+  ON_SITE_HANDLING: { label: '現場處理', color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' },
+  SENT_OEM: { label: '送修原廠', color: '#d97706', bg: 'rgba(217, 119, 6, 0.12)' },
+  OEM_RETURNED: { label: '原廠返還', color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.12)' },
+  COMPLETED: { label: '完工結案', color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.12)' }
 };
 
 const RepairList = () => {
@@ -703,7 +703,7 @@ const RepairList = () => {
 
                           {!order.send_oem_date && !order.oem_return_date && !order.completion_date && !order.results && (
                             <span style={{ color: 'var(--text-subtle)', fontSize: '12px' }}>
-                              現場在庫 (尚未送修)
+                              現場處理中 (尚未送修)
                             </span>
                           )}
                         </div>
@@ -857,7 +857,9 @@ const RepairList = () => {
                                 alignItems: 'center',
                                 gap: '4px'
                               }}
-                              title="原廠返還 (將設備設為在庫)"
+                              title={order.is_internal
+                                ? '原廠返還並結案 (設備回到在庫)'
+                                : '原廠返還 (設備維持維修中，待完工出貨)'}
                             >
                               <Wrench size={13} /> 原廠返還
                             </button>

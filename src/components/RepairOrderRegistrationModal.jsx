@@ -1059,7 +1059,7 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
               }}
             >
               <Wrench size={16} />
-              {isSubmitting ? '建立中...' : '確認建立維修單 (自動設為在庫)'}
+              {isSubmitting ? '建立中...' : '確認建立維修單 (自動設為維修)'}
             </button>
           </div>
         </form>

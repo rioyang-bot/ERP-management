@@ -203,7 +203,9 @@ describe('維修單列表的操作按鈕', () => {
     await showList();
 
     expect(screen.getByRole('button', { name: /恢復送原廠/ })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /送修原廠$/ })).not.toBeInTheDocument();
+    // 上方的狀態篩選分頁也是按鈕、也叫「送修原廠」，只看該列的操作欄
+    const actions = [...actionCell().querySelectorAll('button')].map((b) => b.textContent.trim());
+    expect(actions).not.toContain('送修原廠');
   });
 
   it('空間不足時整顆按鈕換行，不會把字拆開', async () => {
