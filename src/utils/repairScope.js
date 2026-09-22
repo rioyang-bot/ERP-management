@@ -29,4 +29,17 @@ export function getRepairScopeLabel(order) {
 export const hasCustomerContact = (order) =>
   !order?.is_internal && Boolean(String(order?.contact_person ?? '').trim());
 
+/**
+ * 對象底下的第二行：客戶送修是聯絡人，內部維修是送去哪一家供應商。
+ *
+ * @returns {string} 沒有可顯示的內容時回空字串
+ */
+export function getRepairSubLabel(order) {
+  if (order?.is_internal) {
+    const supplier = String(order?.supplier_name ?? '').trim();
+    return supplier ? `送修：${supplier}` : '';
+  }
+  return String(order?.contact_person ?? '').trim();
+}
+
 export default getRepairScopeLabel;

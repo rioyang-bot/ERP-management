@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import RepairList from '../pages/RepairList';
 import { queries } from '../../database/queries';
-import { getRepairScopeLabel, hasCustomerContact, INTERNAL_LABEL } from '../utils/repairScope';
+import { getRepairScopeLabel, getRepairSubLabel, hasCustomerContact, INTERNAL_LABEL } from '../utils/repairScope';
 
 /**
  * 公司內部維修
@@ -88,9 +88,10 @@ describe('建單時的資料庫規則', () => {
   const sql = queries.createRepairOrder;
 
   it('內部維修不寫入客戶與聯絡人', () => {
-    expect(sql).toContain('CASE WHEN $9::boolean THEN NULL');
-    // 客戶、聯絡人、電話三個欄位都要受同一個旗標控制
-    expect(sql.match(/CASE WHEN \$9::boolean THEN NULL/g)).toHaveLength(3);
+    // 客戶、聯絡人、電話都以同一個旗標決定；逐欄比對比數個數可靠
+    expect(sql).toContain("CASE WHEN $9::boolean THEN NULL ELSE NULLIF(TRIM(COALESCE($2, '')), '') END");
+    expect(sql).toContain("CASE WHEN $9::boolean THEN NULL ELSE NULLIF(TRIM(COALESCE($7, '')), '') END");
+    expect(sql).toContain("CASE WHEN $9::boolean THEN NULL ELSE NULLIF(TRIM(COALESCE($8, '')), '') END");
   });
 
   it('旗標沒傳時視為客戶送修，維持既有行為', () => {
@@ -125,23 +126,13 @@ describe('資料表的一致性條件', () => {
 describe('起始階段', () => {
   const sql = queries.createRepairOrder;
 
-  it('第十個參數決定從哪一階段起算', () => {
-    expect(sql).toContain("CASE WHEN $10::boolean THEN 'SENT_OEM' ELSE 'ON_SITE_HANDLING' END");
-  });
-
-  it('起始日期依階段寫到對應欄位，不會兩邊都填', () => {
-    expect(sql).toContain('CASE WHEN $10::boolean THEN NULL ELSE $3::date END');
-    expect(sql).toContain('CASE WHEN $10::boolean THEN $3::date ELSE NULL END');
-  });
-
   it('故障描述兩種階段都記', () => {
     // on_site_status 存的是故障描述，直接送原廠時同樣需要
     expect(sql).toContain('$4');
   });
 
-  it('沒傳時維持現場處理起算，既有行為不變', () => {
-    // $10 為 null 時 CASE 落到 ELSE
-    expect(sql).not.toContain('COALESCE($10');
+  it('旗標沒傳時落到客戶送修，既有行為不變', () => {
+    expect(sql).toContain('COALESCE($9::boolean, FALSE)');
   });
 });
 
@@ -159,5 +150,81 @@ describe('詳情的流程時間軸', () => {
     const src = fs.readFileSync('src/components/RepairOrderDetailModal.jsx', 'utf8');
 
     expect(src).toContain('!repairOrder.on_site_date && !!repairOrder.send_oem_date');
+  });
+});
+
+/**
+ * 起始階段由維修對象決定，內部維修記的是供應商
+ *
+ * 客戶送修的東西在客戶端，一定先有現場處理或取回；內部的東西在自己手上，
+ * 沒有現場可去，直接送原廠。兩者沒有第三種組合，因此不該讓人再選一次。
+ *
+ * 內部維修也沒有客戶聯絡人 —— 要追的是送回哪一家供應商。
+ */
+describe('維修對象決定起始階段與對象欄位', () => {
+  const sql = queries.createRepairOrder;
+
+  it('起始階段直接由內部旗標決定，沒有另一個參數', () => {
+    expect(sql).toContain("CASE WHEN $9::boolean THEN 'SENT_OEM' ELSE 'ON_SITE_HANDLING' END");
+    // 先前的 $10 起始階段參數已移除，$10/$11 改為供應商
+    expect(sql).not.toContain('$10::boolean');
+  });
+
+  it('日期依同一個旗標寫到對應欄位', () => {
+    expect(sql).toContain('CASE WHEN $9::boolean THEN NULL ELSE $3::date END');
+    expect(sql).toContain('CASE WHEN $9::boolean THEN $3::date ELSE NULL END');
+  });
+
+  it('供應商只在內部維修時寫入', () => {
+    expect(sql).toContain('CASE WHEN $9::boolean THEN $10::integer ELSE NULL END');
+    expect(sql).toContain("CASE WHEN $9::boolean THEN NULLIF(TRIM(COALESCE($11, '')), '') ELSE NULL END");
+  });
+
+  it('供應商同時存 id 與名稱', () => {
+    expect(sql).toContain('supplier_id');
+    expect(sql).toContain('supplier_name');
+  });
+});
+
+describe('對象底下的第二行', () => {
+  it('客戶送修顯示聯絡人', () => {
+    expect(getRepairSubLabel({ is_internal: false, contact_person: '郭沛晴' })).toBe('郭沛晴');
+  });
+
+  it('內部維修顯示送修的供應商', () => {
+    expect(getRepairSubLabel({ is_internal: true, supplier_name: '肯微科技' })).toBe('送修：肯微科技');
+  });
+
+  it('內部維修還沒選供應商時不顯示', () => {
+    expect(getRepairSubLabel({ is_internal: true, supplier_name: null })).toBe('');
+    expect(getRepairSubLabel({ is_internal: true, supplier_name: '  ' })).toBe('');
+  });
+
+  it('內部維修不會顯示殘留的客戶聯絡人', () => {
+    expect(getRepairSubLabel({ is_internal: true, contact_person: '不該出現', supplier_name: null })).toBe('');
+  });
+
+  it('缺資料時回空字串，不會是 undefined', () => {
+    expect(getRepairSubLabel({})).toBe('');
+    expect(getRepairSubLabel(null)).toBe('');
+  });
+});
+
+describe('供應商的資料表規則', () => {
+  it('供應商只屬於內部維修', async () => {
+    const fs = await import('fs');
+    const sql = fs.readFileSync('database/migration_repair_supplier.sql', 'utf8');
+
+    expect(sql).toContain('repair_orders_supplier_only_internal');
+    expect(sql).toContain('is_internal = TRUE');
+  });
+
+  it('供應商被刪除時單據留著，名稱仍看得到', async () => {
+    const fs = await import('fs');
+    const sql = fs.readFileSync('database/migration_repair_supplier.sql', 'utf8');
+
+    expect(sql).toContain('ON DELETE SET NULL');
+    // 名稱是另存的，不會跟著外來鍵一起消失
+    expect(sql).toContain('supplier_name VARCHAR(100)');
   });
 });

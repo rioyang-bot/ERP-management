@@ -138,6 +138,11 @@
       "file": "migration_repair_internal.sql",
       "type": "schema",
       "note": "維修單公司內部維修旗標，客戶名稱改為依此決定是否必填"
+    },
+    {
+      "file": "migration_repair_supplier.sql",
+      "type": "schema",
+      "note": "維修單內部維修的供應商欄位"
     }
   ]
 }

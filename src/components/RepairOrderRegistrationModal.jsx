@@ -22,9 +22,10 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   // 庫存裡有幾百台設備沒有客戶（公司資產、尚未出貨的一般銷售品），
   // 這些送修時不該被迫在必填欄位硬編一個客戶名稱。
   const [isInternal, setIsInternal] = useState(false);
-  // 還沒出給客戶的東西就在自己手上，沒有「現場處理」或「取回」這回事，
-  // 壞了是直接送回原廠。這種單從送修原廠起算。
-  const [directToOem, setDirectToOem] = useState(false);
+  // 內部維修送去哪一家。客戶送修記的是客戶聯絡人，內部維修記的是供應商 ——
+  // 東西還在自己手上，要追的是送回哪個原廠。
+  const [supplierId, setSupplierId] = useState('');
+  const [supplierList, setSupplierList] = useState([]);
   // 同一家公司常有多位聯絡人，單上要記得住是對誰處理的
   const [contactPerson, setContactPerson] = useState('');
   const [contactPhone, setContactPhone] = useState('');
@@ -81,6 +82,10 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
       }
       if (custRes.success) {
         setCustomerList(custRes.rows || []);
+      }
+      const supRes = await window.electronAPI.namedQuery('fetchSuppliers');
+      if (supRes.success) {
+        setSupplierList(supRes.rows || []);
       }
       if (nextNo) {
         setRepairNo(nextNo);
@@ -180,12 +185,10 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
     if (selectedItems.length === 0) {
       if (asset.client) {
         setIsInternal(false);
-        setDirectToOem(false);
         if (!customerName) setCustomerName(asset.client);
       } else {
         // 東西還在自己手上：沒有客戶，也沒有現場可去
         setIsInternal(true);
-        setDirectToOem(true);
       }
     } else if (!customerName && asset.client) {
       setCustomerName(asset.client);
@@ -289,7 +292,8 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
         contactPerson.trim() || null,
         contactPhone.trim() || null,
         isInternal,
-        directToOem
+        supplierId ? Number(supplierId) : null,
+        supplierList.find((x) => String(x.id) === String(supplierId))?.name || null
       ]);
 
       if (!orderRes.success || !orderRes.rows || orderRes.rows.length === 0) {
@@ -506,31 +510,21 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                 </div>
               </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '6px' }}>
-                  起始階段
-                </label>
-                <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-                  {[
-                    { direct: false, label: '現場處理 / 取回', hint: '先到現場處理或把設備取回，之後再決定是否送原廠' },
-                    { direct: true, label: '直接送原廠', hint: '設備還在自己手上，沒有現場可去，直接寄回原廠' },
-                  ].map((opt) => (
-                    <button
-                      key={opt.label}
-                      type="button"
-                      onClick={() => setDirectToOem(opt.direct)}
-                      title={opt.hint}
-                      style={{
-                        flex: 1, padding: '8px', borderRadius: '6px', fontWeight: 700, fontSize: '12px', cursor: 'pointer',
-                        border: directToOem === opt.direct ? '2px solid #d97706' : '1px solid var(--border-color)',
-                        backgroundColor: directToOem === opt.direct ? 'rgba(217, 119, 6, 0.1)' : 'var(--bg-surface-subtle)',
-                        color: directToOem === opt.direct ? '#d97706' : 'var(--text-muted)',
-                      }}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
+              {/* 起始階段由維修對象決定，沒有第三種組合可選：
+                  客戶送修的東西在客戶端，一定先有現場處理或取回；
+                  內部的東西在自己手上，沒有現場可去，直接送原廠。 */}
+              <div style={{
+                gridColumn: '1 / -1', padding: '8px 12px', borderRadius: '8px',
+                backgroundColor: 'var(--bg-surface-subtle)', border: '1px solid var(--border-color)',
+                fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px',
+              }}>
+                起始階段：
+                <b style={{ color: isInternal ? '#d97706' : 'var(--primary-color)' }}>
+                  {isInternal ? '直接送原廠' : '現場處理 / 取回'}
+                </b>
+                <span style={{ marginLeft: '6px' }}>
+                  {isInternal ? '（設備還在自己手上，沒有現場可去）' : '（設備在客戶端，先處理或取回）'}
+                </span>
               </div>
 
               <div style={{ display: isInternal ? 'none' : 'block' }}>
@@ -562,7 +556,7 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                 </datalist>
               </div>
 
-              <div>
+              <div style={{ display: isInternal ? 'none' : 'block' }}>
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '6px' }} htmlFor="repair-contact-person">
                   聯絡人 (Contact)
                   {availableContacts.length > 0 && (
@@ -619,10 +613,43 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                   </div>
                 )}
               </div>
+              {/* 內部維修沒有客戶聯絡人，要記的是送去哪一家供應商。
+                  來源是客戶／廠商管理裡標記為供應商的那些。 */}
+              <div style={{ display: isInternal ? 'block' : 'none' }}>
+                <label htmlFor="repair-supplier" style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '6px' }}>
+                  供應商 (Supplier)
+                  <span style={{ marginLeft: '6px', fontWeight: 500, color: 'var(--text-subtle)' }}>
+                    送回哪一家原廠
+                  </span>
+                </label>
+                <select
+                  id="repair-supplier"
+                  value={supplierId}
+                  onChange={(e) => setSupplierId(e.target.value)}
+                  style={{
+                    width: '100%', padding: '10px 14px', borderRadius: '8px',
+                    border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)',
+                    color: 'var(--text-main)', fontSize: '14px'
+                  }}
+                >
+                  <option value="">請選擇供應商...</option>
+                  {supplierList.map((sp) => (
+                    <option key={sp.id} value={sp.id}>
+                      {sp.name}{sp.contact ? `（${sp.contact}）` : ''}
+                    </option>
+                  ))}
+                </select>
+                {supplierList.length === 0 && (
+                  <div style={{ fontSize: '11px', color: '#d97706', marginTop: '4px' }}>
+                    客戶／廠商管理裡還沒有任何供應商，請先建立。
+                  </div>
+                )}
+              </div>
+
 
               <div>
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '6px' }}>
-                  {directToOem ? '送原廠日期 (Send OEM Date) *' : '現場處理/取回日期 (On-site Date) *'}
+                  {isInternal ? '送原廠日期 (Send OEM Date) *' : '現場處理/取回日期 (On-site Date) *'}
                 </label>
                 <input
                   type="date"
@@ -650,14 +677,14 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
               border: '1px solid var(--border-color)'
             }}>
               <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: 'var(--text-main)', marginBottom: '6px' }}>
-                {directToOem ? '故障原因 (Fault description) *' : '現場處理狀況 / 故障原因 (On-site handling status) *'}
+                {isInternal ? '故障原因 (Fault description) *' : '現場處理狀況 / 故障原因 (On-site handling status) *'}
               </label>
               <textarea
                 rows={2}
                 required
                 value={onSiteStatus}
                 onChange={(e) => setOnSiteStatus(e.target.value)}
-                placeholder={directToOem
+                placeholder={isInternal
                   ? '例如: 無法過電 / CPU 溫度過高，直接送原廠檢測'
                   : '例如: 取回 重灌OS / CPU溫度過高 (水冷正常) 取回 RMA / 無法過電'}
                 style={{

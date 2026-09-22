@@ -1732,27 +1732,31 @@ export const queries = {
     ORDER BY ri.id ASC
   `,
   // 同一家公司常有多位聯絡人，單上要記得住是對誰處理的
-  // $9 為 true 時是公司內部維修：沒有客戶，連帶也不會有客戶聯絡人。
-  // 客戶名稱與旗標是否一致由資料表的 CHECK 條件把關，不是只靠畫面擋 ——
-  // 之後任何新的寫入路徑都會被同一條規則約束。
+  // $9 為 true 時是公司內部維修，此時：
+  //   沒有客戶，也沒有客戶聯絡人 —— 要記的是送去哪一家供應商（$10 / $11）
+  //   起始階段固定是「送修原廠」，東西還在自己手上，沒有現場可去
+  // 反之客戶送修固定從「現場處理／取回」起算，有客戶與客戶聯絡人、沒有供應商。
   //
-  // $10 為 true 時直接從「送修原廠」起算：東西還在自己手上、沒有出給客戶，
-  // 就沒有現場處理或取回這回事。$3 是起始日期，依起始階段寫到對應的欄位，
-  // 不會留下一個名不副實的現場處理日期。
+  // 兩種情形的欄位組合由資料表的 CHECK 條件把關，不是只靠畫面擋 ——
+  // 之後任何新的寫入路徑都會被同一條規則約束。
+  // $3 是起始日期，依階段寫到對應欄位，不會留下名不副實的現場處理日期。
   createRepairOrder: `
     INSERT INTO repair_orders (
       repair_no, customer_name, status, on_site_date, on_site_status,
-      creator_id, remarks, contact_person, contact_phone, is_internal, send_oem_date
+      creator_id, remarks, contact_person, contact_phone, is_internal,
+      send_oem_date, supplier_id, supplier_name
     ) VALUES (
       $1,
       CASE WHEN $9::boolean THEN NULL ELSE NULLIF(TRIM(COALESCE($2, '')), '') END,
-      CASE WHEN $10::boolean THEN 'SENT_OEM' ELSE 'ON_SITE_HANDLING' END,
-      CASE WHEN $10::boolean THEN NULL ELSE $3::date END,
+      CASE WHEN $9::boolean THEN 'SENT_OEM' ELSE 'ON_SITE_HANDLING' END,
+      CASE WHEN $9::boolean THEN NULL ELSE $3::date END,
       $4, $5, $6,
       CASE WHEN $9::boolean THEN NULL ELSE NULLIF(TRIM(COALESCE($7, '')), '') END,
       CASE WHEN $9::boolean THEN NULL ELSE NULLIF(TRIM(COALESCE($8, '')), '') END,
       COALESCE($9::boolean, FALSE),
-      CASE WHEN $10::boolean THEN $3::date ELSE NULL END
+      CASE WHEN $9::boolean THEN $3::date ELSE NULL END,
+      CASE WHEN $9::boolean THEN $10::integer ELSE NULL END,
+      CASE WHEN $9::boolean THEN NULLIF(TRIM(COALESCE($11, '')), '') ELSE NULL END
     )
     RETURNING *
   `,

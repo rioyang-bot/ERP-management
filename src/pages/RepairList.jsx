@@ -9,7 +9,7 @@ import RepairActionModal from '../components/RepairActionModal';
 import RepairOrderPrintModal from '../components/RepairOrderPrintModal';
 import RepairOrderDetailModal from '../components/RepairOrderDetailModal';
 import { logDelete, logUpdate } from '../utils/auditLogger';
-import { getRepairScopeLabel, INTERNAL_LABEL } from '../utils/repairScope';
+import { getRepairScopeLabel, getRepairSubLabel, INTERNAL_LABEL } from '../utils/repairScope';
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 
@@ -505,9 +505,9 @@ const RepairList = () => {
                             {getRepairScopeLabel(order)}
                           </span>
                         </div>
-                        {order.contact_person && (
+                        {getRepairSubLabel(order) && (
                           <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', marginTop: '3px', paddingLeft: '20px' }}>
-                            {order.contact_person}
+                            {getRepairSubLabel(order)}
                           </div>
                         )}
                       </td>
