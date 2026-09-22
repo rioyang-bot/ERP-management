@@ -46,13 +46,18 @@ export function getContactName(device) {
     || '';
 }
 
-/** 搭載硬體整理成「廠牌 型號（SN: xxx）」一筆一行 */
+/**
+ * 搭載硬體整理成「廠牌 型號 規格（SN: xxx）」一筆一行
+ *
+ * 規格要印出來：同一個型號常常有不同容量或埠數（例如 32G 與 64G 的同款記憶體），
+ * 只印廠牌型號的話，現場核對時分不出手上這片到底是哪一種。
+ */
 export function formatMountedHardware(device) {
   const comps = Array.isArray(device?.components) ? device.components : [];
   return comps
-    .filter((c) => c && (c.sn || c.model || c.brand))
+    .filter((c) => c && (c.sn || c.model || c.brand || c.specification))
     .map((c) => {
-      const name = [c.brand, c.model].filter(Boolean).join(' ').trim();
+      const name = [c.brand, c.model, c.specification].filter(Boolean).join(' ').trim();
       const sn = (c.sn || '').trim();
       if (name && sn) return `${name}（SN: ${sn}）`;
       return name || `SN: ${sn}`;

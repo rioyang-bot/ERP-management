@@ -28,8 +28,9 @@ const DEVICE = {
   location: 'UAT DC',
   remarks: '客戶指定機櫃 B13',
   components: [
-    { brand: 'INTEL', model: 'ULTRA9 285K', sn: 'U5M16V5601255' },
-    { brand: 'V-COLOR', model: 'PC5-46400', sn: 'STG10005Y26' },
+    { brand: 'INTEL', model: 'ULTRA9 285K', specification: '24C 3.7GHz', sn: 'U5M16V5601255' },
+    { brand: 'V-COLOR', model: 'PC5-46400', specification: '32G', sn: 'STG10005Y26' },
+    { brand: 'V-COLOR', model: 'PC5-46400', specification: '64G', sn: 'STG10005Y27' },
   ],
 };
 
@@ -257,6 +258,12 @@ describe('沒有資料時不會印出破碎的表格', () => {
     expect(formatMountedHardware({})).toEqual([]);
   });
 
+  it('搭載硬體的規格會印進表單', () => {
+    const { body } = buildChecklistSheet(DEVICE, ITEMS);
+    expect(body).toContain('V-COLOR PC5-46400 32G（SN: STG10005Y26）');
+    expect(body).toContain('V-COLOR PC5-46400 64G（SN: STG10005Y27）');
+  });
+
   it('缺少設備資料也能產生內容', () => {
     const { body, html } = buildChecklistSheet(null, null);
     expect(body).toContain('出機檢查表');
@@ -265,8 +272,25 @@ describe('沒有資料時不會印出破碎的表格', () => {
 });
 
 describe('搭載硬體的呈現', () => {
-  it('廠牌型號與序號併成一行', () => {
-    expect(formatMountedHardware(DEVICE)[0]).toBe('INTEL ULTRA9 285K（SN: U5M16V5601255）');
+  it('廠牌型號規格與序號併成一行', () => {
+    expect(formatMountedHardware(DEVICE)[0]).toBe('INTEL ULTRA9 285K 24C 3.7GHz（SN: U5M16V5601255）');
+  });
+
+  /**
+   * 同一個型號常有不同容量，只印廠牌型號的話，
+   * 現場核對時分不出手上這片到底是 32G 還是 64G。
+   */
+  it('同型號不同規格要分得出來', () => {
+    const lines = formatMountedHardware(DEVICE);
+    expect(lines[1]).toBe('V-COLOR PC5-46400 32G（SN: STG10005Y26）');
+    expect(lines[2]).toBe('V-COLOR PC5-46400 64G（SN: STG10005Y27）');
+  });
+
+  it('沒有規格時就只印廠牌型號，不留多餘空白', () => {
+    expect(formatMountedHardware({ components: [{ brand: 'INTEL', model: 'X710', sn: 'A1' }] }))
+      .toEqual(['INTEL X710（SN: A1）']);
+    expect(formatMountedHardware({ components: [{ brand: 'INTEL', model: 'X710', specification: '', sn: 'A1' }] }))
+      .toEqual(['INTEL X710（SN: A1）']);
   });
 
   it('只有序號時仍列得出來', () => {

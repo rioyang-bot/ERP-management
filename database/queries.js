@@ -8,16 +8,16 @@ export const queries = {
          AND a.sn IS NOT NULL AND a.sn <> '' AND oi.sn = a.sn) as lent_request_no,
       COALESCE(a.custom_attributes->>'contact_person', p.contact_person) as partner_contact,
       COALESCE(a.custom_attributes->>'contact_phone', p.phone) as partner_phone,
-      (SELECT json_agg(json_build_object('brand', comp.brand, 'model', comp.model, 'sn', comp.sn) ORDER BY NULLIF(comp.model, '') ASC NULLS LAST, NULLIF(comp.brand, '') ASC NULLS LAST, comp.sn) 
+      (SELECT json_agg(json_build_object('brand', comp.brand, 'model', comp.model, 'specification', comp.specification, 'sn', comp.sn) ORDER BY NULLIF(comp.model, '') ASC NULLS LAST, NULLIF(comp.brand, '') ASC NULLS LAST, comp.sn) 
        FROM (
-         SELECT COALESCE(hi.brand, '') as brand, COALESCE(hi.model, '') as model, ha.sn
+         SELECT COALESCE(hi.brand, '') as brand, COALESCE(hi.model, '') as model, COALESCE(hi.specification, '') as specification, ha.sn
          FROM assets ha 
          LEFT JOIN item_master hi ON ha.item_master_id = hi.id 
          WHERE ha.custom_attributes->>'server_sn' IS NOT NULL AND ha.custom_attributes->>'server_sn' != '' 
            AND a.sn IS NOT NULL AND a.sn != ''
            AND TRIM(LOWER(ha.custom_attributes->>'server_sn')) = TRIM(LOWER(a.sn))
          UNION
-         SELECT '' as brand, '' as model, TRIM(elem) as sn
+         SELECT '' as brand, '' as model, '' as specification, TRIM(elem) as sn
          FROM regexp_split_to_table(COALESCE(a.custom_attributes->>'mounted_hw_sns', ''), '[,，\\s\\n]+') elem
          WHERE TRIM(elem) != ''
            AND NOT EXISTS (
@@ -50,16 +50,16 @@ export const queries = {
          AND a.sn IS NOT NULL AND a.sn <> '' AND oi.sn = a.sn) as lent_request_no,
       COALESCE(a.custom_attributes->>'contact_person', p.contact_person) as partner_contact,
       COALESCE(a.custom_attributes->>'contact_phone', p.phone) as partner_phone,
-      (SELECT json_agg(json_build_object('brand', comp.brand, 'model', comp.model, 'sn', comp.sn) ORDER BY NULLIF(comp.model, '') ASC NULLS LAST, NULLIF(comp.brand, '') ASC NULLS LAST, comp.sn) 
+      (SELECT json_agg(json_build_object('brand', comp.brand, 'model', comp.model, 'specification', comp.specification, 'sn', comp.sn) ORDER BY NULLIF(comp.model, '') ASC NULLS LAST, NULLIF(comp.brand, '') ASC NULLS LAST, comp.sn) 
        FROM (
-         SELECT COALESCE(hi.brand, '') as brand, COALESCE(hi.model, '') as model, ha.sn
+         SELECT COALESCE(hi.brand, '') as brand, COALESCE(hi.model, '') as model, COALESCE(hi.specification, '') as specification, ha.sn
          FROM assets ha 
          LEFT JOIN item_master hi ON ha.item_master_id = hi.id 
          WHERE ha.custom_attributes->>'server_sn' IS NOT NULL AND ha.custom_attributes->>'server_sn' != '' 
            AND a.sn IS NOT NULL AND a.sn != ''
            AND TRIM(LOWER(ha.custom_attributes->>'server_sn')) = TRIM(LOWER(a.sn))
          UNION
-         SELECT '' as brand, '' as model, TRIM(elem) as sn
+         SELECT '' as brand, '' as model, '' as specification, TRIM(elem) as sn
          FROM regexp_split_to_table(COALESCE(a.custom_attributes->>'mounted_hw_sns', ''), '[,，\\s\\n]+') elem
          WHERE TRIM(elem) != ''
            AND NOT EXISTS (
