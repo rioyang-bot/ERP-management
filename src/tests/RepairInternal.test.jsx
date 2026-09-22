@@ -254,17 +254,14 @@ describe('設備狀態的說明文字', () => {
     expect(src.match(/直到完工出貨才解除/g)).toHaveLength(2);
   });
 
-  it('時間軸每一段標示的設備狀態與實際流程相符', async () => {
+  it('現場處理與送修原廠兩段都是維修中', async () => {
     const src = await read('src/components/RepairOrderDetailModal.jsx');
-    const statuses = [...src.matchAll(/assetStatus: '([^']+)'/g)].map((m) => m[1]);
+    const statuses = [...src.matchAll(/assetStatus: ([^,]+),/g)].map((m) => m[1].trim());
 
-    // 現場處理 / 送修原廠 / 原廠返還 都是維修中，只有完工出貨轉為出庫
-    expect(statuses).toEqual([
-      'REPAIRING (維修中)',
-      'REPAIRING (維修中)',
-      'REPAIRING (維修中)',
-      'SHIPPED (出庫)',
-    ]);
+    // 後兩段依維修對象而異，另有測試涵蓋
+    expect(statuses[0]).toBe("'REPAIRING (維修中)'");
+    expect(statuses[1]).toBe("'REPAIRING (維修中)'");
+    expect(statuses).toHaveLength(4);
   });
 
   it('原廠返還那一段不再說「已返還在庫」', async () => {
@@ -272,5 +269,69 @@ describe('設備狀態的說明文字', () => {
 
     expect(src).toContain('已返還，仍為維修中 (REPAIRING)');
     expect(src).not.toContain('已返還在庫 (ACTIVE)');
+  });
+});
+
+/**
+ * 內部維修在原廠返還時結案
+ *
+ * 公司自有或尚未出貨的設備沒有客戶可以出貨，原廠修好寄回、東西回到自己
+ * 庫房，這張單就完成了。硬要再按一次「客戶出貨」不只多餘，還會把設備
+ * 設成出庫 —— 明明就在庫房裡。
+ */
+describe('內部維修的終點', () => {
+  const sql = queries.updateRepairOEMReturn;
+
+  it('內部維修返還時直接結案', () => {
+    expect(sql).toContain("CASE WHEN $5::boolean THEN 'COMPLETED' ELSE 'OEM_RETURNED' END");
+  });
+
+  it('完工日期就是返還日期', () => {
+    expect(sql).toContain('CASE WHEN $5::boolean THEN $1::date ELSE completion_date END');
+  });
+
+  it('客戶送修不受影響，仍要再經過一次出貨', () => {
+    expect(sql).toContain("ELSE 'OEM_RETURNED'");
+    // 旗標沒傳時 CASE 落到 ELSE，維持舊行為
+    expect(sql).not.toContain('COALESCE($5');
+  });
+
+  it('返還後設備回到在庫而不是出庫', async () => {
+    const fs = await import('fs');
+    const src = fs.readFileSync('src/components/RepairActionModal.jsx', 'utf8');
+
+    expect(src).toContain("const returnStatus = isInternal ? 'ACTIVE' : 'REPAIRING'");
+  });
+
+  it('返還彈窗的說明講明這是結案', async () => {
+    const fs = await import('fs');
+    const src = fs.readFileSync('src/components/RepairActionModal.jsx', 'utf8');
+
+    expect(src).toContain('原廠修復寄回並結案');
+    expect(src).toContain('確認返還並結案 (設為在庫)');
+  });
+
+  it('列表不會對內部維修顯示客戶出貨的按鈕', async () => {
+    const fs = await import('fs');
+    const src = fs.readFileSync('src/pages/RepairList.jsx', 'utf8');
+
+    expect(src).toContain("order.status === 'OEM_RETURNED' && !order.is_internal");
+  });
+
+  it('時間軸把客戶出貨那一段標為不適用', async () => {
+    const fs = await import('fs');
+    const src = fs.readFileSync('src/components/RepairOrderDetailModal.jsx', 'utf8');
+
+    expect(src).toContain('客戶完工出貨（不適用）');
+    expect(src).toContain('不適用 (公司內部維修，返還入庫即結案)');
+  });
+
+  it('時間軸的設備狀態：內部維修返還後是在庫', async () => {
+    const fs = await import('fs');
+    const src = fs.readFileSync('src/components/RepairOrderDetailModal.jsx', 'utf8');
+    const statuses = [...src.matchAll(/assetStatus: ([^,]+),/g)].map((m) => m[1].trim());
+
+    expect(statuses[2]).toBe("isInternal ? 'ACTIVE (在庫)' : 'REPAIRING (維修中)'");
+    expect(statuses[3]).toBe("isInternal ? 'ACTIVE (在庫)' : 'SHIPPED (出庫)'");
   });
 });

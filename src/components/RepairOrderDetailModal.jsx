@@ -32,6 +32,8 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
   // 直接送原廠的單沒有現場處理那一段。沒有現場日期、卻已經送出原廠，
   // 就是從送修原廠起算的。
   const skippedOnSite = !repairOrder.on_site_date && !!repairOrder.send_oem_date;
+  // 內部維修沒有客戶可出貨，原廠返還就是終點，東西回自己庫房
+  const isInternal = !!repairOrder.is_internal;
 
   const steps = [
     {
@@ -62,20 +64,26 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
       date: repairOrder.oem_return_date,
       statusDesc: noOem
         ? (repairOrder.results ? `IT 自行維修: ${repairOrder.results}` : '不適用 (由 IT 自行處理)')
-        : (repairOrder.results ? `結果: ${repairOrder.results}` : (repairOrder.oem_return_date ? '已返還在庫' : '原廠處理中')),
-      assetStatus: 'REPAIRING (維修中)',
+        : (repairOrder.results
+          ? `結果: ${repairOrder.results}`
+          : (repairOrder.oem_return_date
+            ? (isInternal ? '已返還入庫，維修完成' : '已返還，待出貨')
+            : '原廠處理中')),
+      assetStatus: isInternal ? 'ACTIVE (在庫)' : 'REPAIRING (維修中)',
       icon: <Wrench size={18} />,
       active: !noOem && (!!repairOrder.oem_return_date || repairOrder.status === 'OEM_RETURNED' || repairOrder.status === 'COMPLETED'),
       color: '#8b5cf6'
     },
     {
       key: 'COMPLETED',
-      title: noOem ? '自行維修完工出貨' : '客戶完工出貨',
+      title: isInternal ? '客戶完工出貨（不適用）' : (noOem ? '自行維修完工出貨' : '客戶完工出貨'),
       date: repairOrder.completion_date,
-      statusDesc: repairOrder.completion_date ? '已交付客戶結案' : '待完工出貨',
-      assetStatus: 'SHIPPED (出庫)',
+      statusDesc: isInternal
+        ? '不適用 (公司內部維修，返還入庫即結案)'
+        : (repairOrder.completion_date ? '已交付客戶結案' : '待完工出貨'),
+      assetStatus: isInternal ? 'ACTIVE (在庫)' : 'SHIPPED (出庫)',
       icon: <PackageCheck size={18} />,
-      active: repairOrder.status === 'COMPLETED' || !!repairOrder.completion_date,
+      active: !isInternal && (repairOrder.status === 'COMPLETED' || !!repairOrder.completion_date),
       color: '#3b82f6'
     }
   ];

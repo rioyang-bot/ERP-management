@@ -74,7 +74,16 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
           submitText: '確認送修原廠 (設為維修中)'
         };
       case 'OEM_RETURN':
-        return {
+        // 內部維修的東西回到自己庫房就結束了，沒有客戶可以出貨
+        return isInternal ? {
+          title: '原廠修復寄回並結案 (OEM Return)',
+          subtitle: '確認原廠已修復寄回。這是公司內部維修，設備回到自己庫房即告完成，系統將一併結案並把設備狀態設為「在庫 (ACTIVE)」。',
+          icon: <Wrench size={22} />,
+          themeColor: '#10b981',
+          themeBg: 'rgba(16, 185, 129, 0.12)',
+          dateLabel: '原廠修復寄回日期 (OEM Return Date) *',
+          submitText: '確認返還並結案 (設為在庫)'
+        } : {
           title: '原廠修復寄回確認 (OEM Return)',
           subtitle: '確認原廠已修復寄回，系統將寫入「OEM Return Date」與「Results」。設備仍在維修流程中，狀態維持「維修中」，要到完工出貨才解除。',
           icon: <Wrench size={22} />,
@@ -116,6 +125,7 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
     }
   };
 
+  const isInternal = !!repairOrder?.is_internal;
   const config = getActionConfig();
 
   const handleSubmit = async (e) => {
@@ -212,20 +222,27 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
           date,
           finalResults,
           remarks.trim() || null,
-          repairOrder.id
+          repairOrder.id,
+          isInternal
         ]);
         if (!res.success) throw new Error(res.error || '更新原廠返還狀態失敗');
 
         // 2. 設備還在維修單上，維持 REPAIRING —— 原廠寄回只是流程中的一站，
         //    還沒交回客戶手上。RMA 換號建立的新資產原本是 ACTIVE，這裡一併改過來，
         //    否則同一張單上的設備會有兩種狀態。
+        // 內部維修到這裡就結束：東西回到自己庫房，設為在庫。
+        // 客戶送修則還在流程中，維持維修中等出貨。
+        const returnStatus = isInternal ? 'ACTIVE' : 'REPAIRING';
+        const returnNote = isInternal
+          ? `維修單 [${repairOrder.repair_no}] 原廠修復寄回，內部維修結案入庫`
+          : `維修單 [${repairOrder.repair_no}] 原廠修復寄回，待完工出貨`;
         for (const item of items) {
           const effectiveSn = (isRmaReplacement && replacementSns[item.sn]?.trim())
             ? replacementSns[item.sn].trim()
             : item.sn;
           if (effectiveSn) {
-            await window.electronAPI.namedQuery('updateAssetStatusBySn', ['REPAIRING', effectiveSn.trim()]);
-            await logStatusChange('DEVICE', effectiveSn.trim(), effectiveSn.trim(), 'REPAIRING', 'REPAIRING', `維修單 [${repairOrder.repair_no}] 原廠修復寄回，待完工出貨`);
+            await window.electronAPI.namedQuery('updateAssetStatusBySn', [returnStatus, effectiveSn.trim()]);
+            await logStatusChange('DEVICE', effectiveSn.trim(), effectiveSn.trim(), 'REPAIRING', returnStatus, returnNote);
           }
         }
       } else if (actionType === 'IN_HOUSE_COMPLETE') {

@@ -1775,14 +1775,18 @@ export const queries = {
     WHERE id = $3 
     RETURNING *
   `,
+  // $5 為 true（公司內部）時，原廠返還就是終點：東西回到自己庫房，
+  // 沒有客戶可以出貨。單據直接結案，完工日期就是返還日期。
+  // 客戶送修則維持原樣，還要再經過一次客戶出貨。
   updateRepairOEMReturn: `
-    UPDATE repair_orders 
-    SET status = 'OEM_RETURNED', 
-        oem_return_date = $1, 
-        results = $2, 
-        remarks = COALESCE($3, remarks), 
-        updated_at = CURRENT_TIMESTAMP 
-    WHERE id = $4 
+    UPDATE repair_orders
+    SET status = CASE WHEN $5::boolean THEN 'COMPLETED' ELSE 'OEM_RETURNED' END,
+        oem_return_date = $1,
+        results = $2,
+        remarks = COALESCE($3, remarks),
+        completion_date = CASE WHEN $5::boolean THEN $1::date ELSE completion_date END,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = $4
     RETURNING *
   `,
   // 標記/取消「不需送回原廠」。只有還在現場處理階段才允許改，

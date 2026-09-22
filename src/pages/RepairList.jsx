@@ -864,7 +864,8 @@ const RepairList = () => {
                           )}
 
                           {/* 階段 3 ➔ 階段 4：客戶出貨完工 */}
-                          {order.status === 'OEM_RETURNED' && (
+                          {/* 內部維修在原廠返還時就結案了，不會停在這個狀態 */}
+                          {order.status === 'OEM_RETURNED' && !order.is_internal && (
                             <button
                               onClick={() => setActionModal({ isOpen: true, order, type: 'COMPLETE' })}
                               style={{
