@@ -410,7 +410,9 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                 )}
               </div>
               <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
-                自客戶端取回故障設備，建立維修單並自動將設備序號狀態變更為「在庫 (ACTIVE)」。
+                {isInternal
+                  ? '公司自有或尚未出貨的設備，建立維修單並自動將設備序號狀態變更為「維修中 (REPAIRING)」，直到完工出貨才解除。'
+                  : '自客戶端取回故障設備，建立維修單並自動將設備序號狀態變更為「維修中 (REPAIRING)」，直到完工出貨才解除。'}
               </p>
             </div>
           </div>
@@ -872,8 +874,8 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                     <Server size={16} color="#ef4444" /> 本次維修設備項目 ({selectedItems.length} 台)
                   </div>
                   {selectedItems.length > 0 && (
-                    <span style={{ fontSize: '11px', color: '#10b981', fontWeight: 700 }}>
-                      建立後將自動設為「在庫 (ACTIVE)」
+                    <span style={{ fontSize: '11px', color: '#ef4444', fontWeight: 700 }}>
+                      建立後將自動設為「維修中 (REPAIRING)」
                     </span>
                   )}
                 </div>

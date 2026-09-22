@@ -41,7 +41,7 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
       statusDesc: skippedOnSite
         ? '不適用 (設備未出給客戶，直接送原廠)'
         : (repairOrder.on_site_status || '現場取回'),
-      assetStatus: 'ACTIVE (在庫)',
+      assetStatus: 'REPAIRING (維修中)',
       icon: <Calendar size={18} />,
       active: !skippedOnSite,
       color: '#10b981'
@@ -63,7 +63,7 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
       statusDesc: noOem
         ? (repairOrder.results ? `IT 自行維修: ${repairOrder.results}` : '不適用 (由 IT 自行處理)')
         : (repairOrder.results ? `結果: ${repairOrder.results}` : (repairOrder.oem_return_date ? '已返還在庫' : '原廠處理中')),
-      assetStatus: 'ACTIVE (在庫)',
+      assetStatus: 'REPAIRING (維修中)',
       icon: <Wrench size={18} />,
       active: !noOem && (!!repairOrder.oem_return_date || repairOrder.status === 'OEM_RETURNED' || repairOrder.status === 'COMPLETED'),
       color: '#8b5cf6'
@@ -321,7 +321,7 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
                   {repairOrder.oem_return_date || '原廠尚未寄回'}
                 </div>
                 <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  狀態：{repairOrder.oem_return_date ? '已返還在庫 (ACTIVE)' : '--'}
+                  狀態：{repairOrder.oem_return_date ? '已返還，仍為維修中 (REPAIRING)' : '--'}
                 </div>
               </div>
 

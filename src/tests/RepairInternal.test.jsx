@@ -228,3 +228,49 @@ describe('供應商的資料表規則', () => {
     expect(sql).toContain('supplier_name VARCHAR(100)');
   });
 });
+
+/**
+ * 畫面上的說明要與實際行為一致
+ *
+ * 建單早就改成把設備標記為維修中，但幾處說明還停在舊行為，
+ * 寫著「建立後將自動設為在庫」。使用者照著讀，自然會以為狀態沒改對。
+ */
+describe('設備狀態的說明文字', () => {
+  const read = async (f) => (await import('fs')).readFileSync(f, 'utf8');
+
+  it('建單畫面說的是維修中，不是在庫', async () => {
+    const src = await read('src/components/RepairOrderRegistrationModal.jsx');
+
+    expect(src).toContain('建立後將自動設為「維修中 (REPAIRING)」');
+    expect(src).not.toContain('建立後將自動設為「在庫 (ACTIVE)」');
+  });
+
+  it('建單的說明會依維修對象調整', async () => {
+    const src = await read('src/components/RepairOrderRegistrationModal.jsx');
+
+    expect(src).toContain('公司自有或尚未出貨的設備');
+    expect(src).toContain('自客戶端取回故障設備');
+    // 兩種說法都要提到完工出貨才解除
+    expect(src.match(/直到完工出貨才解除/g)).toHaveLength(2);
+  });
+
+  it('時間軸每一段標示的設備狀態與實際流程相符', async () => {
+    const src = await read('src/components/RepairOrderDetailModal.jsx');
+    const statuses = [...src.matchAll(/assetStatus: '([^']+)'/g)].map((m) => m[1]);
+
+    // 現場處理 / 送修原廠 / 原廠返還 都是維修中，只有完工出貨轉為出庫
+    expect(statuses).toEqual([
+      'REPAIRING (維修中)',
+      'REPAIRING (維修中)',
+      'REPAIRING (維修中)',
+      'SHIPPED (出庫)',
+    ]);
+  });
+
+  it('原廠返還那一段不再說「已返還在庫」', async () => {
+    const src = await read('src/components/RepairOrderDetailModal.jsx');
+
+    expect(src).toContain('已返還，仍為維修中 (REPAIRING)');
+    expect(src).not.toContain('已返還在庫 (ACTIVE)');
+  });
+});
