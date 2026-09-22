@@ -22,6 +22,9 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   // 庫存裡有幾百台設備沒有客戶（公司資產、尚未出貨的一般銷售品），
   // 這些送修時不該被迫在必填欄位硬編一個客戶名稱。
   const [isInternal, setIsInternal] = useState(false);
+  // 還沒出給客戶的東西就在自己手上，沒有「現場處理」或「取回」這回事，
+  // 壞了是直接送回原廠。這種單從送修原廠起算。
+  const [directToOem, setDirectToOem] = useState(false);
   // 同一家公司常有多位聯絡人，單上要記得住是對誰處理的
   const [contactPerson, setContactPerson] = useState('');
   const [contactPhone, setContactPhone] = useState('');
@@ -177,9 +180,12 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
     if (selectedItems.length === 0) {
       if (asset.client) {
         setIsInternal(false);
+        setDirectToOem(false);
         if (!customerName) setCustomerName(asset.client);
       } else {
+        // 東西還在自己手上：沒有客戶，也沒有現場可去
         setIsInternal(true);
+        setDirectToOem(true);
       }
     } else if (!customerName && asset.client) {
       setCustomerName(asset.client);
@@ -282,7 +288,8 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
         remarks.trim() || null,
         contactPerson.trim() || null,
         contactPhone.trim() || null,
-        isInternal
+        isInternal,
+        directToOem
       ]);
 
       if (!orderRes.success || !orderRes.rows || orderRes.rows.length === 0) {
@@ -499,6 +506,33 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                 </div>
               </div>
 
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '6px' }}>
+                  起始階段
+                </label>
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                  {[
+                    { direct: false, label: '現場處理 / 取回', hint: '先到現場處理或把設備取回，之後再決定是否送原廠' },
+                    { direct: true, label: '直接送原廠', hint: '設備還在自己手上，沒有現場可去，直接寄回原廠' },
+                  ].map((opt) => (
+                    <button
+                      key={opt.label}
+                      type="button"
+                      onClick={() => setDirectToOem(opt.direct)}
+                      title={opt.hint}
+                      style={{
+                        flex: 1, padding: '8px', borderRadius: '6px', fontWeight: 700, fontSize: '12px', cursor: 'pointer',
+                        border: directToOem === opt.direct ? '2px solid #d97706' : '1px solid var(--border-color)',
+                        backgroundColor: directToOem === opt.direct ? 'rgba(217, 119, 6, 0.1)' : 'var(--bg-surface-subtle)',
+                        color: directToOem === opt.direct ? '#d97706' : 'var(--text-muted)',
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div style={{ display: isInternal ? 'none' : 'block' }}>
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '6px' }}>
                   客戶名稱 (Customer) *
@@ -588,7 +622,7 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
 
               <div>
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '6px' }}>
-                  現場處理/取回日期 (On-site Date) *
+                  {directToOem ? '送原廠日期 (Send OEM Date) *' : '現場處理/取回日期 (On-site Date) *'}
                 </label>
                 <input
                   type="date"
@@ -616,14 +650,16 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
               border: '1px solid var(--border-color)'
             }}>
               <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: 'var(--text-main)', marginBottom: '6px' }}>
-                現場處理狀況 / 故障原因 (On-site handling status) *
+                {directToOem ? '故障原因 (Fault description) *' : '現場處理狀況 / 故障原因 (On-site handling status) *'}
               </label>
               <textarea
                 rows={2}
                 required
                 value={onSiteStatus}
                 onChange={(e) => setOnSiteStatus(e.target.value)}
-                placeholder="例如: 取回 重灌OS / CPU溫度過高 (水冷正常) 取回 RMA / 無法過電"
+                placeholder={directToOem
+                  ? '例如: 無法過電 / CPU 溫度過高，直接送原廠檢測'
+                  : '例如: 取回 重灌OS / CPU溫度過高 (水冷正常) 取回 RMA / 無法過電'}
                 style={{
                   width: '100%',
                   padding: '10px 14px',

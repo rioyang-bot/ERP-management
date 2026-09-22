@@ -1735,17 +1735,24 @@ export const queries = {
   // $9 為 true 時是公司內部維修：沒有客戶，連帶也不會有客戶聯絡人。
   // 客戶名稱與旗標是否一致由資料表的 CHECK 條件把關，不是只靠畫面擋 ——
   // 之後任何新的寫入路徑都會被同一條規則約束。
+  //
+  // $10 為 true 時直接從「送修原廠」起算：東西還在自己手上、沒有出給客戶，
+  // 就沒有現場處理或取回這回事。$3 是起始日期，依起始階段寫到對應的欄位，
+  // 不會留下一個名不副實的現場處理日期。
   createRepairOrder: `
     INSERT INTO repair_orders (
       repair_no, customer_name, status, on_site_date, on_site_status,
-      creator_id, remarks, contact_person, contact_phone, is_internal
+      creator_id, remarks, contact_person, contact_phone, is_internal, send_oem_date
     ) VALUES (
       $1,
       CASE WHEN $9::boolean THEN NULL ELSE NULLIF(TRIM(COALESCE($2, '')), '') END,
-      'ON_SITE_HANDLING', $3, $4, $5, $6,
+      CASE WHEN $10::boolean THEN 'SENT_OEM' ELSE 'ON_SITE_HANDLING' END,
+      CASE WHEN $10::boolean THEN NULL ELSE $3::date END,
+      $4, $5, $6,
       CASE WHEN $9::boolean THEN NULL ELSE NULLIF(TRIM(COALESCE($7, '')), '') END,
       CASE WHEN $9::boolean THEN NULL ELSE NULLIF(TRIM(COALESCE($8, '')), '') END,
-      COALESCE($9::boolean, FALSE)
+      COALESCE($9::boolean, FALSE),
+      CASE WHEN $10::boolean THEN $3::date ELSE NULL END
     )
     RETURNING *
   `,

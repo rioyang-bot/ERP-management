@@ -29,16 +29,21 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
   // 不送原廠的單，原廠那兩個階段不適用；仍然列出來但標示為不適用，
   // 直接抽掉會讓時間軸的階段數在兩種單之間不一致，反而難比對。
   const noOem = !!repairOrder.no_oem_required;
+  // 直接送原廠的單沒有現場處理那一段。沒有現場日期、卻已經送出原廠，
+  // 就是從送修原廠起算的。
+  const skippedOnSite = !repairOrder.on_site_date && !!repairOrder.send_oem_date;
 
   const steps = [
     {
       key: 'ON_SITE',
-      title: '現場處理 / 取回',
+      title: skippedOnSite ? '現場處理 / 取回（略過）' : '現場處理 / 取回',
       date: repairOrder.on_site_date,
-      statusDesc: repairOrder.on_site_status || '現場取回',
+      statusDesc: skippedOnSite
+        ? '不適用 (設備未出給客戶，直接送原廠)'
+        : (repairOrder.on_site_status || '現場取回'),
       assetStatus: 'ACTIVE (在庫)',
       icon: <Calendar size={18} />,
-      active: true,
+      active: !skippedOnSite,
       color: '#10b981'
     },
     {
