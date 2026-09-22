@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { logCreate } from '../utils/auditLogger';
 import ConsumableBatchImportModal from '../components/ConsumableBatchImportModal';
 import { normalizeMasterName } from '../utils/normalizeMasterData';
+import { validateName as validateAndSanitize } from '../utils/nameValidation';
 
 const Consumables = ({ isSplitMode = false }) => {
   const navigate = useNavigate();
@@ -19,17 +20,6 @@ const Consumables = ({ isSplitMode = false }) => {
   const [models, setModels] = useState([]);
   const [formData, setFormData] = useState({ type: '', brand: '', model: '', spec: '', safety_stock: 0, stock_qty: 0 });
   const [formKey, setFormKey] = useState(0); // 用於強制重整表單區域
-
-  const validateAndSanitize = (val, fieldName = '欄位') => {
-    if (typeof val !== 'string' || !val) return val;
-    const charRegex = /[|&;$%@'"\\()+\r\n,]/g;
-    const keywordRegex = /\b(Select|Insert|Dbo|Declare|Cast|Drop|Union|Exec|Nvarchar)\b/gi;
-    if (charRegex.test(val) || keywordRegex.test(val)) {
-      alert(`「${fieldName}」包含不合規的安全規則字元或關鍵字，請移除特殊符號。`);
-      return null;
-    }
-    return val.trim();
-  };
 
   const fetchTypes = useCallback(async (brandName, currentType = '') => {
     if (!brandName) { setTypes([]); return { typeNames: [], nextType: '' }; }
