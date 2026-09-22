@@ -533,9 +533,11 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '6px' }}>
                   客戶名稱 (Customer) *
                 </label>
+                {/* required 必須跟著顯示與否：隱藏的 required 欄位仍會參與表單驗證，
+                    瀏覽器又無法把焦點移到看不見的欄位上，結果是按下送出毫無反應。 */}
                 <input
                   type="text"
-                  required
+                  required={!isInternal}
                   list="customer-suggestions"
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
