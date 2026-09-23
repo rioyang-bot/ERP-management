@@ -1722,7 +1722,9 @@ export const queries = {
            )) FROM repair_items ri WHERE ri.repair_id = ro.id) as items
     FROM repair_orders ro
     LEFT JOIN users u ON ro.creator_id = u.id
-    ORDER BY ro.created_at DESC, ro.id DESC
+    -- 已結案的排到最後：還在跑的單才是每天要盯的，結案的只是備查。
+    -- 布林值排序時 false 在前，因此 ASC 就是「未結案先、結案後」。
+    ORDER BY (ro.status = 'COMPLETED') ASC, ro.created_at DESC, ro.id DESC
   `,
   fetchRepairOrderItems: `
     SELECT ri.*, a.status as asset_status, a.client, a.hostname, a.location
