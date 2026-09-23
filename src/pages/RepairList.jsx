@@ -13,6 +13,14 @@ import { getRepairScopeLabel, getRepairSubLabel, INTERNAL_LABEL } from '../utils
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 
+// 維修時程欄位的四個階段，顏色沿用詳情頁的時間軸
+const TIMELINE_STEPS = [
+  { key: 'on_site_date', label: '現場', color: '#10b981' },
+  { key: 'send_oem_date', label: '送修', color: '#d97706' },
+  { key: 'oem_return_date', label: '返還', color: '#8b5cf6' },
+  { key: 'completion_date', label: '完工', color: '#3b82f6' },
+];
+
 const STATUS_CONFIG = {
   ALL: { label: '全部維修單', color: 'var(--text-main)', bg: 'transparent' },
   ON_SITE_HANDLING: { label: '現場處理', color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' },
@@ -448,9 +456,7 @@ const RepairList = () => {
                 <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontWeight: 800, whiteSpace: 'nowrap', position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>維修單號 (Repair No.)</th>
                 <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontWeight: 800, whiteSpace: 'nowrap', position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>客戶 (Customer)</th>
                 <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontWeight: 800, minWidth: '200px', position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>設備明細 (Device / SN)</th>
-                <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontWeight: 800, whiteSpace: 'nowrap', position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>現場處理日 (On-site)</th>
-                <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontWeight: 800, minWidth: '140px', position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>現場狀況 / 故障描述</th>
-                <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontWeight: 800, minWidth: '200px', position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>送修與完工資訊 (OEM & Shipping)</th>
+                <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontWeight: 800, minWidth: '190px', position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>維修時程 (Maint. Timeline)</th>
                 <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontWeight: 800, textAlign: 'center', whiteSpace: 'nowrap', position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>當前狀態</th>
                 <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontWeight: 800, textAlign: 'right', minWidth: '200px', position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>操作流程</th>
               </tr>
@@ -458,14 +464,14 @@ const RepairList = () => {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: 'center', padding: '48px', color: 'var(--text-muted)' }}>
+                  <td colSpan={7} style={{ textAlign: 'center', padding: '48px', color: 'var(--text-muted)' }}>
                     <RefreshCw size={24} className="spin" style={{ margin: '0 auto 10px' }} />
                     資料載入中...
                   </td>
                 </tr>
               ) : filteredOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: 'center', padding: '56px 20px', color: 'var(--text-muted)' }}>
+                  <td colSpan={7} style={{ textAlign: 'center', padding: '56px 20px', color: 'var(--text-muted)' }}>
                     <Wrench size={32} style={{ margin: '0 auto 12px', opacity: 0.3 }} />
                     尚未有符合條件的維修單據
                   </td>
@@ -485,15 +491,12 @@ const RepairList = () => {
                       onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)'}
                       onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                     >
-                      {/* 維修單號 */}
-                      <td style={{ padding: '14px 16px', fontWeight: 800, color: 'var(--text-main)' }}>
-                        <div 
-                          style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}
-                          onClick={() => setDetailModal({ isOpen: true, order })}
-                          title="點選檢視維修單詳細資訊"
-                        >
+                      {/* 單號不換行：RMA-20260923-01 斷成兩行會把整列撐高。
+                          也不再是連結 —— 右邊的「檢視」就是開詳情的入口，兩個一樣的入口只是噪音。 */}
+                      <td style={{ padding: '14px 16px', fontWeight: 800, color: 'var(--text-main)', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <FileText size={15} color="var(--primary-color)" />
-                          <span style={{ borderBottom: '1px dashed var(--primary-color)' }}>{order.repair_no}</span>
+                          <span>{order.repair_no}</span>
                         </div>
                       </td>
 
@@ -535,15 +538,11 @@ const RepairList = () => {
                         </div>
                       </td>
 
-                      {/* 現場處理日 */}
-                      <td style={{ padding: '14px 16px', whiteSpace: 'nowrap', fontWeight: 600 }}>
-                        {order.on_site_date ? (
-                          <span style={{ color: '#10b981' }}>{order.on_site_date}</span>
-                        ) : '-'}
-                      </td>
-
-                      {/* 現場狀況／故障描述，可直接在列表上修改 */}
-                      <td style={{ padding: '14px 16px', color: 'var(--text-main)', fontSize: '12px', minWidth: '220px' }}>
+                      {/* 維修時程：四個階段的日期併成一欄。
+                          故障描述不再列在表格上（單號那麼多列、描述又長，整列會被撐開），
+                          內容在「檢視」的詳情裡；這裡只留鉛筆，讓它仍然改得動。
+                          維修結果同樣拿掉 —— 一行截斷的摘要幫不上忙，詳情裡有完整內容。 */}
+                      <td style={{ padding: '14px 16px' }}>
                         {statusEdit?.orderId === order.id ? (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                             <textarea
@@ -596,117 +595,62 @@ const RepairList = () => {
                             </div>
                           </div>
                         ) : (
-                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
-                            <span style={{
-                              padding: '3px 8px',
-                              borderRadius: '6px',
-                              backgroundColor: order.on_site_status ? 'rgba(239, 68, 68, 0.08)' : 'transparent',
-                              color: order.on_site_status ? '#ef4444' : 'var(--text-subtle)',
-                              fontWeight: 600,
-                              display: 'inline-block',
-                              whiteSpace: 'pre-wrap',
-                            }}>
-                              {order.on_site_status || '-'}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => setStatusEdit({ orderId: order.id, value: order.on_site_status || '' })}
-                              title="修改現場狀況／故障描述"
-                              aria-label={`修改現場狀況 ${order.repair_no}`}
-                              style={{
-                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                width: '24px', height: '24px', padding: 0, flexShrink: 0,
-                                borderRadius: '6px', border: '1px solid var(--border-color)',
-                                backgroundColor: 'var(--bg-surface)', color: '#f59e0b', cursor: 'pointer',
-                              }}
-                            >
-                              <Edit2 size={12} />
-                            </button>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            {TIMELINE_STEPS.map(({ key, label, color }) => (
+                              order[key] ? (
+                                <div key={key} style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <span style={{
+                                    padding: '1px 6px', borderRadius: '4px', minWidth: '34px', textAlign: 'center',
+                                    backgroundColor: `${color}1f`, color, fontWeight: 800, fontSize: '11px', whiteSpace: 'nowrap',
+                                  }}>
+                                    {label}
+                                  </span>
+                                  <span style={{ color, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{order[key]}</span>
+                                  {key === 'on_site_date' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setStatusEdit({ orderId: order.id, value: order.on_site_status || '' })}
+                                      title="修改現場狀況／故障描述"
+                                      aria-label={`修改現場狀況 ${order.repair_no}`}
+                                      style={{
+                                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                        width: '22px', height: '22px', padding: 0, flexShrink: 0,
+                                        borderRadius: '6px', border: '1px solid var(--border-color)',
+                                        backgroundColor: 'var(--bg-surface)', color: '#f59e0b', cursor: 'pointer',
+                                      }}
+                                    >
+                                      <Edit2 size={11} />
+                                    </button>
+                                  )}
+                                </div>
+                              ) : null
+                            ))}
+
+                            {/* 直接送原廠的單沒有現場日期，鉛筆得另外給一個位置 */}
+                            {!order.on_site_date && (
+                              <button
+                                type="button"
+                                onClick={() => setStatusEdit({ orderId: order.id, value: order.on_site_status || '' })}
+                                title="修改現場狀況／故障描述"
+                                aria-label={`修改現場狀況 ${order.repair_no}`}
+                                style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: '4px', alignSelf: 'flex-start',
+                                  padding: '2px 8px', borderRadius: '6px', border: '1px solid var(--border-color)',
+                                  backgroundColor: 'var(--bg-surface)', color: '#f59e0b',
+                                  fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap',
+                                }}
+                              >
+                                <Edit2 size={11} /> 故障描述
+                              </button>
+                            )}
+
+                            {!order.send_oem_date && !order.oem_return_date && !order.completion_date && (
+                              <span style={{ color: 'var(--text-subtle)', fontSize: '11px' }}>
+                                現場處理中 (尚未送修)
+                              </span>
+                            )}
                           </div>
                         )}
-                      </td>
-
-                      {/* 送修與完工資訊 (整合送修、返還、結果、出貨) */}
-                      <td 
-                        style={{ padding: '14px 16px', cursor: 'pointer' }}
-                        onClick={() => setDetailModal({ isOpen: true, order })}
-                        title="點選檢視完整維修送修詳細資訊"
-                      >
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          {order.send_oem_date && (
-                            <div style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <span style={{
-                                padding: '1px 6px',
-                                borderRadius: '4px',
-                                backgroundColor: 'rgba(217, 119, 6, 0.12)',
-                                color: '#d97706',
-                                fontWeight: 800,
-                                fontSize: '11px',
-                                whiteSpace: 'nowrap'
-                              }}>
-                                送修
-                              </span>
-                              <span style={{ color: '#d97706', fontWeight: 700 }}>{order.send_oem_date}</span>
-                            </div>
-                          )}
-
-                          {order.oem_return_date && (
-                            <div style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <span style={{
-                                padding: '1px 6px',
-                                borderRadius: '4px',
-                                backgroundColor: 'rgba(139, 92, 246, 0.12)',
-                                color: '#8b5cf6',
-                                fontWeight: 800,
-                                fontSize: '11px',
-                                whiteSpace: 'nowrap'
-                              }}>
-                                返還
-                              </span>
-                              <span style={{ color: '#8b5cf6', fontWeight: 700 }}>{order.oem_return_date}</span>
-                            </div>
-                          )}
-
-                          {order.results && (
-                            <div style={{
-                              fontSize: '11px',
-                              color: '#10b981',
-                              fontWeight: 600,
-                              backgroundColor: 'rgba(16, 185, 129, 0.08)',
-                              padding: '2px 6px',
-                              borderRadius: '4px',
-                              maxWidth: '220px',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap'
-                            }}>
-                              💡 {order.results}
-                            </div>
-                          )}
-
-                          {order.completion_date && (
-                            <div style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <span style={{
-                                padding: '1px 6px',
-                                borderRadius: '4px',
-                                backgroundColor: 'rgba(59, 130, 246, 0.12)',
-                                color: '#3b82f6',
-                                fontWeight: 800,
-                                fontSize: '11px',
-                                whiteSpace: 'nowrap'
-                              }}>
-                                完工
-                              </span>
-                              <span style={{ color: '#3b82f6', fontWeight: 700 }}>{order.completion_date}</span>
-                            </div>
-                          )}
-
-                          {!order.send_oem_date && !order.oem_return_date && !order.completion_date && !order.results && (
-                            <span style={{ color: 'var(--text-subtle)', fontSize: '12px' }}>
-                              現場處理中 (尚未送修)
-                            </span>
-                          )}
-                        </div>
                       </td>
 
                       {/* 當前狀態 */}
@@ -1034,8 +978,9 @@ const RepairList = () => {
             之後填寫維修結果直接完工結案，不經過原廠那兩個階段。
           </div>
           <div>
-            • <b>現場狀況／故障描述</b>：任何階段都可以在列表上直接修改，
-            這是描述而不是流程狀態，打錯字或事後補充都不會被單據階段擋住。
+            • <b>現場狀況／故障描述</b>：內容在「檢視」的詳情裡；列表上按
+            <b>維修時程</b>欄的鉛筆就能直接改。這是描述而不是流程狀態，
+            打錯字或事後補充都不會被單據階段擋住。
           </div>
           <div>
             • <b>刪除維修單</b>：會把還停在「維修」的設備改回「在庫」，
