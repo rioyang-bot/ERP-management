@@ -143,6 +143,11 @@
       "file": "migration_repair_supplier.sql",
       "type": "schema",
       "note": "維修單內部維修的供應商欄位"
+    },
+    {
+      "file": "migration_repair_stage_remarks.sql",
+      "type": "schema",
+      "note": "維修單四個階段各自的說明欄位"
     }
   ]
 }

@@ -35,13 +35,6 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
   // 內部維修沒有客戶可出貨，原廠返還就是終點，東西回自己庫房
   const isInternal = !!repairOrder.is_internal;
 
-  // 備註只有一欄，每走一步都會被那一步的輸入整個覆寫，所以它屬於「最後走到的那一步」。
-  // 依日期回推就知道是誰填的，不必為此多存一個欄位。
-  const remarksStage = repairOrder.completion_date ? 'COMPLETED'
-    : repairOrder.oem_return_date ? 'OEM_RETURN'
-      : repairOrder.send_oem_date ? 'SEND_OEM'
-        : 'ON_SITE';
-
   // 四張階段卡片共用同一套尺寸：標題與註記 11px、內文 12px、日期 15px。
   // 先前每張卡片各自寫死樣式，字級從 11 到 13 混用，卡片之間對不齊。
   const CARD = { backgroundColor: 'var(--bg-surface-subtle)', padding: '12px 14px', borderRadius: '8px', border: '1px solid var(--border-color)' };
@@ -62,11 +55,6 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
       <div style={BLOCK_BODY}>{body}</div>
     </div>
   );
-
-  /** 備註掛在填它的那張階段卡片底下 */
-  const remarksBlock = (stage) => (repairOrder.remarks && remarksStage === stage
-    ? stageBlock(stage === 'COMPLETED' ? '出貨備註 (Remarks)' : '備註 (Remarks)', repairOrder.remarks)
-    : null);
 
   const resultsBlock = (hint) => stageBlock(
     '維修與檢測結果 (Results)',
@@ -253,6 +241,17 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
                 {repairOrder.creator_name || '系統管理員'}
               </div>
             </div>
+
+            {/* 建單備註屬於整張單（聯絡窗口、派工工程師等），不屬於任何一個階段，
+                因此放在表頭而不是階段卡片裡。各階段的說明各有自己的欄位。 */}
+            {repairOrder.remarks && (
+              <div style={{ gridColumn: '1 / -1' }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)' }}>建單備註</span>
+                <div style={{ fontSize: '13px', color: 'var(--text-main)', marginTop: '4px', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>
+                  {repairOrder.remarks}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* 2. 四階段流轉進度時間軸 */}
@@ -349,7 +348,6 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
                   狀態：{skippedOnSite ? '略過 (未出給客戶，直接送原廠)' : '現場處理 / 取回 (REPAIRING)'}
                 </div>
                 {!skippedOnSite && stageBlock('現場狀況 / 故障描述', repairOrder.on_site_status || '無故障描述')}
-                {remarksBlock('ON_SITE')}
               </div>
 
               {/* 送修原廠 */}
@@ -361,7 +359,7 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
                 <div style={CARD_META}>
                   狀態：{noOem ? '不適用 (不需送回原廠)' : (repairOrder.send_oem_date ? '原廠處理中 (REPAIRING)' : '現場在庫')}
                 </div>
-                {remarksBlock('SEND_OEM')}
+                {repairOrder.send_oem_remarks && stageBlock('送修備註 (Remarks)', repairOrder.send_oem_remarks)}
               </div>
 
               {/* 原廠返還。維修結果就是在這一步填的，放在旁邊才看得出來是何時記錄的 */}
@@ -378,7 +376,6 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
                       : '原廠處理中')}
                 </div>
                 {!noOem && resultsBlock('尚未填寫檢測與維修結果 (待原廠返還時記錄)')}
-                {remarksBlock('OEM_RETURN')}
               </div>
 
               {/* 完工出貨 */}
@@ -394,7 +391,7 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
                 </div>
                 {/* 不送原廠的單沒經過原廠返還，維修結果是在這一步一併填的 */}
                 {noOem && resultsBlock('尚未填寫檢測與維修結果 (待自行維修完工時記錄)')}
-                {remarksBlock('COMPLETED')}
+                {repairOrder.completion_remarks && stageBlock('出貨備註 (Remarks)', repairOrder.completion_remarks)}
               </div>
             </div>
 
