@@ -35,6 +35,27 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
   // 內部維修沒有客戶可出貨，原廠返還就是終點，東西回自己庫房
   const isInternal = !!repairOrder.is_internal;
 
+  // 備註只有一欄，每走一步都會被那一步的輸入整個覆寫，所以它屬於「最後走到的那一步」。
+  // 依日期回推就知道是誰填的，不必為此多存一個欄位。
+  const remarksStage = repairOrder.completion_date ? 'COMPLETED'
+    : repairOrder.oem_return_date ? 'OEM_RETURN'
+      : repairOrder.send_oem_date ? 'SEND_OEM'
+        : 'ON_SITE';
+
+  const stageBlockStyle = { marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed var(--border-color)' };
+
+  /** 備註掛在填它的那張階段卡片底下 */
+  const remarksBlock = (stage) => (repairOrder.remarks && remarksStage === stage ? (
+    <div style={stageBlockStyle}>
+      <div style={{ fontSize: '11px', fontWeight: 800, color: 'var(--text-muted)' }}>
+        {stage === 'COMPLETED' ? '出貨備註 (Remarks)' : '備註 (Remarks)'}
+      </div>
+      <div style={{ fontSize: '12px', color: 'var(--text-main)', lineHeight: '1.6', whiteSpace: 'pre-wrap', marginTop: '4px' }}>
+        {repairOrder.remarks}
+      </div>
+    </div>
+  ) : null);
+
   const steps = [
     {
       key: 'ON_SITE',
@@ -297,7 +318,7 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
 
             <div style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
               gap: '12px'
             }}>
               {/* 現場處理狀況 */}
@@ -309,6 +330,7 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
                 <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
                   處理日期：{repairOrder.on_site_date || '--'}
                 </div>
+                {remarksBlock('ON_SITE')}
               </div>
 
               {/* 送修原廠 */}
@@ -320,6 +342,7 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
                 <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
                   狀態：{repairOrder.send_oem_date ? '原廠處理中 (REPAIRING)' : '現場在庫'}
                 </div>
+                {remarksBlock('SEND_OEM')}
               </div>
 
               {/* 原廠返還日 */}
@@ -331,6 +354,18 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
                 <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
                   狀態：{repairOrder.oem_return_date ? '已返還，仍為維修中 (REPAIRING)' : '--'}
                 </div>
+                {/* 維修結果就是在這一步填的，放在旁邊才看得出來是何時記錄的 */}
+                {!noOem && (
+                  <div style={stageBlockStyle}>
+                    <div style={{ fontSize: '11px', fontWeight: 800, color: '#10b981' }}>
+                      維修與檢測結果 (Results)
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-main)', lineHeight: '1.6', whiteSpace: 'pre-wrap', marginTop: '4px' }}>
+                      {repairOrder.results || '尚未填寫檢測與維修結果 (待原廠返還時記錄)'}
+                    </div>
+                  </div>
+                )}
+                {remarksBlock('OEM_RETURN')}
               </div>
 
               {/* 完工出貨日 */}
@@ -342,37 +377,21 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
                 <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
                   狀態：{repairOrder.completion_date ? '已交付客戶 (SHIPPED)' : '--'}
                 </div>
+                {/* 不送原廠的單沒經過原廠返還，維修結果是在這一步一併填的 */}
+                {noOem && (
+                  <div style={stageBlockStyle}>
+                    <div style={{ fontSize: '11px', fontWeight: 800, color: '#10b981' }}>
+                      維修與檢測結果 (Results)
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-main)', lineHeight: '1.6', whiteSpace: 'pre-wrap', marginTop: '4px' }}>
+                      {repairOrder.results || '尚未填寫檢測與維修結果 (待自行維修完工時記錄)'}
+                    </div>
+                  </div>
+                )}
+                {remarksBlock('COMPLETED')}
               </div>
             </div>
 
-            {/* 維修結果 (Results) 完整文字區 */}
-            <div style={{
-              backgroundColor: 'rgba(16, 185, 129, 0.05)',
-              border: '1px solid rgba(16, 185, 129, 0.25)',
-              padding: '14px',
-              borderRadius: '8px'
-            }}>
-              <div style={{ fontSize: '12px', fontWeight: 800, color: '#10b981', marginBottom: '6px' }}>
-                維修與檢測結果 (Results)
-              </div>
-              <div style={{ fontSize: '13px', color: 'var(--text-main)', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>
-                {repairOrder.results || '尚未填寫檢測與維修結果 (待原廠返還時記錄)'}
-              </div>
-            </div>
-
-            {/* 備註 (Remarks) */}
-            {repairOrder.remarks && (
-              <div style={{
-                backgroundColor: 'var(--bg-surface-subtle)',
-                border: '1px solid var(--border-color)',
-                padding: '12px',
-                borderRadius: '8px',
-                fontSize: '12px',
-                color: 'var(--text-muted)'
-              }}>
-                <strong style={{ color: 'var(--text-main)' }}>備註：</strong> {repairOrder.remarks}
-              </div>
-            )}
           </div>
 
           {/* 4. 關聯報修設備明細清單 */}
