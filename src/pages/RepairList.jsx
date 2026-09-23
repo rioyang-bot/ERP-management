@@ -427,9 +427,9 @@ const RepairList = () => {
                 <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontWeight: 800, whiteSpace: 'nowrap', position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>維修單號 (Repair No.)</th>
                 <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontWeight: 800, whiteSpace: 'nowrap', position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>客戶 (Customer)</th>
                 <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontWeight: 800, minWidth: '200px', position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>設備明細 (Device / SN)</th>
-                <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontWeight: 800, minWidth: '190px', position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>維修時程 (Maint. Timeline)</th>
                 <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontWeight: 800, minWidth: '160px', position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>現場狀況 / 故障描述</th>
                 <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontWeight: 800, textAlign: 'center', whiteSpace: 'nowrap', position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>當前狀態</th>
+                <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontWeight: 800, minWidth: '190px', position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>維修時程 (Maint. Timeline)</th>
                 <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontWeight: 800, textAlign: 'right', minWidth: '200px', position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>操作流程</th>
               </tr>
             </thead>
@@ -510,32 +510,6 @@ const RepairList = () => {
                         </div>
                       </td>
 
-                      {/* 維修時程：現場、送修、返還、完工四個日期併成一欄。
-                          維修結果不放這裡 —— 截斷成一行的摘要幫不上忙，詳情裡有完整內容。 */}
-                      <td style={{ padding: '14px 16px' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          {TIMELINE_STEPS.map(({ key, label, color }) => (
-                            order[key] ? (
-                              <div key={key} style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <span style={{
-                                  padding: '1px 6px', borderRadius: '4px', minWidth: '34px', textAlign: 'center',
-                                  backgroundColor: `${color}1f`, color, fontWeight: 800, fontSize: '11px', whiteSpace: 'nowrap',
-                                }}>
-                                  {label}
-                                </span>
-                                <span style={{ color, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{order[key]}</span>
-                              </div>
-                            ) : null
-                          ))}
-
-                          {!order.send_oem_date && !order.oem_return_date && !order.completion_date && (
-                            <span style={{ color: 'var(--text-subtle)', fontSize: '11px' }}>
-                              現場處理中 (尚未送修)
-                            </span>
-                          )}
-                        </div>
-                      </td>
-
                       {/* 現場狀況／故障描述。列表只顯示，修改在「檢視」的詳情裡 ——
                           四個階段的說明都集中在同一個地方改，不必記得哪一段要去哪裡找。 */}
                       <td style={{ padding: '14px 16px', color: 'var(--text-main)', fontSize: '12px', minWidth: '220px' }}>
@@ -583,6 +557,32 @@ const RepairList = () => {
                             </span>
                           </div>
                         )}
+                      </td>
+
+                      {/* 維修時程：現場、送修、返還、完工四個日期併成一欄。
+                          維修結果不放這裡 —— 截斷成一行的摘要幫不上忙，詳情裡有完整內容。 */}
+                      <td style={{ padding: '14px 16px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          {TIMELINE_STEPS.map(({ key, label, color }) => (
+                            order[key] ? (
+                              <div key={key} style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{
+                                  padding: '1px 6px', borderRadius: '4px', minWidth: '34px', textAlign: 'center',
+                                  backgroundColor: `${color}1f`, color, fontWeight: 800, fontSize: '11px', whiteSpace: 'nowrap',
+                                }}>
+                                  {label}
+                                </span>
+                                <span style={{ color, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{order[key]}</span>
+                              </div>
+                            ) : null
+                          ))}
+
+                          {!order.send_oem_date && !order.oem_return_date && !order.completion_date && (
+                            <span style={{ color: 'var(--text-subtle)', fontSize: '11px' }}>
+                              現場處理中 (尚未送修)
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* 操作流程按鈕 */}

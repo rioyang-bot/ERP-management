@@ -10,8 +10,10 @@ import RepairList from '../pages/RepairList';
  * 現場處理日和送修與完工資訊原本分成兩欄，日期被拆在表格兩端，
  * 一張單走到哪一步還要左右對照。兩欄併成「維修時程」，四個階段的日期排在一起。
  *
- * 維修結果不放進這一欄：它原本是截斷成一行的摘要，幫不上忙，
- * 詳情裡有完整內容。故障描述仍然是獨立的一欄，也仍然可以直接在列表上修改。
+ * 維修結果不放進這一欄：它原本是截斷成一行的摘要，幫不上忙，詳情裡有完整內容。
+ * 故障描述仍然是獨立的一欄，但只顯示 —— 四段說明都集中在「檢視」的詳情裡修改。
+ *
+ * 維修時程排在當前狀態後面：先看單子在哪一階段，再往右看走過的日期。
  *
  * 單號不再是連結 —— 同一列右邊就有「檢視」，兩個一樣的入口只是噪音，
  * 而且 RMA-20260923-01 斷成兩行會把整列撐高。
@@ -49,6 +51,25 @@ describe('維修單列表的欄位', () => {
 
   const headers = () => [...document.querySelectorAll('thead th')].map((th) => th.textContent.trim());
   const cells = () => [...screen.getByText('RMA-20260923-01').closest('tr').querySelectorAll('td')];
+  /** 依欄位標題取該列的格子，不寫死索引 */
+  const cellOf = (header) => {
+    const i = headers().indexOf(header);
+    if (i < 0) throw new Error(`找不到欄位：${header}`);
+    return cells()[i];
+  };
+
+  it('欄位順序：維修時程排在當前狀態後面', async () => {
+    await open();
+    expect(headers()).toEqual([
+      '維修單號 (Repair No.)',
+      '客戶 (Customer)',
+      '設備明細 (Device / SN)',
+      '現場狀況 / 故障描述',
+      '當前狀態',
+      '維修時程 (Maint. Timeline)',
+      '操作流程',
+    ]);
+  });
 
   it('現場處理日與送修完工資訊併成「維修時程」', async () => {
     await open();
@@ -66,7 +87,7 @@ describe('維修單列表的欄位', () => {
   /** 四段說明集中在詳情裡改，列表只顯示 —— 不必記得哪一段要去哪裡找 */
   it('列表上不能編輯，該欄沒有任何按鈕', async () => {
     await open();
-    const cell = cells()[4];
+    const cell = cellOf('現場狀況 / 故障描述');
     expect(cell.querySelectorAll('button, textarea, input')).toHaveLength(0);
     expect(screen.queryByRole('button', { name: /修改現場狀況/ })).not.toBeInTheDocument();
   });
@@ -78,7 +99,7 @@ describe('維修單列表的欄位', () => {
 
   it('維修時程放四個階段的日期', async () => {
     await open();
-    const timeline = cells()[3];
+    const timeline = cellOf('維修時程 (Maint. Timeline)');
     for (const [label, date] of [['現場', '2026-09-17'], ['送修', '2026-09-18'], ['返還', '2026-09-20'], ['完工', '2026-09-23']]) {
       expect(timeline, label).toHaveTextContent(label);
       expect(timeline, date).toHaveTextContent(date);
@@ -88,7 +109,7 @@ describe('維修單列表的欄位', () => {
   /** 打叉的就是這一行：截成一行的維修結果 */
   it('維修時程裡不放維修結果，也不放故障描述', async () => {
     await open();
-    const timeline = cells()[3];
+    const timeline = cellOf('維修時程 (Maint. Timeline)');
     expect(timeline).not.toHaveTextContent('call Advanced RMA');
     expect(timeline).not.toHaveTextContent('主機板錯誤碼');
     expect(screen.queryByText(/call Advanced RMA/)).not.toBeInTheDocument();
