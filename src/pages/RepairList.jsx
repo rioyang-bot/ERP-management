@@ -610,145 +610,155 @@ const RepairList = () => {
                             <Eye size={13} color="var(--primary-color)" /> 檢視
                           </button>
 
-                          {/* 現場處理階段可選擇不送原廠，改由 IT 自行修復 */}
-                          {order.status === 'ON_SITE_HANDLING' && (
-                            <button
-                              onClick={() => handleToggleNoOem(order)}
-                              style={{
-                                padding: '6px 10px',
-                                whiteSpace: 'nowrap',
-                                borderRadius: '8px',
-                                border: order.no_oem_required ? 'none' : '1px solid #0d9488',
-                                backgroundColor: order.no_oem_required ? 'var(--bg-surface)' : 'rgba(13, 148, 136, 0.12)',
-                                color: order.no_oem_required ? 'var(--text-muted)' : '#0d9488',
+                          {/* 階段動作疊成一直排。現場處理階段同時有「免送原廠」和「送修原廠」，
+                              跟檢視、列印、刪除擠在同一列會被擠到換行，看起來像斷掉的兩排。 */}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'stretch' }}>
+                            {/* 現場處理階段可選擇不送原廠，改由 IT 自行修復 */}
+                            {order.status === 'ON_SITE_HANDLING' && (
+                              <button
+                                onClick={() => handleToggleNoOem(order)}
+                                style={{
+                                  padding: '6px 10px',
+                                  whiteSpace: 'nowrap',
+                                  borderRadius: '8px',
+                                  border: order.no_oem_required ? 'none' : '1px solid #0d9488',
+                                  backgroundColor: order.no_oem_required ? 'var(--bg-surface)' : 'rgba(13, 148, 136, 0.12)',
+                                  color: order.no_oem_required ? 'var(--text-muted)' : '#0d9488',
+                                  fontWeight: 700,
+                                  fontSize: '12px',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '4px'
+                                }}
+                                title={order.no_oem_required ? '取消標記，恢復送修原廠流程' : '這張單不需送回原廠，由 IT 人員自行處理'}
+                              >
+                                <Home size={13} /> {order.no_oem_required ? '恢復送原廠' : '免送原廠'}
+                              </button>
+                            )}
+
+                            {/* 不送原廠：現場處理 ➔ 直接完工結案 */}
+                            {order.status === 'ON_SITE_HANDLING' && order.no_oem_required && (
+                              <button
+                                onClick={() => setActionModal({ isOpen: true, order, type: 'IN_HOUSE_COMPLETE' })}
+                                style={{
+                                  padding: '6px 10px',
+                                  whiteSpace: 'nowrap',
+                                  borderRadius: '8px',
+                                  border: 'none',
+                                  backgroundColor: '#0d9488',
+                                  color: '#fff',
+                                  fontWeight: 700,
+                                  fontSize: '12px',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '4px'
+                                }}
+                                title="IT 自行修復完成，填寫維修結果後結案出貨"
+                              >
+                                <Wrench size={13} /> 自行維修完工
+                              </button>
+                            )}
+
+                            {/* 階段 1 ➔ 階段 2：送修原廠（標記不送原廠時就不該再出現） */}
+                            {order.status === 'ON_SITE_HANDLING' && !order.no_oem_required && (
+                              <button
+                                onClick={() => setActionModal({ isOpen: true, order, type: 'SEND_OEM' })}
+                                style={{
+                                  padding: '6px 10px',
+                                  whiteSpace: 'nowrap',
+                                  borderRadius: '8px',
+                                  border: 'none',
+                                  backgroundColor: '#d97706',
+                                  color: '#fff',
+                                  fontWeight: 700,
+                                  fontSize: '12px',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '4px'
+                                }}
+                                title="送修原廠 (將設備設為維修中)"
+                              >
+                                <Truck size={13} /> 送修原廠
+                              </button>
+                            )}
+
+                            {/* 階段 2 ➔ 階段 3：原廠修復返還 */}
+                            {order.status === 'SENT_OEM' && (
+                              <button
+                                onClick={() => setActionModal({ isOpen: true, order, type: 'OEM_RETURN' })}
+                                style={{
+                                  padding: '6px 10px',
+                                  whiteSpace: 'nowrap',
+                                  borderRadius: '8px',
+                                  border: 'none',
+                                  backgroundColor: '#8b5cf6',
+                                  color: '#fff',
+                                  fontWeight: 700,
+                                  fontSize: '12px',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '4px'
+                                }}
+                                title={order.is_internal
+                                  ? '原廠返還並結案 (設備回到在庫)'
+                                  : '原廠返還 (設備維持維修中，待完工出貨)'}
+                              >
+                                <Wrench size={13} /> 原廠返還
+                              </button>
+                            )}
+
+                            {/* 階段 3 ➔ 階段 4：客戶出貨完工 */}
+                            {/* 內部維修在原廠返還時就結案了，不會停在這個狀態 */}
+                            {order.status === 'OEM_RETURNED' && !order.is_internal && (
+                              <button
+                                onClick={() => setActionModal({ isOpen: true, order, type: 'COMPLETE' })}
+                                style={{
+                                  padding: '6px 10px',
+                                  whiteSpace: 'nowrap',
+                                  borderRadius: '8px',
+                                  border: 'none',
+                                  backgroundColor: '#3b82f6',
+                                  color: '#fff',
+                                  fontWeight: 700,
+                                  fontSize: '12px',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '4px'
+                                }}
+                                title="客戶出貨完工 (將設備設為出庫)"
+                              >
+                                <PackageCheck size={13} /> 客戶出貨
+                              </button>
+                            )}
+
+                            {/* 已結案標籤 */}
+                            {order.status === 'COMPLETED' && (
+                              <span style={{
+                                padding: '4px 8px',
+                                borderRadius: '6px',
+                                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                color: '#3b82f6',
+                                fontSize: '11px',
                                 fontWeight: 700,
-                                fontSize: '12px',
-                                cursor: 'pointer',
                                 display: 'flex',
                                 alignItems: 'center',
+                                justifyContent: 'center',
                                 gap: '4px'
-                              }}
-                              title={order.no_oem_required ? '取消標記，恢復送修原廠流程' : '這張單不需送回原廠，由 IT 人員自行處理'}
-                            >
-                              <Home size={13} /> {order.no_oem_required ? '恢復送原廠' : '免送原廠'}
-                            </button>
-                          )}
-
-                          {/* 不送原廠：現場處理 ➔ 直接完工結案 */}
-                          {order.status === 'ON_SITE_HANDLING' && order.no_oem_required && (
-                            <button
-                              onClick={() => setActionModal({ isOpen: true, order, type: 'IN_HOUSE_COMPLETE' })}
-                              style={{
-                                padding: '6px 10px',
-                                whiteSpace: 'nowrap',
-                                borderRadius: '8px',
-                                border: 'none',
-                                backgroundColor: '#0d9488',
-                                color: '#fff',
-                                fontWeight: 700,
-                                fontSize: '12px',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '4px'
-                              }}
-                              title="IT 自行修復完成，填寫維修結果後結案出貨"
-                            >
-                              <Wrench size={13} /> 自行維修完工
-                            </button>
-                          )}
-
-                          {/* 階段 1 ➔ 階段 2：送修原廠（標記不送原廠時就不該再出現） */}
-                          {order.status === 'ON_SITE_HANDLING' && !order.no_oem_required && (
-                            <button
-                              onClick={() => setActionModal({ isOpen: true, order, type: 'SEND_OEM' })}
-                              style={{
-                                padding: '6px 10px',
-                                whiteSpace: 'nowrap',
-                                borderRadius: '8px',
-                                border: 'none',
-                                backgroundColor: '#d97706',
-                                color: '#fff',
-                                fontWeight: 700,
-                                fontSize: '12px',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '4px'
-                              }}
-                              title="送修原廠 (將設備設為維修中)"
-                            >
-                              <Truck size={13} /> 送修原廠
-                            </button>
-                          )}
-
-                          {/* 階段 2 ➔ 階段 3：原廠修復返還 */}
-                          {order.status === 'SENT_OEM' && (
-                            <button
-                              onClick={() => setActionModal({ isOpen: true, order, type: 'OEM_RETURN' })}
-                              style={{
-                                padding: '6px 10px',
-                                whiteSpace: 'nowrap',
-                                borderRadius: '8px',
-                                border: 'none',
-                                backgroundColor: '#8b5cf6',
-                                color: '#fff',
-                                fontWeight: 700,
-                                fontSize: '12px',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '4px'
-                              }}
-                              title={order.is_internal
-                                ? '原廠返還並結案 (設備回到在庫)'
-                                : '原廠返還 (設備維持維修中，待完工出貨)'}
-                            >
-                              <Wrench size={13} /> 原廠返還
-                            </button>
-                          )}
-
-                          {/* 階段 3 ➔ 階段 4：客戶出貨完工 */}
-                          {/* 內部維修在原廠返還時就結案了，不會停在這個狀態 */}
-                          {order.status === 'OEM_RETURNED' && !order.is_internal && (
-                            <button
-                              onClick={() => setActionModal({ isOpen: true, order, type: 'COMPLETE' })}
-                              style={{
-                                padding: '6px 10px',
-                                whiteSpace: 'nowrap',
-                                borderRadius: '8px',
-                                border: 'none',
-                                backgroundColor: '#3b82f6',
-                                color: '#fff',
-                                fontWeight: 700,
-                                fontSize: '12px',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '4px'
-                              }}
-                              title="客戶出貨完工 (將設備設為出庫)"
-                            >
-                              <PackageCheck size={13} /> 客戶出貨
-                            </button>
-                          )}
-
-                          {/* 已結案標籤 */}
-                          {order.status === 'COMPLETED' && (
-                            <span style={{
-                              padding: '4px 8px',
-                              borderRadius: '6px',
-                              backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                              color: '#3b82f6',
-                              fontSize: '11px',
-                              fontWeight: 700,
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '4px'
-                            }}>
-                              <CheckCircle size={13} /> 已結案
-                            </span>
-                          )}
+                              }}>
+                                <CheckCircle size={13} /> 已結案
+                              </span>
+                            )}
+                          </div>
 
                           {/* 套印單據按鈕 */}
                           <button

@@ -124,3 +124,65 @@ describe('維修單列表的欄位', () => {
     expect(screen.getAllByRole('button', { name: /檢視/ })).toHaveLength(1);
   });
 });
+
+/**
+ * 操作欄的階段按鈕疊成一直排
+ *
+ * 現場處理階段同時有「免送原廠」和「送修原廠」，跟檢視、列印、刪除擠在
+ * 同一列 flex-wrap 裡會被擠到換行，看起來像斷掉的兩排。
+ * 階段動作收進自己的直排容器，整欄就固定是「檢視 ¦ 階段動作 ¦ 列印 ¦ 刪除」。
+ */
+describe('操作欄的階段按鈕', () => {
+  const ON_SITE = {
+    id: 9, repair_no: 'RMA-20260917-01', customer_name: '元大Yuanta',
+    status: 'ON_SITE_HANDLING', on_site_date: '2026-09-17', on_site_status: '無法開機',
+    item_count: 1, items: [{ id: 1, sn: 'SRV-001' }], created_at: '2026-09-17T00:00:00.000Z',
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.alert = vi.fn();
+    window.electronAPI = {
+      namedQuery: vi.fn((query) => (query === 'fetchRepairOrders'
+        ? Promise.resolve({ success: true, rows: [ON_SITE] })
+        : Promise.resolve({ success: true, rows: [] }))),
+      runTransaction: vi.fn(),
+      saveFile: vi.fn(),
+      getUserPreference: vi.fn().mockResolvedValue({ success: true, value: null }),
+      setUserPreference: vi.fn().mockResolvedValue({ success: true }),
+    };
+  });
+
+  const openOnSite = async () => {
+    render(<MemoryRouter><RepairList /></MemoryRouter>);
+    await screen.findByText('RMA-20260917-01');
+    const heads = [...document.querySelectorAll('thead th')].map((th) => th.textContent.trim());
+    const row = screen.getByText('RMA-20260917-01').closest('tr');
+    return [...row.querySelectorAll('td')][heads.indexOf('操作流程')];
+  };
+
+  it('免送原廠與送修原廠放在同一個直排容器裡', async () => {
+    const cell = await openOnSite();
+    const column = [...cell.firstElementChild.children].find((c) => c.tagName === 'DIV');
+    expect(column.style.flexDirection).toBe('column');
+    const labels = [...column.querySelectorAll('button')].map((b) => b.textContent.trim());
+    expect(labels).toEqual(['免送原廠', '送修原廠']);
+  });
+
+  it('檢視、列印、刪除不在直排裡，仍排在同一列', async () => {
+    const cell = await openOnSite();
+    const kids = [...cell.firstElementChild.children];
+    expect(kids.map((k) => k.tagName)).toEqual(['BUTTON', 'DIV', 'BUTTON', 'BUTTON']);
+    expect(kids[0]).toHaveTextContent('檢視');
+  });
+
+  /** 兩顆按鈕字數不同，疊起來要等寬置中，左右才不會參差 */
+  it('疊起來的按鈕置中', async () => {
+    const cell = await openOnSite();
+    const column = [...cell.firstElementChild.children].find((c) => c.tagName === 'DIV');
+    expect(column.style.alignItems).toBe('stretch');
+    for (const b of column.querySelectorAll('button')) {
+      expect(b.style.justifyContent, b.textContent.trim()).toBe('center');
+    }
+  });
+});
