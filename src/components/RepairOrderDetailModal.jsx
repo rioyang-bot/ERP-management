@@ -42,19 +42,36 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
       : repairOrder.send_oem_date ? 'SEND_OEM'
         : 'ON_SITE';
 
-  const stageBlockStyle = { marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed var(--border-color)' };
+  // 四張階段卡片共用同一套尺寸：標題與註記 11px、內文 12px、日期 15px。
+  // 先前每張卡片各自寫死樣式，字級從 11 到 13 混用，卡片之間對不齊。
+  const CARD = { backgroundColor: 'var(--bg-surface-subtle)', padding: '12px 14px', borderRadius: '8px', border: '1px solid var(--border-color)' };
+  const CARD_LABEL = { fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.02em' };
+  const CARD_META = { fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px', lineHeight: '1.5' };
+  // 日期用等寬數字，四張卡片的數字才會切齊
+  const cardDate = (filled, color) => ({
+    fontSize: '15px', fontWeight: 800, marginTop: '6px', fontVariantNumeric: 'tabular-nums',
+    color: filled ? color : 'var(--text-muted)',
+  });
+  const BLOCK = { marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed var(--border-color)' };
+  const BLOCK_BODY = { fontSize: '12px', color: 'var(--text-main)', lineHeight: '1.6', whiteSpace: 'pre-wrap', marginTop: '4px' };
+
+  /** 階段卡片底下的附註：故障描述、維修結果、備註都用同一種樣子 */
+  const stageBlock = (label, body) => (
+    <div style={BLOCK}>
+      <div style={CARD_LABEL}>{label}</div>
+      <div style={BLOCK_BODY}>{body}</div>
+    </div>
+  );
 
   /** 備註掛在填它的那張階段卡片底下 */
-  const remarksBlock = (stage) => (repairOrder.remarks && remarksStage === stage ? (
-    <div style={stageBlockStyle}>
-      <div style={{ fontSize: '11px', fontWeight: 800, color: 'var(--text-muted)' }}>
-        {stage === 'COMPLETED' ? '出貨備註 (Remarks)' : '備註 (Remarks)'}
-      </div>
-      <div style={{ fontSize: '12px', color: 'var(--text-main)', lineHeight: '1.6', whiteSpace: 'pre-wrap', marginTop: '4px' }}>
-        {repairOrder.remarks}
-      </div>
-    </div>
-  ) : null);
+  const remarksBlock = (stage) => (repairOrder.remarks && remarksStage === stage
+    ? stageBlock(stage === 'COMPLETED' ? '出貨備註 (Remarks)' : '備註 (Remarks)', repairOrder.remarks)
+    : null);
+
+  const resultsBlock = (hint) => stageBlock(
+    '維修與檢測結果 (Results)',
+    repairOrder.results || hint,
+  );
 
   const steps = [
     {
@@ -321,73 +338,62 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
               gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
               gap: '12px'
             }}>
-              {/* 現場處理狀況 */}
-              <div style={{ backgroundColor: 'var(--bg-surface-subtle)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)' }}>現場狀況 / 故障描述</div>
-                <div style={{ fontSize: '13px', fontWeight: 700, color: '#ef4444', marginTop: '4px' }}>
-                  {repairOrder.on_site_status || '無故障描述'}
+              {/* 現場處理。故障描述跟其他兩段附註一樣掛在日期底下，
+                  四張卡片才會是同一個形狀：標題 / 日期 / 狀態 / 附註 */}
+              <div style={CARD}>
+                <div style={CARD_LABEL}>現場處理日 (On Site)</div>
+                <div style={cardDate(!!repairOrder.on_site_date, '#10b981')}>
+                  {repairOrder.on_site_date || (skippedOnSite ? '不適用' : '尚未處理')}
                 </div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  處理日期：{repairOrder.on_site_date || '--'}
+                <div style={CARD_META}>
+                  狀態：{skippedOnSite ? '略過 (未出給客戶，直接送原廠)' : '現場處理 / 取回 (REPAIRING)'}
                 </div>
+                {!skippedOnSite && stageBlock('現場狀況 / 故障描述', repairOrder.on_site_status || '無故障描述')}
                 {remarksBlock('ON_SITE')}
               </div>
 
               {/* 送修原廠 */}
-              <div style={{ backgroundColor: 'var(--bg-surface-subtle)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)' }}>送修原廠日 (Send OEM)</div>
-                <div style={{ fontSize: '13px', fontWeight: 700, color: repairOrder.send_oem_date ? '#d97706' : 'var(--text-muted)', marginTop: '4px' }}>
-                  {repairOrder.send_oem_date || '尚未送修原廠'}
+              <div style={CARD}>
+                <div style={CARD_LABEL}>送修原廠日 (Send OEM)</div>
+                <div style={cardDate(!!repairOrder.send_oem_date, '#d97706')}>
+                  {repairOrder.send_oem_date || (noOem ? '不適用' : '尚未送修原廠')}
                 </div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  狀態：{repairOrder.send_oem_date ? '原廠處理中 (REPAIRING)' : '現場在庫'}
+                <div style={CARD_META}>
+                  狀態：{noOem ? '不適用 (不需送回原廠)' : (repairOrder.send_oem_date ? '原廠處理中 (REPAIRING)' : '現場在庫')}
                 </div>
                 {remarksBlock('SEND_OEM')}
               </div>
 
-              {/* 原廠返還日 */}
-              <div style={{ backgroundColor: 'var(--bg-surface-subtle)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)' }}>原廠返還日 (OEM Return)</div>
-                <div style={{ fontSize: '13px', fontWeight: 700, color: repairOrder.oem_return_date ? '#8b5cf6' : 'var(--text-muted)', marginTop: '4px' }}>
-                  {repairOrder.oem_return_date || '原廠尚未寄回'}
+              {/* 原廠返還。維修結果就是在這一步填的，放在旁邊才看得出來是何時記錄的 */}
+              <div style={CARD}>
+                <div style={CARD_LABEL}>原廠返還日 (OEM Return)</div>
+                <div style={cardDate(!!repairOrder.oem_return_date, '#8b5cf6')}>
+                  {repairOrder.oem_return_date || (noOem ? '不適用' : '原廠尚未寄回')}
                 </div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  狀態：{repairOrder.oem_return_date ? '已返還，仍為維修中 (REPAIRING)' : '--'}
+                <div style={CARD_META}>
+                  狀態：{noOem
+                    ? '不適用 (由 IT 自行處理)'
+                    : (repairOrder.oem_return_date
+                      ? (isInternal ? '已返還入庫，維修完成 (ACTIVE)' : '已返還，仍為維修中 (REPAIRING)')
+                      : '原廠處理中')}
                 </div>
-                {/* 維修結果就是在這一步填的，放在旁邊才看得出來是何時記錄的 */}
-                {!noOem && (
-                  <div style={stageBlockStyle}>
-                    <div style={{ fontSize: '11px', fontWeight: 800, color: '#10b981' }}>
-                      維修與檢測結果 (Results)
-                    </div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-main)', lineHeight: '1.6', whiteSpace: 'pre-wrap', marginTop: '4px' }}>
-                      {repairOrder.results || '尚未填寫檢測與維修結果 (待原廠返還時記錄)'}
-                    </div>
-                  </div>
-                )}
+                {!noOem && resultsBlock('尚未填寫檢測與維修結果 (待原廠返還時記錄)')}
                 {remarksBlock('OEM_RETURN')}
               </div>
 
-              {/* 完工出貨日 */}
-              <div style={{ backgroundColor: 'var(--bg-surface-subtle)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)' }}>完工出貨日 (Completion)</div>
-                <div style={{ fontSize: '13px', fontWeight: 700, color: repairOrder.completion_date ? '#3b82f6' : 'var(--text-muted)', marginTop: '4px' }}>
-                  {repairOrder.completion_date || '尚未完工交件'}
+              {/* 完工出貨 */}
+              <div style={CARD}>
+                <div style={CARD_LABEL}>完工出貨日 (Completion)</div>
+                <div style={cardDate(!!repairOrder.completion_date, '#3b82f6')}>
+                  {repairOrder.completion_date || (isInternal ? '不適用' : '尚未完工交件')}
                 </div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  狀態：{repairOrder.completion_date ? '已交付客戶 (SHIPPED)' : '--'}
+                <div style={CARD_META}>
+                  狀態：{isInternal
+                    ? '不適用 (公司內部維修，返還入庫即結案)'
+                    : (repairOrder.completion_date ? '已交付客戶 (SHIPPED)' : '待完工出貨')}
                 </div>
                 {/* 不送原廠的單沒經過原廠返還，維修結果是在這一步一併填的 */}
-                {noOem && (
-                  <div style={stageBlockStyle}>
-                    <div style={{ fontSize: '11px', fontWeight: 800, color: '#10b981' }}>
-                      維修與檢測結果 (Results)
-                    </div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-main)', lineHeight: '1.6', whiteSpace: 'pre-wrap', marginTop: '4px' }}>
-                      {repairOrder.results || '尚未填寫檢測與維修結果 (待自行維修完工時記錄)'}
-                    </div>
-                  </div>
-                )}
+                {noOem && resultsBlock('尚未填寫檢測與維修結果 (待自行維修完工時記錄)')}
                 {remarksBlock('COMPLETED')}
               </div>
             </div>

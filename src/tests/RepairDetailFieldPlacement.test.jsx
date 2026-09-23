@@ -98,7 +98,7 @@ describe('維修結果與備註的位置', () => {
       results: null,
       remarks: '客戶約 9/25 到場',
     });
-    expect(cardWith('現場狀況 / 故障描述')).toHaveTextContent('客戶約 9/25 到場');
+    expect(cardWith('現場處理日 (On Site)')).toHaveTextContent('客戶約 9/25 到場');
   });
 
   it('備註只出現一次，不會四張卡片都印', () => {
@@ -114,5 +114,65 @@ describe('維修結果與備註的位置', () => {
     open({ ...ORDER, no_oem_required: true, oem_return_date: null });
     expect(cardWith('完工出貨日 (Completion)')).toHaveTextContent('維修與檢測結果 (Results)');
     expect(cardWith('原廠返還日 (OEM Return)')).not.toHaveTextContent('維修與檢測結果');
+  });
+});
+
+/**
+ * 四張階段卡片要長得一樣
+ *
+ * 原本第一張的形狀跟其他三張不同：值的位置放的是一段紅色故障描述，日期被擠到
+ * 底下的小字；另外三張放的是日期。四張並排時字級從 11 到 13 混用，看起來不整齊。
+ * 現在統一成「標題 / 日期 / 狀態 / 附註」，字級只有 11、12、15 三種。
+ */
+describe('四張階段卡片的形狀一致', () => {
+  const CARD_HEADS = [
+    '現場處理日 (On Site)',
+    '送修原廠日 (Send OEM)',
+    '原廠返還日 (OEM Return)',
+    '完工出貨日 (Completion)',
+  ];
+
+  it('每張卡片都是標題、日期、狀態這個順序', () => {
+    open(ORDER);
+    for (const head of CARD_HEADS) {
+      const card = cardWith(head);
+      const lines = [...card.children].filter((c) => c.tagName === 'DIV');
+      expect(lines[0], head).toHaveTextContent(head);
+      expect(lines[1].style.fontSize, head).toBe('15px');
+      expect(lines[2].textContent, head).toMatch(/^狀態：/);
+    }
+  });
+
+  it('日期用等寬數字，四張卡片才會切齊', () => {
+    open(ORDER);
+    for (const head of CARD_HEADS) {
+      const date = [...cardWith(head).children][1];
+      expect(date.style.fontVariantNumeric, head).toBe('tabular-nums');
+    }
+  });
+
+  it('字級只用 11 / 12 / 15 三種', () => {
+    open(ORDER);
+    const sizes = new Set();
+    for (const head of CARD_HEADS) {
+      cardWith(head).querySelectorAll('div').forEach((d) => {
+        if (d.style.fontSize) sizes.add(d.style.fontSize);
+      });
+    }
+    expect([...sizes].sort()).toEqual(['11px', '12px', '15px']);
+  });
+
+  it('故障描述跟維修結果、備註一樣掛成附註', () => {
+    open(ORDER);
+    const card = cardWith('現場處理日 (On Site)');
+    expect(card).toHaveTextContent('現場狀況 / 故障描述');
+    expect(card).toHaveTextContent('客戶反映 當機無法連線');
+  });
+
+  it('直接送原廠的單，現場那張標為不適用且不留空的故障描述', () => {
+    open({ ...ORDER, on_site_date: null, on_site_status: null });
+    const card = cardWith('現場處理日 (On Site)');
+    expect(card).toHaveTextContent('不適用');
+    expect(card).not.toHaveTextContent('故障描述');
   });
 });
