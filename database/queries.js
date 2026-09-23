@@ -1835,6 +1835,30 @@ export const queries = {
     WHERE id = $2
     RETURNING id, on_site_status
   `,
+  // 其餘三個階段的說明同樣各給一支窄查詢，理由和上面一樣：
+  // 只動該欄，不會順手把別的欄位寫成呼叫端當下的值。
+  // 四段內容都是描述而不是流程狀態，因此任何階段都允許更正。
+  updateRepairSendOemRemarks: `
+    UPDATE repair_orders
+    SET send_oem_remarks = NULLIF(TRIM($1), ''),
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = $2
+    RETURNING id, send_oem_remarks
+  `,
+  updateRepairResults: `
+    UPDATE repair_orders
+    SET results = NULLIF(TRIM($1), ''),
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = $2
+    RETURNING id, results
+  `,
+  updateRepairCompletionRemarks: `
+    UPDATE repair_orders
+    SET completion_remarks = NULLIF(TRIM($1), ''),
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = $2
+    RETURNING id, completion_remarks
+  `,
   updateRepairOrderDetails: `
     UPDATE repair_orders 
     SET customer_name = $1, 

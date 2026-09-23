@@ -61,7 +61,14 @@ describe('維修單列表的欄位', () => {
     await open();
     expect(headers()).toContain('現場狀況 / 故障描述');
     expect(screen.getByText('主機板錯誤碼 552')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /修改現場狀況/ })).toBeInTheDocument();
+  });
+
+  /** 四段說明集中在詳情裡改，列表只顯示 —— 不必記得哪一段要去哪裡找 */
+  it('列表上不能編輯，該欄沒有任何按鈕', async () => {
+    await open();
+    const cell = cells()[4];
+    expect(cell.querySelectorAll('button, textarea, input')).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: /修改現場狀況/ })).not.toBeInTheDocument();
   });
 
   it('表頭與內容的欄位數一致', async () => {

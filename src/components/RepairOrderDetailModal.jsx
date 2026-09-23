@@ -1,9 +1,21 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { getRepairScopeLabel } from '../utils/repairScope';
-import { 
-  X, FileText, Building2, Calendar, CheckCircle2, Clock, 
-  Truck, Wrench, PackageCheck, Printer, ShieldAlert, Cpu
+import { logUpdate } from '../utils/auditLogger';
+import {
+  X, FileText, Building2, Calendar, CheckCircle2, Clock,
+  Truck, Wrench, PackageCheck, Printer, ShieldAlert, Cpu, Edit2, Save
 } from 'lucide-react';
+
+// 四個階段的說明各有自己的欄位與更新查詢。
+// 每一支都只動自己那一欄 —— updateRepairOrderDetails 一次覆寫八個欄位，
+// 拿來改一段描述會把其他欄位一併寫成呼叫端當下的值。
+// 四段都是描述而不是流程狀態，因此任何階段都允許更正。
+const STAGE_FIELDS = {
+  on_site_status: { query: 'updateRepairOnSiteStatus', name: '現場狀況／故障描述' },
+  send_oem_remarks: { query: 'updateRepairSendOemRemarks', name: '送修備註' },
+  results: { query: 'updateRepairResults', name: '維修與檢測結果' },
+  completion_remarks: { query: 'updateRepairCompletionRemarks', name: '出貨備註' },
+};
 
 const STATUS_CONFIG = {
   ON_SITE_HANDLING: { label: '現場處理', color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' },
@@ -15,7 +27,12 @@ const STATUS_CONFIG = {
 /**
  * 維修單完整詳細資訊與歷程檢視彈窗
  */
-const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, onOpenPrint }) => {
+const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, onOpenPrint, onUpdated }) => {
+  // { orderId, field, value }。帶著 orderId 是因為彈窗關閉時元件不會卸載，
+  // 換一張單再打開時，上一張沒存完的編輯狀態不該跟著出現。
+  const [edit, setEdit] = useState(null);
+  const [saving, setSaving] = useState(false);
+
   if (!isOpen || !repairOrder) return null;
 
   const items = repairOrder.items || [];
@@ -48,17 +65,126 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
   const BLOCK = { marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed var(--border-color)' };
   const BLOCK_BODY = { fontSize: '12px', color: 'var(--text-main)', lineHeight: '1.6', whiteSpace: 'pre-wrap', marginTop: '4px' };
 
-  /** 階段卡片底下的附註：故障描述、維修結果、備註都用同一種樣子 */
-  const stageBlock = (label, body) => (
-    <div style={BLOCK}>
-      <div style={CARD_LABEL}>{label}</div>
-      <div style={BLOCK_BODY}>{body}</div>
-    </div>
-  );
+  const handleSaveStage = async (field) => {
+    const { query, name } = STAGE_FIELDS[field];
+    const next = (edit?.value ?? '').trim();
+    const before = (repairOrder[field] || '').trim();
+    if (next === before) { setEdit(null); return; }
+
+    setSaving(true);
+    try {
+      const res = await window.electronAPI.namedQuery(query, [next, repairOrder.id]);
+      if (!res.success) throw new Error(res.error || '未知錯誤');
+      if (!res.rows || res.rows.length === 0) throw new Error('找不到這張維修單，可能已被刪除');
+
+      await logUpdate(
+        'REPAIR', repairOrder.repair_no, repairOrder.customer_name,
+        `修改維修單 [${repairOrder.repair_no}] 的${name}`,
+        { orderNo: repairOrder.repair_no, before, after: next }
+      );
+      setEdit(null);
+      onUpdated?.({ [field]: next || null });
+    } catch (err) {
+      alert('儲存失敗：' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const ICON_BTN = {
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    width: '20px', height: '20px', padding: 0, flexShrink: 0,
+    borderRadius: '5px', border: '1px solid var(--border-color)',
+    backgroundColor: 'var(--bg-surface)', color: '#f59e0b', cursor: 'pointer',
+  };
+
+  const SMALL_BTN = {
+    display: 'inline-flex', alignItems: 'center', gap: '4px',
+    padding: '3px 9px', borderRadius: '6px', fontSize: '11px',
+    cursor: 'pointer', whiteSpace: 'nowrap',
+  };
+
+  /**
+   * 階段卡片底下的附註。給了 field 就可以就地修改 ——
+   * 這四段都是描述，打錯字或事後補充不該被單據階段擋住。
+   */
+  const stageBlock = (label, body, field) => {
+    const editing = field && edit?.field === field && edit?.orderId === repairOrder.id;
+    const name = field ? STAGE_FIELDS[field].name : '';
+    return (
+      <div style={BLOCK}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+          <div style={CARD_LABEL}>{label}</div>
+          {field && !editing && (
+            <button
+              type="button"
+              onClick={() => setEdit({ orderId: repairOrder.id, field, value: repairOrder[field] || '' })}
+              title={`修改${name}`}
+              aria-label={`修改${name}`}
+              style={ICON_BTN}
+            >
+              <Edit2 size={11} />
+            </button>
+          )}
+        </div>
+        {editing ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px' }}>
+            <textarea
+              rows={3}
+              value={edit.value}
+              onChange={(e) => setEdit({ ...edit, value: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') setEdit(null);
+                // 內容可能要分行，換行交給 Enter，存檔用 Ctrl/⌘+Enter
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleSaveStage(field); }
+              }}
+              aria-label={`修改${name}`}
+              autoFocus
+              style={{
+                width: '100%', padding: '6px 8px', borderRadius: '6px',
+                border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)',
+                color: 'var(--input-text)', fontSize: '12px', lineHeight: '1.6',
+                resize: 'vertical', outline: 'none',
+              }}
+            />
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <button
+                type="button"
+                onClick={() => handleSaveStage(field)}
+                disabled={saving}
+                aria-label={`儲存${name}`}
+                style={{
+                  ...SMALL_BTN, border: 'none', color: '#fff', fontWeight: 700,
+                  backgroundColor: saving ? 'var(--border-color)' : '#16a34a',
+                  cursor: saving ? 'wait' : 'pointer',
+                }}
+              >
+                <Save size={12} /> {saving ? '儲存中' : '儲存'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setEdit(null)}
+                aria-label={`取消修改${name}`}
+                style={{
+                  ...SMALL_BTN, border: '1px solid var(--border-color)',
+                  backgroundColor: 'var(--bg-surface)', color: 'var(--text-muted)',
+                }}
+              >
+                <X size={12} /> 取消
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div style={BLOCK_BODY}>{body}</div>
+        )}
+      </div>
+    );
+  };
 
   const resultsBlock = (hint) => stageBlock(
     '維修與檢測結果 (Results)',
     repairOrder.results || hint,
+    'results',
   );
 
   const steps = [
@@ -347,7 +473,7 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
                 <div style={CARD_META}>
                   狀態：{skippedOnSite ? '略過 (未出給客戶，直接送原廠)' : '現場處理 / 取回 (REPAIRING)'}
                 </div>
-                {!skippedOnSite && stageBlock('現場狀況 / 故障描述', repairOrder.on_site_status || '無故障描述')}
+                {!skippedOnSite && stageBlock('現場狀況 / 故障描述', repairOrder.on_site_status || '無故障描述', 'on_site_status')}
               </div>
 
               {/* 送修原廠 */}
@@ -359,7 +485,7 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
                 <div style={CARD_META}>
                   狀態：{noOem ? '不適用 (不需送回原廠)' : (repairOrder.send_oem_date ? '原廠處理中 (REPAIRING)' : '現場在庫')}
                 </div>
-                {repairOrder.send_oem_remarks && stageBlock('送修備註 (Remarks)', repairOrder.send_oem_remarks)}
+                {stageBlock('送修備註 (Remarks)', repairOrder.send_oem_remarks || '尚未填寫', 'send_oem_remarks')}
               </div>
 
               {/* 原廠返還。維修結果就是在這一步填的，放在旁邊才看得出來是何時記錄的 */}
@@ -391,7 +517,7 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
                 </div>
                 {/* 不送原廠的單沒經過原廠返還，維修結果是在這一步一併填的 */}
                 {noOem && resultsBlock('尚未填寫檢測與維修結果 (待自行維修完工時記錄)')}
-                {repairOrder.completion_remarks && stageBlock('出貨備註 (Remarks)', repairOrder.completion_remarks)}
+                {stageBlock('出貨備註 (Remarks)', repairOrder.completion_remarks || '尚未填寫', 'completion_remarks')}
               </div>
             </div>
 

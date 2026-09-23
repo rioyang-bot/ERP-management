@@ -93,10 +93,15 @@ describe('四個階段各自的說明欄位', () => {
     }
   });
 
-  it('沒填的欄位不佔版面', () => {
+  /**
+   * 階段說明就算還沒填也要留著欄位 —— 它們在詳情裡可以就地修改，
+   * 藏起來就沒有地方可以填進去。建單備註不是階段說明，沒填就不佔版面。
+   */
+  it('階段說明沒填也留著位置，建單備註沒填就不顯示', () => {
     open({ ...ORDER, send_oem_remarks: null, completion_remarks: null, remarks: null });
-    expect(screen.queryByText(/送修備註/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/出貨備註/)).not.toBeInTheDocument();
+    expect(cardWith('送修原廠日 (Send OEM)')).toHaveTextContent('送修備註 (Remarks)');
+    expect(cardWith('完工出貨日 (Completion)')).toHaveTextContent('出貨備註 (Remarks)');
+    expect(screen.getAllByText('尚未填寫')).toHaveLength(2);
     expect(screen.queryByText('建單備註')).not.toBeInTheDocument();
   });
 

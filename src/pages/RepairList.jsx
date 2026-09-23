@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Wrench, Search, Plus, Printer, Trash2, CheckCircle, AlertCircle, 
   Truck, PackageCheck, RotateCcw, ExternalLink, RefreshCw, FileText,
-  Calendar, Building2, Cpu, Server, ChevronRight, Eye, Home, Edit2, Save, X
+  Calendar, Building2, Cpu, Server, ChevronRight, Eye, Home
 } from 'lucide-react';
 import RepairOrderRegistrationModal from '../components/RepairOrderRegistrationModal';
 import RepairActionModal from '../components/RepairActionModal';
@@ -76,35 +76,6 @@ const RepairList = () => {
   useEffect(() => {
     fetchRecords();
   }, [fetchRecords]);
-
-  // 現場狀況／故障描述可以隨時更正 —— 這是一段描述，不是流程狀態，
-  // 打錯字或事後補充都不該被單據階段擋住
-  const [statusEdit, setStatusEdit] = useState(null); // { orderId, value }
-  const [statusSaving, setStatusSaving] = useState(false);
-
-  const handleSaveOnSiteStatus = async (order) => {
-    const next = (statusEdit?.value ?? '').trim();
-    if (next === (order.on_site_status || '').trim()) { setStatusEdit(null); return; }
-
-    setStatusSaving(true);
-    try {
-      const res = await window.electronAPI.namedQuery('updateRepairOnSiteStatus', [next, order.id]);
-      if (!res.success) throw new Error(res.error || '未知錯誤');
-      if (!res.rows || res.rows.length === 0) throw new Error('找不到這張維修單，可能已被刪除');
-
-      await logUpdate(
-        'REPAIR', order.repair_no, order.customer_name,
-        `修改維修單 [${order.repair_no}] 的現場狀況／故障描述`,
-        { orderNo: order.repair_no, before: order.on_site_status || '', after: next }
-      );
-      setStatusEdit(null);
-      fetchRecords();
-    } catch (err) {
-      alert('儲存失敗：' + err.message);
-    } finally {
-      setStatusSaving(false);
-    }
-  };
 
   // 刪除維修單
   const handleDeleteOrder = async (order) => {
@@ -565,88 +536,20 @@ const RepairList = () => {
                         </div>
                       </td>
 
-                      {/* 現場狀況／故障描述，可直接在列表上修改 */}
+                      {/* 現場狀況／故障描述。列表只顯示，修改在「檢視」的詳情裡 ——
+                          四個階段的說明都集中在同一個地方改，不必記得哪一段要去哪裡找。 */}
                       <td style={{ padding: '14px 16px', color: 'var(--text-main)', fontSize: '12px', minWidth: '220px' }}>
-                        {statusEdit?.orderId === order.id ? (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                            <textarea
-                              rows={2}
-                              value={statusEdit.value}
-                              onChange={(e) => setStatusEdit({ orderId: order.id, value: e.target.value })}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Escape') setStatusEdit(null);
-                                // 描述可能要分行，換行交給 Enter，存檔用 Ctrl/⌘+Enter
-                                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleSaveOnSiteStatus(order); }
-                              }}
-                              aria-label={`修改現場狀況 ${order.repair_no}`}
-                              autoFocus
-                              placeholder="例如：無法開機，電源指示燈不亮"
-                              style={{
-                                width: '100%', padding: '6px 8px', borderRadius: '6px',
-                                border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)',
-                                color: 'var(--input-text)', fontSize: '12px', resize: 'vertical', outline: 'none',
-                              }}
-                            />
-                            <div style={{ display: 'flex', gap: '6px' }}>
-                              <button
-                                type="button"
-                                onClick={() => handleSaveOnSiteStatus(order)}
-                                disabled={statusSaving}
-                                aria-label="儲存現場狀況"
-                                style={{
-                                  display: 'inline-flex', alignItems: 'center', gap: '4px',
-                                  padding: '4px 10px', borderRadius: '6px', border: 'none',
-                                  backgroundColor: statusSaving ? 'var(--border-color)' : '#16a34a',
-                                  color: '#fff', fontSize: '11px', fontWeight: 700,
-                                  cursor: statusSaving ? 'wait' : 'pointer', whiteSpace: 'nowrap',
-                                }}
-                              >
-                                <Save size={12} /> {statusSaving ? '儲存中' : '儲存'}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setStatusEdit(null)}
-                                aria-label="取消修改現場狀況"
-                                style={{
-                                  display: 'inline-flex', alignItems: 'center', gap: '4px',
-                                  padding: '4px 10px', borderRadius: '6px',
-                                  border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)',
-                                  color: 'var(--text-muted)', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap',
-                                }}
-                              >
-                                <X size={12} /> 取消
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
-                            <span style={{
-                              padding: '3px 8px',
-                              borderRadius: '6px',
-                              backgroundColor: order.on_site_status ? 'rgba(239, 68, 68, 0.08)' : 'transparent',
-                              color: order.on_site_status ? '#ef4444' : 'var(--text-subtle)',
-                              fontWeight: 600,
-                              display: 'inline-block',
-                              whiteSpace: 'pre-wrap',
-                            }}>
-                              {order.on_site_status || '-'}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => setStatusEdit({ orderId: order.id, value: order.on_site_status || '' })}
-                              title="修改現場狀況／故障描述"
-                              aria-label={`修改現場狀況 ${order.repair_no}`}
-                              style={{
-                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                width: '24px', height: '24px', padding: 0, flexShrink: 0,
-                                borderRadius: '6px', border: '1px solid var(--border-color)',
-                                backgroundColor: 'var(--bg-surface)', color: '#f59e0b', cursor: 'pointer',
-                              }}
-                            >
-                              <Edit2 size={12} />
-                            </button>
-                          </div>
-                        )}
+                        <span style={{
+                          padding: '3px 8px',
+                          borderRadius: '6px',
+                          backgroundColor: order.on_site_status ? 'rgba(239, 68, 68, 0.08)' : 'transparent',
+                          color: order.on_site_status ? '#ef4444' : 'var(--text-subtle)',
+                          fontWeight: 600,
+                          display: 'inline-block',
+                          whiteSpace: 'pre-wrap',
+                        }}>
+                          {order.on_site_status || '-'}
+                        </span>
                       </td>
 
                       {/* 當前狀態 */}
@@ -974,8 +877,10 @@ const RepairList = () => {
             之後填寫維修結果直接完工結案，不經過原廠那兩個階段。
           </div>
           <div>
-            • <b>現場狀況／故障描述</b>：任何階段都可以在列表上直接修改，
-            這是描述而不是流程狀態，打錯字或事後補充都不會被單據階段擋住。
+            • <b>四個階段的說明</b>：現場狀況／故障描述、送修備註、維修與檢測結果、
+            出貨備註各自獨立，不會互相覆蓋。內容都在「檢視」的詳情裡，
+            任何階段都可以就地修改 —— 這些是描述而不是流程狀態，
+            打錯字或事後補充都不會被單據階段擋住。
           </div>
           <div>
             • <b>刪除維修單</b>：會把還停在「維修」的設備改回「在庫」，
@@ -995,6 +900,12 @@ const RepairList = () => {
         isOpen={detailModal.isOpen}
         onClose={() => setDetailModal({ isOpen: false, order: null })}
         repairOrder={detailModal.order}
+        // 詳情裡改完四段說明後，列表與彈窗上的內容都要跟著換掉，
+        // 否則要關掉再打開才看得到新的值
+        onUpdated={(patch) => {
+          setDetailModal((m) => (m.order ? { ...m, order: { ...m.order, ...patch } } : m));
+          fetchRecords();
+        }}
         onOpenAction={(order, type) => setActionModal({ isOpen: true, order, type })}
         onOpenPrint={(order) => setPrintModal({ isOpen: true, order })}
       />
