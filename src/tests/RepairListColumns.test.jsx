@@ -188,6 +188,13 @@ describe('操作欄的階段按鈕', () => {
     expect(cell.firstElementChild.style.justifyContent).toBe('');
   });
 
+  /** 欄位擠窄時，刪除鈕會被 wrap 擠到第二行 —— 階段動作已經自己疊成直排了 */
+  it('整列不換行，刪除鈕不會掉到第二行', async () => {
+    const cell = await openOnSite();
+    expect(cell.style.whiteSpace).toBe('nowrap');
+    expect(cell.firstElementChild.style.flexWrap).toBe('nowrap');
+  });
+
   /** 兩顆按鈕字數不同，疊起來要等寬置中，左右才不會參差 */
   it('疊起來的按鈕置中', async () => {
     const cell = await openOnSite();
