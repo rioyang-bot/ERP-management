@@ -169,11 +169,23 @@ describe('操作欄的階段按鈕', () => {
     expect(labels).toEqual(['免送原廠', '送修原廠']);
   });
 
-  it('檢視、列印、刪除不在直排裡，仍排在同一列', async () => {
+  it('檢視、刪除不在直排裡，仍排在同一列', async () => {
     const cell = await openOnSite();
     const kids = [...cell.firstElementChild.children];
-    expect(kids.map((k) => k.tagName)).toEqual(['BUTTON', 'DIV', 'BUTTON', 'BUTTON']);
+    expect(kids.map((k) => k.tagName)).toEqual(['BUTTON', 'DIV', 'BUTTON']);
     expect(kids[0]).toHaveTextContent('檢視');
+  });
+
+  /** 列印移到「檢視」的右上角，同一張單只留一個列印入口 */
+  it('操作欄沒有列印按鈕', async () => {
+    const cell = await openOnSite();
+    expect(cell.querySelector('.lucide-printer')).toBeNull();
+  });
+
+  it('操作欄靠左，不再靠右對齊', async () => {
+    const cell = await openOnSite();
+    expect(cell.style.textAlign).toBe('');
+    expect(cell.firstElementChild.style.justifyContent).toBe('');
   });
 
   /** 兩顆按鈕字數不同，疊起來要等寬置中，左右才不會參差 */

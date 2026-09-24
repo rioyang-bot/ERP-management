@@ -170,3 +170,48 @@ describe('四支更新查詢都只動自己那一欄', () => {
     expect(oneLine).toContain('WHERE id = $2 RETURNING');
   });
 });
+
+/**
+ * 列印放在檢視的右上角
+ *
+ * 列表的操作欄原本也有一顆列印 —— 同一張單兩個入口只是噪音，
+ * 而且要印之前多半會先看一眼內容。彈窗底部那顆一併收掉，只留右上角一個。
+ */
+describe('檢視右上角的列印', () => {
+  let onOpenPrint;
+  let onClose;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.alert = vi.fn();
+    window.electronAPI = { namedQuery: vi.fn().mockResolvedValue({ success: true, rows: [{ id: 7 }] }) };
+    onOpenPrint = vi.fn();
+    onClose = vi.fn();
+  });
+
+  const open = () => render(
+    <RepairOrderDetailModal isOpen repairOrder={ORDER} onClose={onClose} onOpenPrint={onOpenPrint} />
+  );
+
+  it('整個彈窗只有一顆列印，而且在表頭', () => {
+    const { container } = open();
+    const printers = [...container.querySelectorAll('.lucide-printer')];
+    expect(printers).toHaveLength(1);
+    // 表頭是內容區的前一個兄弟節點：列印和關閉在同一組
+    const header = printers[0].closest('div[style]').parentElement.parentElement;
+    expect(header).toHaveTextContent(ORDER.repair_no);
+    expect(header.querySelector('.lucide-x')).not.toBeNull();
+  });
+
+  it('點下去先關掉詳情，再開套印', async () => {
+    open();
+    await userEvent.click(screen.getByRole('button', { name: '套印維修單據' }));
+    expect(onClose).toHaveBeenCalled();
+    expect(onOpenPrint).toHaveBeenCalledWith(ORDER);
+  });
+
+  it('沒有給 onOpenPrint 就不顯示', () => {
+    render(<RepairOrderDetailModal isOpen repairOrder={ORDER} onClose={onClose} />);
+    expect(screen.queryByRole('button', { name: '套印維修單據' })).not.toBeInTheDocument();
+  });
+});

@@ -310,21 +310,51 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--text-muted)',
-              cursor: 'pointer',
-              padding: '6px',
-              borderRadius: '8px',
-              display: 'flex',
-              alignItems: 'center'
-            }}
-          >
-            <X size={20} />
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {/* 列印放右上角。列表那一欄原本也有一顆，同一張單兩個入口只是噪音，
+                而且要印之前多半會先看一眼內容。 */}
+            {onOpenPrint && (
+              <button
+                onClick={() => {
+                  onClose();
+                  onOpenPrint(repairOrder);
+                }}
+                title="套印維修單據"
+                aria-label="套印維修單據"
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: 'var(--bg-surface)',
+                  color: 'var(--text-main)',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <Printer size={14} /> 套印
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              aria-label="關閉"
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-muted)',
+                cursor: 'pointer',
+                padding: '6px',
+                borderRadius: '8px',
+                display: 'flex',
+                alignItems: 'center'
+              }}
+            >
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
         {/* 彈窗內容區 (可滾動) */}
@@ -587,32 +617,10 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
           padding: '16px 24px',
           borderTop: '1px solid var(--border-color)',
           display: 'flex',
-          justifyContent: 'space-between',
+          justifyContent: 'flex-end',
           alignItems: 'center',
           backgroundColor: 'var(--bg-surface-subtle)'
         }}>
-          <button
-            onClick={() => {
-              onClose();
-              if (onOpenPrint) onOpenPrint(repairOrder);
-            }}
-            style={{
-              padding: '8px 16px',
-              borderRadius: '8px',
-              border: '1px solid var(--border-color)',
-              backgroundColor: 'var(--bg-surface)',
-              color: 'var(--text-main)',
-              fontSize: '13px',
-              fontWeight: 700,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}
-          >
-            <Printer size={15} /> 套印維修單據 (Print RMA)
-          </button>
-
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
             {/* 流程推進快捷按鈕 */}
             {repairOrder.status === 'ON_SITE_HANDLING' && noOem && onOpenAction && (

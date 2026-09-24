@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
-  Wrench, Search, Plus, Printer, Trash2, CheckCircle, AlertCircle, 
+  Wrench, Search, Plus, Trash2, CheckCircle, AlertCircle, 
   Truck, PackageCheck, RotateCcw, ExternalLink, RefreshCw, FileText,
   Calendar, Building2, Cpu, Server, ChevronRight, Eye, Home
 } from 'lucide-react';
@@ -430,7 +430,7 @@ const RepairList = () => {
                 <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontWeight: 800, minWidth: '160px', position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>現場狀況 / 故障描述</th>
                 <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontWeight: 800, textAlign: 'center', whiteSpace: 'nowrap', position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>當前狀態</th>
                 <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontWeight: 800, minWidth: '190px', position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>維修時程 (Maint. Timeline)</th>
-                <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontWeight: 800, textAlign: 'right', minWidth: '200px', position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>操作流程</th>
+                <th style={{ padding: 'var(--table-cell-padding-y, 8px) var(--table-cell-padding-x, 10px)', fontWeight: 800, minWidth: '200px', position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', boxShadow: '0 1px 0 var(--border-color)' }}>操作流程</th>
               </tr>
             </thead>
             <tbody>
@@ -586,8 +586,8 @@ const RepairList = () => {
                       </td>
 
                       {/* 操作流程按鈕 */}
-                      <td style={{ padding: '14px 16px', textAlign: 'right' }}>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <td style={{ padding: '14px 16px' }}>
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
                           {/* 檢視詳細資料 */}
                           <button
                             onClick={() => setDetailModal({ isOpen: true, order })}
@@ -759,25 +759,6 @@ const RepairList = () => {
                               </span>
                             )}
                           </div>
-
-                          {/* 套印單據按鈕 */}
-                          <button
-                            onClick={() => setPrintModal({ isOpen: true, order })}
-                            style={{
-                              padding: '6px 8px',
-                              whiteSpace: 'nowrap',
-                              borderRadius: '8px',
-                              border: '1px solid var(--border-color)',
-                              backgroundColor: 'var(--bg-surface)',
-                              color: 'var(--text-main)',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center'
-                            }}
-                            title="列印 / 預覽維修單據"
-                          >
-                            <Printer size={13} />
-                          </button>
 
                           {/* 刪除按鈕 */}
                           <button
