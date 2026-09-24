@@ -189,6 +189,8 @@ describe('維修單管理系統 (Repair Orders / RMA List) 四階段流程與設
       expect(screen.getByText(/X0342639/)).toBeInTheDocument();
       expect(screen.getByText(/BC025778/)).toBeInTheDocument();
       expect(screen.getByText('取回 重灌OS')).toBeInTheDocument();
+      // 現場處理日和送修完工資訊併成「維修時程」後，日期仍然列得出來
+      expect(screen.getAllByText('2026-06-25').length).toBeGreaterThan(0);
     });
   });
 

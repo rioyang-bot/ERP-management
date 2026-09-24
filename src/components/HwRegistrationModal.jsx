@@ -5,6 +5,7 @@ import { logCreate } from '../utils/auditLogger';
 import CardPickerModal from './CardPickerModal';
 import HwBatchImportModal from './HwBatchImportModal';
 import { normalizeMasterName } from '../utils/normalizeMasterData';
+import { validateName as validateAndSanitize } from '../utils/nameValidation';
 
 const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   const [brands, setBrands] = useState([]);
@@ -27,17 +28,6 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
     brand: '', type: '', model: '', specification: '', sn: '',
     order_source: '', server_sn: '', project_name: '', ownership: 'FOR_SALE'
   });
-
-  const validateAndSanitize = (val, fieldName = '欄位') => {
-    if (typeof val !== 'string' || !val) return val;
-    const charRegex = /[|&;$%@'"\\()+\r\n,]/g;
-    const keywordRegex = /\b(Select|Insert|Dbo|Declare|Cast|Drop|Union|Exec|Nvarchar)\b/gi;
-    if (charRegex.test(val) || keywordRegex.test(val)) {
-      alert(`「${fieldName}」包含不合規的安全規則字元或關鍵字，請移除特殊符號。`);
-      return null;
-    }
-    return val.trim();
-  };
 
   // 這次建檔中新輸入、但還沒真正建立的類型／廠牌／型號。
   // 下拉選單已改讀「既有卡片」，新值在存檔前還沒有卡片、查不到，
@@ -223,9 +213,12 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
 
 
   const handleSave = async (continueAdd = false) => {
-    const safeType = validateAndSanitize(formData.type, '類型');
-    const safeBrand = validateAndSanitize(formData.brand, '廠牌');
-    const safeModel = validateAndSanitize(formData.model, '型號');
+    // 類型／廠牌／型號只能從下拉選單挑，挑到的都是資料庫裡既有的值，
+    // 這裡不再重驗一次 —— 新名稱在按下「新增」時就驗過了，送出時再驗只會
+    // 把舊資料（例如以吋數命名的 `SATA 2.5" SSD`）擋成完全無法建檔。
+    const safeType = formData.type.trim();
+    const safeBrand = formData.brand.trim();
+    const safeModel = formData.model.trim();
     const safeSpec = formData.specification ? (validateAndSanitize(formData.specification, '規格') || '') : '';
     const safeServerSn = validateAndSanitize(formData.server_sn, 'Server SN');
 

@@ -19,7 +19,8 @@ describe('硬體建檔規格必填與建立整合測試', () => {
         return Promise.resolve({ success: true, rows: [{ id: 1, name: 'Intel' }] });
       }
       if (query === 'fetchHwTypes' || query === 'fetchNicTypesByBrand') {
-        return Promise.resolve({ success: true, rows: [{ name: 'NIC 網卡' }] });
+        // SATA 2.5" SSD 是早年用匯入建的，名稱含雙引號
+        return Promise.resolve({ success: true, rows: [{ name: 'NIC 網卡' }, { name: 'SATA 2.5" SSD' }] });
       }
       if (query === 'fetchHwModelsByBrand' || query === 'fetchNicModelsByBrandType') {
         return Promise.resolve({ success: true, rows: [{ name: 'E810-XXVDA2' }] });
@@ -90,6 +91,44 @@ describe('硬體建檔規格必填與建立整合測試', () => {
       );
       expect(insertSpy).toHaveBeenCalled();
     });
+  });
+
+/**
+   * 以吋數命名的類型（SATA 2.5" SSD、3.5" HDD、19" Rack）是用匯入建的，
+   * 匯入不經過表單檢查。前端黑名單多擋了雙引號，導致這些類型挑得到、
+   * 卻永遠建不出來 —— 伺服器的 sanitizeParams 本來就放行雙引號。
+   */
+  it('類型名稱含雙引號（例如 SATA 2.5" SSD）仍能建檔', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <HwRegistration />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/硬體建檔/)).toBeInTheDocument();
+    });
+
+    const selects = screen.getAllByRole('combobox');
+    await user.selectOptions(selects[0], 'SATA 2.5" SSD');
+    await user.selectOptions(selects[1], 'Intel');
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'E810-XXVDA2' })).toBeInTheDocument();
+    });
+    await user.selectOptions(selects[2], 'E810-XXVDA2');
+
+    await user.type(screen.getByPlaceholderText('請輸入硬體序號'), 'SSD-TEST-001');
+    fireEvent.submit(screen.getByRole('button', { name: /儲存硬體資料/ }).closest('form'));
+
+    await waitFor(() => {
+      expect(window.electronAPI.namedQuery).toHaveBeenCalledWith(
+        'insertItemMaster',
+        expect.arrayContaining(['SATA 2.5" SSD'])
+      );
+      expect(insertSpy).toHaveBeenCalled();
+    });
+    expect(window.alert).not.toHaveBeenCalledWith(expect.stringContaining('不合規'));
   });
 
   it('填寫必填規格與序號後應能順利建立硬體主檔與資產記錄', async () => {

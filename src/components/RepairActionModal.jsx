@@ -33,6 +33,20 @@ const QUICK_RESULTS = [
  * IN_HOUSE_COMPLETE 是不送原廠的那條路：IT 自行排除故障後填寫維修結果，
  * 一步從現場處理直接結案出貨，不經過送修原廠與原廠返還兩個階段。
  */
+// 四個階段各有自己的說明欄位，不再共用一個 remarks。
+// 原廠返還那一步的內容是「維修與檢測結果」(results)，沒有另外的備註。
+const REMARK_FIELD = {
+  SEND_OEM: 'send_oem_remarks',
+  IN_HOUSE_COMPLETE: 'completion_remarks',
+  COMPLETE: 'completion_remarks',
+};
+
+const REMARK_LABEL = {
+  SEND_OEM: { label: '送修備註 (Remarks)', placeholder: '例如: 黑貓單號 123456789 / 原廠 RMA #98765' },
+  IN_HOUSE_COMPLETE: { label: '出貨備註 (Remarks)', placeholder: '例如: 已於 9/24 送回客戶機房' },
+  COMPLETE: { label: '出貨備註 (Remarks)', placeholder: '例如: 黑貓單號 123456789 / 客戶簽收人' },
+};
+
 const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess }) => {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [results, setResults] = useState('');
@@ -50,14 +64,15 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
     if (isOpen && repairOrder) {
       setDate(new Date().toISOString().split('T')[0]);
       setResults(repairOrder.results || '');
-      setRemarks(repairOrder.remarks || '');
+      // 每個階段的說明各自一欄，帶入的是「這一步自己的」那一筆
+      setRemarks(repairOrder[REMARK_FIELD[actionType]] || '');
       setIsRmaReplacement(false);
       setRmaMode('IN_PLACE');
       setRmaNo('');
       setReplacementSns({});
       setError('');
     }
-  }, [isOpen, repairOrder]);
+  }, [isOpen, repairOrder, actionType]);
 
   if (!isOpen || !repairOrder) return null;
 
@@ -218,10 +233,10 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
         }
 
         // 1. 寫入 OEM Return Date 與 Results，更新為 OEM_RETURNED
+        // 這一步沒有備註欄，內容就是維修與檢測結果
         const res = await window.electronAPI.namedQuery('updateRepairOEMReturn', [
           date,
           finalResults,
-          remarks.trim() || null,
           repairOrder.id,
           isInternal
         ]);
@@ -651,16 +666,18 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
             </div>
           )}
 
-          {/* 備註 */}
+          {/* 本階段的備註。原廠返還那一步沒有備註欄，內容是上面的「維修結果」 */}
+          {REMARK_LABEL[actionType] && (
           <div>
             <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '6px' }}>
-              備註說明 (Remarks / 物流單號)
+              {REMARK_LABEL[actionType].label}
             </label>
             <input
               type="text"
               value={remarks}
               onChange={(e) => setRemarks(e.target.value)}
-              placeholder="例如: 黑貓單號 123456789 / 原廠 RMA #98765"
+              aria-label={REMARK_LABEL[actionType].label}
+              placeholder={REMARK_LABEL[actionType].placeholder}
               style={{
                 width: '100%',
                 padding: '10px 14px',
@@ -672,6 +689,7 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
               }}
             />
           </div>
+          )}
 
           {/* 底部按鈕 */}
           <div style={{

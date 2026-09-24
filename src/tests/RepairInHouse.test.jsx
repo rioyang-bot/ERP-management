@@ -208,10 +208,18 @@ describe('維修單列表的操作按鈕', () => {
     expect(actions).not.toContain('送修原廠');
   });
 
-  it('空間不足時整顆按鈕換行，不會把字拆開', async () => {
+  /**
+   * 原本靠 flex-wrap 換行，但欄位一窄就把刪除鈕擠到第二行。
+   * 階段動作已經自己疊成直排，整列改為不換行；
+   * 「不會把字拆開」則由每顆按鈕自己的 white-space: nowrap 保證。
+   */
+  it('按鈕文字不會被拆成兩行', async () => {
     await showList();
     const container = actionCell().querySelector('button').parentElement;
+    expect(container).toHaveStyle({ flexWrap: 'nowrap' });
 
-    expect(container).toHaveStyle({ flexWrap: 'wrap' });
+    for (const b of actionCell().querySelectorAll('button')) {
+      expect(getComputedStyle(b).whiteSpace, b.textContent.trim()).toBe('nowrap');
+    }
   });
 });

@@ -282,18 +282,20 @@ describe('設備狀態的說明文字', () => {
 describe('內部維修的終點', () => {
   const sql = queries.updateRepairOEMReturn;
 
+  // 這一階段的備註欄拿掉之後（內容由 results 表達），參數從 5 個減為 4 個，
+  // 內部旗標跟著從 $5 往前移到 $4。
   it('內部維修返還時直接結案', () => {
-    expect(sql).toContain("CASE WHEN $5::boolean THEN 'COMPLETED' ELSE 'OEM_RETURNED' END");
+    expect(sql).toContain("CASE WHEN $4::boolean THEN 'COMPLETED' ELSE 'OEM_RETURNED' END");
   });
 
   it('完工日期就是返還日期', () => {
-    expect(sql).toContain('CASE WHEN $5::boolean THEN $1::date ELSE completion_date END');
+    expect(sql).toContain('CASE WHEN $4::boolean THEN $1::date ELSE completion_date END');
   });
 
   it('客戶送修不受影響，仍要再經過一次出貨', () => {
     expect(sql).toContain("ELSE 'OEM_RETURNED'");
     // 旗標沒傳時 CASE 落到 ELSE，維持舊行為
-    expect(sql).not.toContain('COALESCE($5');
+    expect(sql).not.toContain('COALESCE($4');
   });
 
   it('返還後設備回到在庫而不是出庫', async () => {

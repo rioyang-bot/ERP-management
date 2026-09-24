@@ -5,6 +5,7 @@ import { logCreate } from '../utils/auditLogger';
 import CardPickerModal from './CardPickerModal';
 import DeviceBatchImportModal from './DeviceBatchImportModal';
 import { normalizeMasterName } from '../utils/normalizeMasterData';
+import { validateName as validateAndSanitize } from '../utils/nameValidation';
 
 const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   const [types, setTypes] = useState([]);
@@ -30,17 +31,6 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   const [isBulkMode, setIsBulkMode] = useState(false);
   const [bulkSns, setBulkSns] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const validateAndSanitize = (val, fieldName = '欄位') => {
-    if (typeof val !== 'string' || !val) return val;
-    const charRegex = /[|&;$%@'"\\()+\r\n,]/g;
-    const keywordRegex = /\b(Select|Insert|Dbo|Declare|Cast|Drop|Union|Exec|Nvarchar)\b/gi;
-    if (charRegex.test(val) || keywordRegex.test(val)) {
-      alert(`「${fieldName}」包含不合規的安全規則字元或關鍵字，請移除特殊符號。`);
-      return null;
-    }
-    return val.trim();
-  };
 
   // 這次建檔中新輸入、但還沒真正建立的類型／廠牌／型號。
   // 下拉選單已改讀「既有卡片」，新值在存檔前還沒有卡片、查不到，
