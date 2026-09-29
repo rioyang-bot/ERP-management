@@ -116,7 +116,19 @@ for (const token of targets) {
   const found = await resolve(token);
   if (found.length === 0) { problems.push(`找不到「${token}」`); continue; }
   if (found.length > 1) {
-    problems.push(`「${token}」對到 ${found.length} 筆（${found.map((m) => `#${m.id}`).join(', ')}），請改用品項 ID`);
+    // 誤建的典型後果就是同一個品項多了一筆主檔。只印 ID 幫助不大 ——
+    // 要判斷該刪哪一筆，看的是建立時間與有沒有進出貨紀錄，一併列出來。
+    const lines = [`「${token}」對到 ${found.length} 筆主檔，請改用品項 ID 指定要刪的那一筆：`];
+    for (const m of found) {
+      const deps = [];
+      for (const [name, sql] of DEPENDENCIES) {
+        const { rows: [{ n }] } = await pool.query(sql, [m.id]);
+        if (Number(n) > 0) deps.push(`${name} ${n} 筆`);
+      }
+      lines.push(`     #${m.id}　建立於 ${when(m.created_at)}　庫存 ${m.stock_qty ?? 0}`
+        + `　${deps.length ? `有關聯：${deps.join('、')}（動不得）` : '無任何關聯紀錄'}`);
+    }
+    problems.push(lines.join('\n'));
     continue;
   }
   const master = found[0];
