@@ -354,6 +354,22 @@ describe('設備更新狀態同步至掛載硬體之整合測試', () => {
       expect(bindCalls[0][1].slice(0, 2)).toEqual(['STG100385Y25', 'HW-NIC-001']);
       expect(bindCalls[1][1].slice(0, 2)).toEqual(['STG100385Y25', 'HW-NIC-002']);
     });
+
+    // 加掛硬體是這台機器組態的重大變化，履歷與事件紀錄都要看得到。
+    // 先前只把清單塞進 details，敘述完全沒提。
+    await waitFor(() => {
+      const logs = querySpy.mock.calls
+        .filter((c) => c[0] === 'insertAuditLog')
+        .map((c) => JSON.stringify(c[1]));
+      const device = logs.find((t) => t.includes('搭載硬體異動：加掛'));
+      expect(device, '設備端應該有一筆搭載硬體異動').toBeTruthy();
+      expect(device).toContain('HW-NIC-001');
+      expect(device).toContain('HW-NIC-002');
+      expect(device).toContain('"mountChanged":true');
+
+      // 硬體那一側也各記一筆，否則打開該硬體的履歷看不到它被裝到哪裡
+      expect(logs.filter((t) => t.includes('加掛到設備 [STG100385Y25]'))).toHaveLength(2);
+    });
   });
 
   it('在設備編輯彈窗中移除已掛載之硬體 SN，儲存時應呼叫 unbindHardwareServerSn 解除該硬體綁定', async () => {
