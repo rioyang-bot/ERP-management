@@ -8,7 +8,6 @@ import { logUpdate, logDelete, logStatusChange, logSnChange } from '../utils/aud
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 import FilterResultSummary from '../components/common/FilterResultSummary';
-import { matchedContacts, belongsToContacts, expandedSpellings } from '../utils/customerSearch';
 import { isItemRetired, getItemAggregationKey, aggregateCards, computeNewRetiredKeys, getCardTitle, showsModelSubtitle, getCardSearchText, ASSET_AGGREGATION_MODES } from '../utils/cardAggregation';
 import ColumnVisibilityModal from '../components/ColumnVisibilityModal';
 import CardAggregationLegend from '../components/CardAggregationLegend';
@@ -465,16 +464,6 @@ const HwList = ({ isSplitMode = false }) => {
   // 排序用的基準日：整次排序共用同一個，避免跨午夜時前後比較不一致
   const sortToday = new Date();
 
-  // 與設備列表同一套：同一位聯絡人底下的各種客戶寫法一併帶出來
-  const searchTerms = searchTerm.toLowerCase().split(/\s+/).filter(t => t);
-  const customerAccessors = {
-    getClient: (n) => n.client || n.server_client,
-    getEndUser: (n) => n.end_user || n.custom_attributes?.end_user || n.server_end_user,
-    getContact: (n) => n.partner_contact || n.custom_attributes?.contact_person,
-  };
-  const contactMatches = matchedContacts(nics, searchTerms, customerAccessors);
-  const alsoIncluded = expandedSpellings(nics, contactMatches, searchTerms, customerAccessors);
-
   const filteredNics = nics
     .filter(n => {
       if (selectedCardKey) {
@@ -484,12 +473,10 @@ const HwList = ({ isSplitMode = false }) => {
         const itemRetired = isItemRetired(n, retiredKeys);
         if (itemKey !== targetKey || itemRetired !== isTargetRetired) return false;
       }
+      const searchTerms = searchTerm.toLowerCase().split(/\s+/).filter(t => t);
       if (searchTerms.length === 0) return true;
-      // 關鍵字命中同一位聯絡人的其他寫法，這一筆也算
-      if (belongsToContacts(n, contactMatches, customerAccessors)) return true;
-      return searchTerms.every(term =>
+      return searchTerms.every(term => 
         (n.sn || '').toLowerCase().includes(term) ||
-        (n.partner_contact || n.custom_attributes?.contact_person || '').toLowerCase().includes(term) ||
         (n.brand || '').toLowerCase().includes(term) ||
         (n.model || '').toLowerCase().includes(term) ||
         (n.specification || '').toLowerCase().includes(term) ||
@@ -880,7 +867,6 @@ const HwList = ({ isSplitMode = false }) => {
       searchTerm={searchTerm}
       brandFilter={filterType}
       cardLabel={selectedCardKey ? selectedCardKey.replace(':::RETIRED', '') : ''}
-      alsoIncluded={alsoIncluded}
     />
     <div style={{ marginBottom: '16px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', minHeight: '300px', border: '1px solid var(--border-color)', borderRadius: '10px' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
