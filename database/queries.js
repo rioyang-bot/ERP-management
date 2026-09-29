@@ -785,6 +785,8 @@ export const queries = {
       c.name as cat_name 
       FROM item_master i LEFT JOIN categories c ON i.category_id = c.id ORDER BY i.id DESC`,
   fetchPendingPurchases: `SELECT pr.*, p.name as partner_name, c.name as category_name FROM purchase_records pr LEFT JOIN partners p ON pr.partner_id = p.id LEFT JOIN categories c ON pr.category_id = c.id WHERE pr.status != 'COMPLETED' ORDER BY pr.created_at DESC`,
+  // item_master 是五張表的 ON DELETE CASCADE 母表，少檢查一張就會連帶
+  // 刪掉歷史帳務且毫無警告。inventory_monthly_balances 先前漏掉了，這裡補上。
   deleteItemMasterIfOrphan: `
       DELETE FROM item_master i
       WHERE i.id = $1
@@ -792,8 +794,27 @@ export const queries = {
         AND NOT EXISTS (SELECT 1 FROM inbound_items ii WHERE ii.item_id = i.id)
         AND NOT EXISTS (SELECT 1 FROM outbound_items oi WHERE oi.item_id = i.id)
         AND NOT EXISTS (SELECT 1 FROM item_lab_assignments la WHERE la.item_master_id = i.id)
+        AND NOT EXISTS (SELECT 1 FROM inventory_monthly_balances b WHERE b.item_master_id = i.id)
       RETURNING id
   `,
+
+  // 刪掉進貨單之後，哪些品項變成「從來沒真正進過貨」的孤兒。
+  // 進貨頁的「快速新增」會當場建出主檔，單子刪掉後那筆主檔仍會留在列表上，
+  // 庫存 0、沒有任何單據用過 —— 正是先前要手動清掉的那種幽靈品項。
+  // 條件與 deleteItemMasterIfOrphan 相同，另外要求庫存與借測都是 0。
+  fetchOrphanItemMasters: `
+    SELECT i.id, i.brand, i.type, i.model, i.specification, c.name AS category_name
+    FROM item_master i
+    LEFT JOIN categories c ON i.category_id = c.id
+    WHERE i.id = ANY($1::int[])
+      AND COALESCE(i.stock_qty, 0) = 0
+      AND COALESCE(i.lab_qty, 0) = 0
+      AND NOT EXISTS (SELECT 1 FROM assets a WHERE a.item_master_id = i.id)
+      AND NOT EXISTS (SELECT 1 FROM inbound_items ii WHERE ii.item_id = i.id)
+      AND NOT EXISTS (SELECT 1 FROM outbound_items oi WHERE oi.item_id = i.id)
+      AND NOT EXISTS (SELECT 1 FROM item_lab_assignments la WHERE la.item_master_id = i.id)
+      AND NOT EXISTS (SELECT 1 FROM inventory_monthly_balances b WHERE b.item_master_id = i.id)
+    ORDER BY i.id`,
   cleanupOrphanItemMasters: `
       DELETE FROM item_master i
       WHERE i.id IN (
