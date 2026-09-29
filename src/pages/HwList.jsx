@@ -8,6 +8,7 @@ import { logUpdate, logDelete, logStatusChange, logSnChange } from '../utils/aud
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 import FilterResultSummary from '../components/common/FilterResultSummary';
+import { parseSearchQuery, matchesSearchQuery, SEARCH_PLACEHOLDER } from '../utils/searchQuery';
 import { isItemRetired, getItemAggregationKey, aggregateCards, computeNewRetiredKeys, getCardTitle, showsModelSubtitle, getCardSearchText, ASSET_AGGREGATION_MODES } from '../utils/cardAggregation';
 import ColumnVisibilityModal from '../components/ColumnVisibilityModal';
 import CardAggregationLegend from '../components/CardAggregationLegend';
@@ -473,9 +474,9 @@ const HwList = ({ isSplitMode = false }) => {
         const itemRetired = isItemRetired(n, retiredKeys);
         if (itemKey !== targetKey || itemRetired !== isTargetRetired) return false;
       }
-      const searchTerms = searchTerm.toLowerCase().split(/\s+/).filter(t => t);
-      if (searchTerms.length === 0) return true;
-      return searchTerms.every(term => 
+      const searchGroups = parseSearchQuery(searchTerm);
+      if (searchGroups.length === 0) return true;
+      return matchesSearchQuery(searchGroups, term => 
         (n.sn || '').toLowerCase().includes(term) ||
         (n.brand || '').toLowerCase().includes(term) ||
         (n.model || '').toLowerCase().includes(term) ||
@@ -630,7 +631,7 @@ const HwList = ({ isSplitMode = false }) => {
         </button>
         <div style={{ position: 'relative' }}>
           <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-subtle)' }} />
-          <input type="text" placeholder="搜尋..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ padding: '10px 12px 10px 42px', borderRadius: '30px', border: '1.5px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', width: '200px', outline: 'none' }} />
+          <input type="text" placeholder={SEARCH_PLACEHOLDER} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ padding: '10px 12px 10px 42px', borderRadius: '30px', border: '1.5px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', width: '200px', outline: 'none' }} />
         </div>
         </div>
       </div>
@@ -697,16 +698,16 @@ const HwList = ({ isSplitMode = false }) => {
 
     // --- 過濾模式：卡片置頂靠左 ---
     if (filterType || searchTerm || selectedCardKey) {
-      const searchTerms = searchTerm.toLowerCase().split(/\s+/).filter(t => t);
+      const searchGroups = parseSearchQuery(searchTerm);
       const filterCard = (st) => {
         if (selectedCardKey) {
           const cardId = st.isRetired ? `${st.key}:::RETIRED` : st.key;
           if (cardId !== selectedCardKey) return false;
         }
         if (filterType && st.type !== filterType) return false;
-        if (searchTerms.length === 0) return true;
+        if (searchGroups.length === 0) return true;
         const target = getCardSearchText(st);
-        return searchTerms.every(t => target.includes(t));
+        return matchesSearchQuery(searchGroups, t => target.includes(t));
       };
 
       const activeMatches = Object.values(activeStatsMap).filter(filterCard);

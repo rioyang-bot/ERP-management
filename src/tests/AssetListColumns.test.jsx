@@ -62,7 +62,7 @@ describe('設備／硬體列表的欄位編排', () => {
     const { default: userEvent } = await import('@testing-library/user-event');
     render(<MemoryRouter><HwList /></MemoryRouter>);
     // 硬體列表要先搜尋才會展開清單
-    await userEvent.type(await screen.findByPlaceholderText('搜尋...'), 'HW-001');
+    await userEvent.type(await screen.findByPlaceholderText(/搜尋/), 'HW-001');
     await waitFor(() => expect(screen.getAllByText('HW-001').length).toBeGreaterThan(0));
   };
 

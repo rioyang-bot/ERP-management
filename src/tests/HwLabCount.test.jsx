@@ -44,7 +44,7 @@ describe('硬體列表：LAB 計數', () => {
 
   it('卡片上出現 LAB，數字是已掛載且未出貨的筆數', async () => {
     render(<MemoryRouter><HwList /></MemoryRouter>);
-    await userEvent.type(await screen.findByPlaceholderText('搜尋...'), 'CX556A');
+    await userEvent.type(await screen.findByPlaceholderText(/搜尋/), 'CX556A');
 
     const card = await waitFor(() => {
       const el = [...document.querySelectorAll('div')].find((d) => d.textContent?.includes('LAB'));
