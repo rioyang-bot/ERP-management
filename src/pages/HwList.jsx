@@ -7,6 +7,7 @@ import RmaReplacementModal from '../components/RmaReplacementModal';
 import { logUpdate, logDelete, logStatusChange } from '../utils/auditLogger';
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
+import FilterResultSummary from '../components/common/FilterResultSummary';
 import { isItemRetired, getItemAggregationKey, aggregateCards, computeNewRetiredKeys, getCardTitle, showsModelSubtitle, getCardSearchText, ASSET_AGGREGATION_MODES } from '../utils/cardAggregation';
 import ColumnVisibilityModal from '../components/ColumnVisibilityModal';
 import CardAggregationLegend from '../components/CardAggregationLegend';
@@ -845,6 +846,16 @@ const HwList = ({ isSplitMode = false }) => {
   };
 
   const renderTable = () => (
+    <>
+    {/* 篩選結果統計。用 filteredNics 而不是 paginatedNics ——
+        要回答的是「這位客戶總共有幾個」，不是這一頁有幾個。 */}
+    <FilterResultSummary
+      items={filteredNics}
+      unit="個"
+      searchTerm={searchTerm}
+      brandFilter={filterType}
+      cardLabel={selectedCardKey ? selectedCardKey.replace(':::RETIRED', '') : ''}
+    />
     <div style={{ marginBottom: '16px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', minHeight: '300px', border: '1px solid var(--border-color)', borderRadius: '10px' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
         <thead style={{ position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)' }}>
@@ -1087,6 +1098,7 @@ const HwList = ({ isSplitMode = false }) => {
         )}
       </div>
     </div>
+    </>
   );
 
   return (
