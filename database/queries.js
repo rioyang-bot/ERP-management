@@ -1536,6 +1536,7 @@ export const queries = {
         -- 序號變更由 details.snChanged 判定，不靠敘述比對。
         -- 舊資料沒有這個旗標，補一段文字比對涵蓋既有紀錄。
         WHEN l.details->>'snChanged' = 'true' THEN 'SN_CHANGE'
+        WHEN l.details->>'mountChanged' = 'true' THEN 'MOUNT_CHANGE'
         WHEN l.summary LIKE '序號變更%' OR l.summary LIKE '%序號由 [%' THEN 'SN_CHANGE'
         WHEN l.summary LIKE '原廠 RMA%' THEN 'RMA_REPLACE'
         WHEN l.details->>'newStatus' = 'SCRAPPED' THEN 'SCRAP'

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, History, ArrowDownToLine, ArrowUpFromLine, ArrowRightLeft, RefreshCw, Box, Layers, Hash, ChevronLeft, ChevronRight, FileSpreadsheet, Wrench, Repeat, Trash2, PackageCheck } from 'lucide-react';
+import { X, History, ArrowDownToLine, ArrowUpFromLine, ArrowRightLeft, RefreshCw, Box, Layers, Hash, ChevronLeft, ChevronRight, FileSpreadsheet, Wrench, Repeat, Trash2, PackageCheck, Cpu } from 'lucide-react';
 
 const ItemLedgerModal = ({ isOpen, onClose, item }) => {
   const [records, setRecords] = useState([]);
@@ -61,6 +61,8 @@ const ItemLedgerModal = ({ isOpen, onClose, item }) => {
         return { label: '維修處理', icon: <Wrench size={14} />, color: '#d97706', bg: 'rgba(217, 119, 6, 0.15)' };
       case 'SN_CHANGE':
         return { label: '序號變更', icon: <Hash size={14} />, color: '#7c3aed', bg: 'rgba(124, 58, 237, 0.15)' };
+      case 'MOUNT_CHANGE':
+        return { label: '搭載硬體異動', icon: <Cpu size={14} />, color: '#0891b2', bg: 'rgba(8, 145, 178, 0.15)' };
       case 'RMA_REPLACE':
         return { label: '原廠換機', icon: <Repeat size={14} />, color: '#0ea5e9', bg: 'rgba(14, 165, 233, 0.15)' };
       case 'SCRAP':
