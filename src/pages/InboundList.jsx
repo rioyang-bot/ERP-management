@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ArrowDownToLine, Search, Filter, Eye, RefreshCw, AlertCircle, Trash2, Calendar, Hash, FileText, Plus, Edit2, Save, X } from 'lucide-react';
-import { logUpdate } from '../utils/auditLogger';
+import { logUpdate, logSnChange } from '../utils/auditLogger';
 import InboundRegistrationModal from '../components/InboundRegistrationModal';
 import { usePageSize } from '../utils/usePageSize';
 import { buildSnRenameSteps, validateSnRename, summariseSnRename } from '../utils/snRename';
@@ -243,6 +243,16 @@ const InboundList = ({ isSplitMode = false }) => {
         `更正序號 [${oldSn}] → [${newSn}]（資產、掛載關係與相關單據一併更新）`,
         { orderNo: selectedOrder?.order_no, oldSn, newSn }
       );
+
+      // 上面那筆記在進貨單名下，品項履歷是用序號接回資產的，接不到。
+      // 資產真的被改到時，另外記一筆在新序號名下，那台設備的履歷才看得見。
+      if (assetChanged) {
+        await logSnChange(
+          'DEVICE', oldSn, newSn, selectedOrder?.order_no || '進貨單',
+          `於進貨明細單 [${selectedOrder?.order_no || ''}] 更正`,
+          { orderNo: selectedOrder?.order_no }
+        );
+      }
 
       setSnEdit(null);
       const itemsRes = await window.electronAPI.namedQuery('fetchInboundItems', [selectedOrder.id]);

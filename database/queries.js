@@ -1533,6 +1533,10 @@ export const queries = {
       -- 不能直接用 summary LIKE '%RMA%'：維修單號本身就叫 RMA-20260918-01，
       -- 「建立維修單 [RMA-...]」會被誤判成原廠換機。
       CASE
+        -- 序號變更由 details.snChanged 判定，不靠敘述比對。
+        -- 舊資料沒有這個旗標，補一段文字比對涵蓋既有紀錄。
+        WHEN l.details->>'snChanged' = 'true' THEN 'SN_CHANGE'
+        WHEN l.summary LIKE '序號變更%' OR l.summary LIKE '%序號由 [%' THEN 'SN_CHANGE'
         WHEN l.summary LIKE '原廠 RMA%' THEN 'RMA_REPLACE'
         WHEN l.details->>'newStatus' = 'SCRAPPED' THEN 'SCRAP'
         WHEN l.summary LIKE '%維修單%' THEN 'REPAIR'

@@ -4,7 +4,7 @@ import { Search, Columns3, Edit2, X, Save, MoreHorizontal, MoreVertical, MapPin,
 import ItemLedgerModal from '../components/ItemLedgerModal';
 import DeviceRegistrationModal from '../components/DeviceRegistrationModal';
 import RmaReplacementModal from '../components/RmaReplacementModal';
-import { logUpdate, logDelete, logStatusChange } from '../utils/auditLogger';
+import { logUpdate, logDelete, logStatusChange, logSnChange } from '../utils/auditLogger';
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 import FilterResultSummary from '../components/common/FilterResultSummary';
@@ -489,27 +489,30 @@ const DeviceList = ({ isSplitMode = false }) => {
         alert(`【警告】以下搭載硬體 SN 綁定異常（查無已建立之硬體資料）：\n[${notFoundHwSns.join(', ')}]\n\n系統未自動建立未登記之硬體，請確認硬體庫存資料。`);
       }
 
-      logUpdate(
-        'DEVICE', 
-        newSn || editItem.id, 
-        `${editItem.brand || ''} ${editItem.model || ''}`, 
-        isSnChanged 
-          ? `編輯設備詳細資訊，序號由 [${origSn || '無序號'}] 變更為 [${newSn || '無序號'}]（已同步連動 ${mountedComponents.length} 件掛載硬體）` 
-          : `編輯設備詳細資訊 [${newSn || editItem.id}]`, 
-        {
-          sn: newSn,
-          origSn: origSn,
-          isSnChanged,
-          syncedHardwareCount: mountedComponents.length,
-          mountedHwSns: uniqueTargetHwSns,
-          client: editItem.client,
-          hostname: editItem.hostname,
-          location: editItem.location,
-          ownership: editItem.ownership,
-          os: editItem.os,
-          nic: editItem.nic
-        }
-      );
+      // 序號變更改用共用寫法：三個能改序號的入口（設備編輯、硬體編輯、
+      // 進貨明細單更正）敘述一致，並帶上 details.snChanged 供品項履歷分類。
+      const auditName = `${editItem.brand || ''} ${editItem.model || ''}`;
+      const auditDetails = {
+        sn: newSn,
+        origSn: origSn,
+        isSnChanged,
+        syncedHardwareCount: mountedComponents.length,
+        mountedHwSns: uniqueTargetHwSns,
+        client: editItem.client,
+        hostname: editItem.hostname,
+        location: editItem.location,
+        ownership: editItem.ownership,
+        os: editItem.os,
+        nic: editItem.nic,
+      };
+
+      if (isSnChanged) {
+        await logSnChange('DEVICE', origSn, newSn, auditName,
+          `設備編輯；已同步連動 ${mountedComponents.length} 件掛載硬體`, auditDetails);
+      } else {
+        await logUpdate('DEVICE', newSn || editItem.id, auditName,
+          `編輯設備詳細資訊 [${newSn || editItem.id}]`, auditDetails);
+      }
       setShowEditModal(false);
       window.dispatchEvent(new CustomEvent('db-update'));
       fetchAssets();

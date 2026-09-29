@@ -4,7 +4,7 @@ import { Search, Columns3, Edit2, X, Server, User, MapPin, MoreHorizontal, Trash
 import ItemLedgerModal from '../components/ItemLedgerModal';
 import HwRegistrationModal from '../components/HwRegistrationModal';
 import RmaReplacementModal from '../components/RmaReplacementModal';
-import { logUpdate, logDelete, logStatusChange } from '../utils/auditLogger';
+import { logUpdate, logDelete, logStatusChange, logSnChange } from '../utils/auditLogger';
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 import FilterResultSummary from '../components/common/FilterResultSummary';
@@ -287,7 +287,8 @@ const HwList = ({ isSplitMode = false }) => {
       // 否則那些地方會留著一個已經不存在的序號。
       const origSn = (editItem._origSn || '').trim();
       const newSn = (editItem.sn || '').trim();
-      if (origSn && newSn && origSn.toUpperCase() !== newSn.toUpperCase()) {
+      const isSnChanged = !!(origSn && newSn && origSn.toUpperCase() !== newSn.toUpperCase());
+      if (isSnChanged) {
         for (const queryName of ['renameMountedHwSnOnDevices', 'updateRepairItemsSn', 'updateOutboundItemsSn', 'updateInboundItemsSn']) {
           try {
             await window.electronAPI.namedQuery(queryName, [newSn, origSn]);
@@ -324,8 +325,13 @@ const HwList = ({ isSplitMode = false }) => {
       } catch (err) {
         console.error('Failed to update hardware shipping_date:', err);
       }
-      logUpdate('HARDWARE', editItem.sn || editItem.id, `${editItem.brand || ''} ${editItem.model || ''}`, `編輯硬體詳細資訊 [${editItem.sn || editItem.id}]`, {
+      // 序號變更要看得出來 —— 原本敘述只寫「編輯硬體詳細資訊」，
+      // 從履歷上完全看不出序號被改過。
+      const auditName = `${editItem.brand || ''} ${editItem.model || ''}`;
+      const auditDetails = {
         sn: editItem.sn,
+        origSn,
+        isSnChanged,
         client: editItem.client,
         end_user: editItem.temp_end_user,
         location: editItem.location,
@@ -333,8 +339,14 @@ const HwList = ({ isSplitMode = false }) => {
         server_sn: editItem.temp_server_sn,
         project_name: editItem.temp_project_name,
         order_source: editItem.temp_order_source,
-        shipping_date: editItem.shipping_date
-      });
+        shipping_date: editItem.shipping_date,
+      };
+      if (isSnChanged) {
+        await logSnChange('HARDWARE', origSn, newSn, auditName, '硬體編輯', auditDetails);
+      } else {
+        await logUpdate('HARDWARE', editItem.sn || editItem.id, auditName,
+          `編輯硬體詳細資訊 [${editItem.sn || editItem.id}]`, auditDetails);
+      }
       setShowEditModal(false); 
       window.dispatchEvent(new CustomEvent('db-update'));
     }
