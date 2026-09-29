@@ -8,6 +8,7 @@ import { logUpdate, logDelete, logStatusChange, logSnChange } from '../utils/aud
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 import FilterResultSummary from '../components/common/FilterResultSummary';
+import { parseSearchQuery, matchesSearchQuery, SEARCH_PLACEHOLDER } from '../utils/searchQuery';
 import { isItemRetired, getItemAggregationKey, aggregateCards, computeNewRetiredKeys, getCardTitle, showsModelSubtitle, getCardSearchText, ASSET_AGGREGATION_MODES } from '../utils/cardAggregation';
 import ColumnVisibilityModal from '../components/ColumnVisibilityModal';
 import CardAggregationLegend from '../components/CardAggregationLegend';
@@ -535,9 +536,9 @@ const DeviceList = ({ isSplitMode = false }) => {
         const itemRetired = isItemRetired(item, retiredKeys);
         if (itemKey !== targetKey || itemRetired !== isTargetRetired) return false;
       }
-      const searchTerms = searchTerm.toLowerCase().split(/\s+/).filter(t => t);
-      if (searchTerms.length === 0) return true;
-      return searchTerms.every(term => {
+      const searchGroups = parseSearchQuery(searchTerm);
+      if (searchGroups.length === 0) return true;
+      return matchesSearchQuery(searchGroups, term => {
         let attrs = {};
         try { attrs = typeof item.custom_attributes === 'string' ? JSON.parse(item.custom_attributes) : (item.custom_attributes || {}); } catch { /* 欄位不是合法 JSON 就當作沒有屬性 */ }
         return (item.sn || '').toLowerCase().includes(term) || (item.specification || '').toLowerCase().includes(term) ||
@@ -622,16 +623,16 @@ const DeviceList = ({ isSplitMode = false }) => {
     if (activeKeys.length === 0 && retiredList.length === 0) return null;
 
     if (brandFilter || searchTerm || selectedCardKey) {
-      const searchTerms = searchTerm.toLowerCase().split(/\s+/).filter(t => t);
+      const searchGroups = parseSearchQuery(searchTerm);
       const filterCard = (st) => {
         if (selectedCardKey) {
           const cardId = st.isRetired ? `${st.key}:::RETIRED` : st.key;
           if (cardId !== selectedCardKey) return false;
         }
         if (brandFilter && st.brand !== brandFilter) return false;
-        if (searchTerms.length === 0) return true;
+        if (searchGroups.length === 0) return true;
         const target = getCardSearchText(st);
-        return searchTerms.every(t => target.includes(t));
+        return matchesSearchQuery(searchGroups, t => target.includes(t));
       };
 
       const activeMatches = Object.values(activeStatsMap).filter(filterCard);
@@ -965,7 +966,7 @@ const DeviceList = ({ isSplitMode = false }) => {
             </button>
             <div style={{ position: 'relative' }}>
               <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-subtle)' }} />
-              <input type="text" placeholder="快速搜尋..." value={searchTerm} onChange={(e) => {setSearchTerm(e.target.value); setCurrentPage(1);}} style={{ padding: '10px 12px 10px 42px', borderRadius: '30px', border: '1.5px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', width: '220px', outline: 'none' }} />
+              <input type="text" placeholder={SEARCH_PLACEHOLDER} value={searchTerm} onChange={(e) => {setSearchTerm(e.target.value); setCurrentPage(1);}} style={{ padding: '10px 12px 10px 42px', borderRadius: '30px', border: '1.5px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', width: '220px', outline: 'none' }} />
             </div>
             </div>
           </div>

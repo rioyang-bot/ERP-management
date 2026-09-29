@@ -89,7 +89,7 @@ describe('設備列表：公司資產與資產編號', () => {
 
   it('可以用資產編號搜尋', async () => {
     await show();
-    await userEvent.type(screen.getByPlaceholderText('快速搜尋...'), 'METECH-2026-001');
+    await userEvent.type(screen.getByPlaceholderText(/快速搜尋/), 'METECH-2026-001');
 
     await waitFor(() => expect(screen.queryByText('B684M31272')).not.toBeInTheDocument());
     expect(screen.getByText('QTU5250009')).toBeInTheDocument();

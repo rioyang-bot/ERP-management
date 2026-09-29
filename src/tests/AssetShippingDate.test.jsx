@@ -198,7 +198,7 @@ describe('設備與硬體出貨日期 (shipping_date) 欄位與確認出貨自�
     );
 
     // 輸入搜尋字詞以進入 table 檢視
-    const searchInput = await screen.findByPlaceholderText('搜尋...');
+    const searchInput = await screen.findByPlaceholderText(/搜尋/);
     fireEvent.change(searchInput, { target: { value: 'HW-NIC' } });
 
     await waitFor(() => {

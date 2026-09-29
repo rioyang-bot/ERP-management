@@ -243,7 +243,7 @@ describe('設備與硬體工具列', () => {
   it('設備列表的聚合規則同樣排在搜尋框左邊', async () => {
     render(<MemoryRouter><DeviceList /></MemoryRouter>);
     const select = await screen.findByLabelText('聚合規則:');
-    const search = screen.getByPlaceholderText('快速搜尋...');
+    const search = screen.getByPlaceholderText(/快速搜尋/);
 
     expect(select.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });

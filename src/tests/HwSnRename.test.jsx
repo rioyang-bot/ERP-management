@@ -62,7 +62,7 @@ describe('硬體列表：改序號時的關聯連動', () => {
   const openEditor = async () => {
     render(<MemoryRouter><HwList /></MemoryRouter>);
     // 未輸入搜尋或選卡片時清單不會展開，先搜尋出目標那一筆
-    await userEvent.type(await screen.findByPlaceholderText('搜尋...'), 'XFL1YHT0OGYU');
+    await userEvent.type(await screen.findByPlaceholderText(/搜尋/), 'XFL1YHT0OGYU');
     await waitFor(() => expect(screen.getAllByText(/XFL1YHT0OGYU/).length).toBeGreaterThan(0));
 
     const menuBtn = screen.getAllByRole('button').find((b) => b.className?.includes('action-menu-btn'));
@@ -71,7 +71,7 @@ describe('硬體列表：改序號時的關聯連動', () => {
     // 搜尋框裡也是同一組字，挑編輯視窗裡的那一個
     return waitFor(() => {
       const input = screen.getAllByDisplayValue('XFL1YHT0OGYU')
-        .find((el) => el.getAttribute('placeholder') !== '搜尋...');
+        .find((el) => !(el.getAttribute('placeholder') || '').includes('搜尋'));
       expect(input).toBeTruthy();
       return input;
     });
