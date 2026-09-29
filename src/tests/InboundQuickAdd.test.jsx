@@ -55,6 +55,18 @@ describe('進貨單：快速建檔品項', () => {
     return screen.findByText('快速建檔品項範本');
   };
 
+  /**
+   * 快速新增的品項改為送出整張進貨單時才建立（先前是按下「儲存並帶入單據」
+   * 當下就寫進資料庫，使用者若沒送出，那筆品項仍會留在品項庫裡，
+   * 庫存 0、沒有任何單據用過）。因此欄位改從送出的交易步驟檢查。
+   */
+  const submitAndFindMasterStep = async () => {
+    await userEvent.click(screen.getByRole('button', { name: /確認入庫作業/ }));
+    await waitFor(() => expect(window.electronAPI.runTransaction).toHaveBeenCalled());
+    const steps = window.electronAPI.runTransaction.mock.calls.at(-1)[0];
+    return steps.find((st) => st.queryName === 'insertItemMaster');
+  };
+
   it('收的是廠牌、類型、型號、規格，不是一個籠統的品項名稱', async () => {
     await openQuickAdd();
 
@@ -122,9 +134,12 @@ describe('進貨單：快速建檔品項', () => {
     await userEvent.type(screen.getByPlaceholderText('例如：SYS-1029P'), 'SYS-1029P');
     await userEvent.click(screen.getByRole('button', { name: /儲存並帶入單據/ }));
 
-    await waitFor(() => expect(called('insertItemMaster')).toHaveLength(1));
+    // 按下「儲存並帶入單據」的當下不該碰資料庫
+    expect(called('insertItemMaster')).toHaveLength(0);
+
+    const step = await submitAndFindMasterStep();
     // 參數順序：規格、類型、廠牌、型號、單位、類別
-    expect(called('insertItemMaster')[0].params).toEqual(['', 'SERVER', 'SUPERMICRO', 'SYS-1029P', '台', '設備']);
+    expect(step.params).toEqual(['', 'SERVER', 'SUPERMICRO', 'SYS-1029P', '台', '設備']);
   });
 
   it('四個欄位都寫進品項主檔，型號不會遺失', async () => {
@@ -136,10 +151,50 @@ describe('進貨單：快速建檔品項', () => {
     await userEvent.type(screen.getByPlaceholderText(/26C \/ 256G/), '26C / 256G');
     await userEvent.click(screen.getByRole('button', { name: /儲存並帶入單據/ }));
 
-    await waitFor(() => expect(called('insertItemMaster')).toHaveLength(1));
-    const [spec, type, brand, model] = called('insertItemMaster')[0].params;
+    expect(called('insertItemMaster')).toHaveLength(0);
+
+    const step = await submitAndFindMasterStep();
+    const [spec, type, brand, model] = step.params;
     expect({ spec, type, brand, model })
       .toEqual({ spec: '26C / 256G', type: 'SERVER', brand: 'SUPERMICRO', model: 'SYS-1029P' });
+  });
+
+  /**
+   * 這正是要修掉的狀況：使用者快速新增了品項，然後改變主意關掉頁面。
+   * 舊行為會在品項庫留下一筆沒人用過的幽靈主檔。
+   */
+  it('快速新增後放棄送出，資料庫不會多出品項', async () => {
+    await openQuickAdd();
+
+    await userEvent.type(screen.getByPlaceholderText('例如：SUPERMICRO'), 'SUPERMICRO');
+    await userEvent.type(screen.getByPlaceholderText('例如：SERVER'), 'SERVER');
+    await userEvent.type(screen.getByPlaceholderText('例如：SYS-1029P'), 'SYS-1029P');
+    await userEvent.click(screen.getByRole('button', { name: /儲存並帶入單據/ }));
+
+    await waitFor(() => expect(screen.queryByText('快速建檔品項範本')).not.toBeInTheDocument());
+    expect(called('insertItemMaster')).toHaveLength(0);
+    expect(window.electronAPI.runTransaction).not.toHaveBeenCalled();
+  });
+
+  /**
+   * 從「從品項庫挑選」進來時沒有指定是哪一列。舊行為靠的是建檔後品項庫會多出
+   * 這筆、使用者再挑一次；不先建檔以後就得直接把它放到單據上，否則使用者
+   * 填完欄位按下儲存，畫面上卻什麼都沒發生。
+   */
+  it('沒有指定列時，快速新增的品項會落在單據的明細列上', async () => {
+    await openQuickAdd();
+
+    await userEvent.type(screen.getByPlaceholderText('例如：SUPERMICRO'), 'SUPERMICRO');
+    await userEvent.type(screen.getByPlaceholderText('例如：SERVER'), 'SERVER');
+    await userEvent.type(screen.getByPlaceholderText('例如：SYS-1029P'), 'SYS-1029P');
+    await userEvent.click(screen.getByRole('button', { name: /儲存並帶入單據/ }));
+
+    // 明細列上看得到它，並標明還沒建立
+    expect(await screen.findByText(/送出後才建立/)).toBeInTheDocument();
+    expect(screen.getByText(/SYS-1029P/)).toBeInTheDocument();
+
+    const step = await submitAndFindMasterStep();
+    expect(step).toBeTruthy();
   });
 
   it('切換類別會改讀該類別的既有值', async () => {
@@ -161,8 +216,8 @@ describe('進貨單：快速建檔品項', () => {
     await userEvent.type(screen.getByPlaceholderText('例如：SYS-1029P'), 'LC-LC-OM4-3M');
     await userEvent.click(screen.getByRole('button', { name: /儲存並帶入單據/ }));
 
-    await waitFor(() => expect(called('insertItemMaster')).toHaveLength(1));
+    const step = await submitAndFindMasterStep();
     // 耗材論個、設備論台
-    expect(called('insertItemMaster')[0].params[4]).toBe('個');
+    expect(step.params[4]).toBe('個');
   });
 });

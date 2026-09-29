@@ -9,7 +9,7 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
   const [pendingPurchases, setPendingPurchases] = useState([]);
   const [orderNo, setOrderNo] = useState('');
   const [inboundDate, setInboundDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [items, setItems] = useState([{ id: 1, selectedOrderNo: '', itemId: '', purchaseRecordId: '', cat_name: '', orderSource: '', unit: '', sn: '', qty: 1 }]);
+  const [items, setItems] = useState([{ id: 1, selectedOrderNo: '', itemId: '', pendingMaster: null, purchaseRecordId: '', cat_name: '', orderSource: '', unit: '', sn: '', qty: 1 }]);
   const [invoiceNo, setInvoiceNo] = useState('');
   const [attachments, setAttachments] = useState([]);
   const [previewFile, setPreviewFile] = useState(null);
@@ -76,7 +76,7 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
   }, [fetchData]);
 
   const handleAddItem = () => {
-    setItems([...items, { id: Date.now(), selectedOrderNo: '', itemId: '', purchaseRecordId: '', cat_name: '', orderSource: '', unit: '', sn: '', qty: 1 }]);
+    setItems([...items, { id: Date.now(), selectedOrderNo: '', itemId: '', pendingMaster: null, purchaseRecordId: '', cat_name: '', orderSource: '', unit: '', sn: '', qty: 1 }]);
   };
 
 
@@ -124,6 +124,7 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
       purchaseRecordId: '',
       orderSource: '',
       itemId: item.id,
+      pendingMaster: null,
       cat_name: item.cat_name || '',
       unit: item.unit || '個',
       sn: '',
@@ -142,7 +143,8 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
     if (activeRowId) {
       setItems(items.map(row => row.id === activeRowId ? { 
         ...row, 
-        itemId: selectedItem.id, 
+        itemId: selectedItem.id,
+        pendingMaster: null,
         cat_name: selectedItem.cat_name || '',
         unit: selectedItem.unit || '個',
         qty: qty || row.qty || 1
@@ -164,6 +166,7 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
     setItems(items.map(row => row.id === rowId ? {
       ...row,
       itemId: '',
+      pendingMaster: null,
       cat_name: '',
       unit: '個'
     } : row));
@@ -171,7 +174,7 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
 
   const handlePurchaseSelect = (rowId, poId) => {
     if (!poId) {
-      setItems(items.map(row => row.id === rowId ? { ...row, purchaseRecordId: '', itemId: '', cat_name: '', qty: 1 } : row));
+      setItems(items.map(row => row.id === rowId ? { ...row, purchaseRecordId: '', itemId: '', pendingMaster: null, cat_name: '', qty: 1 } : row));
       return;
     }
     const po = pendingPurchases.find(p => p.id.toString() === poId.toString());
@@ -180,7 +183,7 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
     const hasAnyOtherPO = items.some(i => i.id !== rowId && !!i.purchaseRecordId);
     if (hasAnyOtherPO && partnerId && partnerId.toString() !== po.partner_id.toString()) {
       alert('此品項所屬的供應商與本進貨單目前綁定的供應商不符。\n(建議將不同供應商的進貨分開建立以免帳務混亂)');
-      setItems(items.map(row => row.id === rowId ? { ...row, purchaseRecordId: '', itemId: '', cat_name: '', qty: 1 } : row));
+      setItems(items.map(row => row.id === rowId ? { ...row, purchaseRecordId: '', itemId: '', pendingMaster: null, cat_name: '', qty: 1 } : row));
       return;
     }
 
@@ -201,6 +204,7 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
       ...row,
       purchaseRecordId: poId,
       itemId: existingItem ? existingItem.id : '',
+      pendingMaster: null,
       cat_name: po.category_name || (existingItem ? existingItem.cat_name : ''),
       unit: po.unit,
       qty: po.quantity - (po.received_quantity || 0)
@@ -276,25 +280,59 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
     if (!type) return alert('請輸入類型 (Type)');
     if (!model) return alert('請輸入型號 (Model)');
 
-    const res = await window.electronAPI.namedQuery(
-      'insertItemMaster',
-      [quickAddData.spec.trim(), type, brand, model, unitForCategory(quickAddData.type_cat), quickAddData.type_cat]
-    );
-    if (res.success) {
-      const newId = res.rows[0].id;
-      await fetchData();
-      setItems(items.map(row => row.id === activeRowId ? { ...row, itemId: newId, cat_name: quickAddData.type_cat, unit: unitForCategory(quickAddData.type_cat) } : row));
+    const spec = quickAddData.spec.trim();
+    const cat = quickAddData.type_cat;
+
+    // 從「從品項庫挑選」進來時沒有指定是哪一列（activeRowId 為 null）。
+    // 先前是靠「建好主檔後品項庫就多出這筆，使用者再自己挑一次」；
+    // 現在不先建檔了，就得直接放到單據上：優先填進空白列，沒有空白列就新增一列。
+    const placeOnRow = (patch) => {
+      setItems((prev) => {
+        const target = activeRowId
+          ? prev.find((r) => r.id === activeRowId)
+          : prev.find((r) => !r.itemId && !r.pendingMaster && !r.purchaseRecordId);
+        if (target) return prev.map((row) => (row.id === target.id ? { ...row, ...patch } : row));
+        return [...prev, {
+          id: Date.now(), selectedOrderNo: '', itemId: '', pendingMaster: null, purchaseRecordId: '',
+          cat_name: '', orderSource: '', unit: '', sn: '', qty: 1, ...patch,
+        }];
+      });
       setShowQuickAdd(false);
+      setShowItemSelectModal(false);
+      setActiveRowId(null);
       setQuickAddData({ type_cat: '設備', brand: '', type: '', model: '', spec: '' });
-    } else {
-      alert('新增失敗：' + res.error);
+    };
+
+    // 已經有同樣的品項就直接選它，不要再開一筆。
+    // 耗材的識別鍵是廠牌＋類型＋型號（備註不算），資料庫也有唯一索引；
+    // 設備與硬體的規格有識別意義，因此連規格一起比。
+    const dupRes = cat === '耗材'
+      ? await window.electronAPI.namedQuery('checkDuplicateConsumable', [brand, type, model])
+      : await window.electronAPI.namedQuery('findItemMaster', [spec, type, brand, model]);
+    const existing = dupRes.success && dupRes.rows && dupRes.rows[0];
+    if (existing) {
+      alert(`系統裡已經有這個品項了，直接選用既有的那一筆：\n\n${brand} ${type} ${model}`
+        + (existing.specification ? `\n備註／規格：${existing.specification}` : ''));
+      placeOnRow({ itemId: existing.id, pendingMaster: null, cat_name: cat, unit: unitForCategory(cat) });
+      return;
     }
+
+    // 不在這裡寫進資料庫 —— 先前是按下去就建好主檔，使用者若沒送出進貨單，
+    // 那筆品項仍會留在列表上（庫存 0、沒有任何單據用過）。
+    // 改成暫存在這一列，送出時才在同一個交易裡建立；放棄送出就什麼都沒發生。
+    // 採購單那條路本來就是這樣做的（insertInboundItemMaster + $ref）。
+    placeOnRow({
+      itemId: '',
+      pendingMaster: { brand, type, model, spec, unit: unitForCategory(cat), category: cat },
+      cat_name: cat,
+      unit: unitForCategory(cat),
+    });
   };
 
   const handleSubmit = async () => {
     // 供應商改為非必填：收到貨時常常還沒確認是哪一家，
     // 先把品項與數量入庫，供應商日後於進貨單列表編輯補填。
-    if (items.some(i => !i.itemId && !i.purchaseRecordId)) return alert('請確認所有明細均已選擇入庫品項');
+    if (items.some(i => !i.itemId && !i.pendingMaster && !i.purchaseRecordId)) return alert('請確認所有明細均已選擇入庫品項');
     
     // 檢查入庫數量是否皆為大於 0 的正整數
     for (let idx = 0; idx < items.length; idx++) {
@@ -339,6 +377,18 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
       items.forEach((item, idx) => {
         // 品項主檔可能需要即時建立，其 id 以 $ref 供後續步驟取用
         let itemIdRef = item.itemId;
+        // 快速新增的品項到這一步才真的建立，與採購那條路一樣用 $ref 串起來。
+        // 整批同一個交易：進貨單沒建成功，品項也不會留下來。
+        if (!itemIdRef && item.pendingMaster) {
+          const pm = item.pendingMaster;
+          const newMasterStepId = `newmaster_${idx}`;
+          steps.push({
+            id: newMasterStepId,
+            queryName: 'insertItemMaster',
+            params: [pm.spec, pm.type, pm.brand, pm.model, pm.unit, pm.category],
+          });
+          itemIdRef = { $ref: `${newMasterStepId}.rows.0.id` };
+        }
         if (!itemIdRef && item.purchaseRecordId) {
           const po = pendingPurchases.find(p => p.id.toString() === item.purchaseRecordId.toString());
           if (!po) return; // 找不到對應採購項目，略過此列（與原行為一致）
@@ -380,7 +430,7 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
           { orderNo, partnerId, partnerName: partner?.name, invoiceNo, itemsCount: items.length, items: items.map(i => ({ itemId: i.itemId, sn: i.sn, qty: i.qty, poNo: i.selectedOrderNo })) }
         );
         alert('進貨入庫成功！');
-        setItems([{ id: Date.now(), selectedOrderNo: '', itemId: '', purchaseRecordId: '', cat_name: '', orderSource: '', unit: '', sn: '', qty: 1 }]);
+        setItems([{ id: Date.now(), selectedOrderNo: '', itemId: '', pendingMaster: null, purchaseRecordId: '', cat_name: '', orderSource: '', unit: '', sn: '', qty: 1 }]);
         setInvoiceNo('');
         setAttachments([]);
         setOrderNo(''); // Reset to generate new order no
@@ -526,7 +576,10 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
                     {pendingPurchases.filter(p => p.order_no === row.selectedOrderNo).map(p => <option key={p.id} value={p.id}>{[p.brand, p.model, p.specification].filter(Boolean).join(' ')} (未入庫 {p.quantity - (p.received_quantity || 0)})</option>)}
                   </select>
                 ) : (() => {
-                  const selected = availableItems.find(i => i.id?.toString() === row.itemId?.toString());
+                  // 快速新增的品項還沒寫進資料庫，查不到 id；用列上暫存的資料顯示，
+                  // 否則使用者會看到一片空白，以為剛剛新增的東西不見了。
+                  const selected = availableItems.find(i => i.id?.toString() === row.itemId?.toString())
+                    || (row.pendingMaster && { ...row.pendingMaster, isPending: true });
                   return selected ? (
                     <div style={{
                       display: 'flex',
@@ -541,6 +594,12 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontWeight: 800, fontSize: '13px', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                           <span>{selected.brand} {selected.model}</span>
+                          {/* 標明這筆還沒建進資料庫，避免與既有品項混淆 */}
+                          {selected.isPending && (
+                            <span style={{ fontSize: '10px', fontWeight: 800, padding: '1px 6px', borderRadius: '10px', backgroundColor: 'rgba(217, 119, 6, 0.15)', color: '#d97706' }}>
+                              送出後才建立
+                            </span>
+                          )}
                           {selected.current_stock !== undefined && (
                             <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>
                               (目前庫存: {selected.current_stock} {selected.unit || '個'})
