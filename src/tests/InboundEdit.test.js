@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   validateQtyChange, buildQtyChangeSteps, isQtyEditable,
   findUsedAssets, describeUsage, buildInboundDeleteSteps,
+  collectMasterIds, describeOrphanMaster,
 } from '../utils/inboundEdit';
 import { queries } from '../../database/queries';
 
@@ -166,5 +167,44 @@ describe('用到的查詢都存在且語意正確', () => {
   it('改數量與刪單都回傳資料列，呼叫端才知道有沒有真的改到', () => {
     expect(queries.updateInboundItemQty).toContain('RETURNING');
     expect(queries.deleteInboundOrderById).toContain('RETURNING');
+  });
+});
+
+/**
+ * 刪單後的孤兒品項
+ *
+ * 進貨頁的「快速新增」會當場建出主檔，與送不送出單據無關。
+ * 單子刪掉後那筆主檔仍留在列表上，庫存 0、沒有任何單據用過 ——
+ * 正是先前要手動清掉的那種幽靈品項。不自動刪，問一句由使用者決定。
+ */
+describe('刪單後的孤兒品項', () => {
+  it('收集這張單用到的品項，去掉重複與空值', () => {
+    expect(collectMasterIds([
+      { item_id: 5 }, { item_id: 5 }, { item_id: 7 }, { item_id: null }, {}, { item_id: 0 },
+    ])).toEqual([5, 7]);
+    expect(collectMasterIds([])).toEqual([]);
+    expect(collectMasterIds(null)).toEqual([]);
+  });
+
+  it('說得出是哪一個品項', () => {
+    expect(describeOrphanMaster({ brand: 'ARISTA', type: 'GBIC', model: '10G-LR', category_name: '耗材' }))
+      .toBe('　· ARISTA GBIC 10G-LR（耗材）');
+    expect(describeOrphanMaster({ brand: 'A', model: 'B', specification: '2 Port', category_name: '硬體' }))
+      .toBe('　· A B / 2 Port（硬體）');
+  });
+
+  /** 少檢查一張表就會連帶刪掉歷史帳務且毫無警告 */
+  it('判定條件涵蓋五張 CASCADE 母表與庫存', () => {
+    const sql = queries.fetchOrphanItemMasters;
+    for (const t of ['assets', 'inbound_items', 'outbound_items',
+      'item_lab_assignments', 'inventory_monthly_balances']) {
+      expect(sql, t).toContain(t);
+    }
+    expect(sql).toContain('COALESCE(i.stock_qty, 0) = 0');
+    expect(sql).toContain('COALESCE(i.lab_qty, 0) = 0');
+  });
+
+  it('實際刪除那支也補上了月結存檢查', () => {
+    expect(queries.deleteItemMasterIfOrphan).toContain('inventory_monthly_balances');
   });
 });

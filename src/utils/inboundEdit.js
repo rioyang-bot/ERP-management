@@ -126,3 +126,23 @@ export function buildInboundDeleteSteps({ orderId, items = [], assetSns = [] }) 
 
   return steps;
 }
+
+/**
+ * 刪掉進貨單之後，哪些品項變成「從來沒真正進過貨」的孤兒。
+ *
+ * 進貨頁的「快速新增」會當場建出主檔，與送不送出單據無關。單子刪掉後
+ * 那筆主檔仍會留在列表上，庫存 0、沒有任何單據用過 ——
+ * 下次有人搜尋會以為系統裡真的有這個東西。
+ *
+ * 不自動刪除：品項定義本來就可以獨立於單據存在（下次進同一批貨還會用到），
+ * 只是這一次很可能是跟著打錯的單一起建的。因此問一句，由使用者決定。
+ */
+export function describeOrphanMaster(m) {
+  const name = [m.brand, m.type, m.model].filter(Boolean).join(' ');
+  return `　· ${name}${m.specification ? ` / ${m.specification}` : ''}（${m.category_name || '未分類'}）`;
+}
+
+/** 這張單用到的品項主檔，去掉重複與空值 */
+export function collectMasterIds(items) {
+  return [...new Set((items || []).map((i) => i?.item_id).filter((id) => Number.isInteger(Number(id)) && Number(id) > 0).map(Number))];
+}

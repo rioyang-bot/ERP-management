@@ -7,6 +7,7 @@ import { buildSnRenameSteps, validateSnRename, summariseSnRename } from '../util
 import {
   validateQtyChange, buildQtyChangeSteps, isQtyEditable,
   findUsedAssets, describeUsage, buildInboundDeleteSteps,
+  collectMasterIds, describeOrphanMaster,
 } from '../utils/inboundEdit';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 
@@ -322,7 +323,38 @@ const InboundList = ({ isSplitMode = false }) => {
         { orderNo: order.order_no, items: items.length, assets: assetSns.length }
       );
 
-      alert(`進貨單 [${order.order_no}] 已刪除，庫存與採購數量已還原。`);
+      // 刪完之後，這張單用到的品項可能變成「從來沒真正進過貨」的孤兒 ——
+      // 進貨頁的快速新增會當場建出主檔，單子刪了它還留在列表上。
+      // 不自動刪：品項定義本來就能獨立於單據存在，只是這次很可能是跟著
+      // 打錯的單一起建的，因此問一句由使用者決定。
+      let removedMasters = 0;
+      const masterIds = collectMasterIds(items);
+      if (masterIds.length > 0) {
+        const orphanRes = await window.electronAPI.namedQuery('fetchOrphanItemMasters', [masterIds]);
+        const orphans = (orphanRes.success && orphanRes.rows) || [];
+        if (orphans.length > 0 && window.confirm(
+          `進貨單 [${order.order_no}] 已刪除。\n\n`
+          + `以下 ${orphans.length} 個品項在刪除後庫存為 0，也沒有任何其他單據用過：\n`
+          + orphans.map(describeOrphanMaster).join('\n')
+          + '\n\n要一併移除這些品項嗎？\n'
+          + '（保留的話它們會繼續留在列表上，庫存 0）'
+        )) {
+          for (const m of orphans) {
+            const del = await window.electronAPI.namedQuery('deleteItemMasterIfOrphan', [m.id]);
+            if (del.success && del.rows?.length) removedMasters += 1;
+          }
+          if (removedMasters > 0) {
+            await logDelete(
+              'INBOUND', order.order_no, order.partner_name || '進貨單',
+              `刪除進貨單 [${order.order_no}] 後一併移除 ${removedMasters} 個未使用品項`,
+              { orderNo: order.order_no, removedMasters: orphans.map((m) => m.id) }
+            );
+          }
+        }
+      }
+
+      alert(`進貨單 [${order.order_no}] 已刪除，庫存與採購數量已還原。`
+        + (removedMasters > 0 ? `\n並移除 ${removedMasters} 個未使用的品項。` : ''));
       setSelectedOrder(null);
       fetchRecords();
     } catch (err) {
