@@ -16,7 +16,7 @@ describe('全模組彈窗建檔 (Registration Modals) 整合測試', () => {
     vi.clearAllMocks();
 
     window.electronAPI = {
-      namedQuery: vi.fn(async (queryName, params) => {
+      namedQuery: vi.fn(async (queryName, _params) => {
         if (queryName === 'fetchDeviceBrands') {
           return { success: true, rows: [{ name: 'Dell' }, { name: 'Supermicro' }] };
         }
@@ -131,7 +131,7 @@ describe('全模組彈窗建檔 (Registration Modals) 整合測試', () => {
     const handleClose = vi.fn();
     const handleSuccess = vi.fn();
 
-    window.electronAPI.namedQuery.mockImplementation((query, params) => {
+    window.electronAPI.namedQuery.mockImplementation((query, _params) => {
       if (query === 'fetchHwBrands' || query === 'fetchNicBrands') {
         return Promise.resolve({ success: true, rows: [{ id: 1, name: 'Intel' }] });
       }

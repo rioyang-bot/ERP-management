@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   X, Wrench, Search, Plus, Trash2, CheckCircle, AlertCircle, 
   Cpu, Monitor, Server, Calendar, Building2, FileText, User
@@ -54,7 +54,7 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
       const countRes = await window.electronAPI.namedQuery('countRepairOrders', [prefix]);
       const nextNum = (parseInt(countRes?.rows?.[0]?.count) || 1).toString().padStart(2, '0');
       return `RMA-${dateStr}-${nextNum}`;
-    } catch (e) {
+    } catch {
       const dateStr = (targetDate || new Date().toISOString().split('T')[0]).replace(/-/g, '');
       return `RMA-${dateStr}-01`;
     }

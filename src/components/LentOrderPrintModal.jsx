@@ -88,7 +88,7 @@ const LentOrderPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
     let parsedPhone = '';
     if (dnData.contact_info) {
       // 支援 "David (0918-xxx)" 或 "David 0918-xxx" 格式
-      const parts = dnData.contact_info.split(/[\(\)\/\-–]/).map(s => s.trim()).filter(Boolean);
+      const parts = dnData.contact_info.split(/[()/\-–]/).map(s => s.trim()).filter(Boolean);
       if (parts.length >= 2) {
         parsedContact = parts[0];
         parsedPhone = parts.slice(1).join('-');

@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { Search, Columns3, Edit2, X, Save, MoreHorizontal, MoreVertical, MapPin, User, Trash2, CheckCircle, ShoppingBag, Wrench, ShieldAlert, Cpu, Archive, RotateCcw, Server, Send, History, Building2, RefreshCw, Plus, ClipboardCheck } from 'lucide-react';
 import ItemLedgerModal from '../components/ItemLedgerModal';
 import DeviceRegistrationModal from '../components/DeviceRegistrationModal';
 import RmaReplacementModal from '../components/RmaReplacementModal';
-import { logUpdate, logDelete, logStatusChange } from '../utils/auditLogger';
+import { logUpdate, logDelete, logStatusChange, logSnChange } from '../utils/auditLogger';
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
+import FilterResultSummary from '../components/common/FilterResultSummary';
 import { isItemRetired, getItemAggregationKey, aggregateCards, computeNewRetiredKeys, getCardTitle, showsModelSubtitle, getCardSearchText, ASSET_AGGREGATION_MODES } from '../utils/cardAggregation';
 import ColumnVisibilityModal from '../components/ColumnVisibilityModal';
 import CardAggregationLegend from '../components/CardAggregationLegend';
@@ -35,7 +36,6 @@ const DEVICE_COLUMNS = [
 ];
 
 const DeviceList = ({ isSplitMode = false }) => {
-  const navigate = useNavigate();
   const [items, setItems] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
@@ -124,7 +124,7 @@ const DeviceList = ({ isSplitMode = false }) => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [confirmModal, setConfirmModal] = useState({ show: false, msg: '', onConfirm: null });
   const [expandedItems, setExpandedItems] = useState({}); // 控制摺疊狀態
-  const [expandedLabItems, setExpandedLabItems] = useState({}); // 控制 LAB 耗材摺疊
+// 控制 LAB 耗材摺疊
   const [ledgerItem, setLedgerItem] = useState(null); // 品項履歷 Modal
   const [rmaAsset, setRmaAsset] = useState(null); // 原廠換新 RMA Modal
   const [availableHardwares, setAvailableHardwares] = useState([]); // 可供掛載之硬體清單
@@ -247,7 +247,7 @@ const DeviceList = ({ isSplitMode = false }) => {
     let mountedSns = [];
     if (targetItem) {
       let attrs = {};
-      try { attrs = typeof targetItem.custom_attributes === 'string' ? JSON.parse(targetItem.custom_attributes) : (targetItem.custom_attributes || {}); } catch {}
+      try { attrs = typeof targetItem.custom_attributes === 'string' ? JSON.parse(targetItem.custom_attributes) : (targetItem.custom_attributes || {}); } catch { /* 欄位不是合法 JSON 就當作沒有屬性 */ }
       const attrSns = (attrs.mounted_hw_sns || '').split(/[,，\s\n]+/).map(s => s.trim()).filter(Boolean);
       const compSns = (targetItem.components || []).map(c => c.sn).filter(Boolean);
       mountedSns = Array.from(new Set([...attrSns, ...compSns]));
@@ -489,27 +489,30 @@ const DeviceList = ({ isSplitMode = false }) => {
         alert(`【警告】以下搭載硬體 SN 綁定異常（查無已建立之硬體資料）：\n[${notFoundHwSns.join(', ')}]\n\n系統未自動建立未登記之硬體，請確認硬體庫存資料。`);
       }
 
-      logUpdate(
-        'DEVICE', 
-        newSn || editItem.id, 
-        `${editItem.brand || ''} ${editItem.model || ''}`, 
-        isSnChanged 
-          ? `編輯設備詳細資訊，序號由 [${origSn || '無序號'}] 變更為 [${newSn || '無序號'}]（已同步連動 ${mountedComponents.length} 件掛載硬體）` 
-          : `編輯設備詳細資訊 [${newSn || editItem.id}]`, 
-        {
-          sn: newSn,
-          origSn: origSn,
-          isSnChanged,
-          syncedHardwareCount: mountedComponents.length,
-          mountedHwSns: uniqueTargetHwSns,
-          client: editItem.client,
-          hostname: editItem.hostname,
-          location: editItem.location,
-          ownership: editItem.ownership,
-          os: editItem.os,
-          nic: editItem.nic
-        }
-      );
+      // 序號變更改用共用寫法：三個能改序號的入口（設備編輯、硬體編輯、
+      // 進貨明細單更正）敘述一致，並帶上 details.snChanged 供品項履歷分類。
+      const auditName = `${editItem.brand || ''} ${editItem.model || ''}`;
+      const auditDetails = {
+        sn: newSn,
+        origSn: origSn,
+        isSnChanged,
+        syncedHardwareCount: mountedComponents.length,
+        mountedHwSns: uniqueTargetHwSns,
+        client: editItem.client,
+        hostname: editItem.hostname,
+        location: editItem.location,
+        ownership: editItem.ownership,
+        os: editItem.os,
+        nic: editItem.nic,
+      };
+
+      if (isSnChanged) {
+        await logSnChange('DEVICE', origSn, newSn, auditName,
+          `設備編輯；已同步連動 ${mountedComponents.length} 件掛載硬體`, auditDetails);
+      } else {
+        await logUpdate('DEVICE', newSn || editItem.id, auditName,
+          `編輯設備詳細資訊 [${newSn || editItem.id}]`, auditDetails);
+      }
       setShowEditModal(false);
       window.dispatchEvent(new CustomEvent('db-update'));
       fetchAssets();
@@ -536,7 +539,7 @@ const DeviceList = ({ isSplitMode = false }) => {
       if (searchTerms.length === 0) return true;
       return searchTerms.every(term => {
         let attrs = {};
-        try { attrs = typeof item.custom_attributes === 'string' ? JSON.parse(item.custom_attributes) : (item.custom_attributes || {}); } catch {}
+        try { attrs = typeof item.custom_attributes === 'string' ? JSON.parse(item.custom_attributes) : (item.custom_attributes || {}); } catch { /* 欄位不是合法 JSON 就當作沒有屬性 */ }
         return (item.sn || '').toLowerCase().includes(term) || (item.specification || '').toLowerCase().includes(term) ||
           (item.hostname || '').toLowerCase().includes(term) || (item.brand || '').toLowerCase().includes(term) ||
           (item.model || '').toLowerCase().includes(term) || (item.client || '').toLowerCase().includes(term) ||
@@ -977,6 +980,15 @@ const DeviceList = ({ isSplitMode = false }) => {
             ) : (
               paginatedItems.length > 0 ? (
                 <>
+                  {/* 篩選結果統計。用 sortedItems 而不是 paginatedItems ——
+                      要回答的是「這位客戶總共有幾台」，不是這一頁有幾台。 */}
+                  <FilterResultSummary
+                    items={sortedItems}
+                    unit="台"
+                    searchTerm={searchTerm}
+                    brandFilter={brandFilter}
+                    cardLabel={selectedCardKey ? selectedCardKey.replace(':::RETIRED', '') : ''}
+                  />
                   <div style={{ marginBottom: '16px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', minHeight: '300px', border: '1px solid var(--border-color)', borderRadius: '10px' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
                       <thead style={{ position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)' }}>

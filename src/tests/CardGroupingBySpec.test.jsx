@@ -12,7 +12,7 @@ describe('設備、硬體與耗材卡片依「廠牌+類型+型號+規格」聚�
     vi.clearAllMocks();
     localStorage.clear();
 
-    window.electronAPI.namedQuery.mockImplementation((query, params) => {
+    window.electronAPI.namedQuery.mockImplementation((query, _params) => {
       if (query === 'fetchAssetsList') {
         return Promise.resolve({
           success: true,

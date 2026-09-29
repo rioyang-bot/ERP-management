@@ -13,7 +13,7 @@ describe('耗材模組移除單位 (Unit Removal) 測試', () => {
     window.confirm = vi.fn(() => true);
 
     window.electronAPI = {
-      namedQuery: vi.fn((query, params) => {
+      namedQuery: vi.fn((query, _params) => {
         if (query === 'fetchRecentConsumables') {
           return Promise.resolve({
             success: true,

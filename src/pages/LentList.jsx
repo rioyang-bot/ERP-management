@@ -41,7 +41,7 @@ const LentList = () => {
     setError(null);
     try {
       // 確保 signed_doc 欄位存在
-      try { await window.electronAPI.namedQuery('migrateOutboundSignedDoc'); } catch(e) {}
+      try { await window.electronAPI.namedQuery('migrateOutboundSignedDoc'); } catch { /* 欄位已存在就略過，這是相容舊資料庫用的 */ }
 
       const res = await window.electronAPI.namedQuery('fetchLentRequests');
       if (res.success) {
@@ -475,7 +475,6 @@ const LentList = () => {
 
   const pendingCount = dnRecords.filter(dn => dn.status === 'PENDING').length;
   const shippedCount = dnRecords.filter(dn => dn.status === 'SHIPPED').length;
-  const returnedCount = dnRecords.filter(dn => dn.status === 'RETURNED').length;
 
   return (
     <div className="page-container">

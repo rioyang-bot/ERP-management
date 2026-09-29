@@ -8,16 +8,16 @@ export const queries = {
          AND a.sn IS NOT NULL AND a.sn <> '' AND oi.sn = a.sn) as lent_request_no,
       COALESCE(a.custom_attributes->>'contact_person', p.contact_person) as partner_contact,
       COALESCE(a.custom_attributes->>'contact_phone', p.phone) as partner_phone,
-      (SELECT json_agg(json_build_object('brand', comp.brand, 'model', comp.model, 'sn', comp.sn) ORDER BY NULLIF(comp.model, '') ASC NULLS LAST, NULLIF(comp.brand, '') ASC NULLS LAST, comp.sn) 
+      (SELECT json_agg(json_build_object('brand', comp.brand, 'model', comp.model, 'specification', comp.specification, 'sn', comp.sn) ORDER BY NULLIF(comp.model, '') ASC NULLS LAST, NULLIF(comp.brand, '') ASC NULLS LAST, comp.sn) 
        FROM (
-         SELECT COALESCE(hi.brand, '') as brand, COALESCE(hi.model, '') as model, ha.sn
+         SELECT COALESCE(hi.brand, '') as brand, COALESCE(hi.model, '') as model, COALESCE(hi.specification, '') as specification, ha.sn
          FROM assets ha 
          LEFT JOIN item_master hi ON ha.item_master_id = hi.id 
          WHERE ha.custom_attributes->>'server_sn' IS NOT NULL AND ha.custom_attributes->>'server_sn' != '' 
            AND a.sn IS NOT NULL AND a.sn != ''
            AND TRIM(LOWER(ha.custom_attributes->>'server_sn')) = TRIM(LOWER(a.sn))
          UNION
-         SELECT '' as brand, '' as model, TRIM(elem) as sn
+         SELECT '' as brand, '' as model, '' as specification, TRIM(elem) as sn
          FROM regexp_split_to_table(COALESCE(a.custom_attributes->>'mounted_hw_sns', ''), '[,，\\s\\n]+') elem
          WHERE TRIM(elem) != ''
            AND NOT EXISTS (
@@ -50,16 +50,16 @@ export const queries = {
          AND a.sn IS NOT NULL AND a.sn <> '' AND oi.sn = a.sn) as lent_request_no,
       COALESCE(a.custom_attributes->>'contact_person', p.contact_person) as partner_contact,
       COALESCE(a.custom_attributes->>'contact_phone', p.phone) as partner_phone,
-      (SELECT json_agg(json_build_object('brand', comp.brand, 'model', comp.model, 'sn', comp.sn) ORDER BY NULLIF(comp.model, '') ASC NULLS LAST, NULLIF(comp.brand, '') ASC NULLS LAST, comp.sn) 
+      (SELECT json_agg(json_build_object('brand', comp.brand, 'model', comp.model, 'specification', comp.specification, 'sn', comp.sn) ORDER BY NULLIF(comp.model, '') ASC NULLS LAST, NULLIF(comp.brand, '') ASC NULLS LAST, comp.sn) 
        FROM (
-         SELECT COALESCE(hi.brand, '') as brand, COALESCE(hi.model, '') as model, ha.sn
+         SELECT COALESCE(hi.brand, '') as brand, COALESCE(hi.model, '') as model, COALESCE(hi.specification, '') as specification, ha.sn
          FROM assets ha 
          LEFT JOIN item_master hi ON ha.item_master_id = hi.id 
          WHERE ha.custom_attributes->>'server_sn' IS NOT NULL AND ha.custom_attributes->>'server_sn' != '' 
            AND a.sn IS NOT NULL AND a.sn != ''
            AND TRIM(LOWER(ha.custom_attributes->>'server_sn')) = TRIM(LOWER(a.sn))
          UNION
-         SELECT '' as brand, '' as model, TRIM(elem) as sn
+         SELECT '' as brand, '' as model, '' as specification, TRIM(elem) as sn
          FROM regexp_split_to_table(COALESCE(a.custom_attributes->>'mounted_hw_sns', ''), '[,，\\s\\n]+') elem
          WHERE TRIM(elem) != ''
            AND NOT EXISTS (
@@ -1444,7 +1444,8 @@ export const queries = {
       im.brand,
       im.model,
       im.specification,
-      ii.created_at
+      ii.created_at,
+      NULL::text as summary
     FROM inbound_items ii
     JOIN inbound_orders io ON ii.inbound_order_id = io.id
     LEFT JOIN partners p ON io.partner_id = p.id
@@ -1463,7 +1464,8 @@ export const queries = {
       im.brand,
       im.model,
       im.specification,
-      a.created_at
+      a.created_at,
+      NULL::text as summary
     FROM assets a
     JOIN item_master im ON a.item_master_id = im.id
     WHERE a.item_master_id = $1::integer
@@ -1492,7 +1494,8 @@ export const queries = {
       im.brand,
       im.model,
       im.specification,
-      im.created_at
+      im.created_at,
+      NULL::text as summary
     FROM item_master im
     JOIN categories c ON im.category_id = c.id
     WHERE im.id = $1::integer AND c.name = '耗材'
@@ -1512,12 +1515,54 @@ export const queries = {
       im.brand,
       im.model,
       im.specification,
-      o.created_at
+      o.created_at,
+      NULL::text as summary
     FROM outbound_items oi
     JOIN outbound_requests o ON oi.request_id = o.id
     LEFT JOIN item_master im ON oi.item_id = im.id
     WHERE o.status IN ('SHIPPED', 'RETURNED') AND oi.item_id = $1::integer
     
+    UNION ALL
+
+    -- 入庫之後發生的事：出貨、維修、原廠 RMA 換機、報廢。
+    -- 先前履歷只有進貨、批次匯入與出貨三種來源，設備送修、換機、報廢
+    -- 一筆都不會出現 —— 明明 system_audit_logs 都記著，只是沒人去讀。
+    -- 稽核紀錄沒有 item_master_id，靠序號對回資產再過濾主檔。
+    SELECT
+      -- 以 details 裡的狀態為準，文字比對只用來分辨狀態一樣、意義不同的情形。
+      -- 不能直接用 summary LIKE '%RMA%'：維修單號本身就叫 RMA-20260918-01，
+      -- 「建立維修單 [RMA-...]」會被誤判成原廠換機。
+      CASE
+        -- 序號變更由 details.snChanged 判定，不靠敘述比對。
+        -- 舊資料沒有這個旗標，補一段文字比對涵蓋既有紀錄。
+        WHEN l.details->>'snChanged' = 'true' THEN 'SN_CHANGE'
+        WHEN l.summary LIKE '序號變更%' OR l.summary LIKE '%序號由 [%' THEN 'SN_CHANGE'
+        WHEN l.summary LIKE '原廠 RMA%' THEN 'RMA_REPLACE'
+        WHEN l.details->>'newStatus' = 'SCRAPPED' THEN 'SCRAP'
+        WHEN l.summary LIKE '%維修單%' THEN 'REPAIR'
+        WHEN l.details->>'newStatus' = 'REPAIRING' THEN 'REPAIR'
+        WHEN l.details->>'newStatus' = 'SHIPPED' THEN 'OUTBOUND_SALE'
+        WHEN l.details->>'newStatus' = 'LENT' THEN 'OUTBOUND_LEND'
+        WHEN l.details->>'newStatus' = 'ACTIVE' THEN 'RETURN_STOCK'
+        ELSE 'STATUS_CHANGE'
+      END as transaction_type,
+      l.timestamp::date as transaction_date,
+      -- 敘述裡帶到的單號（RMA-20260918-01 這種）抓出來放單號欄
+      COALESCE(substring(l.summary from '[A-Z]{2,5}-[0-9]{6,8}-[0-9]+'), '-') as order_no,
+      COALESCE(NULLIF(TRIM(l.user_name), ''), '系統') as partner_name,
+      1 as quantity,
+      a.sn,
+      im.brand,
+      im.model,
+      im.specification,
+      l.timestamp as created_at,
+      l.summary
+    FROM system_audit_logs l
+    JOIN assets a ON UPPER(TRIM(a.sn)) = UPPER(TRIM(l.target_id))
+    JOIN item_master im ON a.item_master_id = im.id
+    WHERE a.item_master_id = $1::integer
+      AND l.module IN ('DEVICE', 'HARDWARE', 'ASSET')
+
     ORDER BY transaction_date DESC, created_at DESC
   `,
 
@@ -1722,7 +1767,9 @@ export const queries = {
            )) FROM repair_items ri WHERE ri.repair_id = ro.id) as items
     FROM repair_orders ro
     LEFT JOIN users u ON ro.creator_id = u.id
-    ORDER BY ro.created_at DESC, ro.id DESC
+    -- 已結案的排到最後：還在跑的單才是每天要盯的，結案的只是備查。
+    -- 布林值排序時 false 在前，因此 ASC 就是「未結案先、結案後」。
+    ORDER BY (ro.status = 'COMPLETED') ASC, ro.created_at DESC, ro.id DESC
   `,
   fetchRepairOrderItems: `
     SELECT ri.*, a.status as asset_status, a.client, a.hostname, a.location
@@ -1766,11 +1813,14 @@ export const queries = {
     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
     RETURNING *
   `,
+  // 每個階段各寫自己的說明欄位，不再共用 remarks —— 共用時後面的步驟會蓋掉前面的。
+  // 直接寫入而不是 COALESCE：彈窗開啟時已帶入現值，使用者把內容刪光就是要清空，
+  // COALESCE 會默默留著舊字，看起來像沒存到。
   updateRepairSendOEM: `
     UPDATE repair_orders 
     SET status = 'SENT_OEM', 
         send_oem_date = $1, 
-        remarks = COALESCE($2, remarks), 
+        send_oem_remarks = NULLIF(TRIM(COALESCE($2, '')), ''),
         updated_at = CURRENT_TIMESTAMP 
     WHERE id = $3 
     RETURNING *
@@ -1778,15 +1828,16 @@ export const queries = {
   // $5 為 true（公司內部）時，原廠返還就是終點：東西回到自己庫房，
   // 沒有客戶可以出貨。單據直接結案，完工日期就是返還日期。
   // 客戶送修則維持原樣，還要再經過一次客戶出貨。
+  // 這一階段的內容是「維修與檢測結果」(results)，沒有另外的備註欄，
+  // 因此參數比先前少一個：原本的 $4（id）與 $5（內部旗標）往前移成 $3 / $4。
   updateRepairOEMReturn: `
     UPDATE repair_orders
-    SET status = CASE WHEN $5::boolean THEN 'COMPLETED' ELSE 'OEM_RETURNED' END,
+    SET status = CASE WHEN $4::boolean THEN 'COMPLETED' ELSE 'OEM_RETURNED' END,
         oem_return_date = $1,
         results = $2,
-        remarks = COALESCE($3, remarks),
-        completion_date = CASE WHEN $5::boolean THEN $1::date ELSE completion_date END,
+        completion_date = CASE WHEN $4::boolean THEN $1::date ELSE completion_date END,
         updated_at = CURRENT_TIMESTAMP
-    WHERE id = $4
+    WHERE id = $3
     RETURNING *
   `,
   // 標記/取消「不需送回原廠」。只有還在現場處理階段才允許改，
@@ -1805,7 +1856,7 @@ export const queries = {
     SET status = 'COMPLETED',
         completion_date = $1,
         results = $2,
-        remarks = COALESCE($3, remarks),
+        completion_remarks = NULLIF(TRIM(COALESCE($3, '')), ''),
         updated_at = CURRENT_TIMESTAMP
     WHERE id = $4 AND status = 'ON_SITE_HANDLING' AND no_oem_required = TRUE
     RETURNING *
@@ -1814,7 +1865,7 @@ export const queries = {
     UPDATE repair_orders 
     SET status = 'COMPLETED', 
         completion_date = $1, 
-        remarks = COALESCE($2, remarks), 
+        completion_remarks = NULLIF(TRIM(COALESCE($2, '')), ''),
         updated_at = CURRENT_TIMESTAMP 
     WHERE id = $3 
     RETURNING *
@@ -1828,6 +1879,30 @@ export const queries = {
         updated_at = CURRENT_TIMESTAMP
     WHERE id = $2
     RETURNING id, on_site_status
+  `,
+  // 其餘三個階段的說明同樣各給一支窄查詢，理由和上面一樣：
+  // 只動該欄，不會順手把別的欄位寫成呼叫端當下的值。
+  // 四段內容都是描述而不是流程狀態，因此任何階段都允許更正。
+  updateRepairSendOemRemarks: `
+    UPDATE repair_orders
+    SET send_oem_remarks = NULLIF(TRIM($1), ''),
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = $2
+    RETURNING id, send_oem_remarks
+  `,
+  updateRepairResults: `
+    UPDATE repair_orders
+    SET results = NULLIF(TRIM($1), ''),
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = $2
+    RETURNING id, results
+  `,
+  updateRepairCompletionRemarks: `
+    UPDATE repair_orders
+    SET completion_remarks = NULLIF(TRIM($1), ''),
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = $2
+    RETURNING id, completion_remarks
   `,
   updateRepairOrderDetails: `
     UPDATE repair_orders 

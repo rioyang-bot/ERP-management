@@ -22,7 +22,7 @@ import './PJReport.css';
 const PJReport = () => {
   const navigate = useNavigate();
   const [data, setData] = useState([]);
-  const [projects, setProjects] = useState([]);
+  const [_projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Filters State

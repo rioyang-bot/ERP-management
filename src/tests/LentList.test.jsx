@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import LentList from '../pages/LentList';
@@ -90,7 +90,7 @@ describe('設備/硬體借用清單 (LentList) 流程、簽收單上傳與新增
 
     window.electronAPI.saveFile = saveFileSpy.mockResolvedValue({ success: true, fileName: 'uploaded-123456.jpg' });
 
-    window.electronAPI.namedQuery.mockImplementation((query, params) => {
+    window.electronAPI.namedQuery.mockImplementation((query, _params) => {
       if (query === 'migrateOutboundSignedDoc') {
         return Promise.resolve({ success: true });
       }

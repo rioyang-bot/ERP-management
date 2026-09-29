@@ -316,7 +316,7 @@ const Settings = () => {
       await window.electronAPI.namedQuery('upsertSystemSetting', ['password_policy', passwordPolicy]);
       logUpdate('SETTING', 'password_policy', '密碼原則設定', '更新系統密碼安全性原則', passwordPolicy);
       alert('密碼安全原則已儲存');
-    } catch(err) {
+    } catch {
       alert('儲存失敗');
     }
     setIsSavingPolicy(false);

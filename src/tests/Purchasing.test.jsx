@@ -1,6 +1,5 @@
 import React from 'react';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import ProcurementRegistration from '../pages/Purchasing';
@@ -57,7 +56,7 @@ describe('採購單建檔品項選取與卡片一致性測試', () => {
     vi.clearAllMocks();
 
     window.electronAPI = {
-      namedQuery: vi.fn().mockImplementation((query, params) => {
+      namedQuery: vi.fn().mockImplementation((query, _params) => {
         if (query === 'fetchPurchasingRecords') {
           return Promise.resolve({ success: true, rows: [] });
         }

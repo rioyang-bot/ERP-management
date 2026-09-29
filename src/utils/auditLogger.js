@@ -128,6 +128,31 @@ export async function logUpdate(module, targetId, targetName, summary, details =
 }
 
 /**
+ * 序號變更 (UPDATE)
+ *
+ * 序號會從三個地方被改：設備編輯、硬體編輯、進貨明細單更正。
+ * 三邊各寫各的敘述，其中進貨那邊還記在進貨單底下 —— 品項履歷是用序號
+ * 接回資產的，記在單號底下就永遠不會出現在那台設備的歷程裡。
+ *
+ * 一律記在「新序號」名下：改完之後資產上留著的就是新序號，
+ * 記在舊序號底下會接不回任何一筆資產。舊序號寫進敘述與 details，
+ * 之後要查「這支序號後來變成什麼」仍然找得到。
+ *
+ * details.snChanged 給履歷分類用 —— 靠敘述比對文字太脆弱。
+ */
+export async function logSnChange(module, oldSn, newSn, targetName, note = '', details = {}) {
+  const from = (oldSn || '').trim() || '無序號';
+  const to = (newSn || '').trim() || '無序號';
+  return logUpdate(
+    module,
+    (newSn || '').trim() || oldSn,
+    targetName,
+    `序號變更：[${from}] → [${to}]${note ? `（${note}）` : ''}`,
+    { ...details, oldSn: from, newSn: to, snChanged: true }
+  );
+}
+
+/**
  * 移除動作便捷函式 (DELETE)
  */
 export async function logDelete(module, targetId, targetName, summary, details = {}) {
@@ -162,6 +187,7 @@ export default {
   logCreate,
   logUpdate,
   logDelete,
+  logSnChange,
   logStatusChange,
   getCurrentUser
 };

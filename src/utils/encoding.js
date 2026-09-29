@@ -114,7 +114,7 @@ export function fixMojibake(str) {
     }
     const decoded = new TextDecoder('utf-8', { fatal: true }).decode(new Uint8Array(bytes));
     return decoded;
-  } catch (e) {
+  } catch {
     return str;
   }
 }
@@ -135,12 +135,12 @@ export function decodeTextBuffer(buffer) {
   try {
     const utf8Strict = new TextDecoder('utf-8', { fatal: true });
     return utf8Strict.decode(buffer);
-  } catch (e) {
+  } catch {
     // 3. 若非有效 UTF-8 (例如繁體中文 Windows Excel 導出的 Big5/CP950 ANSI CSV)
     try {
       const big5Decoder = new TextDecoder('big5');
       return big5Decoder.decode(buffer);
-    } catch (e2) {
+    } catch {
       const fallbackDecoder = new TextDecoder('utf-8');
       return fallbackDecoder.decode(buffer);
     }

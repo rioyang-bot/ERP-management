@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import DeviceList from '../pages/DeviceList';
@@ -64,7 +64,10 @@ describe('設備編輯：搭載硬體清單即時篩選', () => {
       </ThemeProvider>
     );
     await userEvent.type(await screen.findByPlaceholderText(/快速搜尋/), 'DEV-1');
-    await waitFor(() => expect(screen.getByText('DEV-1')).toBeInTheDocument());
+    // 篩選結果統計列也會印出搜尋字串，只看表格裡的那一筆
+    await waitFor(() => expect(
+      within(document.querySelector('table')).getByText('DEV-1')
+    ).toBeInTheDocument());
 
     const menuBtn = screen.getAllByRole('button').find((b) => b.className?.includes('action-menu-btn'));
     await userEvent.click(menuBtn);

@@ -3,7 +3,7 @@ import {
   X, RefreshCw, CheckCircle2, AlertCircle, Calendar, FileText, 
   Cpu, Server, ArrowRight, ShieldCheck, Tag, Box, Info 
 } from 'lucide-react';
-import { performInPlaceReplacement, performOneToOneReplacement, validateNewSn } from '../utils/rmaService';
+import { performInPlaceReplacement, performOneToOneReplacement } from '../utils/rmaService';
 
 /**
  * 原廠 RMA 換新品雙模式更換序號彈窗

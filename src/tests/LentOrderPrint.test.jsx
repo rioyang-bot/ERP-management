@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import LentOrderPrintModal from '../components/LentOrderPrintModal';
@@ -41,7 +41,7 @@ describe('借貨申請單 (Loan Application Form) 列印與預覽模組測試', 
     vi.clearAllMocks();
     window.print = mockPrint;
 
-    window.electronAPI.namedQuery.mockImplementation((query, params) => {
+    window.electronAPI.namedQuery.mockImplementation((query, _params) => {
       if (query === 'fetchCustomers') {
         return Promise.resolve({
           success: true,

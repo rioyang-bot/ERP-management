@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { sanitizeParams } from '../utils/security';
 
 // 模擬後端的 Named Query 執行邏輯

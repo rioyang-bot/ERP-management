@@ -1,14 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { ArrowDownToLine, Search, Filter, Eye, RefreshCw, AlertCircle, Trash2, Calendar, Hash, FileText, Plus, Edit2, Save, X } from 'lucide-react';
-import { logUpdate } from '../utils/auditLogger';
+import { logUpdate, logSnChange } from '../utils/auditLogger';
 import InboundRegistrationModal from '../components/InboundRegistrationModal';
 import { usePageSize } from '../utils/usePageSize';
 import { buildSnRenameSteps, validateSnRename, summariseSnRename } from '../utils/snRename';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 
 const InboundList = ({ isSplitMode = false }) => {
-  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [searchField, setSearchField] = useState('all');
   const [startDate, setStartDate] = useState('');
@@ -85,7 +83,7 @@ const InboundList = ({ isSplitMode = false }) => {
     let parsedAttachments = [];
     try {
        parsedAttachments = typeof order.attachments === 'string' ? JSON.parse(order.attachments || '[]') : (order.attachments || []);
-    } catch(e) {}
+    } catch { /* 失敗就沿用預設值 */ }
     
     setEditData({
       partner_id: order.partner_id || '',
@@ -246,6 +244,16 @@ const InboundList = ({ isSplitMode = false }) => {
         { orderNo: selectedOrder?.order_no, oldSn, newSn }
       );
 
+      // 上面那筆記在進貨單名下，品項履歷是用序號接回資產的，接不到。
+      // 資產真的被改到時，另外記一筆在新序號名下，那台設備的履歷才看得見。
+      if (assetChanged) {
+        await logSnChange(
+          'DEVICE', oldSn, newSn, selectedOrder?.order_no || '進貨單',
+          `於進貨明細單 [${selectedOrder?.order_no || ''}] 更正`,
+          { orderNo: selectedOrder?.order_no }
+        );
+      }
+
       setSnEdit(null);
       const itemsRes = await window.electronAPI.namedQuery('fetchInboundItems', [selectedOrder.id]);
       if (itemsRes.success) setOrderItems(itemsRes.rows);
@@ -293,7 +301,7 @@ const InboundList = ({ isSplitMode = false }) => {
       } else {
         alert('儲存失敗：' + res.error);
       }
-    } catch(err) {
+    } catch {
       alert('發生錯誤');
     } finally {
       setIsSaving(false);
@@ -616,7 +624,7 @@ const InboundList = ({ isSplitMode = false }) => {
                         let atts = [];
                         try {
                            atts = typeof selectedOrder.attachments === 'string' ? JSON.parse(selectedOrder.attachments || '[]') : (selectedOrder.attachments || []);
-                        } catch(e) {}
+                        } catch { /* 失敗就沿用預設值 */ }
                         
                         if (atts.length === 0) {
                             return <div style={{ color: 'var(--text-subtle)' }}>無附件</div>;

@@ -111,20 +111,6 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
     setSnBatch({ show: false, rowId: null, text: '' });
   };
 
-  const handleItemSelect = (rowId, value) => {
-    if (value === 'NEW_ITEM') {
-      setActiveRowId(rowId);
-      setShowQuickAdd(true);
-      return;
-    }
-    const selected = availableItems.find(i => i.id.toString() === value.toString());
-    setItems(items.map(row => row.id === rowId ? { 
-      ...row, 
-      itemId: value, 
-      cat_name: selected?.cat_name || '',
-      unit: selected?.unit || '個'
-    } : row));
-  };
 
   const handleBatchAddItems = (selectedList) => {
     if (!selectedList || selectedList.length === 0) return;
@@ -168,9 +154,6 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
     setActiveRowId(null);
   };
 
-  const handleModalItemSelect = (selectedItem) => {
-    handleSingleAddItem(selectedItem, 1);
-  };
 
   const openItemSelectModal = (rowId = null) => {
     setActiveRowId(rowId);
@@ -431,7 +414,6 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
     } : row));
   };
 
-  const selectedPOOrderNo = items.find(i => i.selectedOrderNo)?.selectedOrderNo;
 
   const hasPOSelected = items.some(i => !!i.selectedOrderNo || !!i.purchaseRecordId);
 
@@ -931,7 +913,6 @@ const alertContainerStyle = { backgroundColor: 'rgba(245, 158, 11, 0.1)', border
 const alertBadgeStyle = { backgroundColor: '#f59e0b', color: '#fff', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: '1.1rem' };
 const expandButtonStyle = { padding: '8px', backgroundColor: 'var(--primary-bg)', border: '1px solid rgba(59, 130, 246, 0.3)', borderRadius: '8px', cursor: 'pointer', color: 'var(--primary-color)', display: 'flex' };
 const deleteButtonStyle = { padding: '8px', color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.8 };
-const addRowsButtonStyle = { display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 20px', backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--primary-color)', border: '1px solid var(--border-color)', borderRadius: '10px', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 700 };
 const submitButtonStyle = { padding: '14px 40px', backgroundColor: 'var(--primary-color)', color: 'white', border: 'none', borderRadius: '12px', cursor: 'pointer', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '10px', boxShadow: '0 4px 15px rgba(26,115,232,0.3)' };
 const modalOverlayStyle = { position: 'fixed', inset: 0, backgroundColor: 'var(--bg-modal-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1050, backdropFilter: 'blur(5px)' };
 const modalCancelButtonStyle = { padding: '10px 20px', background: 'var(--bg-surface-subtle)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 };

@@ -41,7 +41,7 @@ describe('設備與硬體列表資產歸屬 (公司資產 ↔ 一般銷售) 切�
       custom_attributes: {}
     };
 
-    namedQueryMock.mockImplementation((query, params) => {
+    namedQueryMock.mockImplementation((query, _params) => {
       if (query === 'fetchAssetsList' || query === 'fetchAssetsListByBrand') {
         return Promise.resolve({ success: true, rows: [mockDevice] });
       }
@@ -111,7 +111,7 @@ describe('設備與硬體列表資產歸屬 (公司資產 ↔ 一般銷售) 切�
       custom_attributes: {}
     };
 
-    namedQueryMock.mockImplementation((query, params) => {
+    namedQueryMock.mockImplementation((query, _params) => {
       if (query === 'fetchNicList' || query === 'fetchNicListByType') {
         return Promise.resolve({ success: true, rows: [mockHw] });
       }

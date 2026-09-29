@@ -49,7 +49,7 @@ export function validatePassword(password, policy) {
     return { isValid: false, message: '密碼必須包含至少一個數字' };
   }
   
-  if (policy.requireSpecialChar && !/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]+/.test(password)) {
+  if (policy.requireSpecialChar && !/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]+/.test(password)) {
     return { isValid: false, message: '密碼必須包含至少一個特殊符號' };
   }
   

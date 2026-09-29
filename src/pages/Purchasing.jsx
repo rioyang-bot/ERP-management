@@ -280,10 +280,6 @@ const ProcurementRegistration = ({ editMode = false, isModalMode = false, initOr
     }));
   };
 
-  const openQuickAdd = (rowId, catId, type) => {
-    setQuickAdd({ show: true, type, rowId, catId });
-    setNewName('');
-  };
 
   const handleQuickAddSave = async () => {
     if (!newName.trim()) return;
@@ -931,6 +927,5 @@ const labelStyle = { display: 'block', fontSize: '0.85rem', fontWeight: 600, col
 const inputStyle = { width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--input-border)', fontSize: '0.95rem', outline: 'none', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', boxSizing: 'border-box' };
 const thStyle = { padding: '12px 16px', borderBottom: '2px solid var(--border-color)', fontWeight: 600, color: 'var(--table-header-text)', backgroundColor: 'var(--table-header-bg)', fontSize: '0.85rem' };
 const tdStyle = { padding: '12px 16px', verticalAlign: 'middle', borderBottom: '1px solid var(--table-border)', color: 'var(--text-main)' };
-const smallIconButtonStyle = { display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px', backgroundColor: 'var(--bg-surface-subtle)', border: '1px solid var(--border-color)', borderRadius: '4px', cursor: 'pointer', color: 'var(--text-main)' };
 
 export default ProcurementRegistration; 

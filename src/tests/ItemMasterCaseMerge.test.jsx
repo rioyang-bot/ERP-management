@@ -28,7 +28,7 @@ describe('品項主檔規格型號大小寫不區分比對 (Case-Insensitive) �
   });
 
   it('Settings 頁面應能呈現品項主檔大小寫整併工具，並執行掃描與整併操作', async () => {
-    const mockNamedQuery = vi.fn().mockImplementation((query, params) => {
+    const mockNamedQuery = vi.fn().mockImplementation((query, _params) => {
       if (query === 'getSystemSetting') {
         return Promise.resolve({ success: true, rows: [] });
       }

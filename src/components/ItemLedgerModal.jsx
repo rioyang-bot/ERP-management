@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, History, ArrowDownToLine, ArrowUpFromLine, ArrowRightLeft, RefreshCw, Box, Layers, Hash, ChevronLeft, ChevronRight, FileSpreadsheet } from 'lucide-react';
+import { X, History, ArrowDownToLine, ArrowUpFromLine, ArrowRightLeft, RefreshCw, Box, Layers, Hash, ChevronLeft, ChevronRight, FileSpreadsheet, Wrench, Repeat, Trash2, PackageCheck } from 'lucide-react';
 
 const ItemLedgerModal = ({ isOpen, onClose, item }) => {
   const [records, setRecords] = useState([]);
@@ -55,6 +55,20 @@ const ItemLedgerModal = ({ isOpen, onClose, item }) => {
         return { label: '出貨發貨', icon: <ArrowUpFromLine size={14} />, color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.15)' };
       case 'OUTBOUND_LEND':
         return { label: '設備借出', icon: <ArrowRightLeft size={14} />, color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.15)' };
+      // 以下都來自稽核紀錄。先前履歷只查進貨、匯入與出貨，
+      // 設備送修、原廠換機、報廢一筆都不會出現。
+      case 'REPAIR':
+        return { label: '維修處理', icon: <Wrench size={14} />, color: '#d97706', bg: 'rgba(217, 119, 6, 0.15)' };
+      case 'SN_CHANGE':
+        return { label: '序號變更', icon: <Hash size={14} />, color: '#7c3aed', bg: 'rgba(124, 58, 237, 0.15)' };
+      case 'RMA_REPLACE':
+        return { label: '原廠換機', icon: <Repeat size={14} />, color: '#0ea5e9', bg: 'rgba(14, 165, 233, 0.15)' };
+      case 'SCRAP':
+        return { label: '報廢', icon: <Trash2 size={14} />, color: '#ef4444', bg: 'rgba(239, 68, 68, 0.15)' };
+      case 'RETURN_STOCK':
+        return { label: '回到在庫', icon: <PackageCheck size={14} />, color: '#10b981', bg: 'rgba(16, 185, 129, 0.15)' };
+      case 'STATUS_CHANGE':
+        return { label: '狀態異動', icon: <History size={14} />, color: '#64748b', bg: 'rgba(100, 116, 139, 0.15)' };
       default:
         return { label: '未知', icon: <History size={14} />, color: 'var(--text-muted)', bg: 'var(--bg-surface-subtle)' };
     }
@@ -64,7 +78,7 @@ const ItemLedgerModal = ({ isOpen, onClose, item }) => {
     if (!dateStr) return '-';
     try {
       return new Date(dateStr).toLocaleDateString('zh-TW');
-    } catch (e) {
+    } catch {
       return dateStr;
     }
   };
@@ -113,7 +127,7 @@ const ItemLedgerModal = ({ isOpen, onClose, item }) => {
             </div>
             <div>
               <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: 'var(--text-main)' }}>品項履歷查詢 (Item Ledger)</h2>
-              <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: 'var(--text-muted)' }}>單一品項總數量與完整進出貨紀錄</p>
+              <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: 'var(--text-muted)' }}>進貨、出貨、維修、原廠換機與報廢的完整軌跡</p>
             </div>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '8px', color: 'var(--text-muted)', borderRadius: '8px', transition: 'background-color 0.2s' }}>
@@ -146,7 +160,7 @@ const ItemLedgerModal = ({ isOpen, onClose, item }) => {
           {/* History Table */}
           <div style={{ flex: 1, border: '1px solid var(--border-color)', borderRadius: '12px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             <div style={{ padding: '12px 16px', backgroundColor: 'var(--bg-surface)', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>進出貨歷史軌跡 ({records.length} 筆)</span>
+              <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>異動歷程 ({records.length} 筆)</span>
               <button onClick={fetchHistory} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--primary-color)', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 600 }}>
                 <RefreshCw size={14} className={loading ? 'spinner' : ''} /> 重新整理
               </button>
@@ -156,25 +170,26 @@ const ItemLedgerModal = ({ isOpen, onClose, item }) => {
               <table className="ledger-table">
                 <thead>
                   <tr>
-                    <th style={{ width: '15%' }}>異動日期</th>
-                    <th style={{ width: '15%' }}>交易類型</th>
-                    <th style={{ width: '20%' }}>單號</th>
-                    <th style={{ width: '20%' }}>關聯對象</th>
-                    <th style={{ width: '20%' }}>序號 (S/N)</th>
-                    <th style={{ width: '10%', textAlign: 'right' }}>數量</th>
+                    <th style={{ width: '12%' }}>異動日期</th>
+                    <th style={{ width: '13%' }}>交易類型</th>
+                    <th style={{ width: '15%' }}>單號</th>
+                    <th style={{ width: '12%' }}>關聯對象</th>
+                    <th style={{ width: '15%' }}>序號 (S/N)</th>
+                    <th style={{ width: '28%' }}>說明</th>
+                    <th style={{ width: '5%', textAlign: 'right' }}>數量</th>
                   </tr>
                 </thead>
                 <tbody>
                   {loading ? (
                     <tr>
-                      <td colSpan="6" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                      <td colSpan="7" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
                         <RefreshCw className="spinner" size={24} style={{ marginBottom: '8px', color: 'var(--primary-color)' }} /><br/>
                         載入中...
                       </td>
                     </tr>
                   ) : records.length === 0 ? (
                     <tr>
-                      <td colSpan="6" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                      <td colSpan="7" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
                         尚無歷史進出紀錄
                       </td>
                     </tr>
@@ -182,7 +197,7 @@ const ItemLedgerModal = ({ isOpen, onClose, item }) => {
                     paginatedRecords.map((rec, index) => {
                       const display = getTypeDisplay(rec.transaction_type);
                       return (
-                        <tr key={`${rec.order_no}-${index}`}>
+                        <tr key={`${rec.transaction_type}-${rec.order_no}-${index}`}>
                           <td style={{ fontWeight: 500 }}>{formatDate(rec.transaction_date)}</td>
                           <td>
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 8px', borderRadius: '12px', backgroundColor: display.bg, color: display.color, fontWeight: 700, fontSize: '11px' }}>
@@ -192,6 +207,10 @@ const ItemLedgerModal = ({ isOpen, onClose, item }) => {
                           <td style={{ fontWeight: 600 }}>{rec.order_no}</td>
                           <td>{rec.partner_name || '-'}</td>
                           <td>{rec.sn ? <span style={{ fontFamily: 'monospace', fontSize: '12px', backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-main)', border: '1px solid var(--border-color)', padding: '2px 4px', borderRadius: '4px' }}>{rec.sn}</span> : '-'}</td>
+                          {/* 稽核紀錄才有說明；進貨與出貨那幾段是 NULL */}
+                          <td style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.5' }} title={rec.summary || ''}>
+                            {rec.summary || '-'}
+                          </td>
                           <td style={{ textAlign: 'right', fontWeight: 700 }}>{rec.quantity}</td>
                         </tr>
                       );

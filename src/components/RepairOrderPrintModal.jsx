@@ -1,7 +1,25 @@
 import React, { useRef } from 'react';
 import { getRepairScopeLabel } from '../utils/repairScope';
-import { X, Printer, Download, Wrench, Building2, Calendar, FileText } from 'lucide-react';
+import { getRepairStageRows } from '../utils/repairStages';
+import { X, Printer } from 'lucide-react';
 
+const STATUS_LABEL = {
+  ON_SITE_HANDLING: '現場處理',
+  SENT_OEM: '送修原廠',
+  OEM_RETURNED: '原廠返還',
+  COMPLETED: '完工結案',
+};
+
+/**
+ * 維修單套印
+ *
+ * 內容以「檢視」的詳情為準：同樣的四個階段、同樣的四段說明，
+ * 外加當前狀態與建單備註。先前這張單少了送修備註、出貨備註與狀態，
+ * 印出來的比畫面上看到的少，得再開一次詳情才補得齊。
+ *
+ * 階段資料取自 utils/repairStages，與詳情共用同一份 —— 兩邊才不會再各自漂移。
+ * 樣式維持黑白列印取向：不用主題變數（列印時會失真），線條與底色都印得出來。
+ */
 const RepairOrderPrintModal = ({ isOpen, onClose, repairOrder }) => {
   const printRef = useRef(null);
 
@@ -12,6 +30,11 @@ const RepairOrderPrintModal = ({ isOpen, onClose, repairOrder }) => {
   };
 
   const items = repairOrder.items || [];
+  const stages = getRepairStageRows(repairOrder);
+  const isInternal = !!repairOrder.is_internal;
+
+  const LABEL = { fontSize: '11px', color: '#64748b', display: 'block', fontWeight: 700 };
+  const CELL = { padding: '8px 10px', borderBottom: '1px solid #e2e8f0', verticalAlign: 'top' };
 
   return (
     <div style={{
@@ -91,6 +114,9 @@ const RepairOrderPrintModal = ({ isOpen, onClose, repairOrder }) => {
               .no-print { display: none !important; }
               #repair-print-area, #repair-print-area * { visibility: visible; }
               #repair-print-area { position: absolute; left: 0; top: 0; width: 100%; padding: 20px; }
+              /* 底色預設不印，階段表格靠它分行，因此強制印出來 */
+              #repair-print-area * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+              #repair-print-area tr { break-inside: avoid; }
             }
           `}</style>
 
@@ -101,8 +127,23 @@ const RepairOrderPrintModal = ({ isOpen, onClose, repairOrder }) => {
                 <h1 style={{ fontSize: '24px', fontWeight: 900, margin: 0, color: '#0f172a', letterSpacing: '-0.5px' }}>
                   維修單據 (Repair Order / RMA)
                 </h1>
-                <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
-                  單號: <strong style={{ color: '#0f172a', fontSize: '14px' }}>{repairOrder.repair_no}</strong>
+                <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span>單號: <strong style={{ color: '#0f172a', fontSize: '14px' }}>{repairOrder.repair_no}</strong></span>
+                  {/* 當前狀態：詳情上有，套印單先前整個漏掉 */}
+                  <span style={{
+                    padding: '2px 10px', borderRadius: '999px', border: '1px solid #0f172a',
+                    fontSize: '11px', fontWeight: 800, color: '#0f172a',
+                  }}>
+                    {STATUS_LABEL[repairOrder.status] || repairOrder.status}
+                  </span>
+                  {repairOrder.no_oem_required && (
+                    <span style={{
+                      padding: '2px 10px', borderRadius: '999px', border: '1px dashed #64748b',
+                      fontSize: '11px', fontWeight: 700, color: '#475569',
+                    }}>
+                      不需送回原廠
+                    </span>
+                  )}
                 </div>
               </div>
               <div style={{ textAlign: 'right', fontSize: '12px', color: '#475569' }}>
@@ -111,58 +152,69 @@ const RepairOrderPrintModal = ({ isOpen, onClose, repairOrder }) => {
               </div>
             </div>
 
-            {/* 單據基本資訊表格 */}
+            {/* 單據基本資訊 */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '24px', backgroundColor: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
               <div>
-                <span style={{ fontSize: '11px', color: '#64748b', display: 'block', fontWeight: 700 }}>
-                  {repairOrder.is_internal ? '維修對象' : '客戶名稱 (Customer)'}
-                </span>
+                <span style={LABEL}>{isInternal ? '維修對象' : '客戶名稱 (Customer)'}</span>
                 <span style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>{getRepairScopeLabel(repairOrder)}</span>
-                {repairOrder.contact_person && (
+              </div>
+              <div>
+                {/* 內部維修沒有客戶聯絡人，要記的是送去哪一家供應商 */}
+                <span style={LABEL}>{isInternal ? '送修供應商 (Supplier)' : '聯絡人 (Contact)'}</span>
+                <span style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>
+                  {isInternal
+                    ? (repairOrder.supplier_name || '-')
+                    : (repairOrder.contact_person || '-')}
+                </span>
+                {repairOrder.contact_phone && (
                   <span style={{ fontSize: '12px', color: '#475569', display: 'block', marginTop: '2px' }}>
-                    聯絡人：{repairOrder.contact_person}{repairOrder.contact_phone ? `（${repairOrder.contact_phone}）` : ''}
+                    {repairOrder.contact_phone}
                   </span>
                 )}
               </div>
-              <div>
-                <span style={{ fontSize: '11px', color: '#64748b', display: 'block', fontWeight: 700 }}>現場處理/取回日期 (On-site handling Date)</span>
-                <span style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>{repairOrder.on_site_date || '-'}</span>
-              </div>
-              <div style={{ gridColumn: 'span 2' }}>
-                <span style={{ fontSize: '11px', color: '#64748b', display: 'block', fontWeight: 700 }}>現場狀況 / 故障描述 (On-site handling status)</span>
-                <span style={{ fontSize: '13px', fontWeight: 600, color: '#dc2626' }}>{repairOrder.on_site_status || '-'}</span>
-              </div>
+              {repairOrder.remarks && (
+                <div style={{ gridColumn: 'span 2' }}>
+                  <span style={LABEL}>建單備註</span>
+                  <span style={{ fontSize: '13px', color: '#0f172a', whiteSpace: 'pre-wrap' }}>{repairOrder.remarks}</span>
+                </div>
+              )}
             </div>
 
-            {/* 流程日期節點 */}
-            <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '24px', fontSize: '12px' }}>
-              <thead>
-                <tr style={{ backgroundColor: '#f1f5f9', borderTop: '1px solid #cbd5e1', borderBottom: '1px solid #cbd5e1' }}>
-                  <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700 }}>送修原廠日期 (Send OEM Date)</th>
-                  <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700 }}>原廠修復寄回日期 (OEM Return Date)</th>
-                  <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700 }}>完工出貨日期 (Completion Date)</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
-                  <td style={{ padding: '10px 12px', fontWeight: 700, color: '#d97706' }}>{repairOrder.send_oem_date || '--'}</td>
-                  <td style={{ padding: '10px 12px', fontWeight: 700, color: '#16a34a' }}>{repairOrder.oem_return_date || '--'}</td>
-                  <td style={{ padding: '10px 12px', fontWeight: 700, color: '#2563eb' }}>{repairOrder.completion_date || '--'}</td>
-                </tr>
-              </tbody>
-            </table>
-
-            {/* 維修結果說明 */}
-            {repairOrder.results && (
-              <div style={{ marginBottom: '24px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '14px 16px', borderRadius: '8px' }}>
-                <span style={{ fontSize: '11px', color: '#166534', fontWeight: 800, display: 'block', marginBottom: '4px' }}>
-                  維修結果 / 檢測說明 (Results)
-                </span>
-                <span style={{ fontSize: '13px', color: '#15803d', fontWeight: 600 }}>
-                  {repairOrder.results}
-                </span>
-              </div>
-            )}
+            {/* 四階段時程。每一列帶上那一步填的說明 —— 這是先前最缺的部分 */}
+            <div style={{ marginBottom: '24px' }}>
+              <h3 style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a', marginBottom: '10px' }}>
+                維修時程 (Maint. Timeline)
+              </h3>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                <thead>
+                  <tr style={{ backgroundColor: '#f1f5f9', borderTop: '1px solid #cbd5e1', borderBottom: '1px solid #cbd5e1' }}>
+                    <th style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 700, width: '150px' }}>階段 (Stage)</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 700, width: '110px' }}>日期 (Date)</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 700, width: '190px' }}>狀態 (Status)</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 700 }}>說明 (Details)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stages.map((stage) => (
+                    <tr key={stage.key}>
+                      <td style={{ ...CELL, fontWeight: 800, color: '#0f172a' }}>{stage.title}</td>
+                      <td style={{ ...CELL, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{stage.date || '--'}</td>
+                      <td style={{ ...CELL, color: '#475569' }}>{stage.statusDesc}</td>
+                      <td style={CELL}>
+                        {stage.contents.length === 0 ? (
+                          <span style={{ color: '#94a3b8' }}>-</span>
+                        ) : stage.contents.map(({ field, label, text }) => (
+                          <div key={field} style={{ marginBottom: '4px' }}>
+                            <span style={{ fontSize: '10px', fontWeight: 800, color: '#64748b', display: 'block' }}>{label}</span>
+                            <span style={{ color: '#0f172a', whiteSpace: 'pre-wrap' }}>{text || '-'}</span>
+                          </div>
+                        ))}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
             {/* 設備明細清單 */}
             <div style={{ marginBottom: '24px' }}>
@@ -173,40 +225,40 @@ const RepairOrderPrintModal = ({ isOpen, onClose, repairOrder }) => {
                 <thead>
                   <tr style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>
                     <th style={{ padding: '8px 10px', textAlign: 'center', width: '40px' }}>#</th>
-                    <th style={{ padding: '8px 10px', textAlign: 'left' }}>廠牌 (Device)</th>
-                    <th style={{ padding: '8px 10px', textAlign: 'left' }}>類型/型號 (Type/Model)</th>
-                    <th style={{ padding: '8px 10px', textAlign: 'left' }}>序號 (Serial Number)</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'left' }}>類型 (Type)</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'left' }}>廠牌 (Brand)</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'left' }}>型號 (Model)</th>
                     <th style={{ padding: '8px 10px', textAlign: 'left' }}>規格 (Specification)</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'left' }}>序號 (Serial Number)</th>
                   </tr>
                 </thead>
                 <tbody>
                   {items.map((it, idx) => (
                     <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: idx % 2 === 1 ? '#f8fafc' : '#ffffff' }}>
                       <td style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 700 }}>{idx + 1}</td>
+                      <td style={{ padding: '8px 10px' }}>{it.type || '-'}</td>
                       <td style={{ padding: '8px 10px', fontWeight: 800 }}>{it.brand}</td>
                       <td style={{ padding: '8px 10px', fontWeight: 600 }}>{it.model}</td>
-                      <td style={{ padding: '8px 10px', fontWeight: 700, color: '#2563eb' }}>{it.sn}</td>
                       <td style={{ padding: '8px 10px', color: '#64748b' }}>{it.specification || '-'}</td>
+                      <td style={{ padding: '8px 10px', fontWeight: 700, color: '#2563eb' }}>{it.sn}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
 
-            {/* 簽核區 */}
+            {/* 簽核區。內部維修沒有客戶可簽收，那一格換成入庫確認 */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginTop: '48px', paddingTop: '24px', borderTop: '1px solid #cbd5e1' }}>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '40px' }}>現場取件簽署 (Engineer)</div>
-                <div style={{ borderBottom: '1px solid #0f172a', width: '80%', margin: '0 auto' }}></div>
-              </div>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '40px' }}>原廠返還/主管簽核 (Supervisor)</div>
-                <div style={{ borderBottom: '1px solid #0f172a', width: '80%', margin: '0 auto' }}></div>
-              </div>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '40px' }}>客戶簽收確認 (Customer Signature)</div>
-                <div style={{ borderBottom: '1px solid #0f172a', width: '80%', margin: '0 auto' }}></div>
-              </div>
+              {[
+                '現場取件簽署 (Engineer)',
+                '原廠返還/主管簽核 (Supervisor)',
+                isInternal ? '返還入庫確認 (Warehouse)' : '客戶簽收確認 (Customer Signature)',
+              ].map((label) => (
+                <div key={label} style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '40px' }}>{label}</div>
+                  <div style={{ borderBottom: '1px solid #0f172a', width: '80%', margin: '0 auto' }}></div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
