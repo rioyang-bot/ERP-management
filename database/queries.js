@@ -857,6 +857,43 @@ export const queries = {
     WHERE id = $2 RETURNING id`,
   // 刪除進貨單時把入庫加上的庫存扣回來
   reverseStockQtyOnInboundDelete: `UPDATE item_master SET stock_qty = GREATEST(COALESCE(stock_qty, 0) - $1, 0) WHERE id = $2 RETURNING id`,
+
+  // --- 進貨明細數量更正 ---------------------------------------------------
+  // 打錯數量原本只能整張單刪掉重開（而且得上伺服器跑腳本）。
+  // 數量與庫存必須一起改，因此兩支都回傳資料列，交給交易的 expectRows 把關：
+  // 任何一步改不到就整批退回，不會出現「明細改了、庫存沒改」的半套狀態。
+  updateInboundItemQty: `
+    UPDATE inbound_items SET quantity = $1::integer
+    WHERE id = $2::integer
+    RETURNING id, item_id, quantity`,
+
+  // 差額可正可負。GREATEST 夾住 0：已經領用掉的部分無法再扣回，
+  // 與 reverseStockQtyOnInboundDelete 的處理一致，不讓庫存變成負數。
+  adjustItemMasterStock: `
+    UPDATE item_master SET stock_qty = GREATEST(COALESCE(stock_qty, 0) + $1::integer, 0)
+    WHERE id = $2::integer
+    RETURNING id, stock_qty`,
+
+  // --- 刪除進貨單（畫面版，與 scripts/delete-inbound-order.mjs 同一套規則）---
+  // 這批貨若已經流出去就不該用「刪除進貨單」處理，應走退貨或報廢。
+  // 逐一算出每支序號被動用的痕跡，有任何一項就擋下來。
+  fetchInboundAssetUsage: `
+    SELECT a.id, TRIM(a.sn) AS sn,
+      (SELECT COUNT(*) FROM outbound_items oi WHERE TRIM(oi.sn) = TRIM(a.sn))::int AS outbound,
+      (SELECT COUNT(*) FROM repair_items ri WHERE TRIM(ri.sn) = TRIM(a.sn))::int AS repair,
+      (SELECT COUNT(*) FROM item_lab_assignments la WHERE la.asset_id = a.id)::int AS lab,
+      (SELECT COUNT(*) FROM assets x
+        WHERE TRIM(LOWER(x.custom_attributes->>'server_sn')) = TRIM(LOWER(a.sn)))::int AS mounted
+    FROM assets a
+    WHERE TRIM(a.sn) = ANY($1::text[])
+    ORDER BY a.sn`,
+
+  deleteAssetsBySnList: `
+    DELETE FROM assets WHERE TRIM(sn) = ANY($1::text[]) RETURNING id`,
+
+  // 明細由外鍵連動刪除
+  deleteInboundOrderById: `
+    DELETE FROM inbound_orders WHERE id = $1::integer RETURNING id, order_no`,
   updatePurchaseRecordStatus: `UPDATE purchase_records SET received_quantity = COALESCE(received_quantity, 0) + $1, status = CASE WHEN COALESCE(received_quantity, 0) + $1 >= quantity THEN 'COMPLETED' ELSE 'PARTIAL' END, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
   fetchInboundList: `
     SELECT io.*,

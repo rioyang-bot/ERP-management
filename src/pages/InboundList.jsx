@@ -1,9 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ArrowDownToLine, Search, Filter, Eye, RefreshCw, AlertCircle, Trash2, Calendar, Hash, FileText, Plus, Edit2, Save, X } from 'lucide-react';
-import { logUpdate, logSnChange } from '../utils/auditLogger';
+import { logUpdate, logDelete, logSnChange } from '../utils/auditLogger';
 import InboundRegistrationModal from '../components/InboundRegistrationModal';
 import { usePageSize } from '../utils/usePageSize';
 import { buildSnRenameSteps, validateSnRename, summariseSnRename } from '../utils/snRename';
+import {
+  validateQtyChange, buildQtyChangeSteps, isQtyEditable,
+  findUsedAssets, describeUsage, buildInboundDeleteSteps,
+} from '../utils/inboundEdit';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 
 const InboundList = ({ isSplitMode = false }) => {
@@ -34,6 +38,11 @@ const InboundList = ({ isSplitMode = false }) => {
   // 進貨時序號打錯，直接在明細上改；相關單據與掛載關係會一起帶過去
   const [snEdit, setSnEdit] = useState(null); // { itemId, value }
   const [snSaving, setSnSaving] = useState(false);
+  // 數量打錯原本只能整張單刪掉重開（而且得上伺服器跑腳本）。
+  // 數量與庫存要一起改，因此走同一個交易。
+  const [qtyEdit, setQtyEdit] = useState(null); // { itemId, value }
+  const [qtySaving, setQtySaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   // 整張單一次填寫訂單來源。這一欄存在資產上，逐筆到硬體列表改八十次不切實際。
   const [orderSourceInput, setOrderSourceInput] = useState('');
   const [orderSourceSaving, setOrderSourceSaving] = useState(false);
@@ -210,6 +219,119 @@ const InboundList = ({ isSplitMode = false }) => {
    * 因此整組放在同一個交易裡；資產那一步改不到就整批退回，
    * 不會只改掉單據、留下對不上的資產。
    */
+  /**
+   * 更正進貨明細的數量。
+   *
+   * 明細與庫存必須一起改，否則會出現「單據寫 10、庫存卻是 100」。
+   * 兩步都放在同一個交易並要求改到一列，任何一步落空就整批退回。
+   */
+  const handleSaveQty = async (item) => {
+    const check = validateQtyChange(item.quantity, qtyEdit?.value);
+    if (check.error) { alert(check.error); return; }
+    if (check.unchanged) { setQtyEdit(null); return; }
+
+    const name = [item.brand, item.model].filter(Boolean).join(' ') || '此品項';
+    const word = check.delta > 0 ? `增加 ${check.delta}` : `減少 ${Math.abs(check.delta)}`;
+    if (!window.confirm(
+      `確定把「${name}」的數量從 ${item.quantity} 改成 ${check.next} 嗎？\n\n`
+      + `庫存會同步${word}。\n`
+      + (check.delta < 0 ? '若這些貨已經領用出去，庫存最低只會扣到 0。\n' : '')
+      + '\n此動作會記錄在事件紀錄中。'
+    )) return;
+
+    setQtySaving(true);
+    try {
+      const res = await window.electronAPI.runTransaction(buildQtyChangeSteps({
+        itemId: item.id,
+        itemMasterId: item.item_id,
+        nextQty: check.next,
+        delta: check.delta,
+      }));
+      if (!res.success) throw new Error(res.error || '更正失敗');
+
+      await logUpdate(
+        'INBOUND',
+        selectedOrder?.order_no,
+        name,
+        `更正進貨數量 [${name}] ${item.quantity} → ${check.next}（庫存同步${word}）`,
+        { orderNo: selectedOrder?.order_no, itemId: item.id, from: item.quantity, to: check.next, delta: check.delta }
+      );
+
+      setQtyEdit(null);
+      const itemsRes = await window.electronAPI.namedQuery('fetchInboundItems', [selectedOrder.id]);
+      if (itemsRes.success) setOrderItems(itemsRes.rows);
+      fetchRecords();
+    } catch (err) {
+      alert('更正失敗：' + err.message);
+    } finally {
+      setQtySaving(false);
+    }
+  };
+
+  /**
+   * 刪除整張進貨單。
+   *
+   * 規則與 scripts/delete-inbound-order.mjs 相同 —— 那支腳本原本是唯一的途徑，
+   * 但得登入伺服器才能用。會一併還原：入庫加上的庫存、採購單的已入庫數量與
+   * 狀態、該單建立的資產。
+   *
+   * 這批貨若已經流出去（出貨、維修、借測，或有硬體掛在上面）就一律拒絕 ——
+   * 那該走退貨或報廢，不是把進貨紀錄抹掉。
+   */
+  const handleDeleteOrder = async (order) => {
+    setDeleting(true);
+    try {
+      const itemsRes = await window.electronAPI.namedQuery('fetchInboundItems', [order.id]);
+      if (!itemsRes.success) throw new Error(itemsRes.error || '無法讀取明細');
+      const items = itemsRes.rows || [];
+      const assetSns = items.map((i) => (i.sn || '').trim()).filter(Boolean);
+
+      if (assetSns.length > 0) {
+        const usageRes = await window.electronAPI.namedQuery('fetchInboundAssetUsage', [assetSns]);
+        if (!usageRes.success) throw new Error(usageRes.error || '無法確認資產是否已被動用');
+        const used = findUsedAssets(usageRes.rows);
+        if (used.length > 0) {
+          alert(
+            `無法刪除進貨單 [${order.order_no}]：以下資產已經被動用過。\n\n`
+            + used.map(describeUsage).join('\n')
+            + '\n\n這代表這批貨已經流出去了，請改走退貨或報廢流程。'
+          );
+          return;
+        }
+      }
+
+      const qtyLines = items
+        .map((i) => `　· ${[i.brand, i.model].filter(Boolean).join(' ') || '品項'} ×${i.quantity}`)
+        .join('\n');
+      if (!window.confirm(
+        `確定要刪除進貨單 [${order.order_no}] 嗎？此動作無法復原。\n\n`
+        + `會一併還原：\n`
+        + `　· 入庫時加上的庫存\n${qtyLines}\n`
+        + `　· 該單建立的資產 ${assetSns.length} 筆\n`
+        + `　· 來自採購單的已入庫數量與狀態\n`
+      )) return;
+
+      const res = await window.electronAPI.runTransaction(
+        buildInboundDeleteSteps({ orderId: order.id, items, assetSns })
+      );
+      if (!res.success) throw new Error(res.error || '刪除失敗');
+
+      await logDelete(
+        'INBOUND', order.order_no, order.partner_name || '進貨單',
+        `刪除進貨單 [${order.order_no}]（已扣回庫存、退回採購數量、刪除 ${assetSns.length} 筆資產）`,
+        { orderNo: order.order_no, items: items.length, assets: assetSns.length }
+      );
+
+      alert(`進貨單 [${order.order_no}] 已刪除，庫存與採購數量已還原。`);
+      setSelectedOrder(null);
+      fetchRecords();
+    } catch (err) {
+      alert('刪除失敗：' + err.message);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const handleSaveSn = async (item) => {
     const oldSn = (item.sn || '').trim();
     const newSn = (snEdit?.value || '').trim();
@@ -769,8 +891,76 @@ const InboundList = ({ isSplitMode = false }) => {
                                 ? <span style={{ color: 'var(--text-main)', fontWeight: 600 }}>{item.order_source}</span>
                                 : <span style={{ color: '#d97706' }}>未填</span>}
                           </td>
+                          {/* 數量可就地更正。有序號的（設備／硬體）不給改 ——
+                              一支序號就是一台，改數字不會多出或少掉一台資產，
+                              只會讓單據與實際資產對不起來。 */}
                           <td style={{ padding: '16px', textAlign: 'center', verticalAlign: 'top', fontWeight: 800, color: 'var(--text-main)' }}>
-                            {item.quantity}
+                            {qtyEdit?.itemId === item.id ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={qtyEdit.value}
+                                  onChange={(e) => setQtyEdit({ itemId: item.id, value: e.target.value })}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Escape') setQtyEdit(null);
+                                    if (e.key === 'Enter') { e.preventDefault(); handleSaveQty(item); }
+                                  }}
+                                  aria-label={`修改數量 ${[item.brand, item.model].filter(Boolean).join(' ')}`}
+                                  autoFocus
+                                  style={{
+                                    width: '72px', padding: '4px 6px', borderRadius: '6px', textAlign: 'center',
+                                    border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)',
+                                    color: 'var(--input-text)', fontSize: '0.9rem', outline: 'none',
+                                  }}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveQty(item)}
+                                  disabled={qtySaving}
+                                  aria-label="儲存數量"
+                                  style={{
+                                    display: 'inline-flex', alignItems: 'center', padding: '4px 6px',
+                                    borderRadius: '6px', border: 'none', cursor: qtySaving ? 'wait' : 'pointer',
+                                    backgroundColor: qtySaving ? 'var(--border-color)' : '#16a34a', color: '#fff',
+                                  }}
+                                >
+                                  <Save size={13} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setQtyEdit(null)}
+                                  aria-label="取消修改數量"
+                                  style={{
+                                    display: 'inline-flex', alignItems: 'center', padding: '4px 6px',
+                                    borderRadius: '6px', border: '1px solid var(--border-color)',
+                                    backgroundColor: 'var(--bg-surface)', color: 'var(--text-muted)', cursor: 'pointer',
+                                  }}
+                                >
+                                  <X size={13} />
+                                </button>
+                              </div>
+                            ) : (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                                <span>{item.quantity}</span>
+                                {isQtyEditable(item) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setQtyEdit({ itemId: item.id, value: String(item.quantity ?? '') })}
+                                    title="更正數量（庫存會同步調整）"
+                                    aria-label={`修改數量 ${[item.brand, item.model].filter(Boolean).join(' ')}`}
+                                    style={{
+                                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                      width: '22px', height: '22px', padding: 0, flexShrink: 0,
+                                      borderRadius: '6px', border: '1px solid var(--border-color)',
+                                      backgroundColor: 'var(--bg-surface)', color: '#f59e0b', cursor: 'pointer',
+                                    }}
+                                  >
+                                    <Edit2 size={11} />
+                                  </button>
+                                )}
+                              </div>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -784,7 +974,24 @@ const InboundList = ({ isSplitMode = false }) => {
               )}
             </div>
 
-            <div style={{ padding: '20px 32px', borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)', display: 'flex', justifyContent: 'flex-end', gap: '12px', borderBottomLeftRadius: '16px', borderBottomRightRadius: '16px' }}>
+            <div style={{ padding: '20px 32px', borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)', display: 'flex', justifyContent: 'space-between', gap: '12px', borderBottomLeftRadius: '16px', borderBottomRightRadius: '16px' }}>
+              {/* 刪除整張進貨單。規則與 scripts/delete-inbound-order.mjs 相同，
+                  但不必登入伺服器。已動用過的貨會被擋下來。 */}
+              <button
+                onClick={() => handleDeleteOrder(selectedOrder)}
+                disabled={deleting || !selectedOrder}
+                title="刪除整張進貨單，並還原庫存、採購數量與該單建立的資產"
+                style={{
+                  padding: '10px 20px', borderRadius: '8px',
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                  backgroundColor: 'rgba(239, 68, 68, 0.08)', color: '#ef4444',
+                  fontWeight: 700, cursor: deleting ? 'wait' : 'pointer',
+                  display: 'flex', alignItems: 'center', gap: '8px',
+                }}
+              >
+                <Trash2 size={16} /> {deleting ? '刪除中...' : '刪除進貨單'}
+              </button>
+              <div style={{ display: 'flex', gap: '12px' }}>
               <button
                 onClick={() => setIsModalOpen(false)}
                 style={{ padding: '10px 24px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, color: 'var(--text-main)' }}
@@ -800,6 +1007,7 @@ const InboundList = ({ isSplitMode = false }) => {
                    <Save size={18} /> {isSaving ? '儲存中...' : '儲存變更'}
                  </button>
               )}
+              </div>
             </div>
           </div>
         </div>
