@@ -8,6 +8,7 @@ import { logUpdate, logDelete, logStatusChange, logSnChange } from '../utils/aud
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 import FilterResultSummary from '../components/common/FilterResultSummary';
+import { matchedContacts, belongsToContacts, expandedSpellings } from '../utils/customerSearch';
 import { isItemRetired, getItemAggregationKey, aggregateCards, computeNewRetiredKeys, getCardTitle, showsModelSubtitle, getCardSearchText, ASSET_AGGREGATION_MODES } from '../utils/cardAggregation';
 import ColumnVisibilityModal from '../components/ColumnVisibilityModal';
 import CardAggregationLegend from '../components/CardAggregationLegend';
@@ -34,6 +35,16 @@ const DEVICE_COLUMNS = [
   { id: 'status', label: '狀態' },
   { id: 'actions', label: '功能', always: true },
 ];
+
+
+// custom_attributes 有時是字串有時是物件，解析失敗就當作沒有屬性
+const readAttrs = (item) => {
+  try {
+    return typeof item?.custom_attributes === 'string'
+      ? JSON.parse(item.custom_attributes)
+      : (item?.custom_attributes || {});
+  } catch { return {}; }
+};
 
 const DeviceList = ({ isSplitMode = false }) => {
   const [items, setItems] = useState([]);
@@ -526,6 +537,18 @@ const DeviceList = ({ isSplitMode = false }) => {
   // 排序用的基準日：整次排序共用同一個，避免跨午夜時前後比較不一致
   const sortToday = new Date();
 
+  // 同一位客戶在匯入時被寫成好幾種（郭沛晴 = Niky / Yuanta QFII / 元大 郭沛晴…），
+  // 搜其中一種找不到另一種。contact_person 早就正規化了，拿它把同一位聯絡人
+  // 底下的資產一併帶出來，不必另外維護別名表。
+  const searchTerms = searchTerm.toLowerCase().split(/\s+/).filter(t => t);
+  const customerAccessors = {
+    getClient: (i) => i.client,
+    getEndUser: (i) => i.end_user || readAttrs(i).end_user,
+    getContact: (i) => i.partner_contact || readAttrs(i).contact_person,
+  };
+  const contactMatches = matchedContacts(items, searchTerms, customerAccessors);
+  const alsoIncluded = expandedSpellings(items, contactMatches, searchTerms, customerAccessors);
+
   const sortedItems = items
     .filter(item => {
       if (selectedCardKey) {
@@ -535,15 +558,16 @@ const DeviceList = ({ isSplitMode = false }) => {
         const itemRetired = isItemRetired(item, retiredKeys);
         if (itemKey !== targetKey || itemRetired !== isTargetRetired) return false;
       }
-      const searchTerms = searchTerm.toLowerCase().split(/\s+/).filter(t => t);
       if (searchTerms.length === 0) return true;
+      // 關鍵字命中同一位聯絡人的其他寫法，這一筆也算
+      if (belongsToContacts(item, contactMatches, customerAccessors)) return true;
       return searchTerms.every(term => {
-        let attrs = {};
-        try { attrs = typeof item.custom_attributes === 'string' ? JSON.parse(item.custom_attributes) : (item.custom_attributes || {}); } catch { /* 欄位不是合法 JSON 就當作沒有屬性 */ }
+        const attrs = readAttrs(item);
         return (item.sn || '').toLowerCase().includes(term) || (item.specification || '').toLowerCase().includes(term) ||
           (item.hostname || '').toLowerCase().includes(term) || (item.brand || '').toLowerCase().includes(term) ||
           (item.model || '').toLowerCase().includes(term) || (item.client || '').toLowerCase().includes(term) ||
           (item.end_user || attrs.end_user || '').toLowerCase().includes(term) ||
+          (item.partner_contact || attrs.contact_person || '').toLowerCase().includes(term) ||
           (item.asset_no || '').toLowerCase().includes(term) ||
           (item.location || '').toLowerCase().includes(term);
       });
@@ -988,6 +1012,7 @@ const DeviceList = ({ isSplitMode = false }) => {
                     searchTerm={searchTerm}
                     brandFilter={brandFilter}
                     cardLabel={selectedCardKey ? selectedCardKey.replace(':::RETIRED', '') : ''}
+                    alsoIncluded={alsoIncluded}
                   />
                   <div style={{ marginBottom: '16px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', minHeight: '300px', border: '1px solid var(--border-color)', borderRadius: '10px' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
