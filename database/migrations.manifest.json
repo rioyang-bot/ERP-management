@@ -148,6 +148,11 @@
       "file": "migration_repair_stage_remarks.sql",
       "type": "schema",
       "note": "維修單四個階段各自的說明欄位"
+    },
+    {
+      "file": "migration_consumable_unique_key.sql",
+      "type": "schema",
+      "note": "耗材主檔唯一鍵（廠牌+類型+型號）"
     }
   ]
 }

@@ -1,4 +1,5 @@
 import React from 'react';
+import { MemoryRouter } from 'react-router-dom';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { BrowserRouter } from 'react-router-dom';
@@ -44,11 +45,14 @@ describe('耗材列表與新增耗材彈窗批次匯入整合測試', () => {
 
   it('在 ConsumableRegistrationModal (新增耗材) 彈窗內部，應提供批次匯入按鈕並可正常開啟匯入彈窗', async () => {
     render(
-      <ConsumableRegistrationModal
-        isOpen={true}
-        onClose={vi.fn()}
-        onSuccess={vi.fn()}
-      />
+      // 重複品項時彈窗會提供「前往進貨入庫」，因此需要路由脈絡
+      <MemoryRouter>
+        <ConsumableRegistrationModal
+          isOpen={true}
+          onClose={vi.fn()}
+          onSuccess={vi.fn()}
+        />
+      </MemoryRouter>
     );
 
     // 1. 等待彈窗渲染，並確認標題為新增耗材主檔

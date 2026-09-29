@@ -1,4 +1,5 @@
 import React from 'react';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -195,11 +196,14 @@ describe('全模組彈窗建檔 (Registration Modals) 整合測試', () => {
     const handleSuccess = vi.fn();
 
     render(
-      <ConsumableRegistrationModal
-        isOpen={true}
-        onClose={handleClose}
-        onSuccess={handleSuccess}
-      />
+      // 重複品項時彈窗會提供「前往進貨入庫」，因此需要路由脈絡
+      <MemoryRouter>
+        <ConsumableRegistrationModal
+          isOpen={true}
+          onClose={handleClose}
+          onSuccess={handleSuccess}
+        />
+      </MemoryRouter>
     );
 
     expect(screen.getByText(/新增耗材主檔/i)).toBeInTheDocument();

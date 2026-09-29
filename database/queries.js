@@ -657,7 +657,12 @@ export const queries = {
   fetchAllAssetsForSelect: `SELECT a.id, a.sn, a.hostname, i.brand, i.model FROM assets a JOIN item_master i ON a.item_master_id = i.id ORDER BY a.hostname ASC, a.sn ASC`,
 
   // Consumables.jsx & ConsumableBatchImportModal.jsx
-  checkDuplicateConsumable: `SELECT id, specification, stock_qty, lab_qty FROM item_master WHERE UPPER(TRIM(REGEXP_REPLACE(COALESCE(brand, ''), '[[:space:]]+', ' ', 'g'))) = UPPER(TRIM(REGEXP_REPLACE(COALESCE($1, ''), '[[:space:]]+', ' ', 'g'))) AND UPPER(TRIM(REGEXP_REPLACE(COALESCE(type, ''), '[[:space:]]+', ' ', 'g'))) = UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g'))) AND UPPER(TRIM(REGEXP_REPLACE(COALESCE(model, ''), '[[:space:]]+', ' ', 'g'))) = UPPER(TRIM(REGEXP_REPLACE(COALESCE($3, ''), '[[:space:]]+', ' ', 'g'))) AND LOWER(TRIM(COALESCE(specification, ''))) = LOWER(TRIM(COALESCE($4, ''))) AND category_id = (SELECT id FROM categories WHERE name = '耗材')`,
+  // 識別鍵是「廠牌＋類型＋型號」，不含備註。
+  // 備註（specification）對耗材而言只是備註 —— 既有資料裡的內容多半是廠牌名
+  // 重複一次。先前把它算進識別鍵，導致同一個品項只要備註不同就能再建一筆，
+  // 2026-09-29 就這樣多出四筆重複主檔。實測 78 筆耗材，移除備註後 0 組相撞。
+  // 資料庫層另有唯一索引擋住所有路徑，見 migration_consumable_unique_key.sql。
+  checkDuplicateConsumable: `SELECT id, brand, type, model, specification, stock_qty, lab_qty FROM item_master WHERE UPPER(TRIM(REGEXP_REPLACE(COALESCE(brand, ''), '[[:space:]]+', ' ', 'g'))) = UPPER(TRIM(REGEXP_REPLACE(COALESCE($1, ''), '[[:space:]]+', ' ', 'g'))) AND UPPER(TRIM(REGEXP_REPLACE(COALESCE(type, ''), '[[:space:]]+', ' ', 'g'))) = UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g'))) AND UPPER(TRIM(REGEXP_REPLACE(COALESCE(model, ''), '[[:space:]]+', ' ', 'g'))) = UPPER(TRIM(REGEXP_REPLACE(COALESCE($3, ''), '[[:space:]]+', ' ', 'g'))) AND category_id = (SELECT id FROM categories WHERE name = '耗材')`,
   findConsumableMaster: `SELECT id, stock_qty, lab_qty, safety_stock FROM item_master WHERE LOWER(brand) = LOWER($1) AND LOWER(type) = LOWER($2) AND LOWER(model) = LOWER($3) AND LOWER(specification) = LOWER($4) AND category_id = (SELECT id FROM categories WHERE name = '耗材')`,
   // 直接指定庫存值（覆蓋模式）。回傳 id 以便呼叫端確認確實更新到。
   updateConsumableStockQtyOnImport: `UPDATE item_master SET stock_qty = $1 WHERE id = $2 RETURNING id`,

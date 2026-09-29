@@ -127,26 +127,27 @@ const Consumables = ({ isSplitMode = false }) => {
 
     const trimmedSpec = (formData.spec || '').trim();
 
-    // 檢查現有系統中是否已有相同的「廠牌 + 類型 + 型號/規格 + 備註」
     const checkRes = await window.electronAPI.namedQuery('checkDuplicateConsumable', [
       formData.brand.trim(),
       formData.type.trim(),
       formData.model.trim(),
-      trimmedSpec
     ]);
 
     if (checkRes.success && checkRes.rows && checkRes.rows.length > 0) {
       const existing = checkRes.rows[0];
-      return alert(
-        `⚠️ 無法建立：此耗材品項已經存在！\n\n` +
-        `【已存在項目】\n` +
-        `• 廠牌：${formData.brand}\n` +
-        `• 類型：${formData.type}\n` +
-        `• 型號/規格：${formData.model}\n` +
-        `• 備註：${existing.specification || '(無)'}\n` +
-        `• 目前 Stock 庫存：${existing.stock_qty || 0} / LAB：${existing.lab_qty || 0}\n\n` +
-        `系統不允許建立重複的「廠牌 + 類型 + 型號/規格 + 備註」，如需補充庫存請至「進貨入庫」作業。`
+      // 擋下來之後要給出路：先前只叫人「請至進貨入庫作業」，使用者得自己
+      // 關掉、離開頁面、再找一次品項 —— 摩擦大到讓人乾脆改個備註硬建一筆。
+      const go = window.confirm(
+        `此耗材品項已經存在，不需要重新建檔。\n\n` +
+        `【既有品項】${existing.brand} ${existing.type} ${existing.model}\n` +
+        `　備註：${existing.specification || '(無)'}\n` +
+        `　目前庫存：Stock ${existing.stock_qty || 0} / LAB ${existing.lab_qty || 0}\n\n` +
+        `同一個品項只會有一筆主檔（備註不列入判斷）。\n` +
+        `要補充庫存請走進貨入庫，庫存才追得到來源單據。\n\n` +
+        `要現在前往「進貨入庫」嗎？`
       );
+      if (go) navigate('/inbound');
+      return;
     }
 
     const res = await window.electronAPI.namedQuery('insertConsumableMaster', [
