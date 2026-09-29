@@ -1444,7 +1444,8 @@ export const queries = {
       im.brand,
       im.model,
       im.specification,
-      ii.created_at
+      ii.created_at,
+      NULL::text as summary
     FROM inbound_items ii
     JOIN inbound_orders io ON ii.inbound_order_id = io.id
     LEFT JOIN partners p ON io.partner_id = p.id
@@ -1463,7 +1464,8 @@ export const queries = {
       im.brand,
       im.model,
       im.specification,
-      a.created_at
+      a.created_at,
+      NULL::text as summary
     FROM assets a
     JOIN item_master im ON a.item_master_id = im.id
     WHERE a.item_master_id = $1::integer
@@ -1492,7 +1494,8 @@ export const queries = {
       im.brand,
       im.model,
       im.specification,
-      im.created_at
+      im.created_at,
+      NULL::text as summary
     FROM item_master im
     JOIN categories c ON im.category_id = c.id
     WHERE im.id = $1::integer AND c.name = '耗材'
@@ -1512,12 +1515,50 @@ export const queries = {
       im.brand,
       im.model,
       im.specification,
-      o.created_at
+      o.created_at,
+      NULL::text as summary
     FROM outbound_items oi
     JOIN outbound_requests o ON oi.request_id = o.id
     LEFT JOIN item_master im ON oi.item_id = im.id
     WHERE o.status IN ('SHIPPED', 'RETURNED') AND oi.item_id = $1::integer
     
+    UNION ALL
+
+    -- 入庫之後發生的事：出貨、維修、原廠 RMA 換機、報廢。
+    -- 先前履歷只有進貨、批次匯入與出貨三種來源，設備送修、換機、報廢
+    -- 一筆都不會出現 —— 明明 system_audit_logs 都記著，只是沒人去讀。
+    -- 稽核紀錄沒有 item_master_id，靠序號對回資產再過濾主檔。
+    SELECT
+      -- 以 details 裡的狀態為準，文字比對只用來分辨狀態一樣、意義不同的情形。
+      -- 不能直接用 summary LIKE '%RMA%'：維修單號本身就叫 RMA-20260918-01，
+      -- 「建立維修單 [RMA-...]」會被誤判成原廠換機。
+      CASE
+        WHEN l.summary LIKE '原廠 RMA%' THEN 'RMA_REPLACE'
+        WHEN l.details->>'newStatus' = 'SCRAPPED' THEN 'SCRAP'
+        WHEN l.summary LIKE '%維修單%' THEN 'REPAIR'
+        WHEN l.details->>'newStatus' = 'REPAIRING' THEN 'REPAIR'
+        WHEN l.details->>'newStatus' = 'SHIPPED' THEN 'OUTBOUND_SALE'
+        WHEN l.details->>'newStatus' = 'LENT' THEN 'OUTBOUND_LEND'
+        WHEN l.details->>'newStatus' = 'ACTIVE' THEN 'RETURN_STOCK'
+        ELSE 'STATUS_CHANGE'
+      END as transaction_type,
+      l.timestamp::date as transaction_date,
+      -- 敘述裡帶到的單號（RMA-20260918-01 這種）抓出來放單號欄
+      COALESCE(substring(l.summary from '[A-Z]{2,5}-[0-9]{6,8}-[0-9]+'), '-') as order_no,
+      COALESCE(NULLIF(TRIM(l.user_name), ''), '系統') as partner_name,
+      1 as quantity,
+      a.sn,
+      im.brand,
+      im.model,
+      im.specification,
+      l.timestamp as created_at,
+      l.summary
+    FROM system_audit_logs l
+    JOIN assets a ON UPPER(TRIM(a.sn)) = UPPER(TRIM(l.target_id))
+    JOIN item_master im ON a.item_master_id = im.id
+    WHERE a.item_master_id = $1::integer
+      AND l.module IN ('DEVICE', 'HARDWARE', 'ASSET')
+
     ORDER BY transaction_date DESC, created_at DESC
   `,
 
