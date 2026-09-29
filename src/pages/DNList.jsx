@@ -3,7 +3,6 @@ import {
   FileText, Search, Filter, Eye, RefreshCw, AlertCircle, Trash2, Calendar, 
   Printer, Paperclip, Upload, FileCheck, ExternalLink, X, Pencil 
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 import { logStatusChange, logDelete, logUpdate } from '../utils/auditLogger';
 import LentOrderPrintModal from '../components/LentOrderPrintModal';
 import DeliveryReceiptPrintModal from '../components/DeliveryReceiptPrintModal';
@@ -12,7 +11,6 @@ import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 
 const DNList = ({ isSplitMode = false }) => {
-  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [searchField, setSearchField] = useState('all');
   const [statusFilter, setStatusFilter] = useState('ALL');
@@ -62,8 +60,8 @@ const DNList = ({ isSplitMode = false }) => {
     setError(null);
     try {
       // 確保 signed_doc 與 project_name 欄位存在
-      try { await window.electronAPI.namedQuery('migrateOutboundSignedDoc'); } catch(e) {}
-      try { await window.electronAPI.namedQuery('migrateOutboundProjectName'); } catch(e) {}
+      try { await window.electronAPI.namedQuery('migrateOutboundSignedDoc'); } catch { /* 欄位已存在就略過，這是相容舊資料庫用的 */ }
+      try { await window.electronAPI.namedQuery('migrateOutboundProjectName'); } catch { /* 欄位已存在就略過，這是相容舊資料庫用的 */ }
       const res = await window.electronAPI.namedQuery('fetchDNList');
       if (res.success) {
         setDnRecords(res.rows || []);

@@ -19,8 +19,7 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   const [newBrandName, setNewBrandName] = useState('');
   const [newModelName, setNewModelName] = useState('');
   const [models, setModels] = useState([]);
-  const [projects, setProjects] = useState([]);
-  const [showProjectDropdown, setShowProjectDropdown] = useState(false);
+  const [_projects, setProjects] = useState([]);
   const [formData, setFormData] = useState({
     type: '', brand: '', model: '', sn: '', specification: '', client: '',
     hostname: '', location: '', installed_date: '',

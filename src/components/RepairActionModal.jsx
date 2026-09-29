@@ -4,7 +4,7 @@ import {
   FileText, Truck, Wrench, ShieldCheck, RefreshCw, ArrowRight, Info
 } from 'lucide-react';
 import { logStatusChange, logUpdate } from '../utils/auditLogger';
-import { validateNewSn, performInPlaceReplacement, performOneToOneReplacement } from '../utils/rmaService';
+import { performInPlaceReplacement, performOneToOneReplacement } from '../utils/rmaService';
 
 // 自行維修的常用結果跟原廠是兩回事，混在一起只會讓人挑到不對的敘述
 const IN_HOUSE_RESULTS = [

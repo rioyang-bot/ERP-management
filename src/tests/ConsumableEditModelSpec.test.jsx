@@ -28,7 +28,7 @@ describe('ConsumableList 耗材型號與規格編輯功能測試', () => {
     window.alert = vi.fn();
 
     window.electronAPI = {
-      namedQuery: vi.fn().mockImplementation((queryName, params) => {
+      namedQuery: vi.fn().mockImplementation((queryName, _params) => {
         if (queryName === 'fetchConsumablesList' || queryName === 'fetchConsumablesListByType') {
           return Promise.resolve({ success: true, rows: mockConsumables });
         }

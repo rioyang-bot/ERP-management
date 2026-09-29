@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Search, FileText, ShoppingCart, Filter, Calendar, ExternalLink, ChevronDown, ChevronRight, Package, Truck, CheckCircle2, Trash2, Edit2, X, Save, RefreshCw } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 import ProcurementRegistration from './Purchasing';
 import PurchaseOrderRegistrationModal from '../components/PurchaseOrderRegistrationModal';
 import { logDelete } from '../utils/auditLogger';
@@ -8,7 +7,6 @@ import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 
 const ProcurementList = ({ isSplitMode = false }) => {
-  const navigate = useNavigate();
   const [purchaseRecords, setPurchaseRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -506,14 +504,9 @@ const ProcurementList = ({ isSplitMode = false }) => {
   );
 };
 
-const thStyle = { padding: '12px 24px', fontSize: '0.95rem', fontWeight: 800, color: 'var(--table-header-text)' };
 const innerThStyle = { padding: '10px 16px', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' };
 const innerTdStyle = { padding: '12px 16px', fontSize: '0.85rem', color: 'var(--text-main)' };
-const actionButtonStyle = { display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', fontSize: '0.85rem' };
-const iconButtonStyle = { padding: '6px', borderRadius: '6px', border: 'none', backgroundColor: 'transparent', cursor: 'pointer' };
 const modalOverlayStyle = { position: 'fixed', inset: 0, backgroundColor: 'var(--bg-modal-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' };
 const modalContentStyle = { width: '800px', maxHeight: '85vh', padding: '32px', borderRadius: '16px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-main)', overflow: 'hidden', display: 'flex', flexDirection: 'column' };
-const labelStyle = { display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' };
-const inputStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', fontSize: '0.9rem', boxSizing: 'border-box' };
 
 export default ProcurementList;

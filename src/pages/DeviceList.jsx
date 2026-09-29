@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { Search, Columns3, Edit2, X, Save, MoreHorizontal, MoreVertical, MapPin, User, Trash2, CheckCircle, ShoppingBag, Wrench, ShieldAlert, Cpu, Archive, RotateCcw, Server, Send, History, Building2, RefreshCw, Plus, ClipboardCheck } from 'lucide-react';
 import ItemLedgerModal from '../components/ItemLedgerModal';
 import DeviceRegistrationModal from '../components/DeviceRegistrationModal';
@@ -36,7 +36,6 @@ const DEVICE_COLUMNS = [
 ];
 
 const DeviceList = ({ isSplitMode = false }) => {
-  const navigate = useNavigate();
   const [items, setItems] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
@@ -125,7 +124,7 @@ const DeviceList = ({ isSplitMode = false }) => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [confirmModal, setConfirmModal] = useState({ show: false, msg: '', onConfirm: null });
   const [expandedItems, setExpandedItems] = useState({}); // 控制摺疊狀態
-  const [expandedLabItems, setExpandedLabItems] = useState({}); // 控制 LAB 耗材摺疊
+// 控制 LAB 耗材摺疊
   const [ledgerItem, setLedgerItem] = useState(null); // 品項履歷 Modal
   const [rmaAsset, setRmaAsset] = useState(null); // 原廠換新 RMA Modal
   const [availableHardwares, setAvailableHardwares] = useState([]); // 可供掛載之硬體清單
@@ -248,7 +247,7 @@ const DeviceList = ({ isSplitMode = false }) => {
     let mountedSns = [];
     if (targetItem) {
       let attrs = {};
-      try { attrs = typeof targetItem.custom_attributes === 'string' ? JSON.parse(targetItem.custom_attributes) : (targetItem.custom_attributes || {}); } catch {}
+      try { attrs = typeof targetItem.custom_attributes === 'string' ? JSON.parse(targetItem.custom_attributes) : (targetItem.custom_attributes || {}); } catch { /* 欄位不是合法 JSON 就當作沒有屬性 */ }
       const attrSns = (attrs.mounted_hw_sns || '').split(/[,，\s\n]+/).map(s => s.trim()).filter(Boolean);
       const compSns = (targetItem.components || []).map(c => c.sn).filter(Boolean);
       mountedSns = Array.from(new Set([...attrSns, ...compSns]));
@@ -537,7 +536,7 @@ const DeviceList = ({ isSplitMode = false }) => {
       if (searchTerms.length === 0) return true;
       return searchTerms.every(term => {
         let attrs = {};
-        try { attrs = typeof item.custom_attributes === 'string' ? JSON.parse(item.custom_attributes) : (item.custom_attributes || {}); } catch {}
+        try { attrs = typeof item.custom_attributes === 'string' ? JSON.parse(item.custom_attributes) : (item.custom_attributes || {}); } catch { /* 欄位不是合法 JSON 就當作沒有屬性 */ }
         return (item.sn || '').toLowerCase().includes(term) || (item.specification || '').toLowerCase().includes(term) ||
           (item.hostname || '').toLowerCase().includes(term) || (item.brand || '').toLowerCase().includes(term) ||
           (item.model || '').toLowerCase().includes(term) || (item.client || '').toLowerCase().includes(term) ||

@@ -1,7 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import CompanyPresetModal from '../components/CompanyPresetModal';
 import DeliveryReceiptPrintModal from '../components/DeliveryReceiptPrintModal';
 import LentOrderPrintModal from '../components/LentOrderPrintModal';
@@ -82,7 +81,7 @@ describe('公司資訊範本自訂與管理功能測試 (Company Presets Managem
     };
 
     // 測試交貨簽收單
-    const { container: drContainer } = render(
+    render(
       <DeliveryReceiptPrintModal
         isOpen={true}
         onClose={vi.fn()}

@@ -10,8 +10,8 @@ import { matchPartnerContact } from '../utils/partnerMatcher';
 import { findColumnValue } from '../utils/importColumnMatch';
 import { buildFillPlan, buildFillParams, buildSnListParam, getKeptFieldLabels, indexAssetsBySn } from '../utils/assetFillImport';
 
-const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] }) => {
-  const [file, setFile] = useState(null);
+const HwBatchImportModal = ({ isOpen, onClose, onSuccess, _existingBrands = [] }) => {
+  const [_file, setFile] = useState(null);
   const [fileName, setFileName] = useState('');
 
   // 硬體主檔設定 (廠牌 / 類型 / 型號 / 規格 / 歸屬)
@@ -27,7 +27,7 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
   const [partners, setPartners] = useState([]);
 
   const [rawJsonData, setRawJsonData] = useState([]);
-  const [isProcessingFile, setIsProcessingFile] = useState(false);
+  const [_isProcessingFile, setIsProcessingFile] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
   const [activeTab, setActiveTab] = useState('all'); // 'all', 'valid', 'skipped', 'duplicate'
@@ -51,7 +51,7 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
   // 智慧比對自訂欄位與檔案表頭 (嚴格隔離 OS Type，避免誤對應至硬體類型)
   const findMatchingHeader = (headers, field) => {
     if (!headers || headers.length === 0 || !field) return '';
-    const normalize = (str) => asText(str).toLowerCase().replace(/[\s_\(\)\-\[\]\/\\:]/g, '');
+    const normalize = (str) => asText(str).toLowerCase().replace(/[\s_()\-[\]/\\:]/g, '');
     const normLabel = normalize(field.label);
     const normId = normalize(field.id);
     const isTypeField = normLabel === 'type' || normLabel === '類型' || normId === 'type';
@@ -231,7 +231,7 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
     const dateStr = strVal.replace(/T.*$/, '').split(/\s+/)[0];
 
     // 3. 如果是 DD/MM/YYYY 或 D/M/YYYY
-    const dmyMatch = dateStr.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
+    const dmyMatch = dateStr.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})$/);
     if (dmyMatch) {
       // 預設為 DD/MM/YYYY；若第二段大於 12，代表其實是美式 M/D/YYYY，對調兩者
       let first = Number(dmyMatch[1]);
@@ -247,7 +247,7 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
     }
 
     // 4. 如果是 YYYY/MM/DD 或 YYYY-MM-DD
-    const ymdMatch = dateStr.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/);
+    const ymdMatch = dateStr.match(/^(\d{4})[/\-.](\d{1,2})[/\-.](\d{1,2})$/);
     if (ymdMatch) {
       const y = ymdMatch[1];
       const m = String(ymdMatch[2]).padStart(2, '0');
@@ -639,7 +639,7 @@ const HwBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] })
   // 檢查檔案中是否同時包含 Type 與 OS Type
   const hasTypeAndOsType = useMemo(() => {
     if (!fileHeaders || fileHeaders.length === 0) return false;
-    const lower = fileHeaders.map(h => h.trim().toLowerCase().replace(/[\s_\(\)\-\[\]\/\\:]/g, ''));
+    const lower = fileHeaders.map(h => h.trim().toLowerCase().replace(/[\s_()\-[\]/\\:]/g, ''));
     const hasType = lower.some(h => h === 'type' || h === 'systemtype' || h === '類型' || h === '硬體類型');
     const hasOsType = lower.some(h => h.includes('ostype') || h === 'os' || h.includes('作業系統'));
     return hasType && hasOsType;

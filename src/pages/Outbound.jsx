@@ -107,7 +107,7 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null, ed
   useEffect(() => {
     const initData = async () => {
       // 確保出貨單 project_name 欄位遷移存在
-      try { await window.electronAPI.namedQuery('migrateOutboundProjectName'); } catch(e) {}
+      try { await window.electronAPI.namedQuery('migrateOutboundProjectName'); } catch { /* 欄位已存在就略過，這是相容舊資料庫用的 */ }
 
       if (!isEditing) {
         const initialDate = header.date || new Date().toISOString().split('T')[0];

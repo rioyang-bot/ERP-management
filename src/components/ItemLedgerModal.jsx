@@ -64,7 +64,7 @@ const ItemLedgerModal = ({ isOpen, onClose, item }) => {
     if (!dateStr) return '-';
     try {
       return new Date(dateStr).toLocaleDateString('zh-TW');
-    } catch (e) {
+    } catch {
       return dateStr;
     }
   };

@@ -21,7 +21,7 @@ describe('DeviceBatchImportModal 設備批次匯入檢核與建立測試', () =>
       saveFile: vi.fn()
     };
 
-    namedQueryMock.mockImplementation((query, params) => {
+    namedQueryMock.mockImplementation((query, _params) => {
       if (query === 'fetchAssetSns') {
         return Promise.resolve({
           success: true,
@@ -423,7 +423,7 @@ describe('DeviceBatchImportModal 設備批次匯入檢核與建立測試', () =>
   });
 
   it('應能正確解析 4 種日期格式（包含 Project Date ( Installedl ) 錯字別名、DD/MM/YYYY 及 Excel 序列數字），並於預覽表格完整呈現 4 種日期', async () => {
-    namedQueryMock.mockImplementation((query, params) => {
+    namedQueryMock.mockImplementation((query, _params) => {
       if (query === 'fetchAssetSns') {
         return Promise.resolve({ success: true, rows: [] });
       }

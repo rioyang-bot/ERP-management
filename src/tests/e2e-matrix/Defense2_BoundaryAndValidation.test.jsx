@@ -208,7 +208,7 @@ describe('防線 2：邊界極值與防呆阻擋 (15 種情境檢測)', () => {
       if (!raw) return null;
       const str = String(raw).trim();
       // 支援 YYYY/MM/DD, YYYY.MM.DD, YYYY-MM-DD
-      const cleaned = str.replace(/[\/\.]/g, '-');
+      const cleaned = str.replace(/[/.]/g, '-');
       const d = new Date(cleaned);
       if (isNaN(d.getTime())) return null;
       return d.toISOString().split('T')[0];

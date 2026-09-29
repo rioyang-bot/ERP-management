@@ -1,5 +1,5 @@
 import React, { useContext, useState, useEffect } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { NavLink, Outlet } from 'react-router-dom';
 import { RoleContext } from '../../context/RoleContext';
 import { useTheme } from '../../context/ThemeContext';
 import logo from '../../assets/logo.png';
@@ -10,8 +10,7 @@ import './MainLayout.css';
 
 const MainLayout = () => {
   const { role, authUser, setAuthUser } = useContext(RoleContext);
-  const { theme, isDark, toggleTheme } = useTheme();
-  const location = useLocation();
+  const { isDark, toggleTheme } = useTheme();
 
   // --- 即時事件抽屜 (Live Events Drawer) ---
   const [showLiveEvents, setShowLiveEvents] = useState(false);
@@ -105,7 +104,7 @@ const MainLayout = () => {
     if (saved) {
       try {
         setMenuOrder(JSON.parse(saved));
-      } catch (e) {
+      } catch {
         setMenuOrder(null);
       }
     } else {

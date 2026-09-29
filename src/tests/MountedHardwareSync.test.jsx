@@ -453,7 +453,7 @@ describe('設備更新狀態同步至掛載硬體之整合測試', () => {
 
   it('設備即使沒有 components，若 custom_attributes 內有 mounted_hw_sns，開啟編輯彈窗時應能正確載入該序號', async () => {
     const user = userEvent.setup();
-    const querySpy = vi.fn((query, params) => {
+    const querySpy = vi.fn((query, _params) => {
       if (query === 'fetchAssetsList' || query === 'fetchAssetsListByBrand') {
         return Promise.resolve({
           success: true,
@@ -565,7 +565,7 @@ describe('設備更新狀態同步至掛載硬體之整合測試', () => {
     const user = userEvent.setup();
     const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
 
-    const querySpy = vi.fn((query, params) => {
+    const querySpy = vi.fn((query, _params) => {
       if (query === 'fetchAssetsList' || query === 'fetchAssetsListByBrand') {
         return Promise.resolve({
           success: true,

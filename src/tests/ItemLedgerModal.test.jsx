@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import ItemLedgerModal from '../components/ItemLedgerModal';
 import FlowHistory from '../pages/FlowHistory';
@@ -12,7 +12,7 @@ describe('ItemLedgerModal & FlowHistory 匯入履歷整合測試', () => {
   });
 
   it('ItemLedgerModal 能正確載入並呈現 BATCH_IMPORT (批次匯入) 紀錄', async () => {
-    window.electronAPI.namedQuery.mockImplementation((query, params) => {
+    window.electronAPI.namedQuery.mockImplementation((query, _params) => {
       if (query === 'fetchItemFlowHistory') {
         return Promise.resolve({
           success: true,
@@ -55,7 +55,7 @@ describe('ItemLedgerModal & FlowHistory 匯入履歷整合測試', () => {
   });
 
   it('ItemLedgerModal 當 item.sn 具前後空格或大小寫差異時，仍能正確比對並顯示履歷', async () => {
-    window.electronAPI.namedQuery.mockImplementation((query, params) => {
+    window.electronAPI.namedQuery.mockImplementation((query, _params) => {
       if (query === 'fetchItemFlowHistory') {
         return Promise.resolve({
           success: true,

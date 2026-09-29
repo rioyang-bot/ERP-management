@@ -41,7 +41,7 @@ describe('設備與硬體列表編輯詳細資訊中型號與規格欄位可自�
       custom_attributes: {}
     };
 
-    namedQueryMock.mockImplementation((query, params) => {
+    namedQueryMock.mockImplementation((query, _params) => {
       if (query === 'fetchAssetsList' || query === 'fetchAssetsListByBrand') {
         return Promise.resolve({ success: true, rows: [mockDevice] });
       }
@@ -138,7 +138,7 @@ describe('設備與硬體列表編輯詳細資訊中型號與規格欄位可自�
       custom_attributes: {}
     };
 
-    namedQueryMock.mockImplementation((query, params) => {
+    namedQueryMock.mockImplementation((query, _params) => {
       if (query === 'fetchNicList' || query === 'fetchNicListByType') {
         return Promise.resolve({ success: true, rows: [mockHw] });
       }

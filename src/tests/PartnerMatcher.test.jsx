@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { matchPartnerContact, getTokens, normalizeStr } from '../utils/partnerMatcher';
+import { matchPartnerContact, getTokens } from '../utils/partnerMatcher';
 
 describe('PartnerMatcher Utility', () => {
   const mockPartners = [

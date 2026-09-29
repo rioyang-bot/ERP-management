@@ -5,7 +5,7 @@ import {
   XCircle, Filter, Layers, Database, ArrowRight, RefreshCw, Info, Download, Package, Plus, Check, Edit3
 } from 'lucide-react';
 import { logEvent, ACTION_TYPES, MODULE_MAP } from '../utils/auditLogger';
-import { parseSpreadsheetFile, fixMojibake, asText } from '../utils/encoding';
+import { parseSpreadsheetFile, asText } from '../utils/encoding';
 
 // 常見廠牌關鍵字特徵表，用於智慧推導
 const KNOWN_BRANDS = [
@@ -18,7 +18,7 @@ const KNOWN_BRANDS = [
 /**
  * 智慧從品項字串推導 (Brand, Model, Spec)
  */
-function parseItemInfo(rawName, defaultType = '') {
+function parseItemInfo(rawName, _defaultType = '') {
   const cleanName = asText(rawName);
   if (!cleanName) return { brand: '', model: '', spec: cleanName };
 
@@ -83,8 +83,8 @@ function getSuggestedUnit(typeStr) {
   return '個';
 }
 
-const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes = [] }) => {
-  const [file, setFile] = useState(null);
+const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, _existingTypes = [] }) => {
+  const [_file, setFile] = useState(null);
   const [fileName, setFileName] = useState('');
 
   // 覆蓋/預設設定
@@ -94,14 +94,14 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
 
   const [rawJsonData, setRawJsonData] = useState([]);
   const [fileHeaders, setFileHeaders] = useState([]);
-  const [isProcessingFile, setIsProcessingFile] = useState(false);
+  const [_isProcessingFile, setIsProcessingFile] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
   const [activeTab, setActiveTab] = useState('all'); // 'all', 'valid', 'skipped', 'existing'
   const [existingItemsMap, setExistingItemsMap] = useState(new Map());
   const [importResult, setImportResult] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [editingRowIndex, setEditingRowIndex] = useState(null);
+  const [_editingRowIndex, setEditingRowIndex] = useState(null);
   const [customEdits, setCustomEdits] = useState({}); // rowIndex -> { brand, type, model, spec, quantity, unit }
 
   const fileInputRef = useRef(null);
@@ -152,7 +152,7 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
   const hasBrandHeader = useMemo(() => {
     if (!fileHeaders || fileHeaders.length === 0) return true;
     return fileHeaders.some(h => {
-      const lh = h.toLowerCase().replace(/[\s_\(\)\-]/g, '');
+      const lh = h.toLowerCase().replace(/[\s_()-]/g, '');
       return lh.includes('brand') || lh.includes('廠牌') || lh.includes('品牌');
     });
   }, [fileHeaders]);
@@ -196,7 +196,7 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
     rawJsonData.forEach((row, index) => {
       // 排除全空行
       const entries = Object.entries(row).map(([k, v]) => [k.trim(), String(v !== undefined && v !== null ? v : '').trim()]);
-      const nonEmpty = entries.filter(([k, v]) => v !== '');
+      const nonEmpty = entries.filter(([_k, v]) => v !== '');
       if (nonEmpty.length === 0) return;
 
       // 檢查標準欄位
@@ -208,7 +208,7 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
       let unitVal = '';
 
       for (const [k, v] of entries) {
-        const lk = k.toLowerCase().replace(/[\s_\(\)\-]/g, '');
+        const lk = k.toLowerCase().replace(/[\s_()-]/g, '');
         if (lk.includes('brand') || lk.includes('廠牌') || lk.includes('品牌')) brandVal = v;
         else if (!lk.includes('os') && !lk.includes('作業系統') && (lk.includes('type') || lk.includes('類型'))) typeVal = v;
         else if (lk.includes('model') || lk.includes('型號')) modelVal = v;
@@ -219,14 +219,13 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, existingTypes 
       }
 
       // 如果是階層/分組式結構（例如第一欄為品項名稱或類型標題）
-      const firstEntryKey = entries[0] ? entries[0][0] : '';
       const firstEntryVal = entries[0] ? entries[0][1] : '';
 
       // 檢查第二欄數量
       const secondEntryVal = entries[1] ? entries[1][1] : '';
 
       // 判斷是否為分類標題列 (例如 "NIC", "DAC Cable", "GBIC", "Fiber" 等，後面欄位皆為空)
-      const otherValuesEmpty = entries.slice(1).every(([k, v]) => v === '' || v === '0' || isNaN(Number(v)));
+      const otherValuesEmpty = entries.slice(1).every(([_k, v]) => v === '' || v === '0' || isNaN(Number(v)));
       const isHeadingPattern = ['nic', 'dac cable', 'gbic', 'fiber', 'utp', 'power cord', 'server', 'switch', 'ssd disk', 'lda', 'scerect', 'raid card cable', 'other'].includes(firstEntryVal.toLowerCase()) ||
         (!qtyVal && otherValuesEmpty && firstEntryVal && !/[0-9]/.test(firstEntryVal) && firstEntryVal.length < 30);
 

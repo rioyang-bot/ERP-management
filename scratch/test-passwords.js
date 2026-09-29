@@ -2,7 +2,6 @@ import pg from 'pg';
 const { Pool } = pg;
 
 const passwords = ['Admin123', 'admin123', 'postgres', 'password', '123456', 'admin', 'root'];
-let successPassword = null;
 
 async function testPasswords() {
   for (const pwd of passwords) {
@@ -16,11 +15,10 @@ async function testPasswords() {
     try {
       const client = await pool.connect();
       client.release();
-      successPassword = pwd;
       console.log(`✅ Success with password: ${pwd}`);
       await pool.end();
       break;
-    } catch (err) {
+    } catch {
       console.log(`❌ Failed with password: ${pwd}`);
       await pool.end();
     }

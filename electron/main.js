@@ -107,7 +107,7 @@ const { getCurrentUser } = registerAuthHandlers(ipcMain, query);
 registerPreferenceHandlers(ipcMain, query, getCurrentUser);
 
 // 儀表板 API IPC
-ipcMain.handle('dashboard:stats', async (event) => {
+ipcMain.handle('dashboard:stats', async (_event) => {
   try {
     const queries = [
       query('SELECT COUNT(*) as total_items FROM v_inventory_summary'),

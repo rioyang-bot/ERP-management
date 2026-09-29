@@ -118,7 +118,7 @@ describe('設備與硬體出貨日期 (shipping_date) 欄位與確認出貨自�
     window.electronAPI = {
       // 多步驟交易轉發給同一組 namedQuery 模擬，才驗證得到實際送出的查詢
       runTransaction: (steps) => createRunTransactionMock(window.electronAPI.namedQuery)(steps),
-      namedQuery: vi.fn(async (query, params) => {
+      namedQuery: vi.fn(async (query, _params) => {
         if (query === 'fetchAssetsList' || query === 'fetchAssetsListByBrand') {
           return {
             success: true,

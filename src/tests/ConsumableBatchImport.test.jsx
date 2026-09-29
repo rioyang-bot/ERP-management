@@ -3,7 +3,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import ConsumableBatchImportModal from '../components/ConsumableBatchImportModal';
-import { parseSpreadsheetFile } from '../utils/encoding';
 import * as XLSX from 'xlsx';
 
 describe('ConsumableBatchImportModal Component', () => {
@@ -20,7 +19,7 @@ describe('ConsumableBatchImportModal Component', () => {
       saveFile: vi.fn()
     };
 
-    namedQueryMock.mockImplementation((queryName, params) => {
+    namedQueryMock.mockImplementation((queryName, _params) => {
       if (queryName === 'fetchConsumablesList') {
         return Promise.resolve({ success: true, rows: [] });
       }

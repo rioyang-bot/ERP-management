@@ -1,8 +1,6 @@
 
 const { Pool } = require('pg'); // 假設是 PostgreSQL
 // 或者嘗試 SQLite
-const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
 
 async function debugMigration() {
   console.log('--- 開始資料庫偵錯 ---');

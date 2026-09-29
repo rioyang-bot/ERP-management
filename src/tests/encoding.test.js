@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fixMojibake, decodeTextBuffer, parseSpreadsheetFile } from '../utils/encoding';
+import { fixMojibake, decodeTextBuffer } from '../utils/encoding';
 
 describe('encoding.js 繁簡中文編碼與亂碼修復測試', () => {
   it('應能正確將 UTF-8 誤解碼為 Windows-1252/Latin-1 的字串修復為正確中文', () => {

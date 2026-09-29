@@ -11,7 +11,7 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   const [brands, setBrands] = useState([]);
   const [types, setTypes] = useState([]);
   const [models, setModels] = useState([]);
-  const [projects, setProjects] = useState([]);
+  const [_projects, setProjects] = useState([]);
   const [showBatchImport, setShowBatchImport] = useState(false);
 
   const [activeAdd, setActiveAdd] = useState(null);

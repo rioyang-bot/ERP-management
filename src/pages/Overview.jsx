@@ -62,7 +62,7 @@ const Overview = () => {
     try {
       try {
         await window.electronAPI.namedQuery('initRepairTables');
-      } catch (e) {}
+      } catch { /* 失敗就沿用預設值 */ }
 
       const [
         statsRes,

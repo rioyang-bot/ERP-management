@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { ArrowDownToLine, Search, Filter, Eye, RefreshCw, AlertCircle, Trash2, Calendar, Hash, FileText, Plus, Edit2, Save, X } from 'lucide-react';
 import { logUpdate } from '../utils/auditLogger';
 import InboundRegistrationModal from '../components/InboundRegistrationModal';
@@ -8,7 +7,6 @@ import { buildSnRenameSteps, validateSnRename, summariseSnRename } from '../util
 import PageSizeSelector from '../components/common/PageSizeSelector';
 
 const InboundList = ({ isSplitMode = false }) => {
-  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [searchField, setSearchField] = useState('all');
   const [startDate, setStartDate] = useState('');
@@ -85,7 +83,7 @@ const InboundList = ({ isSplitMode = false }) => {
     let parsedAttachments = [];
     try {
        parsedAttachments = typeof order.attachments === 'string' ? JSON.parse(order.attachments || '[]') : (order.attachments || []);
-    } catch(e) {}
+    } catch { /* 失敗就沿用預設值 */ }
     
     setEditData({
       partner_id: order.partner_id || '',
@@ -293,7 +291,7 @@ const InboundList = ({ isSplitMode = false }) => {
       } else {
         alert('儲存失敗：' + res.error);
       }
-    } catch(err) {
+    } catch {
       alert('發生錯誤');
     } finally {
       setIsSaving(false);
@@ -616,7 +614,7 @@ const InboundList = ({ isSplitMode = false }) => {
                         let atts = [];
                         try {
                            atts = typeof selectedOrder.attachments === 'string' ? JSON.parse(selectedOrder.attachments || '[]') : (selectedOrder.attachments || []);
-                        } catch(e) {}
+                        } catch { /* 失敗就沿用預設值 */ }
                         
                         if (atts.length === 0) {
                             return <div style={{ color: 'var(--text-subtle)' }}>無附件</div>;

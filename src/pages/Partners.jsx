@@ -22,11 +22,11 @@ const Partners = () => {
   const fetchPartners = useCallback(async () => {
     setLoading(true);
     // 嘗試建立欄位 (如果已存在則會報錯但不影響後續)
-    try { await window.electronAPI.namedQuery('migratePartnersActive'); } catch(e) {}
-    try { await window.electronAPI.namedQuery('migratePartnersAddress'); } catch(e) {}
-    try { await window.electronAPI.namedQuery('migratePartnersProjectInfo'); } catch(e) {}
+    try { await window.electronAPI.namedQuery('migratePartnersActive'); } catch { /* 欄位已存在就略過，這是相容舊資料庫用的 */ }
+    try { await window.electronAPI.namedQuery('migratePartnersAddress'); } catch { /* 欄位已存在就略過，這是相容舊資料庫用的 */ }
+    try { await window.electronAPI.namedQuery('migratePartnersProjectInfo'); } catch { /* 欄位已存在就略過，這是相容舊資料庫用的 */ }
     // 確保現有資料的 is_active 不是 NULL
-    try { await window.electronAPI.namedQuery('initPartnersActive'); } catch(e) {}
+    try { await window.electronAPI.namedQuery('initPartnersActive'); } catch { /* 欄位已存在就略過，這是相容舊資料庫用的 */ }
     
     const res = await window.electronAPI.namedQuery('fetchPartners');
     if (res.success) setPartners(res.rows || []);
@@ -43,7 +43,7 @@ const Partners = () => {
     return val
       .trim()
       .replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gim, "") // 移除 Script
-      .replace(/[<>'"\\;\%]/g, "") // 移除特殊字元
+      .replace(/[<>'"\\;%]/g, "") // 移除特殊字元
       .substring(0, 300); // 限制長度防止惡意攻擊
   };
 
@@ -613,7 +613,6 @@ const Partners = () => {
 
 const labelStyle = { display: 'block', fontWeight: '800', fontSize: '13px', marginBottom: '6px', color: 'var(--text-muted)' };
 const inputStyle = { width: '100%', padding: '12px', borderRadius: '8px', border: '1.5px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', outline: 'none', fontSize: '14px', boxSizing: 'border-box' };
-const actionButtonStyle = { backgroundColor: 'var(--bg-surface-subtle)', border: '1px solid var(--border-color)', padding: '8px', borderRadius: '8px', color: 'var(--primary-color)', cursor: 'pointer', display: 'flex' };
 const pageButtonStyle = { padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-main)', cursor: 'pointer', fontWeight: '700', fontSize: '13px' };
 
 export default Partners;
