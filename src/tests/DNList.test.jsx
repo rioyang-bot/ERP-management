@@ -75,94 +75,89 @@ describe('DNList 出貨單列表狀態查詢與搜尋測試', () => {
     );
   };
 
-  it('應正確呈現搜尋列中新增的「狀態查詢欄位」以及所有狀態選項', async () => {
+  /**
+   * 狀態改以頁籤區分，與借用單列表一致：
+   * 「已建立 (待確認)」只有 PENDING，「已出貨 (歷史紀錄)」是其餘全部。
+   */
+  it('預設停在「已建立」，只看得到待確認的單', async () => {
     renderComponent();
 
     await waitFor(() => {
       expect(screen.getByText('DN-20260828-01')).toBeInTheDocument();
     });
-
-    // 驗證狀態查詢下拉選單存在並包含所有預期選項
-    const selects = screen.getAllByRole('combobox');
-    const statusSelect = selects[1];
-    expect(statusSelect).toBeInTheDocument();
-    
-    expect(screen.getByRole('option', { name: '全部狀態' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: '已建立 (待出貨)' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: '已出貨' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: '已歸還' })).toBeInTheDocument();
+    expect(screen.queryByText('DN-20260828-02')).not.toBeInTheDocument();
+    expect(screen.queryByText('DN-20260828-03')).not.toBeInTheDocument();
   });
 
-  it('切換狀態篩選為「已出貨」時，應只顯示狀態為 SHIPPED 的出貨單', async () => {
+  it('切到「已出貨」看得到已出貨的單', async () => {
     renderComponent();
+    await waitFor(() => expect(screen.getByText('DN-20260828-01')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('dn-tab-history'));
 
     await waitFor(() => {
-      expect(screen.getByText('DN-20260828-01')).toBeInTheDocument();
       expect(screen.getByText('DN-20260828-02')).toBeInTheDocument();
-      expect(screen.getByText('DN-20260828-03')).toBeInTheDocument();
-    });
-
-    const selects = screen.getAllByRole('combobox');
-    const statusSelect = selects[1]; // 第二個 select 為狀態篩選
-
-    fireEvent.change(statusSelect, { target: { value: 'SHIPPED' } });
-
-    await waitFor(() => {
       expect(screen.queryByText('DN-20260828-01')).not.toBeInTheDocument();
-      expect(screen.getByText('DN-20260828-02')).toBeInTheDocument();
-      expect(screen.queryByText('DN-20260828-03')).not.toBeInTheDocument();
     });
   });
 
-  it('切換狀態篩選為「已建立 (待出貨)」時，應只顯示狀態為 PENDING 的出貨單', async () => {
+  /**
+   * 這張清單也看得到借用單，它們結案後是 RETURNED。
+   * 歷史頁籤若只認 SHIPPED，那些單會整個從畫面上消失。
+   */
+  it('已歸還的單也收在「已出貨」頁籤裡，不會不見', async () => {
     renderComponent();
+    await waitFor(() => expect(screen.getByText('DN-20260828-01')).toBeInTheDocument());
 
+    fireEvent.click(screen.getByTestId('dn-tab-history'));
+
+    await waitFor(() => expect(screen.getByText('DN-20260828-03')).toBeInTheDocument());
+  });
+
+  it('頁籤上標出待確認的筆數', async () => {
+    renderComponent();
+    await waitFor(() => expect(screen.getByText('DN-20260828-01')).toBeInTheDocument());
+
+    const pendingTab = screen.getByTestId('dn-tab-pending');
+    expect(pendingTab.textContent).toContain('已建立 (待確認)');
+    expect(pendingTab.textContent).toContain('1');
+  });
+
+  /** 分頁之後，待確認的單一樣要能上傳客戶簽收單 */
+  it('「已建立」頁籤上仍然可以上傳簽收單', async () => {
+    renderComponent();
+    await waitFor(() => expect(screen.getByText('DN-20260828-01')).toBeInTheDocument());
+
+    const pendingRow = screen.getByText('DN-20260828-01').closest('tr');
+    const uploadBtn = within(pendingRow).getByTitle(/上傳客戶簽收單據/);
+    expect(uploadBtn).toBeInTheDocument();
+
+    fireEvent.click(uploadBtn);
     await waitFor(() => {
-      expect(screen.getByText('DN-20260828-01')).toBeInTheDocument();
-    });
-
-    const selects = screen.getAllByRole('combobox');
-    const statusSelect = selects[1];
-
-    fireEvent.change(statusSelect, { target: { value: 'PENDING' } });
-
-    await waitFor(() => {
-      expect(screen.getByText('DN-20260828-01')).toBeInTheDocument();
-      expect(screen.queryByText('DN-20260828-02')).not.toBeInTheDocument();
-      expect(screen.queryByText('DN-20260828-03')).not.toBeInTheDocument();
+      expect(screen.getByText(/點此上傳客戶已簽收的出貨單/)).toBeInTheDocument();
     });
   });
 
-  it('切換狀態篩選為「已歸還」時，應只顯示狀態為 RETURNED 的出貨單', async () => {
+  it('不再有與頁籤重複的狀態下拉', async () => {
     renderComponent();
+    await waitFor(() => expect(screen.getByText('DN-20260828-01')).toBeInTheDocument());
 
-    await waitFor(() => {
-      expect(screen.getByText('DN-20260828-01')).toBeInTheDocument();
-    });
-
-    const selects = screen.getAllByRole('combobox');
-    const statusSelect = selects[1];
-
-    fireEvent.change(statusSelect, { target: { value: 'RETURNED' } });
-
-    await waitFor(() => {
-      expect(screen.queryByText('DN-20260828-01')).not.toBeInTheDocument();
-      expect(screen.queryByText('DN-20260828-02')).not.toBeInTheDocument();
-      expect(screen.getByText('DN-20260828-03')).toBeInTheDocument();
-    });
+    expect(screen.queryByRole('option', { name: '全部狀態' })).not.toBeInTheDocument();
   });
 
   it('表格與明細檢視內應提供客戶已簽收單據之上傳、查驗與刪除功能', async () => {
     renderComponent();
 
+    await waitFor(() => expect(screen.getByText('DN-20260828-01')).toBeInTheDocument());
+    // 已簽收的那張是已出貨的單，在歷史頁籤裡
+    fireEvent.click(screen.getByTestId('dn-tab-history'));
     await waitFor(() => {
-      expect(screen.getByText('DN-20260828-01')).toBeInTheDocument();
       expect(screen.getByText('DN-20260828-02')).toBeInTheDocument();
     });
 
-    // 檢查表格中已簽收與未上傳標籤
+    // 簽收單據維持可上傳：兩個頁籤都看得到這一欄
     expect(screen.getByText('已簽收')).toBeInTheDocument();
-    expect(screen.getAllByText('未上傳').length).toBe(2);
+    expect(screen.getAllByText('未上傳').length).toBe(1);
 
     // 點擊「檢視」開啟凱基證券 (有簽收單) 的明細彈窗
     const kgiRow = screen.getByText('DN-20260828-02').closest('tr');
@@ -185,14 +180,16 @@ describe('DNList 出貨單列表狀態查詢與搜尋測試', () => {
       expect(screen.getByText('DN-20260828-01')).toBeInTheDocument();
     });
 
-    const pendingRow = screen.getByText('DN-20260828-01').closest('tr');
-    const shippedRow = screen.getByText('DN-20260828-02').closest('tr');
-    const returnedRow = screen.getByText('DN-20260828-03').closest('tr');
-
     // PENDING 單據應有刪除按鈕
+    const pendingRow = screen.getByText('DN-20260828-01').closest('tr');
     expect(within(pendingRow).getByRole('button', { name: /刪除/ })).toBeInTheDocument();
 
-    // SHIPPED 與 RETURNED 單據應不可刪除
+    // SHIPPED 與 RETURNED 單據應不可刪除（它們在歷史頁籤裡）
+    fireEvent.click(screen.getByTestId('dn-tab-history'));
+    await waitFor(() => expect(screen.getByText('DN-20260828-02')).toBeInTheDocument());
+
+    const shippedRow = screen.getByText('DN-20260828-02').closest('tr');
+    const returnedRow = screen.getByText('DN-20260828-03').closest('tr');
     expect(within(shippedRow).queryByRole('button', { name: /刪除/ })).not.toBeInTheDocument();
     expect(within(returnedRow).queryByRole('button', { name: /刪除/ })).not.toBeInTheDocument();
   });
