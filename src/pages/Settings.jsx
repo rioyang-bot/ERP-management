@@ -188,9 +188,14 @@ const Settings = () => {
   };
 
   const handleToggleActive = async (id, currentStatus) => {
+    // 誤點等於把人擋在系統外，而畫面上只是一個切換鈕
+    const u = users.find(item => item.id === id);
+    const action = currentStatus ? '停用' : '啟用';
+    if (!window.confirm(`確定要${action}帳號「${u?.username || id}」嗎？`
+      + (currentStatus ? '\n\n停用後該帳號將無法登入系統。' : ''))) return;
+
     const res = await window.electronAPI.namedQuery('updateUserActive', [!currentStatus, id]);
     if (res.success) {
-      const u = users.find(item => item.id === id);
       logStatusChange('USER', id, u?.username || '帳號', currentStatus ? '啟用' : '停用', !currentStatus ? '啟用' : '停用', `${!currentStatus ? '啟用' : '停用'}使用者帳號 [${u?.username || id}]`, { id, username: u?.username, newStatus: !currentStatus });
       await fetchUsers();
     }

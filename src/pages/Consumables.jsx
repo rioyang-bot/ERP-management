@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { logCreate } from '../utils/auditLogger';
 import ConsumableBatchImportModal from '../components/ConsumableBatchImportModal';
 import { normalizeMasterName } from '../utils/normalizeMasterData';
+import { addDictionaryEntry } from '../utils/masterDictionary';
 import { validateName as validateAndSanitize } from '../utils/nameValidation';
 
 const Consumables = ({ isSplitMode = false }) => {
@@ -71,39 +72,38 @@ const Consumables = ({ isSplitMode = false }) => {
   const handleAddType = async () => {
     const name = normalizeMasterName(validateAndSanitize(newTypeName, '類型名稱'));
     if (!name || !formData.brand) return;
-    const res = await window.electronAPI.namedQuery('insertDeviceType', ['耗材', name]);
-    if (res.success) {
+    const res = await addDictionaryEntry(window.electronAPI, { kind: 'TYPE', category: '耗材', name });
+    if (res.ok) {
       await fetchTypes(formData.brand);
       setFormData(prev => ({ ...prev, type: name }));
       setNewTypeName('');
       setShowAddType(false);
-    }
+    } else if (!res.cancelled) alert(res.message);
   };
 
 
   const handleAddBrand = async () => {
     const name = normalizeMasterName(validateAndSanitize(newBrandName, '廠牌名稱'));
     if (!name) return;
-    const res = await window.electronAPI.namedQuery('insertDeviceBrand', ['耗材', name]);
-    if (res.success) {
+    const res = await addDictionaryEntry(window.electronAPI, { kind: 'BRAND', category: '耗材', name });
+    if (res.ok) {
       setFormData({ ...formData, brand: name });
       await fetchBrands();
       setNewBrandName('');
       setShowAddBrand(false);
-    }
+    } else if (!res.cancelled) alert(res.message);
   };
 
   const handleAddModel = async () => {
     const name = normalizeMasterName(validateAndSanitize(newModelName, '型號名稱'));
     if (!name || !formData.brand || !formData.type) return;
-    const res = await window.electronAPI.namedQuery('insertDeviceModel', [formData.brand, name, '耗材']);
-    if (res.success) {
-      if (res.rowCount === 0) return alert('失敗：關聯錯誤');
+    const res = await addDictionaryEntry(window.electronAPI, { kind: 'MODEL', category: '耗材', name, brand: formData.brand });
+    if (res.ok) {
       setFormData(prev => ({ ...prev, model: name }));
       await fetchModels(formData.brand, formData.type);
       setNewModelName('');
       setShowAddModel(false);
-    }
+    } else if (!res.cancelled) alert(res.message);
   };
 
 

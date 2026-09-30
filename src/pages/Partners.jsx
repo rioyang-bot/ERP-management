@@ -103,9 +103,15 @@ const Partners = () => {
   };
 
   const handleToggleActive = async (id, currentStatus) => {
+    // 點一下就生效太輕率：停用的夥伴會從所有選單裡消失，
+    // 單據上選不到人，使用者未必知道是自己剛剛點到的。
+    const p = partners.find(item => item.id === id);
+    const action = currentStatus ? '停用' : '啟用';
+    if (!window.confirm(`確定要${action}夥伴「${p?.name || id}」嗎？`
+      + (currentStatus ? '\n\n停用後建立單據時會選不到這家夥伴，既有單據不受影響。' : ''))) return;
+
     const res = await window.electronAPI.namedQuery('updatePartnerActive', [!currentStatus, id]);
     if (res.success) {
-      const p = partners.find(item => item.id === id);
       logStatusChange('PARTNER', id, p?.name || '夥伴', currentStatus ? '啟用' : '停用', !currentStatus ? '啟用' : '停用', `${!currentStatus ? '啟用' : '停用'}夥伴 [${p?.name || id}]`, { id, name: p?.name, newStatus: !currentStatus });
       await fetchPartners();
     } else {
