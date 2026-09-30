@@ -305,10 +305,13 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
   // 細項是這台設備個別的內容，不是主要檢查功能底下的分支，因此獨立成一區、不分組
   const appliedDetails = useMemo(() => applied.filter((r) => r.kind === KIND_DETAIL), [applied]);
 
-  // 細項是填內容不是勾選，因此不列入完成度
   const mainRows = applied.filter((a) => a.kind === KIND_MAIN);
   const autoCount = mainRows.length;
   const doneCount = mainRows.filter((a) => a.is_checked).length;
+  // 標題的完成度與設備列表的「檢查 x/y」一致：主要檢查功能勾選才算、細項有填內容才算
+  const filledDetails = applied.filter((a) => a.kind === KIND_DETAIL && (a.content || '').trim()).length;
+  const checkTotal = autoCount + applied.filter((a) => a.kind === KIND_DETAIL).length;
+  const checkDone = doneCount + filledDetails;
   // 拍照項目有照片就算完成，與勾選分開計算
   const photoRows = applied.filter((a) => a.kind === KIND_PHOTO);
   const photoDoneCount = photoRows.filter((a) => Number(a.photo_count) > 0).length;
@@ -338,9 +341,13 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
               </h2>
               <p style={{ color: 'var(--text-muted)', fontSize: '13px', margin: '5px 0 0 0', wordBreak: 'break-all' }}>
                 {device.brand} {device.model} · S/N <b style={{ color: 'var(--text-main)' }}>{device.sn || '—'}</b>
-                {autoCount > 0 && (
-                  <span style={{ marginLeft: '10px', fontWeight: 800, color: doneCount === autoCount ? '#10b981' : '#f59e0b' }}>
-                    已完成 {doneCount} / {autoCount}
+                {checkTotal > 0 && (
+                  <span
+                    style={{ marginLeft: '10px', fontWeight: 800, color: checkDone === checkTotal ? '#10b981' : '#f59e0b' }}
+                    title="主要檢查功能勾選、細項填寫內容才算完成"
+                    data-testid="header-check-progress"
+                  >
+                    已完成 {checkDone} / {checkTotal}
                   </span>
                 )}
                 {photoRows.length > 0 && (
@@ -569,7 +576,7 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.7, marginTop: '8px' }}>
                       <Info size={14} style={{ flexShrink: 0, marginTop: '2px' }} />
                       <span>
-                        細項不勾選，記錄的是這台設備個別的內容（例如「OS」填「RH9.6」）；不列入上方的完成度。
+                        細項不勾選，記錄的是這台設備個別的內容（例如「OS」填「RH9.6」）；填了內容才算完成。
                         勾選與內容都要按下方的「儲存變更」才會寫回，按錯了可以直接放棄。
                       </span>
                     </div>

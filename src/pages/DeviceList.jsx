@@ -33,6 +33,7 @@ const DEVICE_COLUMNS = [
   { id: 'remarks', label: '備註' },
   { id: 'warranty', label: '保固資訊 (P/S/W/C)' },
   { id: 'status', label: '狀態' },
+  { id: 'checklist', label: '出機檢查' },
   { id: 'actions', label: '功能', always: true },
 ];
 
@@ -67,7 +68,13 @@ const DeviceList = ({ isSplitMode = false }) => {
       const res = await window.electronAPI.namedQuery('fetchAssetChecklistSummary');
       if (!res.success) return;
       const map = new Map();
-      (res.rows || []).forEach((r) => map.set(r.asset_id, { total: Number(r.total) || 0, done: Number(r.done) || 0 }));
+      (res.rows || []).forEach((r) => map.set(r.asset_id, {
+        total: Number(r.total) || 0,
+        done: Number(r.done) || 0,
+        photoTotal: Number(r.photo_total) || 0,
+        photoDone: Number(r.photo_done) || 0,
+        photoCount: Number(r.photo_count) || 0,
+      }));
       setChecklistSummary(map);
     } catch {
       // 尚未套用資料庫變更時讀不到，這時不顯示進度即可，不影響設備列表
@@ -1017,6 +1024,12 @@ const DeviceList = ({ isSplitMode = false }) => {
                             保固資訊 (P/S/W/C)
                           </th>
                           <th style={{ ...thStyle, textAlign: 'left', width: '100px' , ...hideCol('status') }}>狀態</th>
+                          <th
+                            style={{ ...thStyle, textAlign: 'left', width: '96px', ...hideCol('checklist') }}
+                            title="檢查：主要檢查功能勾選、細項填寫內容才算完成。照片：拍照項目拍了幾項；沒有拍照項目時顯示上傳張數。點標籤可開啟出機檢查表。"
+                          >
+                            出機檢查
+                          </th>
                           <th style={{ ...thStyle, textAlign: 'center', width: '80px' }}>功能</th>
                         </tr>
                       </thead>
@@ -1165,25 +1178,60 @@ const DeviceList = ({ isSplitMode = false }) => {
                                     借用單 {item.lent_request_no}
                                   </div>
                                 )}
+                              </td>
+                              {/* 出機檢查：檢查進度（主要檢查功能 + 細項）與照片狀態，點標籤開啟檢查表 */}
+                              <td style={{ ...tdStyle, width: '96px', ...hideCol('checklist') }}>
                                 {(() => {
                                   const cl = checklistSummary.get(item.id);
-                                  if (!cl || cl.total === 0) return null;
-                                  const allDone = cl.done >= cl.total;
+                                  if (!cl || (cl.total === 0 && cl.photoTotal === 0 && cl.photoCount === 0)) {
+                                    return <span style={{ fontSize: '11px', color: 'var(--text-subtle)' }}>—</span>;
+                                  }
+                                  const open = (e) => { e.stopPropagation(); setChecklistDevice(item); };
+                                  const badge = (tone) => ({
+                                    padding: '1px 8px', borderRadius: '10px', cursor: 'pointer',
+                                    fontSize: '10px', fontWeight: 800, whiteSpace: 'nowrap',
+                                    border: `1px solid ${tone.border}`, backgroundColor: tone.bg, color: tone.fg,
+                                  });
+                                  const GREEN = { border: 'rgba(16, 185, 129, 0.4)', bg: 'rgba(16, 185, 129, 0.12)', fg: '#10b981' };
+                                  const TEAL = { border: 'rgba(8, 145, 178, 0.4)', bg: 'rgba(8, 145, 178, 0.12)', fg: '#0891b2' };
+                                  const AMBER = { border: 'rgba(245, 158, 11, 0.45)', bg: 'rgba(245, 158, 11, 0.12)', fg: '#d97706' };
+                                  // 拍照項目：看有沒有拍齊；沒有拍照項目時，有上傳照片就顯示張數
+                                  let photo = null;
+                                  if (cl.photoTotal > 0) {
+                                    const allShot = cl.photoDone >= cl.photoTotal;
+                                    photo = {
+                                      text: `照片 ${cl.photoDone}/${cl.photoTotal}`,
+                                      title: `拍照項目：${cl.photoDone} / ${cl.photoTotal} 項已上傳，共 ${cl.photoCount} 張照片（點擊開啟）`,
+                                      tone: allShot ? GREEN : AMBER,
+                                    };
+                                  } else if (cl.photoCount > 0) {
+                                    photo = { text: `照片 ${cl.photoCount} 張`, title: `已上傳 ${cl.photoCount} 張照片（點擊開啟）`, tone: TEAL };
+                                  }
                                   return (
-                                    <button
-                                      type="button"
-                                      onClick={(e) => { e.stopPropagation(); setChecklistDevice(item); }}
-                                      title={`出機檢查表：${cl.done} / ${cl.total} 項已完成（點擊開啟）`}
-                                      style={{
-                                        marginTop: '4px', padding: '1px 8px', borderRadius: '10px', cursor: 'pointer',
-                                        fontSize: '10px', fontWeight: 800, whiteSpace: 'nowrap',
-                                        border: `1px solid ${allDone ? 'rgba(16, 185, 129, 0.4)' : 'rgba(8, 145, 178, 0.4)'}`,
-                                        backgroundColor: allDone ? 'rgba(16, 185, 129, 0.12)' : 'rgba(8, 145, 178, 0.12)',
-                                        color: allDone ? '#10b981' : '#0891b2',
-                                      }}
-                                    >
-                                      檢查 {cl.done}/{cl.total}
-                                    </button>
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
+                                      {cl.total > 0 && (
+                                        <button
+                                          type="button"
+                                          onClick={open}
+                                          title={`出機檢查表：${cl.done} / ${cl.total} 項已完成（主要檢查功能勾選、細項填寫內容才算，點擊開啟）`}
+                                          style={badge(cl.done >= cl.total ? GREEN : TEAL)}
+                                          data-testid={`checklist-badge-${item.id}`}
+                                        >
+                                          檢查 {cl.done}/{cl.total}
+                                        </button>
+                                      )}
+                                      {photo && (
+                                        <button
+                                          type="button"
+                                          onClick={open}
+                                          title={photo.title}
+                                          style={badge(photo.tone)}
+                                          data-testid={`photo-badge-${item.id}`}
+                                        >
+                                          {photo.text}
+                                        </button>
+                                      )}
+                                    </div>
                                   );
                                 })()}
                               </td>
