@@ -1,5 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { X, Search, Plus, Check, Layers, Package, Cpu, Tag, AlertTriangle, ShoppingCart, CheckSquare, Square, Trash2 } from 'lucide-react';
+import { logDelete } from '../utils/auditLogger';
+import { MODULE_BY_CATEGORY } from '../utils/masterDictionary';
 
 const CATEGORIES = [
   { key: 'ALL', label: '全部品項', icon: Layers },
@@ -52,6 +54,15 @@ const PurchaseItemSelectModal = ({
     try {
       const res = await window.electronAPI.namedQuery('deleteItemMasterIfOrphan', [item.id]);
       if (res && res.success && res.rows && res.rows.length > 0) {
+        // 品項從品項庫裡消失，之後只能靠事件紀錄查得到是誰移除的
+        await logDelete(
+          MODULE_BY_CATEGORY[item.cat_name] || 'SETTING',
+          item.id,
+          `${item.brand || ''} ${item.model || ''}`.trim() || '品項',
+          `於採購單的品項挑選移除無庫存品項主檔 [${[item.brand, item.type, item.model].filter(Boolean).join(' ') || item.id}]`,
+          { itemMasterId: item.id, brand: item.brand, type: item.type, model: item.model,
+            specification: item.specification, category: item.cat_name }
+        );
         setDeletedIds((prev) => [...prev, item.id]);
         if (onItemDeleted) {
           onItemDeleted(item.id);

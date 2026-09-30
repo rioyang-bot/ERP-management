@@ -127,6 +127,15 @@ const LentList = () => {
   // 上傳簽收單檔案
   const handleUploadSignedDoc = async (dn, file) => {
     if (!file) return;
+    // 選完檔案就直接上傳、而且會蓋掉原本那份 —— 已經有簽收單時要先問過。
+    // 舊的那份不會留備份，蓋掉就找不回來了。
+    const replacing = !!(dn.signed_doc_url || dn.signed_doc_name);
+    const question = replacing
+      ? `這張借用單 [${dn.request_no}] 已經有簽收單 [${dn.signed_doc_name || '附件'}]。\n\n`
+        + `確定要改成 [${file.name}] 嗎？原本那份不會保留。`
+      : `確定要為借用單 [${dn.request_no}] 上傳簽收單 [${file.name}] 嗎？`;
+    if (!window.confirm(question)) return;
+
     setIsUploadingDoc(true);
     try {
       const buffer = await file.arrayBuffer();

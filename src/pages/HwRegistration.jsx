@@ -4,6 +4,7 @@ import { Plus, Save, Trash2, Cpu, Settings2, X, Server, Layers, ListFilter, File
 import { logCreate } from '../utils/auditLogger';
 import HwBatchImportModal from '../components/HwBatchImportModal';
 import { normalizeMasterName } from '../utils/normalizeMasterData';
+import { addDictionaryEntry } from '../utils/masterDictionary';
 import { validateName as validateAndSanitize } from '../utils/nameValidation';
 
 const HwRegistration = ({ isSplitMode = false }) => {
@@ -107,41 +108,38 @@ const HwRegistration = ({ isSplitMode = false }) => {
   const handleAddBrand = async () => {
     const name = normalizeMasterName(validateAndSanitize(newBrandName, '廠牌名稱'));
     if (!name) return;
-    const res = await window.electronAPI.namedQuery('insertDeviceBrand', ['硬體', name]);
-    if (res.success) { 
+    const res = await addDictionaryEntry(window.electronAPI, { kind: 'BRAND', category: '硬體', name });
+    if (res.ok) {
       setFormData(prev => ({ ...prev, brand: name, model: '' }));
-      await fetchBrands(); 
+      await fetchBrands();
       await fetchModels(name);
-      setNewBrandName(''); 
-      setActiveAdd(null); 
-    }
-    else alert('新增失敗：' + res.error);
+      setNewBrandName('');
+      setActiveAdd(null);
+    } else if (!res.cancelled) alert('新增失敗：' + res.message);
   };
 
   const handleAddType = async () => {
     const name = normalizeMasterName(validateAndSanitize(newTypeName, '類型名稱'));
     if (!name) return;
-    const res = await window.electronAPI.namedQuery('insertDeviceType', ['硬體', name]);
-    if (res.success) { 
+    const res = await addDictionaryEntry(window.electronAPI, { kind: 'TYPE', category: '硬體', name });
+    if (res.ok) {
       setFormData(prev => ({ ...prev, type: name }));
-      await fetchTypes(name); 
-      setNewTypeName(''); 
-      setActiveAdd(null); 
-    }
-    else alert('新增失敗：' + res.error);
+      await fetchTypes(name);
+      setNewTypeName('');
+      setActiveAdd(null);
+    } else if (!res.cancelled) alert('新增失敗：' + res.message);
   };
 
   const handleAddModel = async () => {
     const name = normalizeMasterName(validateAndSanitize(newModelName, '型號名稱'));
     if (!name || !formData.brand) return alert('請先選擇廠牌後再新增型號');
-    const res = await window.electronAPI.namedQuery('insertDeviceModel', [formData.brand, name, '硬體']);
-    if (res.success) { 
+    const res = await addDictionaryEntry(window.electronAPI, { kind: 'MODEL', category: '硬體', name, brand: formData.brand });
+    if (res.ok) {
       setFormData(prev => ({ ...prev, model: name }));
-      await fetchModels(formData.brand); 
-      setNewModelName(''); 
-      setActiveAdd(null); 
-    }
-    else alert('新增失敗：' + res.error);
+      await fetchModels(formData.brand);
+      setNewModelName('');
+      setActiveAdd(null);
+    } else if (!res.cancelled) alert('新增失敗：' + res.message);
   };
 
 

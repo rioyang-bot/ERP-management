@@ -3,6 +3,7 @@ import { Plus, Save, Settings2, Trash2, X, Monitor, User, MapPin, ListFilter, La
 import { useNavigate } from 'react-router-dom';
 import { logCreate } from '../utils/auditLogger';
 import { deleteItemType } from '../utils/deleteItemType';
+import { addDictionaryEntry } from '../utils/masterDictionary';
 import DeviceBatchImportModal from '../components/DeviceBatchImportModal';
 import { normalizeMasterName } from '../utils/normalizeMasterData';
 import { validateName as validateAndSanitize } from '../utils/nameValidation';
@@ -117,37 +118,37 @@ const Devices = ({ isSplitMode = false }) => {
   const handleAddType = async () => {
     const name = normalizeMasterName(validateAndSanitize(newTypeName, '類型名稱'));
     if (!name) return;
-    const res = await window.electronAPI.namedQuery('insertDeviceType', ['設備', name]);
-    if (res.success) {
+    const res = await addDictionaryEntry(window.electronAPI, { kind: 'TYPE', category: '設備', name });
+    if (res.ok) {
       setFormData(prev => ({ ...prev, type: name }));
       await fetchTypes(name);
       setNewTypeName(''); setShowAddType(false);
-    }
+    } else if (!res.cancelled) alert(res.message);
   };
 
 
   const handleAddModel = async () => {
     const name = normalizeMasterName(validateAndSanitize(newModelName, '型號名稱'));
     if (!name || !formData.brand) return alert('請先選擇或輸入廠牌');
-    const res = await window.electronAPI.namedQuery('insertDeviceModel', [formData.brand, name, '設備']);
-    if (res.success) {
+    const res = await addDictionaryEntry(window.electronAPI, { kind: 'MODEL', category: '設備', name, brand: formData.brand });
+    if (res.ok) {
       setFormData(prev => ({ ...prev, model: name }));
       await fetchModels(formData.brand);
       setNewModelName(''); setShowAddModel(false);
-    }
+    } else if (!res.cancelled) alert(res.message);
   };
 
 
   const handleAddBrand = async () => {
     const name = normalizeMasterName(validateAndSanitize(newBrandName, '廠牌名稱'));
     if (!name) return;
-    const res = await window.electronAPI.namedQuery('insertDeviceBrand', ['設備', name]);
-    if (res.success) {
+    const res = await addDictionaryEntry(window.electronAPI, { kind: 'BRAND', category: '設備', name });
+    if (res.ok) {
       setFormData(prev => ({ ...prev, brand: name }));
       await fetchBrands();
       await fetchModels(name);
       setNewBrandName(''); setShowAddBrand(false);
-    }
+    } else if (!res.cancelled) alert(res.message);
   };
 
 

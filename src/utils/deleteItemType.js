@@ -19,6 +19,8 @@
  * @param {string} categoryName 類別（設備／硬體／耗材）
  * @returns {Promise<{ ok: boolean, message: string, used?: number }>}
  */
+import { logDictionaryDelete } from './masterDictionary';
+
 export async function deleteItemType(api, typeName, categoryName) {
   const name = String(typeName ?? '').trim();
   if (!name) return { ok: false, message: '請先選擇要移除的類型' };
@@ -45,6 +47,9 @@ export async function deleteItemType(api, typeName, categoryName) {
     // 查詢到刪除之間有人建了資料，或這個類型已經被別人刪掉了
     return { ok: false, message: `類型「${name}」未被移除，可能剛剛已有資料開始使用，或已被其他人移除。請重新整理後確認。` };
   }
+
+  // 選單裡少了一個類型，要查得到是誰什麼時候移除的
+  await logDictionaryDelete({ kind: 'TYPE', category: categoryName, name });
 
   return { ok: true, used: 0, message: `類型「${name}」已移除。` };
 }
