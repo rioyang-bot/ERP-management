@@ -447,7 +447,7 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
                   </div>
                   <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '6px', lineHeight: 1.7 }}>
                     在「報表中心 → 出機檢查表」新增主要檢查功能後，該廠牌（或指定型號）的所有設備都會自動帶入，不需要逐台操作。
-                    {groups.length === 0 && ' 目前還沒有任何範本，請先到該頁面建立主項目。'}
+                    {groups.length === 0 && <span> 目前還沒有任何範本，請先到該頁面建立主項目。</span>}
                   </div>
                 </section>
 
