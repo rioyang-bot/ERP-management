@@ -66,6 +66,11 @@ describe('出機檢查表：單一設備', () => {
         if (row) row.is_checked = params[0];
         return Promise.resolve({ success: true, rows: [{ id: params[1] }] });
       }
+      if (query === 'setAssetChecklistItemContent') {
+        const row = assetItems.find((r) => r.id === params[1]);
+        if (row) row.content = params[0];
+        return Promise.resolve({ success: true, rows: [{ id: params[1] }] });
+      }
       if (query === 'deleteAssetChecklistItem') {
         assetItems = assetItems.filter((r) => r.id !== params[0]);
         return Promise.resolve({ success: true, rows: [{ id: params[0] }] });
@@ -84,9 +89,17 @@ describe('出機檢查表：單一設備', () => {
   });
 
   const called = (name) => calls.filter((c) => c.query === name);
-  const renderModal = (device = DEVICE) => render(
-    <DeviceChecklistModal isOpen device={device} onClose={vi.fn()} onChanged={vi.fn()} />
-  );
+  let onClose;
+  const renderModal = (device = DEVICE) => {
+    onClose = vi.fn();
+    return render(
+      <DeviceChecklistModal isOpen device={device} onClose={onClose} onChanged={vi.fn()} />
+    );
+  };
+  /** 勾選與內容都要按過「儲存變更」才寫回資料庫 */
+  const saveChanges = async () => {
+    await userEvent.click(await screen.findByRole('button', { name: /儲存變更/ }));
+  };
 
   describe('主要檢查功能依廠牌自動套用', () => {
     it('開啟時先為這台設備補上該廠牌的主要檢查功能', async () => {
@@ -233,7 +246,7 @@ describe('出機檢查表：單一設備', () => {
       expect(await screen.findByLabelText('OS 內容')).toBeInTheDocument();
     });
 
-    it('填好內容離開欄位才寫回資料庫', async () => {
+    it('填好內容要按儲存才寫回資料庫', async () => {
       setup({ applied: WITH_DETAIL });
       renderModal();
 
@@ -243,7 +256,23 @@ describe('出機檢查表：單一設備', () => {
       expect(called('setAssetChecklistItemContent')).toHaveLength(0);
 
       await userEvent.tab();
+      // 離開欄位只是收進待儲存，資料庫還沒動
+      expect(called('setAssetChecklistItemContent')).toHaveLength(0);
+
+      await saveChanges();
       await waitFor(() => expect(called('setAssetChecklistItemContent')[0].params).toEqual(['RH9.6', 960]));
+    });
+
+    it('打完內容又放棄，資料庫不會留下東西', async () => {
+      setup({ applied: WITH_DETAIL });
+      renderModal();
+
+      await userEvent.type(await screen.findByLabelText('OS 內容'), 'RH9.6');
+      await userEvent.tab();
+      await userEvent.click(await screen.findByRole('button', { name: /放棄變更/ }));
+
+      expect(called('setAssetChecklistItemContent')).toHaveLength(0);
+      await waitFor(() => expect(screen.queryByText(/尚未儲存/)).not.toBeInTheDocument());
     });
 
     it('內容沒改就不會送出多餘的更新', async () => {
@@ -274,9 +303,13 @@ describe('出機檢查表：單一設備', () => {
   });
 
   describe('勾選檢查完成', () => {
-    it('勾選會存回資料庫', async () => {
+    it('勾選要按儲存才存回資料庫', async () => {
       renderModal();
       await userEvent.click(await screen.findByRole('checkbox', { name: 'BIOS 設定 檢查完成' }));
+      // 勾一下不會直接寫進去 —— 勾錯了也回不來，而畫面上只是點了一下
+      expect(called('setAssetChecklistItemChecked')).toHaveLength(0);
+
+      await saveChanges();
       await waitFor(() => expect(called('setAssetChecklistItemChecked')[0].params).toEqual([true, 801]));
     });
 
@@ -284,7 +317,39 @@ describe('出機檢查表：單一設備', () => {
       setup({ applied: [{ ...AUTO_APPLIED[0], is_checked: true }] });
       renderModal();
       await userEvent.click(await screen.findByRole('checkbox', { name: 'BIOS 設定 檢查完成' }));
+      await saveChanges();
       await waitFor(() => expect(called('setAssetChecklistItemChecked')[0].params).toEqual([false, 801]));
+    });
+
+    it('勾錯了可以直接放棄，資料庫不會動到', async () => {
+      renderModal();
+      await userEvent.click(await screen.findByRole('checkbox', { name: 'BIOS 設定 檢查完成' }));
+      await userEvent.click(await screen.findByRole('button', { name: /放棄變更/ }));
+
+      expect(called('setAssetChecklistItemChecked')).toHaveLength(0);
+    });
+
+    it('有沒存的變更時關閉會先問一句', async () => {
+      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+      renderModal();
+      await userEvent.click(await screen.findByRole('checkbox', { name: 'BIOS 設定 檢查完成' }));
+      await userEvent.click(screen.getByLabelText('關閉'));
+
+      expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining('沒有儲存'));
+      expect(onClose).not.toHaveBeenCalled();
+      confirmSpy.mockRestore();
+    });
+
+    it('儲存之後留下事件紀錄，目標是設備序號', async () => {
+      renderModal();
+      await userEvent.click(await screen.findByRole('checkbox', { name: 'BIOS 設定 檢查完成' }));
+      await saveChanges();
+
+      await waitFor(() => expect(called('insertAuditLog')).toHaveLength(1));
+      const params = called('insertAuditLog')[0].params;
+      // 履歷是拿序號接回資產的，記成 device.id 就永遠接不上
+      expect(params[6]).toBe(DEVICE.sn);
+      expect(params[8]).toContain('BIOS 設定');
     });
 
     it('顯示完成進度', async () => {
@@ -315,11 +380,13 @@ describe('出機檢查表：單一設備', () => {
 
       // 主要檢查功能仍可勾選
       await userEvent.click(screen.getByRole('checkbox', { name: 'BIOS 設定 檢查完成' }));
-      await waitFor(() => expect(called('setAssetChecklistItemChecked')[0].params).toEqual([false, 601]));
 
       // 細項仍可填內容
       await userEvent.type(screen.getByLabelText('開機順序 內容'), 'NVMe 優先');
       await userEvent.tab();
+
+      await saveChanges();
+      await waitFor(() => expect(called('setAssetChecklistItemChecked')[0].params).toEqual([false, 601]));
       await waitFor(() => expect(called('setAssetChecklistItemContent')[0].params).toEqual(['NVMe 優先', 602]));
     });
 
@@ -509,6 +576,31 @@ describe('出機檢查表：範本維護頁', () => {
       expect(await screen.findByText(/已經發出去的仍保留在各設備上/)).toBeInTheDocument();
     });
 
+    /**
+     * 這個勾選框點一下就會把項目發到所有符合廠牌的設備上，
+     * 影響範圍遠大於畫面上看起來的一次點擊。
+     */
+    it('沒有按下確定就不會設成自動套用', async () => {
+      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+      renderPage();
+      await userEvent.click(await screen.findByText('SecretHFT 出機檢查'));
+      await userEvent.click(await screen.findByLabelText('開機順序 自動套用到所有設備'));
+
+      expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining('所有符合廠牌的設備'));
+      expect(called('setChecklistItemAutoApply')).toHaveLength(0);
+      confirmSpy.mockRestore();
+    });
+
+    it('設定自動套用會留下事件紀錄', async () => {
+      renderPage();
+      await userEvent.click(await screen.findByText('SecretHFT 出機檢查'));
+      await userEvent.click(await screen.findByLabelText('開機順序 自動套用到所有設備'));
+
+      await waitFor(() => expect(called('insertAuditLog')).toHaveLength(1));
+      expect(called('insertAuditLog')[0].params[8]).toContain('開機順序');
+      expect(called('insertAuditLog')[0].params[8]).toContain('設為自動套用');
+    });
+
     it('已設為自動套用的細項會標示出來', async () => {
       items = items.map((i) => (i.id === 23 ? { ...i, auto_apply: true } : i));
       renderPage();
@@ -556,6 +648,32 @@ describe('出機檢查表：範本維護頁', () => {
       dragOnto(container, 'SR-IOV 開啟', '開機順序');
 
       await waitFor(() => expect(called('reorderChecklistItems')[0].params).toEqual(['24,23']));
+    });
+
+    /** 放開滑鼠就寫回資料庫，而且會連動所有已套用設備上的順序 */
+    it('沒有按下確定就不會動到順序', async () => {
+      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+      const { container } = renderPage();
+      await userEvent.click(await screen.findByText('SecretHFT 出機檢查'));
+      await screen.findByText('BIOS 設定');
+
+      dragOnto(container, 'BIOS 設定', '網路設定');
+
+      expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining('BIOS 設定'));
+      expect(called('reorderChecklistItems')).toHaveLength(0);
+      confirmSpy.mockRestore();
+    });
+
+    it('調整順序會留下事件紀錄', async () => {
+      const { container } = renderPage();
+      await userEvent.click(await screen.findByText('SecretHFT 出機檢查'));
+      await screen.findByText('BIOS 設定');
+
+      dragOnto(container, 'BIOS 設定', '網路設定');
+
+      await waitFor(() => expect(called('insertAuditLog')).toHaveLength(1));
+      expect(called('insertAuditLog')[0].params[8]).toContain('順序');
+      expect(called('insertAuditLog')[0].params[8]).toContain('BIOS 設定');
     });
 
     it('排完順序會一併同步到設備上已套用的項目', async () => {

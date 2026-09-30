@@ -182,6 +182,11 @@ const ChecklistTemplates = () => {
    */
   const handleToggleAutoApply = async (item) => {
     const next = !item.auto_apply;
+    // 這個勾選框點一下就會把項目發到所有符合廠牌的設備上（或停止再發），
+    // 影響範圍遠大於畫面上看起來的一次點擊
+    if (!window.confirm(next
+      ? `確定要把細項「${item.name}」設為自動套用嗎？\n\n它會立刻加到所有符合廠牌的設備檢查表上。`
+      : `確定要取消「${item.name}」的自動套用嗎？\n\n之後不再自動加入；已經發出去的仍保留在各設備上。`)) return;
     try {
       const res = await window.electronAPI.namedQuery('setChecklistItemAutoApply', [next, item.id]);
       if (!res.success || (res.rows || []).length === 0) throw new Error(res.error || '找不到該項目');
@@ -193,6 +198,9 @@ const ChecklistTemplates = () => {
       } else {
         setSyncNotice(`「${item.name}」之後不再自動套用；已經發出去的仍保留在各設備上`);
       }
+      logUpdate('SETTING', item.id, item.name,
+        `出機檢查細項 [${item.name}] ${next ? '設為' : '取消'}自動套用`,
+        { name: item.name, group: item.group_id, autoApply: next });
       await fetchAll();
     } catch (err) {
       alert(`設定自動套用失敗：${err.message}`);
@@ -201,7 +209,8 @@ const ChecklistTemplates = () => {
 
   // --- 拖曳排序 ---
   const handleItemDragStart = (e, item) => {
-    setDraggingItem({ id: item.id, kind: item.kind });
+    // 名稱也要帶著：確認訊息與事件紀錄都要說得出拖的是哪一項
+    setDraggingItem({ id: item.id, kind: item.kind, name: item.name });
     e.dataTransfer.effectAllowed = 'move';
     // 某些瀏覽器要有資料才會啟動拖曳
     e.dataTransfer.setData('text/plain', String(item.id));
@@ -235,6 +244,11 @@ const ChecklistTemplates = () => {
     const sameKind = items
       .filter((i) => i.group_id === target.group_id && i.kind === target.kind)
       .sort(bySortOrder);
+    // 放開滑鼠就寫回資料庫，而且會連動所有已套用設備上的順序。
+    // 拖錯位置的成本不只是這張範本。
+    if (!window.confirm(`確定要把「${source.name}」移到「${target.name}」的位置嗎？\n\n`
+      + '已套用到設備上的相同項目會跟著換順序。')) return;
+
     const reordered = moveItem(sameKind, source.id, target.id);
     const orderById = new Map(reordered.map((i, idx) => [i.id, idx]));
 
@@ -245,6 +259,9 @@ const ChecklistTemplates = () => {
       if (!res.success) throw new Error(res.error || '排序失敗');
       // 設備上已套用的項目跟著換順序，列印出來才與範本一致
       await window.electronAPI.namedQuery('syncAssetChecklistOrderBySource');
+      logUpdate('SETTING', target.group_id, source.name,
+        `調整出機檢查項目順序：「${source.name}」移到「${target.name}」的位置`,
+        { moved: source.name, before: target.name, kind: target.kind, order: reordered.map((i) => i.name) });
     } catch (err) {
       alert(`調整順序失敗：${err.message}`);
       await fetchAll();
@@ -259,6 +276,9 @@ const ChecklistTemplates = () => {
       if (!res.success) throw new Error(res.error || '修改失敗');
       // 設備端已套用的同一個項目跟著改名，否則同步會把新名稱再補一份進去
       await window.electronAPI.namedQuery('renameAssetChecklistItemsBySource', [name, editingItem.id]);
+      logUpdate('SETTING', editingItem.id, name,
+        `修改出機檢查項目名稱 [${editingItem._origName || ''}] → [${name}]`,
+        { before: editingItem._origName || '', after: name });
       setEditingItem(null);
       await fetchAll();
     } catch (err) {
@@ -413,7 +433,7 @@ const ChecklistTemplates = () => {
                       </span>
                     )}
                   </span>
-                  <button type="button" onClick={() => setEditingItem({ id: item.id, name: item.name })} style={iconBtn('#f59e0b')} title="修改名稱" aria-label={`修改 ${item.name}`}><Pencil size={13} /></button>
+                  <button type="button" onClick={() => setEditingItem({ id: item.id, name: item.name, _origName: item.name })} style={iconBtn('#f59e0b')} title="修改名稱" aria-label={`修改 ${item.name}`}><Pencil size={13} /></button>
                   <button type="button" onClick={() => handleDeleteItem(item)} style={iconBtn('#ef4444')} title="刪除" aria-label={`刪除 ${item.name}`}><Trash2 size={13} /></button>
                 </>
               )}

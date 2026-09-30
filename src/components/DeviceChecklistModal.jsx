@@ -36,8 +36,18 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
   // 細項逐台挑選，因此各自記住勾了哪些
   const [pickedDetails, setPickedDetails] = useState(() => new Set());
   const [customDetail, setCustomDetail] = useState('');
-  // 細項內容改成邊打邊記在本地，離開欄位才寫回資料庫
+  // 細項內容改成邊打邊記在本地，離開欄位才收進待儲存
   const [contentDraft, setContentDraft] = useState({});
+  /**
+   * 尚未儲存的勾選與內容。
+   *
+   * 先前勾一下、或內容打完離開欄位，就直接寫進資料庫 —— 勾錯了也回不來，
+   * 而畫面上只是點了一下。改成先放在這裡，按下「儲存變更」才一起寫回去。
+   * { [rowId]: boolean } 與 { [rowId]: string }
+   */
+  const [pendingChecks, setPendingChecks] = useState({});
+  const [pendingContents, setPendingContents] = useState({});
+  const [savingChanges, setSavingChanges] = useState(false);
 
   const deviceBrand = (device?.brand || '').trim().toUpperCase();
 
@@ -124,6 +134,8 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
       alert('請先勾選要加入的細項。');
       return;
     }
+    if (!window.confirm(`確定要把這 ${picks.length} 項細項加入 [${device.sn || device.id}] 的檢查表嗎？\n\n`
+      + picks.map((i) => `· ${i.name}`).join('\n'))) return;
     setBusy(true);
     try {
       let order = applied.length;
@@ -131,7 +143,8 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
         await insertDetail(selectedGroup.name, item.name, item.id, order);
         order += 1;
       }
-      logUpdate('DEVICE', device.id, device.sn, `設備 [${device.sn}] 加入出機檢查細項 ${picks.length} 項`, {
+      // 目標要用序號：品項履歷是拿序號接回資產的，記成 device.id 就永遠接不上
+      logUpdate('DEVICE', device.sn || device.id, device.sn, `設備 [${device.sn}] 加入出機檢查細項 ${picks.length} 項`, {
         sn: device.sn, group: selectedGroup?.name, items: picks.map((i) => i.name),
       });
       setPickedDetails(new Set());
@@ -152,10 +165,11 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
       alert('這台設備已經有同名的細項了。');
       return;
     }
+    if (!window.confirm(`確定要為 [${device.sn || device.id}] 新增細項「${name}」嗎？`)) return;
     setBusy(true);
     try {
       await insertDetail(groupName, name, null, applied.length);
-      logUpdate('DEVICE', device.id, device.sn, `設備 [${device.sn}] 新增自訂出機檢查細項 [${name}]`, {
+      logUpdate('DEVICE', device.sn || device.id, device.sn, `設備 [${device.sn}] 新增自訂出機檢查細項 [${name}]`, {
         sn: device.sn, group: groupName, item: name,
       });
       setCustomDetail('');
@@ -176,38 +190,84 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
     setContentDraft((prev) => ({ ...prev, [id]: value }));
   };
 
-  const handleContentCommit = async (row) => {
+  const handleContentCommit = (row) => {
     const draft = contentDraft[row.id];
     if (draft === undefined) return;
     const next = draft.trim();
-    if (next === (row.content || '')) {
-      setContentDraft((prev) => { const n = { ...prev }; delete n[row.id]; return n; });
-      return;
-    }
-    setApplied((prev) => prev.map((r) => (r.id === row.id ? { ...r, content: next || null } : r)));
     setContentDraft((prev) => { const n = { ...prev }; delete n[row.id]; return n; });
+    if (next === (row.content || '')) return;
+
+    // 只更新畫面並記成待儲存，資料庫等按下「儲存變更」才動
+    setApplied((prev) => prev.map((r) => (r.id === row.id ? { ...r, content: next || null } : r)));
+    setPendingContents((prev) => ({ ...prev, [row.id]: next }));
+  };
+
+  const handleToggleChecked = (row) => {
+    const next = !row.is_checked;
+    setApplied((prev) => prev.map((r) => (r.id === row.id ? { ...r, is_checked: next } : r)));
+    setPendingChecks((prev) => ({ ...prev, [row.id]: next }));
+  };
+
+  /** 尚未寫回資料庫的變更筆數 */
+  const pendingCount = Object.keys(pendingChecks).length + Object.keys(pendingContents).length;
+
+  const discardChanges = async () => {
+    setPendingChecks({});
+    setPendingContents({});
+    setContentDraft({});
+    await loadAll();
+  };
+
+  const handleSaveChanges = async () => {
+    if (pendingCount === 0) return;
+    const checks = Object.entries(pendingChecks);
+    const contents = Object.entries(pendingContents);
+    if (!window.confirm(`確定要儲存這 ${pendingCount} 項變更嗎？`)) return;
+
+    setSavingChanges(true);
     try {
-      const res = await window.electronAPI.namedQuery('setAssetChecklistItemContent', [next, row.id]);
-      if (!res.success || (res.rows || []).length === 0) throw new Error(res.error || '找不到該項目');
+      for (const [rowId, checked] of checks) {
+        const res = await window.electronAPI.namedQuery('setAssetChecklistItemChecked', [checked, Number(rowId)]);
+        if (!res.success || (res.rows || []).length === 0) throw new Error(res.error || '找不到該項目');
+      }
+      for (const [rowId, content] of contents) {
+        const res = await window.electronAPI.namedQuery('setAssetChecklistItemContent', [content, Number(rowId)]);
+        if (!res.success || (res.rows || []).length === 0) throw new Error(res.error || '找不到該項目');
+      }
+
+      const named = (rowId) => applied.find((r) => String(r.id) === String(rowId))?.item_name || rowId;
+      const parts = [];
+      if (checks.length) {
+        parts.push('勾選：' + checks.map(([id, v]) => `${named(id)}${v ? '✓' : '✗'}`).join('、'));
+      }
+      if (contents.length) {
+        parts.push('內容：' + contents.map(([id, v]) => `${named(id)}=${v || '（清空）'}`).join('、'));
+      }
+      // 出機檢查的結果是出貨憑據的一部分，改過什麼要留得下來
+      await logUpdate('DEVICE', device.sn || device.id, device.sn,
+        `設備 [${device.sn || device.id}] 出機檢查表更新 ${pendingCount} 項 —— ${parts.join('；')}`,
+        { sn: device.sn, checked: Object.fromEntries(checks), contents: Object.fromEntries(contents) });
+
+      setPendingChecks({});
+      setPendingContents({});
+      await loadAll();
       if (onChanged) onChanged();
     } catch (e) {
-      setApplied((prev) => prev.map((r) => (r.id === row.id ? { ...r, content: row.content } : r)));
-      alert(`儲存內容失敗：${e.message}`);
+      alert(`儲存失敗：${e.message}\n\n畫面會重新讀取，請確認後再試一次。`);
+      await discardChanges();
+    } finally {
+      setSavingChanges(false);
     }
   };
 
-  const handleToggleChecked = async (row) => {
-    const next = !row.is_checked;
-    // 先更新畫面，勾選要跟得上手速；失敗再退回
-    setApplied((prev) => prev.map((r) => (r.id === row.id ? { ...r, is_checked: next } : r)));
-    try {
-      const res = await window.electronAPI.namedQuery('setAssetChecklistItemChecked', [next, row.id]);
-      if (!res.success || (res.rows || []).length === 0) throw new Error(res.error || '找不到該項目');
-      if (onChanged) onChanged();
-    } catch (e) {
-      setApplied((prev) => prev.map((r) => (r.id === row.id ? { ...r, is_checked: !next } : r)));
-      alert(`儲存勾選狀態失敗：${e.message}`);
-    }
+  /** 有沒存的變更就先問一句再關 */
+  const handleClose = () => {
+    if (pendingCount > 0
+      && !window.confirm(`還有 ${pendingCount} 項變更沒有儲存，關閉後就會消失。\n\n確定要關閉嗎？`)) return;
+    setPendingChecks({});
+    setPendingContents({});
+    setContentDraft({});
+    onClose();
   };
 
   /** 範本裡仍存在、且設定為自動套用的項目 id */
@@ -229,6 +289,9 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
     try {
       const res = await window.electronAPI.namedQuery('deleteAssetChecklistItem', [row.id]);
       if (!res.success) throw new Error(res.error || '移除失敗');
+      await logUpdate('DEVICE', device.sn || device.id, device.sn,
+        `設備 [${device.sn || device.id}] 的出機檢查表移除項目 [${row.item_name}]`,
+        { sn: device.sn, group: row.group_name, item: row.item_name, kind: row.kind });
       await loadAll();
       if (onChanged) onChanged();
     } catch (e) {
@@ -241,6 +304,9 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
     try {
       const res = await window.electronAPI.namedQuery('deleteAssetChecklistGroup', [device.id, groupName]);
       if (!res.success) throw new Error(res.error || '移除失敗');
+      await logUpdate('DEVICE', device.sn || device.id, device.sn,
+        `設備 [${device.sn || device.id}] 的出機檢查表移除整組 [${groupName}]`,
+        { sn: device.sn, group: groupName });
       await loadAll();
       if (onChanged) onChanged();
     } catch (e) {
@@ -310,7 +376,7 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
                 <Printer size={15} /> 列印
               </button>
               <button
-                onClick={onClose}
+                onClick={handleClose}
                 aria-label="關閉"
                 style={{ width: '36px', height: '36px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-main)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               >
@@ -571,7 +637,8 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.7, marginTop: '8px' }}>
                       <Info size={14} style={{ flexShrink: 0, marginTop: '2px' }} />
                       <span>
-                        細項不勾選，記錄的是這台設備個別的內容（例如「OS」填「RH9.6」），離開欄位即自動儲存；不列入上方的完成度。
+                        細項不勾選，記錄的是這台設備個別的內容（例如「OS」填「RH9.6」）；不列入上方的完成度。
+                        勾選與內容都要按下方的「儲存變更」才會寫回，按錯了可以直接放棄。
                       </span>
                     </div>
                   </section>
@@ -579,6 +646,37 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
               </>
             )}
           </div>
+
+          {/* 未儲存的變更 */}
+          {pendingCount > 0 && (
+            <div style={{
+              padding: '12px 24px', borderTop: '1px solid var(--border-color)',
+              backgroundColor: 'rgba(245, 158, 11, 0.10)', display: 'flex',
+              alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap',
+            }}>
+              <span style={{ fontSize: '13px', fontWeight: 800, color: 'var(--text-main)' }}>
+                有 {pendingCount} 項變更尚未儲存
+              </span>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={discardChanges}
+                  disabled={savingChanges}
+                  style={{ padding: '8px 14px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-main)', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}
+                >
+                  放棄變更
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveChanges}
+                  disabled={savingChanges}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: '8px', border: 'none', backgroundColor: '#10b981', color: '#fff', fontWeight: 800, fontSize: '13px', cursor: savingChanges ? 'not-allowed' : 'pointer' }}
+                >
+                  <CheckCircle2 size={15} /> {savingChanges ? '儲存中…' : '儲存變更'}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
