@@ -176,11 +176,15 @@ const AssetPhotoSection = ({ device, card, photoItems = [], onChanged, canRemove
     color: '#fff', fontWeight: 800, fontSize: '12px', cursor: busy ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap',
   });
 
-  const renderPhoto = (photo) => (
+  /**
+   * @param {boolean} compact 拍照項目底下用的小縮圖：一列可能有好幾項，
+   *                          用原本的大卡片會把整張檢查表撐得很長
+   */
+  const renderPhoto = (photo, compact = false) => (
     <div
       key={photo.id}
       style={{
-        width: '132px', border: '1px solid var(--border-color)', borderRadius: '10px',
+        width: compact ? '96px' : '132px', border: '1px solid var(--border-color)', borderRadius: compact ? '8px' : '10px',
         overflow: 'hidden', backgroundColor: 'var(--bg-surface)',
       }}
       data-testid={`asset-photo-${photo.id}`}
@@ -190,7 +194,7 @@ const AssetPhotoSection = ({ device, card, photoItems = [], onChanged, canRemove
         onClick={() => handleDownload(photo)}
         title={`點擊下載 ${photo.original_name}`}
         style={{
-          display: 'block', width: '100%', height: '96px', padding: 0, border: 'none',
+          display: 'block', width: '100%', height: compact ? '64px' : '96px', padding: 0, border: 'none',
           backgroundColor: 'var(--bg-surface-subtle)', cursor: 'pointer',
         }}
         data-testid={`download-asset-photo-${photo.id}`}
@@ -199,24 +203,26 @@ const AssetPhotoSection = ({ device, card, photoItems = [], onChanged, canRemove
           <img
             src={thumbs[photo.id]}
             alt={photo.original_name}
-            style={{ width: '100%', height: '96px', objectFit: 'cover', display: 'block' }}
+            style={{ width: '100%', height: compact ? '64px' : '96px', objectFit: 'cover', display: 'block' }}
           />
         ) : (
           <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>載入中…</span>
         )}
       </button>
-      <div style={{ padding: '6px 8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+      <div style={{ padding: compact ? '3px 4px 3px 6px' : '6px 8px', display: 'flex', alignItems: 'center', gap: compact ? '2px' : '6px' }}>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div
-            title={photo.original_name}
-            style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+            title={`${photo.original_name}（${formatFileSize(photo.file_size)}${photo.uploaded_by_name ? ` · ${photo.uploaded_by_name}` : ''}）`}
+            style={{ fontSize: compact ? '10px' : '11px', fontWeight: 700, color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
           >
             {photo.original_name}
           </div>
-          <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-            {formatFileSize(photo.file_size)}
-            {photo.uploaded_by_name ? ` · ${photo.uploaded_by_name}` : ''}
-          </div>
+          {!compact && (
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+              {formatFileSize(photo.file_size)}
+              {photo.uploaded_by_name ? ` · ${photo.uploaded_by_name}` : ''}
+            </div>
+          )}
         </div>
         <button
           type="button"
@@ -224,7 +230,7 @@ const AssetPhotoSection = ({ device, card, photoItems = [], onChanged, canRemove
           title="下載"
           style={{ border: 'none', background: 'none', color: 'var(--primary-color)', cursor: 'pointer', padding: '2px' }}
         >
-          <Download size={14} />
+          <Download size={compact ? 12 : 14} />
         </button>
         <button
           type="button"
@@ -234,7 +240,7 @@ const AssetPhotoSection = ({ device, card, photoItems = [], onChanged, canRemove
           style={{ border: 'none', background: 'none', color: '#ef4444', cursor: busy ? 'not-allowed' : 'pointer', padding: '2px' }}
           data-testid={`delete-asset-photo-${photo.id}`}
         >
-          <Trash2 size={14} />
+          <Trash2 size={compact ? 12 : 14} />
         </button>
       </div>
     </div>
@@ -303,26 +309,40 @@ const AssetPhotoSection = ({ device, card, photoItems = [], onChanged, canRemove
       ) : (
         <>
           {/* 拍照項目：範本規定這台要拍的照片 */}
+          {/* 一項一列：名稱、說明、狀態、上傳鈕排在同一行，有照片才在下面多一排小縮圖。
+              先前一項一張卡片，九個項目就把整張檢查表撐得很長 */}
           {hasItems && !error && (
-            <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {photoItems.map((item) => {
+            <div style={{ marginTop: '10px', border: '1px solid var(--border-color)', borderRadius: '10px', overflow: 'hidden' }}>
+              {photoItems.map((item, idx) => {
                 const list = photosOf(item.id);
                 const done = list.length > 0;
                 return (
                   <div
                     key={item.id}
                     style={{
-                      padding: '10px 12px', borderRadius: '10px',
-                      border: `1px solid ${done ? 'rgba(16, 185, 129, 0.35)' : 'rgba(245, 158, 11, 0.45)'}`,
-                      backgroundColor: done ? 'rgba(16, 185, 129, 0.06)' : 'rgba(245, 158, 11, 0.06)',
+                      padding: '6px 10px',
+                      borderTop: idx === 0 ? 'none' : '1px solid var(--border-color)',
+                      borderLeft: `3px solid ${done ? '#10b981' : '#f59e0b'}`,
+                      backgroundColor: done ? 'rgba(16, 185, 129, 0.05)' : 'transparent',
                     }}
                     data-testid={`photo-item-${item.id}`}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                      {done ? <CheckCircle2 size={16} color="#10b981" /> : <Circle size={16} color="#f59e0b" />}
-                      <b style={{ flex: 1, minWidth: 0, fontSize: '13px', color: 'var(--text-main)', wordBreak: 'break-word' }}>
-                        {item.item_name}
-                      </b>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {done ? <CheckCircle2 size={15} color="#10b981" style={{ flexShrink: 0 }} /> : <Circle size={15} color="#f59e0b" style={{ flexShrink: 0 }} />}
+                      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', columnGap: '12px', rowGap: '1px' }}>
+                        <b style={{ fontSize: '13px', color: 'var(--text-main)', wordBreak: 'break-word' }}>
+                          {item.item_name}
+                        </b>
+                        {item.description && (
+                          // 說明是拍攝指示（常常是要下的指令），完整顯示、不截斷
+                          <span
+                            style={{ flex: '1 1 220px', minWidth: 0, fontSize: '12px', color: 'var(--text-muted)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.5, fontFamily: 'ui-monospace, SFMono-Regular, Consolas, monospace' }}
+                            data-testid={`photo-item-desc-${item.id}`}
+                          >
+                            {item.description}
+                          </span>
+                        )}
+                      </div>
                       <span style={{ fontSize: '11px', fontWeight: 800, color: done ? '#10b981' : '#f59e0b', whiteSpace: 'nowrap' }}>
                         {done ? `已上傳 ${list.length} 張` : '尚未上傳'}
                       </span>
@@ -330,10 +350,10 @@ const AssetPhotoSection = ({ device, card, photoItems = [], onChanged, canRemove
                         type="button"
                         onClick={() => handlePickForItem(item)}
                         disabled={busy || !assetId}
-                        style={uploadBtnStyle('#0891b2')}
+                        style={{ ...uploadBtnStyle('#0891b2'), padding: '4px 10px', gap: '4px', borderRadius: '6px' }}
                         aria-label={`上傳 ${item.item_name} 的照片`}
                       >
-                        <Upload size={13} /> 上傳
+                        <Upload size={12} /> 上傳
                       </button>
                       {canRemove && onRemoveItem && canRemove(item) && (
                         <button
@@ -341,23 +361,15 @@ const AssetPhotoSection = ({ device, card, photoItems = [], onChanged, canRemove
                           onClick={() => onRemoveItem(item)}
                           title="範本已刪除，可從這台設備移除；照片會改列為其他照片"
                           aria-label={`移除 ${item.item_name}`}
-                          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px', padding: 0, borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: '#ef4444', cursor: 'pointer' }}
+                          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '24px', height: '24px', padding: 0, borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: '#ef4444', cursor: 'pointer', flexShrink: 0 }}
                         >
-                          <Trash2 size={12} />
+                          <Trash2 size={11} />
                         </button>
                       )}
                     </div>
-                    {item.description && (
-                      <div
-                        style={{ marginTop: '6px', marginLeft: '24px', fontSize: '12px', color: 'var(--text-muted)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.7 }}
-                        data-testid={`photo-item-desc-${item.id}`}
-                      >
-                        {item.description}
-                      </div>
-                    )}
                     {list.length > 0 && (
-                      <div style={{ marginTop: '10px', display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
-                        {list.map(renderPhoto)}
+                      <div style={{ margin: '6px 0 2px 23px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                        {list.map((p) => renderPhoto(p, true))}
                       </div>
                     )}
                   </div>
