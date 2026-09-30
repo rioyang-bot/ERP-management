@@ -1,7 +1,13 @@
 <!doctype html>
-<html lang="en">
+<!--
+  整個系統的介面都是繁體中文。先前宣告成 lang="en"，Chrome 會把頁面當英文自動翻譯，
+  翻譯會改寫畫面上的文字節點，React 更新畫面時找不到原本的節點就整頁錯誤
+  （「無法對 Node 執行 removeChild」）。因此宣告為繁體中文並關閉翻譯。
+-->
+<html lang="zh-Hant" translate="no">
   <head>
     <meta charset="UTF-8" />
+    <meta name="google" content="notranslate" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>METECH ERP Asset Management</title>

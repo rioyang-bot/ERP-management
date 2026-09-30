@@ -474,7 +474,8 @@ const ChecklistTemplates = () => {
         </div>
         <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
           {meta.desc}
-          {list.length > 1 && '　拖曳左側的握把即可調整順序，設備上與列印的先後會跟著改。'}
+          {/* 會出現、消失的文字一律包在元素裡：裸露的文字節點被瀏覽器翻譯改寫後，React 移除時會找不到而整頁錯誤 */}
+          {list.length > 1 && <span>　拖曳左側的握把即可調整順序，設備上與列印的先後會跟著改。</span>}
         </p>
 
         {isPhoto && (
