@@ -3,6 +3,7 @@ import { render, screen, waitFor, fireEvent, within } from '@testing-library/rea
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { BrowserRouter } from 'react-router-dom';
 import DNList from '../pages/DNList';
+import { queries } from '../../database/queries';
 
 describe('DNList 出貨單列表狀態查詢與搜尋測試', () => {
   const mockDNRecords = [
@@ -33,10 +34,10 @@ describe('DNList 出貨單列表狀態查詢與搜尋測試', () => {
     {
       id: 3,
       request_no: 'DN-20260828-03',
-      request_type: 'LEND',
+      request_type: 'SALE',
       customer: '群益證券',
       shipping_date: '2026-08-26',
-      status: 'RETURNED',
+      status: 'SHIPPED',
       item_count: 1,
       creator_name: 'User2',
       signed_doc_url: null,
@@ -102,10 +103,15 @@ describe('DNList 出貨單列表狀態查詢與搜尋測試', () => {
   });
 
   /**
-   * 這張清單也看得到借用單，它們結案後是 RETURNED。
-   * 歷史頁籤若只認 SHIPPED，那些單會整個從畫面上消失。
+   * 借用單有自己的列表與自己的流程（預計歸還日、逾期、撤銷借出、歸還入庫）。
+   * 混在出貨單列表裡，同一張單在兩個地方都能被「確認」，
+   * 事件紀錄還會一邊記成 OUTBOUND、一邊記成 LENT，事後對不起來。
    */
-  it('已歸還的單也收在「已出貨」頁籤裡，不會不見', async () => {
+  it('查詢只取銷貨單，借用單不會進到這張清單', () => {
+    expect(queries.fetchDNList).toContain("<> 'LEND'");
+  });
+
+  it('待確認以外的單都收在「已出貨」頁籤裡，不會不見', async () => {
     renderComponent();
     await waitFor(() => expect(screen.getByText('DN-20260828-01')).toBeInTheDocument());
 
@@ -184,13 +190,19 @@ describe('DNList 出貨單列表狀態查詢與搜尋測試', () => {
     const pendingRow = screen.getByText('DN-20260828-01').closest('tr');
     expect(within(pendingRow).getByRole('button', { name: /刪除/ })).toBeInTheDocument();
 
-    // SHIPPED 與 RETURNED 單據應不可刪除（它們在歷史頁籤裡）
+    // 已出貨的單不可刪除（它們在歷史頁籤裡）
     fireEvent.click(screen.getByTestId('dn-tab-history'));
     await waitFor(() => expect(screen.getByText('DN-20260828-02')).toBeInTheDocument());
 
     const shippedRow = screen.getByText('DN-20260828-02').closest('tr');
-    const returnedRow = screen.getByText('DN-20260828-03').closest('tr');
+    const otherShipped = screen.getByText('DN-20260828-03').closest('tr');
     expect(within(shippedRow).queryByRole('button', { name: /刪除/ })).not.toBeInTheDocument();
-    expect(within(returnedRow).queryByRole('button', { name: /刪除/ })).not.toBeInTheDocument();
+    expect(within(otherShipped).queryByRole('button', { name: /刪除/ })).not.toBeInTheDocument();
+  });
+
+  it('列表上不再標示借用單，因為這裡不會有借用單', async () => {
+    renderComponent();
+    await waitFor(() => expect(screen.getByText('DN-20260828-01')).toBeInTheDocument());
+    expect(screen.queryByText('借用單')).not.toBeInTheDocument();
   });
 });
