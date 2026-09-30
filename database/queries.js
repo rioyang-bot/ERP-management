@@ -370,6 +370,24 @@ export const queries = {
     RETURNING id`,
   deleteAssetChecklistAll: `DELETE FROM asset_checklist_items WHERE asset_id = $1 RETURNING id`,
 
+  // --- 設備主機照片 ---
+  // 照片掛在單一台設備上，不是掛在型號上：同型號的兩台機器，機況與配置都不一樣，
+  // 日後要據以開立驗收單的也是那一台自己的照片。
+  fetchAssetPhotos: `
+    SELECT id, asset_id, file_name, original_name, mime_type, file_size,
+           uploaded_by, uploaded_by_name, created_at
+    FROM asset_photos
+    WHERE asset_id = $1
+    ORDER BY id ASC`,
+  insertAssetPhoto: `
+    INSERT INTO asset_photos (asset_id, file_name, original_name, mime_type, file_size, uploaded_by, uploaded_by_name)
+    VALUES ($1::integer, $2, $3, $4, $5::bigint, $6::integer, $7)
+    RETURNING id, file_name, original_name, mime_type, file_size, uploaded_by_name, created_at`,
+  // 一併回傳檔名：呼叫端要據此判斷刪的是哪一張，寫進事件紀錄
+  deleteAssetPhoto: `
+    DELETE FROM asset_photos WHERE id = $1::integer
+    RETURNING id, asset_id, file_name, original_name`,
+
   // --- 依廠牌自動套用 ---
   // 主項目綁定廠牌之後，該廠牌的每一台設備都要有這組「主要檢查功能」，
   // 不需要逐台按套用。這支查詢把還缺的補上（已經有的不動，勾選狀態不受影響）。
