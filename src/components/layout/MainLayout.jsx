@@ -5,6 +5,7 @@ import { useTheme } from '../../context/ThemeContext';
 import logo from '../../assets/logo.png';
 import { ChevronRight, Key, X, Sun, Moon, LogOut, Plus } from 'lucide-react';
 import { validatePassword } from '../../utils/auth';
+import { logUpdate } from '../../utils/auditLogger';
 import LiveEventDrawer from './LiveEventDrawer';
 import './MainLayout.css';
 
@@ -70,6 +71,10 @@ const MainLayout = () => {
       // 前端不再取得 password_hash，也不再自行計算雜湊。
       const updateRes = await window.electronAPI.authChangePassword(pwdOld, pwdNew);
       if (updateRes.success) {
+        // 自己改自己的密碼原本完全不留痕跡。帳號相關的異動要查得到是誰、什麼時候改的。
+        await logUpdate('USER', authUser?.username || '', authUser?.full_name || authUser?.username || '使用者',
+          `使用者 [${authUser?.username || ''}] 自行變更登入密碼`,
+          { username: authUser?.username, selfService: true });
         alert('密碼變更成功，其他裝置的登入狀態已一併登出。');
         setShowPasswordModal(false);
         setPwdOld('');

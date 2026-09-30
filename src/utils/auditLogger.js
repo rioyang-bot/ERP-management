@@ -14,7 +14,12 @@ export const MODULE_MAP = {
   PARTNER: { key: 'PARTNER', label: '夥伴管理' },
   PROJECT: { key: 'PROJECT', label: '專案管理' },
   USER: { key: 'USER', label: '帳號權限' },
-  SETTING: { key: 'SETTING', label: '系統設定' }
+  SETTING: { key: 'SETTING', label: '系統設定' },
+  // 維修的紀錄一直都是用 'REPAIR' 寫進去的，但這張表裡沒有它，
+  // 事件紀錄上就顯示英文的 REPAIR，模組下拉選單也篩不出來。
+  REPAIR: { key: 'REPAIR', label: '維修管理' },
+  // 主檔整併這類資料維護工具用的模組，理由同上
+  SYSTEM_SETTINGS: { key: 'SYSTEM_SETTINGS', label: '系統維護' }
 };
 
 export const ACTION_TYPES = {
@@ -22,7 +27,11 @@ export const ACTION_TYPES = {
   UPDATE: 'UPDATE',
   DELETE: 'DELETE',
   STATUS_CHANGE: 'STATUS_CHANGE',
-  BATCH_IMPORT: 'BATCH_IMPORT'
+  BATCH_IMPORT: 'BATCH_IMPORT',
+  // 登入與登出由伺服器端寫入（前端拿不到來源 IP，也擋不住失敗的登入）
+  LOGIN: 'LOGIN',
+  LOGIN_FAILED: 'LOGIN_FAILED',
+  LOGOUT: 'LOGOUT'
 };
 
 /**
