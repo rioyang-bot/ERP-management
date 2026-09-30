@@ -307,11 +307,39 @@ export const queries = {
     JOIN checklist_groups g ON i.group_id = g.id
     ORDER BY i.group_id ASC, i.kind DESC, i.sort_order ASC, i.id ASC
   `,
+  // description：拍照項目的拍攝指示，其他種類不填
   insertChecklistItem: `
-    INSERT INTO checklist_items (group_id, kind, name, sort_order)
-    VALUES ($1, $2, TRIM($3), COALESCE($4, 0))
-    RETURNING id, name, kind`,
+    INSERT INTO checklist_items (group_id, kind, name, sort_order, description)
+    VALUES ($1, $2, TRIM($3), COALESCE($4, 0), NULLIF(TRIM(COALESCE($5, '')), ''))
+    RETURNING id, name, kind, description`,
   updateChecklistItemName: `UPDATE checklist_items SET name = TRIM($1) WHERE id = $2 RETURNING id`,
+  updateChecklistItemDescription: `
+    UPDATE checklist_items SET description = NULLIF(TRIM(COALESCE($1, '')), '')
+    WHERE id = $2 RETURNING id, description`,
+  // 範本改說明時，設備上仍連著範本的那些列跟著改（與改名的處理一致）
+  syncAssetChecklistDescriptionBySource: `
+    UPDATE asset_checklist_items
+    SET description = NULLIF(TRIM(COALESCE($1, '')), ''), updated_at = CURRENT_TIMESTAMP
+    WHERE source_item_id = $2
+    RETURNING id`,
+
+  // --- 拍照項目範例 ---
+  // 使用者自己維護的常用拍照項目（項目 + 說明），新增拍照項目時可直接選取。
+  // 從範例加進去之後就是獨立的一筆，之後改範例不會回頭改已經加進去的項目。
+  fetchChecklistPhotoExamples: `
+    SELECT id, name, description, sort_order
+    FROM checklist_photo_examples
+    ORDER BY sort_order ASC, id ASC`,
+  insertChecklistPhotoExample: `
+    INSERT INTO checklist_photo_examples (name, description, sort_order)
+    VALUES (TRIM($1), NULLIF(TRIM(COALESCE($2, '')), ''), COALESCE($3, 0))
+    RETURNING id, name, description`,
+  updateChecklistPhotoExample: `
+    UPDATE checklist_photo_examples
+    SET name = TRIM($1), description = NULLIF(TRIM(COALESCE($2, '')), ''), updated_at = CURRENT_TIMESTAMP
+    WHERE id = $3
+    RETURNING id`,
+  deleteChecklistPhotoExample: `DELETE FROM checklist_photo_examples WHERE id = $1 RETURNING id, name`,
   // 細項是否隨主要檢查功能一起自動套用到該廠牌的每一台設備
   setChecklistItemAutoApply: `
     UPDATE checklist_items SET auto_apply = $1 WHERE id = $2 RETURNING id, auto_apply`,
@@ -427,8 +455,8 @@ export const queries = {
   //
   // $1 傳入資產 id 只同步那一台，傳 null 則同步全部。
   syncBrandChecklistToAssets: `
-    INSERT INTO asset_checklist_items (asset_id, group_name, kind, item_name, source_item_id, sort_order)
-    SELECT a.id, g.name, i.kind, i.name, i.id, COALESCE(i.sort_order, 0)
+    INSERT INTO asset_checklist_items (asset_id, group_name, kind, item_name, source_item_id, sort_order, description)
+    SELECT a.id, g.name, i.kind, i.name, i.id, COALESCE(i.sort_order, 0), i.description
     FROM checklist_groups g
     JOIN checklist_items i ON i.group_id = g.id
                           AND (i.kind IN ('MAIN', 'PHOTO') OR COALESCE(i.auto_apply, FALSE))

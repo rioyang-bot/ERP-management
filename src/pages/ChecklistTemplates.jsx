@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
-  ClipboardCheck, Plus, Trash2, Pencil, Check, X, Layers, ListChecks, Info, Tag, RefreshCw, GripVertical, Camera,
+  ClipboardCheck, Plus, Trash2, Pencil, Check, X, Layers, ListChecks, Info, Tag, RefreshCw, GripVertical, Camera, BookmarkPlus,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { logCreate, logDelete, logUpdate } from '../utils/auditLogger';
 import { moveItem, buildOrderParam } from '../utils/reorderList';
 import { groupScopeLabel } from '../utils/checklistGroupScope';
+import PhotoExampleLibrary from '../components/PhotoExampleLibrary';
 
 /**
  * 出機檢查表範本 (Pre-delivery Checklist Templates)
@@ -19,6 +20,8 @@ import { groupScopeLabel } from '../utils/checklistGroupScope';
  *     │        自動出現在該廠牌的每一台設備上，省去逐台加的功夫。
  *     └─ 拍照項目：每台設備要拍的照片（例如正面、背面），自動套用，
  *                  在設備的主機照片區逐項上傳，有照片就算完成。
+ *                  可附上拍攝說明，設備上每一項底下直接顯示；
+ *                  常用的項目與說明存成「拍照項目範例」，新增時直接選取。
  *
  * 這裡改的是「範本」。新增主項目或主要檢查功能之後會立刻同步到所有符合的
  * 設備；但設備端保留的是套用當下的快照，在這裡刪掉任何項目都不會讓已經
@@ -66,7 +69,10 @@ const ChecklistTemplates = () => {
 
   // 新增項目（兩組各自一個輸入框）
   const [newItemText, setNewItemText] = useState({ [KIND_MAIN]: '', [KIND_DETAIL]: '', [KIND_PHOTO]: '' });
-  const [editingItem, setEditingItem] = useState(null); // { id, name }
+  const [editingItem, setEditingItem] = useState(null); // { id, name, kind, description }
+  // 拍照項目的拍攝說明（新增時）與範例
+  const [newPhotoDesc, setNewPhotoDesc] = useState('');
+  const [photoExamples, setPhotoExamples] = useState([]);
   // 「已套用到 N 台設備」的提示，讓使用者看得到自動套用真的發生了
   const [syncNotice, setSyncNotice] = useState('');
   // 拖曳排序中的項目
@@ -93,7 +99,19 @@ const ChecklistTemplates = () => {
     }
   }, []);
 
+  // 範例讀不到（例如資料庫變更還沒套用）只影響範例，不擋整頁
+  const fetchPhotoExamples = useCallback(async () => {
+    try {
+      const res = await window.electronAPI.namedQuery('fetchChecklistPhotoExamples');
+      setPhotoExamples(res.success ? (res.rows || []) : []);
+    } catch (e) {
+      console.error('讀取拍照項目範例失敗:', e);
+      setPhotoExamples([]);
+    }
+  }, []);
+
   useEffect(() => { fetchAll(); }, [fetchAll]);
+  useEffect(() => { fetchPhotoExamples(); }, [fetchPhotoExamples]);
 
   const loadModels = useCallback(async (brand) => {
     if (!brand || modelsByBrand[brand]) return;
@@ -215,16 +233,29 @@ const ChecklistTemplates = () => {
   };
 
   // --- 項目 ---
-  const handleAddItem = async (kind) => {
-    const name = (newItemText[kind] || '').trim();
+  /**
+   * @param {object} [preset] 從範例加入時帶入 { name, description }，不讀輸入框
+   */
+  const handleAddItem = async (kind, preset = null) => {
+    const name = (preset ? preset.name : newItemText[kind] || '').trim();
     if (!selectedGroup) return alert('請先選擇左側的主項目');
     if (!name) return;
     const sameKind = groupItems.filter((i) => i.kind === kind);
+    if (sameKind.some((i) => (i.name || '').trim().toUpperCase() === name.toUpperCase())) {
+      return alert(`「${name}」已經在這個主項目的${KIND_META[kind].title}裡了。`);
+    }
+    // 只有拍照項目有說明
+    const description = kind === KIND_PHOTO ? (preset ? preset.description || '' : newPhotoDesc).trim() : '';
     try {
-      const res = await window.electronAPI.namedQuery('insertChecklistItem', [selectedGroup.id, kind, name, sameKind.length]);
+      const res = await window.electronAPI.namedQuery('insertChecklistItem', [selectedGroup.id, kind, name, sameKind.length, description || null]);
       if (!res.success) throw new Error(res.error || '新增失敗');
-      logCreate('SETTING', res.rows?.[0]?.id, name, `新增出機檢查${KIND_META[kind].label} [${name}] 至 [${selectedGroup.name}]`, { group: selectedGroup.name, kind, name });
-      setNewItemText((prev) => ({ ...prev, [kind]: '' }));
+      logCreate('SETTING', res.rows?.[0]?.id, name,
+        `新增出機檢查${KIND_META[kind].label} [${name}] 至 [${selectedGroup.name}]${preset ? '（取自範例）' : ''}`,
+        { group: selectedGroup.name, kind, name, description: description || null, fromExample: !!preset });
+      if (!preset) {
+        setNewItemText((prev) => ({ ...prev, [kind]: '' }));
+        if (kind === KIND_PHOTO) setNewPhotoDesc('');
+      }
 
       // 主要檢查功能與拍照項目一建立就要出現在所有符合廠牌的設備上
       if (AUTO_KINDS.includes(kind)) {
@@ -334,18 +365,45 @@ const ChecklistTemplates = () => {
   const handleSaveItem = async () => {
     const name = (editingItem.name || '').trim();
     if (!name) return;
+    const isPhoto = editingItem.kind === KIND_PHOTO;
+    const description = (editingItem.description || '').trim();
+    const descChanged = isPhoto && description !== (editingItem._origDescription || '').trim();
     try {
       const res = await window.electronAPI.namedQuery('updateChecklistItemName', [name, editingItem.id]);
       if (!res.success) throw new Error(res.error || '修改失敗');
       // 設備端已套用的同一個項目跟著改名，否則同步會把新名稱再補一份進去
       await window.electronAPI.namedQuery('renameAssetChecklistItemsBySource', [name, editingItem.id]);
+      if (descChanged) {
+        const dRes = await window.electronAPI.namedQuery('updateChecklistItemDescription', [description || null, editingItem.id]);
+        if (!dRes.success) throw new Error(dRes.error || '修改說明失敗');
+        // 已套用到設備上的拍照項目，說明跟著更新
+        await window.electronAPI.namedQuery('syncAssetChecklistDescriptionBySource', [description || null, editingItem.id]);
+      }
       logUpdate('SETTING', editingItem.id, name,
-        `修改出機檢查項目名稱 [${editingItem._origName || ''}] → [${name}]`,
-        { before: editingItem._origName || '', after: name });
+        `修改出機檢查項目${editingItem._origName !== name ? `名稱 [${editingItem._origName || ''}] → [${name}]` : ` [${name}]`}${descChanged ? '，並更新拍攝說明' : ''}`,
+        { before: editingItem._origName || '', after: name, ...(descChanged ? { description: description || null } : {}) });
       setEditingItem(null);
       await fetchAll();
     } catch (err) {
       alert(`修改失敗：${err.message}`);
+    }
+  };
+
+  /** 把主項目裡寫好的拍照項目存成範例，之後其他主項目可以直接選 */
+  const handleSaveAsExample = async (item) => {
+    if (photoExamples.some((ex) => (ex.name || '').trim().toUpperCase() === (item.name || '').trim().toUpperCase())) {
+      return alert(`範例裡已經有「${item.name}」了。要更新說明請到下方的「拍照項目範例」修改。`);
+    }
+    if (!window.confirm(`確定要把「${item.name}」連同說明存成拍照項目範例嗎？`)) return;
+    try {
+      const res = await window.electronAPI.namedQuery('insertChecklistPhotoExample', [item.name, item.description || null, photoExamples.length]);
+      if (!res.success) throw new Error(res.error || '新增失敗');
+      logCreate('SETTING', res.rows?.[0]?.id, item.name, `新增拍照項目範例 [${item.name}]（取自主項目 [${selectedGroup?.name || ''}]）`,
+        { name: item.name, description: item.description || null });
+      await fetchPhotoExamples();
+      setSyncNotice(`「${item.name}」已存成範例`);
+    } catch (err) {
+      alert(`存成範例失敗：${err.message}`);
     }
   };
 
@@ -373,6 +431,7 @@ const ChecklistTemplates = () => {
     border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)',
     color: 'var(--input-text)', fontSize: '13px', boxSizing: 'border-box', outline: 'none',
   };
+  const textareaStyle = { ...inputStyle, minHeight: '56px', resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.6 };
   const iconBtn = (color) => ({
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
     width: '28px', height: '28px', padding: 0, borderRadius: '6px',
@@ -384,6 +443,7 @@ const ChecklistTemplates = () => {
   const renderItemColumn = (kind) => {
     const meta = KIND_META[kind];
     const isDetail = kind === KIND_DETAIL;
+    const isPhoto = kind === KIND_PHOTO;
     const list = itemsOfKind[kind];
     const accent = meta.accent;
     const { Icon } = meta;
@@ -402,7 +462,31 @@ const ChecklistTemplates = () => {
           {list.length > 1 && '　拖曳左側的握把即可調整順序，設備上與列印的先後會跟著改。'}
         </p>
 
-        <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
+        {isPhoto && (
+          <select
+            value=""
+            onChange={(e) => {
+              const ex = photoExamples.find((x) => String(x.id) === e.target.value);
+              if (ex) handleAddItem(KIND_PHOTO, ex);
+            }}
+            disabled={!selectedGroup || photoExamples.length === 0}
+            aria-label="從範例加入拍照項目"
+            style={{ ...inputStyle, marginBottom: '6px' }}
+          >
+            <option value="">
+              {photoExamples.length === 0 ? '尚無範例，可在下方「拍照項目範例」建立' : '從範例加入…'}
+            </option>
+            {photoExamples.map((ex) => {
+              const exists = list.some((i) => (i.name || '').trim().toUpperCase() === (ex.name || '').trim().toUpperCase());
+              return (
+                <option key={ex.id} value={ex.id} disabled={exists}>
+                  {ex.name}{exists ? '（已加入）' : ''}
+                </option>
+              );
+            })}
+          </select>
+        )}
+        <div style={{ display: 'flex', gap: '6px', marginBottom: isPhoto ? '6px' : '12px' }}>
           <input
             type="text"
             value={newItemText[kind]}
@@ -429,6 +513,16 @@ const ChecklistTemplates = () => {
             <Plus size={15} /> 新增
           </button>
         </div>
+        {isPhoto && (
+          <textarea
+            value={newPhotoDesc}
+            onChange={(e) => setNewPhotoDesc(e.target.value)}
+            placeholder={'拍攝說明（選填），例如：\n關機狀態、正面平視，前面板與序號貼紙都要清楚入鏡'}
+            aria-label="拍照項目說明"
+            disabled={!selectedGroup}
+            style={{ ...textareaStyle, marginBottom: '12px' }}
+          />
+        )}
 
         <div style={{ flex: 1, overflowY: 'auto', minHeight: '120px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
           {list.length === 0 ? (
@@ -444,7 +538,7 @@ const ChecklistTemplates = () => {
               onDrop={(e) => handleItemDrop(e, item)}
               onDragEnd={handleItemDragEnd}
               style={{
-                display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px',
+                display: 'flex', alignItems: isPhoto ? 'flex-start' : 'center', gap: '8px', padding: '8px 10px',
                 borderRadius: '8px',
                 border: dragOverId === item.id && draggingItem?.id !== item.id
                   ? `2px solid ${accent}`
@@ -476,28 +570,56 @@ const ChecklistTemplates = () => {
               )}
               {editingItem?.id === item.id ? (
                 <>
-                  <input
-                    type="text"
-                    value={editingItem.name}
-                    onChange={(e) => setEditingItem({ ...editingItem, name: e.target.value })}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSaveItem(); } }}
-                    style={{ ...inputStyle, padding: '4px 8px' }}
-                    autoFocus
-                  />
+                  <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <input
+                      type="text"
+                      value={editingItem.name}
+                      onChange={(e) => setEditingItem({ ...editingItem, name: e.target.value })}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSaveItem(); } }}
+                      style={{ ...inputStyle, padding: '4px 8px' }}
+                      aria-label="修改項目名稱"
+                      autoFocus
+                    />
+                    {isPhoto && (
+                      <textarea
+                        value={editingItem.description || ''}
+                        onChange={(e) => setEditingItem({ ...editingItem, description: e.target.value })}
+                        placeholder="拍攝說明（選填）"
+                        aria-label="修改拍照項目說明"
+                        style={textareaStyle}
+                      />
+                    )}
+                  </div>
                   <button type="button" onClick={handleSaveItem} style={iconBtn('#10b981')} title="儲存" aria-label="儲存項目"><Check size={14} /></button>
                   <button type="button" onClick={() => setEditingItem(null)} style={iconBtn('var(--text-muted)')} title="取消" aria-label="取消編輯"><X size={14} /></button>
                 </>
               ) : (
                 <>
-                  <span style={{ flex: 1, fontSize: '13px', color: 'var(--text-main)', fontWeight: 600, wordBreak: 'break-word' }}>
+                  <span style={{ flex: 1, minWidth: 0, fontSize: '13px', color: 'var(--text-main)', fontWeight: 600, wordBreak: 'break-word' }}>
                     {item.name}
                     {isDetail && item.auto_apply && (
                       <span style={{ marginLeft: '6px', fontSize: '10px', fontWeight: 800, padding: '1px 7px', borderRadius: '8px', backgroundColor: 'rgba(8, 145, 178, 0.14)', color: '#0891b2', whiteSpace: 'nowrap' }}>
                         自動套用
                       </span>
                     )}
+                    {isPhoto && item.description && (
+                      <span style={{ display: 'block', marginTop: '4px', fontSize: '12px', fontWeight: 500, color: 'var(--text-muted)', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+                        {item.description}
+                      </span>
+                    )}
                   </span>
-                  <button type="button" onClick={() => setEditingItem({ id: item.id, name: item.name, _origName: item.name })} style={iconBtn('#f59e0b')} title="修改名稱" aria-label={`修改 ${item.name}`}><Pencil size={13} /></button>
+                  {isPhoto && (
+                    <button type="button" onClick={() => handleSaveAsExample(item)} style={iconBtn('#ea580c')} title="存成拍照項目範例" aria-label={`把 ${item.name} 存成範例`}><BookmarkPlus size={13} /></button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setEditingItem({ id: item.id, kind: item.kind, name: item.name, _origName: item.name, description: item.description || '', _origDescription: item.description || '' })}
+                    style={iconBtn('#f59e0b')}
+                    title={isPhoto ? '修改名稱與說明' : '修改名稱'}
+                    aria-label={`修改 ${item.name}`}
+                  >
+                    <Pencil size={13} />
+                  </button>
                   <button type="button" onClick={() => handleDeleteItem(item)} style={iconBtn('#ef4444')} title="刪除" aria-label={`刪除 ${item.name}`}><Trash2 size={13} /></button>
                 </>
               )}
@@ -727,6 +849,13 @@ const ChecklistTemplates = () => {
               {renderItemColumn(KIND_DETAIL)}
               {renderItemColumn(KIND_PHOTO)}
             </div>
+            <PhotoExampleLibrary
+              examples={photoExamples}
+              onChanged={fetchPhotoExamples}
+              card={card}
+              inputStyle={inputStyle}
+              iconBtn={iconBtn}
+            />
           </div>
         </div>
       )}
