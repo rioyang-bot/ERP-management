@@ -416,13 +416,38 @@ export const queries = {
   // 各設備的完成度，供設備列表顯示進度。
   // 單獨一支查詢而不是併進 fetchAssetsList：尚未套用資料庫變更時
   // 也只有這支會失敗，不會整個設備列表讀不出來。
+  //
+  //   total / done              檢查：主要檢查功能（勾選才算）+ 細項（有填內容才算）
+  //   photo_total / photo_done  拍照項目：有照片才算
+  //   photo_count               這台設備上傳的照片總數（含不屬於任何拍照項目的其他照片）
+  // 沒有任何檢查項目、但有上傳照片的設備也要列出來，因此照片另外彙總再合併。
   fetchAssetChecklistSummary: `
-    SELECT asset_id,
-           COUNT(*)::int AS total,
-           COUNT(*) FILTER (WHERE is_checked)::int AS done
-    FROM asset_checklist_items
-    WHERE kind = 'MAIN'
-    GROUP BY asset_id
+    WITH items AS (
+      SELECT c.asset_id,
+             COUNT(*) FILTER (WHERE c.kind IN ('MAIN', 'DETAIL'))::int AS total,
+             COUNT(*) FILTER (
+               WHERE (c.kind = 'MAIN' AND COALESCE(c.is_checked, FALSE))
+                  OR (c.kind = 'DETAIL' AND NULLIF(TRIM(COALESCE(c.content, '')), '') IS NOT NULL)
+             )::int AS done,
+             COUNT(*) FILTER (WHERE c.kind = 'PHOTO')::int AS photo_total,
+             COUNT(*) FILTER (
+               WHERE c.kind = 'PHOTO'
+                 AND EXISTS (SELECT 1 FROM asset_photos p WHERE p.checklist_item_id = c.id)
+             )::int AS photo_done
+      FROM asset_checklist_items c
+      GROUP BY c.asset_id
+    ),
+    photos AS (
+      SELECT asset_id, COUNT(*)::int AS photo_count FROM asset_photos GROUP BY asset_id
+    )
+    SELECT COALESCE(i.asset_id, p.asset_id) AS asset_id,
+           COALESCE(i.total, 0) AS total,
+           COALESCE(i.done, 0) AS done,
+           COALESCE(i.photo_total, 0) AS photo_total,
+           COALESCE(i.photo_done, 0) AS photo_done,
+           COALESCE(p.photo_count, 0) AS photo_count
+    FROM items i
+    FULL JOIN photos p ON p.asset_id = i.asset_id
   `,
   // 重複套用同一個項目時不重寫，避免把已經勾好的狀態洗掉
   insertAssetChecklistItem: `

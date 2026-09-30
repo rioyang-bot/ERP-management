@@ -303,14 +303,26 @@ describe('出機檢查表：單一設備', () => {
       expect((await screen.findByLabelText('OS 內容')).value).toBe('RH9.6');
     });
 
-    it('完成度只算主要檢查功能，細項不影響', async () => {
+    // 與設備列表的「檢查 x/y」同一套算法：主要檢查功能勾選才算、細項填了內容才算
+    it('完成度包含細項，沒填內容的細項算未完成', async () => {
       setup({ applied: [
         { ...AUTO_APPLIED[0], is_checked: true },
         { ...AUTO_APPLIED[1], is_checked: true },
-        WITH_DETAIL[2],
+        // 複製一份：其他測試會改到共用物件的內容
+        { ...WITH_DETAIL[2], content: null },
       ] });
       renderModal();
-      expect(await screen.findByText(/已完成 2 \/ 2/)).toBeInTheDocument();
+      expect(await screen.findByTestId('header-check-progress')).toHaveTextContent('已完成 2 / 3');
+    });
+
+    it('細項填了內容就算完成', async () => {
+      setup({ applied: [
+        { ...AUTO_APPLIED[0], is_checked: true },
+        { ...AUTO_APPLIED[1], is_checked: false },
+        { ...WITH_DETAIL[2], content: 'RH9.6' },
+      ] });
+      renderModal();
+      expect(await screen.findByTestId('header-check-progress')).toHaveTextContent('已完成 2 / 3');
     });
   });
 
