@@ -5,12 +5,14 @@ import {
 import { logUpdate } from '../utils/auditLogger';
 import DeviceChecklistPrintModal from './DeviceChecklistPrintModal';
 import AssetPhotoSection from './AssetPhotoSection';
+import { groupScopeLabel, groupMatchLevel, pickDefaultGroup } from '../utils/checklistGroupScope';
 
 /**
  * 單一設備的出機檢查表
  *
  * 主要檢查功能是「依廠牌自動套用」的：主項目綁定哪個廠牌，該廠牌的每一台設備
- * 就都有那一組，開啟這個視窗時會先同步一次，不需要逐台按套用。
+ * 就都有那一組；主項目再指定型號的，只套用到那個型號。開啟這個視窗時會先
+ * 同步一次，不需要逐台按套用。
  *
  * 細項才是逐台決定的 —— 每台設備要檢查的東西不盡相同，可以從範本挑選，
  * 也可以直接為這台設備新增自己的細項。
@@ -50,8 +52,6 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
   const [pendingContents, setPendingContents] = useState({});
   const [savingChanges, setSavingChanges] = useState(false);
 
-  const deviceBrand = (device?.brand || '').trim().toUpperCase();
-
   const loadAll = useCallback(async () => {
     if (!device?.id) return;
     setLoading(true);
@@ -90,13 +90,11 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
     loadAll();
   }, [isOpen, loadAll]);
 
-  // 挑細項時預設看這台設備自己廠牌的那一組；沒有的話退回通用的
+  // 挑細項時預設看這台設備自己型號的那一組；沒有就看廠牌的，再退回通用的
   useEffect(() => {
     if (!isOpen || groups.length === 0 || selectedGroupId !== null) return;
-    const sameBrand = groups.find((g) => deviceBrand && (g.brand || '').trim().toUpperCase() === deviceBrand);
-    const generic = groups.find((g) => !g.brand);
-    setSelectedGroupId((sameBrand || generic || groups[0]).id);
-  }, [isOpen, groups, selectedGroupId, deviceBrand]);
+    setSelectedGroupId(pickDefaultGroup(groups, device).id);
+  }, [isOpen, groups, selectedGroupId, device]);
 
   const selectedGroup = groups.find((g) => g.id === selectedGroupId) || null;
   const detailItems = useMemo(
@@ -402,13 +400,13 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
                 <section style={{ ...card, padding: '14px 16px', backgroundColor: 'rgba(8, 145, 178, 0.06)', borderColor: 'rgba(8, 145, 178, 0.3)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                     <ListChecks size={17} color="#0891b2" />
-                    <b style={{ fontSize: '14px', color: 'var(--text-main)' }}>主要檢查功能已依廠牌自動套用</b>
+                    <b style={{ fontSize: '14px', color: 'var(--text-main)' }}>主要檢查功能已依廠牌／型號自動套用</b>
                     <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 700 }}>
-                      （{device.brand || '未填廠牌'} · 共 {autoCount} 項）
+                      （{device.brand || '未填廠牌'}{device.model ? ` · ${device.model}` : ''} · 共 {autoCount} 項）
                     </span>
                   </div>
                   <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '6px', lineHeight: 1.7 }}>
-                    在「報表中心 → 出機檢查表」新增主要檢查功能後，該廠牌的所有設備都會自動帶入，不需要逐台操作。
+                    在「報表中心 → 出機檢查表」新增主要檢查功能後，該廠牌（或指定型號）的所有設備都會自動帶入，不需要逐台操作。
                     {groups.length === 0 && ' 目前還沒有任何範本，請先到該頁面建立主項目。'}
                   </div>
                 </section>
@@ -437,12 +435,12 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
                         style={{ padding: '8px 10px', borderRadius: '8px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', fontSize: '13px', minWidth: '260px' }}
                       >
                         {groups.map((g) => (
-                          <option key={g.id} value={g.id}>{g.name}（{g.brand || '通用'}）</option>
+                          <option key={g.id} value={g.id}>{g.name}（{groupScopeLabel(g)}）</option>
                         ))}
                       </select>
-                      {selectedGroup && deviceBrand && (selectedGroup.brand || '').trim().toUpperCase() === deviceBrand && (
+                      {selectedGroup && ['model', 'brand'].includes(groupMatchLevel(selectedGroup, device)) && (
                         <span style={{ fontSize: '11px', fontWeight: 800, padding: '2px 10px', borderRadius: '10px', backgroundColor: 'rgba(8, 145, 178, 0.14)', color: '#0891b2' }}>
-                          這台設備的廠牌
+                          {groupMatchLevel(selectedGroup, device) === 'model' ? '這台設備的型號' : '這台設備的廠牌'}
                         </span>
                       )}
                     </div>
