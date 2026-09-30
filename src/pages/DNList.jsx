@@ -4,7 +4,6 @@ import {
   Printer, Paperclip, Upload, FileCheck, ExternalLink, X, Pencil, Clock  
 } from 'lucide-react';
 import { logStatusChange, logDelete, logUpdate } from '../utils/auditLogger';
-import LentOrderPrintModal from '../components/LentOrderPrintModal';
 import DeliveryReceiptPrintModal from '../components/DeliveryReceiptPrintModal';
 import OutboundRegistrationModal from '../components/OutboundRegistrationModal';
 import { usePageSize } from '../utils/usePageSize';
@@ -17,8 +16,7 @@ const DNList = ({ isSplitMode = false }) => {
    * 兩個頁籤，與借用單列表一致。
    *
    * 「已出貨」收的是 PENDING 以外的全部，而不是只有 SHIPPED ——
-   * 這張清單也看得到借用單（request_type 為 LEND），它們結案後是 RETURNED，
-   * 只認 SHIPPED 的話那些單會整個消失。
+   * 多一個狀態時寧可讓它出現在歷史裡，也不要整張單從畫面上消失。
    */
   const [activeTab, setActiveTab] = useState('PENDING');
   const [startDate, setStartDate] = useState('');
@@ -43,7 +41,6 @@ const DNList = ({ isSplitMode = false }) => {
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const [printModal, setPrintModal] = useState({ show: false, dn: null, items: [] });
   const [deliveryReceiptModal, setDeliveryReceiptModal] = useState({ show: false, dn: null, items: [] });
   
   // 客戶簽收單據相關狀態與 Refs
@@ -243,14 +240,10 @@ const DNList = ({ isSplitMode = false }) => {
       // 使用者再按一次確認就會把前 2 個再扣一次。
       const steps = [];
       const shipDate = selectedDN.shipping_date || new Date().toISOString().split('T')[0];
-      const isLend = selectedDN.request_type === 'LEND';
-
       for (const item of dnItems) {
         if (item.category_name === '耗材') {
-           // 借用單也會出現在本列表，從這裡確認時同樣要記為「借出中」，
-           // 不然日後歸還會找不到要加回多少（與借用單列表的處理保持一致）
            steps.push({
-             queryName: isLend ? 'updateStockQtyOnLendOut' : 'updateStockQtyOnOutbound',
+             queryName: 'updateStockQtyOnOutbound',
              params: [item.quantity, item.item_id],
              // 庫存不足會被 stock_qty >= $1 擋下而變成 0 筆異動，
              // SQL 本身不報錯，必須在此要求至少異動一筆才會中止交易
@@ -259,10 +252,9 @@ const DNList = ({ isSplitMode = false }) => {
            });
         } else if (item.category_name === '硬體' || item.category_name === '設備') {
            const destLocation = item.location || selectedDN.location;
-           const assetStatus = isLend ? 'LENT' : 'SHIPPED';
            steps.push({
              queryName: 'updateAssetStatusLocationAndInstalledDateBySn',
-             params: [assetStatus, destLocation, shipDate, item.sn],
+             params: ['SHIPPED', destLocation, shipDate, item.sn],
              expectRows: 1,
              errorMessage: `序號 [${item.sn}] 找不到對應資產，無法變更狀態。`,
            });
@@ -545,11 +537,6 @@ const DNList = ({ isSplitMode = false }) => {
                 <tr key={dn.id} className="row-hover" style={{ borderBottom: '1px solid var(--table-border)', color: 'var(--text-main)' }}>
                   <td style={{ padding: '12px', fontWeight: 700, color: 'var(--text-main)' }}>
                     {dn.request_no}
-                    {dn.request_type === 'LEND' && (
-                      <span style={{ marginLeft: '8px', fontSize: '0.75rem', backgroundColor: '#eab308', color: 'white', padding: '2px 6px', borderRadius: '4px', verticalAlign: 'middle' }}>
-                        借用單
-                      </span>
-                    )}
                   </td>
                   <td style={{ padding: '12px', color: 'var(--text-muted)' }}>{new Date(dn.shipping_date).toLocaleDateString()}</td>
                   <td style={{ padding: '12px' }}>
@@ -831,14 +818,6 @@ const DNList = ({ isSplitMode = false }) => {
             </div>
 
             <div className="modal-footer" style={{ padding: '12px 20px', borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)', display: 'flex', justifyContent: 'flex-end', gap: '12px', flexWrap: 'wrap' }}>
-              {selectedDN.request_type === 'LEND' && (
-                <button 
-                  onClick={() => setPrintModal({ show: true, dn: selectedDN, items: dnItems })}
-                  style={{ padding: '8px 18px', borderRadius: '50px', border: 'none', backgroundColor: '#2563eb', color: 'white', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 2px 8px rgba(37, 99, 235, 0.3)' }}
-                >
-                  <Printer size={16} /> 🖨️ 產生借貨申請單 (PDF)
-                </button>
-              )}
               <button 
                 onClick={() => setDeliveryReceiptModal({ show: true, dn: selectedDN, items: dnItems })}
                 style={{ padding: '8px 18px', borderRadius: '50px', border: 'none', backgroundColor: '#059669', color: 'white', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 2px 8px rgba(5, 150, 105, 0.3)' }}
@@ -858,16 +837,6 @@ const DNList = ({ isSplitMode = false }) => {
             </div>
           </div>
         </div>
-      )}
-
-      {/* 借貨申請單列印/預覽 Modal */}
-      {printModal.show && printModal.dn && (
-        <LentOrderPrintModal
-          isOpen={printModal.show}
-          onClose={() => setPrintModal({ show: false, dn: null, items: [] })}
-          dnData={printModal.dn}
-          items={printModal.items}
-        />
       )}
 
       {/* 交貨簽收單列印/預覽 Modal */}

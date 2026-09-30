@@ -1191,6 +1191,9 @@ export const queries = {
       (POSITION(' ' IN $1) > 0 AND a.custom_attributes->>'project_name' = substring($1 from '^[^ ]+ (.*)$'))
     )
   `,
+  // 只回銷貨單。借用單有自己的列表與自己的流程（預計歸還日、逾期、撤銷借出、
+  // 歸還入庫），混在出貨單列表裡只會讓同一張單在兩個地方都能被「確認」，
+  // 事件紀錄還會一邊記成 OUTBOUND、一邊記成 LENT，事後對不起來。
   fetchDNList: `
     SELECT r.*, u.full_name as creator_name, 
            (SELECT COUNT(*) FROM outbound_items WHERE request_id = r.id) as item_count,
@@ -1203,6 +1206,7 @@ export const queries = {
            ) as project_name
     FROM outbound_requests r
     LEFT JOIN users u ON r.creator_id = u.id
+    WHERE COALESCE(r.request_type, 'SALE') <> 'LEND'
     ORDER BY r.created_at DESC
   `,
   fetchLentRequests: `
