@@ -853,10 +853,10 @@ describe('出機檢查表：範本維護頁', () => {
     expect(await screen.findByText(/該廠牌的每一台設備都會自動套用/)).toBeInTheDocument();
   });
 
-  it('說明清楚寫出刪除範本不會影響已套用的設備', async () => {
+  it('說明清楚寫出刪除範本時設備上哪些會移除、哪些保留', async () => {
     renderPage();
-    const notes = await screen.findAllByText(/都不會影響已經套用到設備上的檢查表/);
-    expect(notes.length).toBeGreaterThan(0);
+    expect(await screen.findByText(/還沒勾選、填寫或拍照的會一併移除/)).toBeInTheDocument();
+    expect(screen.getByText(/勾選、內容與照片都不會消失/)).toBeInTheDocument();
   });
 
   it('切換主項目時只顯示該主項目的項目', async () => {

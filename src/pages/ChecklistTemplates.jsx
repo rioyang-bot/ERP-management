@@ -24,8 +24,8 @@ import PhotoExampleLibrary from '../components/PhotoExampleLibrary';
  *                  常用的項目與說明存成「拍照項目範例」，新增時直接選取。
  *
  * 這裡改的是「範本」。新增主項目或主要檢查功能之後會立刻同步到所有符合的
- * 設備；但設備端保留的是套用當下的快照，在這裡刪掉任何項目都不會讓已經
- * 套用出去的檢查表消失。
+ * 設備。刪除範本項目時，設備上還沒有任何紀錄（沒勾選、沒填內容、沒照片）的
+ * 同一項一併移除；已經有紀錄的保留，檢查結果不會因為改範本而消失。
  */
 const KIND_MAIN = 'MAIN';
 const KIND_DETAIL = 'DETAIL';
@@ -220,12 +220,19 @@ const ChecklistTemplates = () => {
   const handleDeleteGroup = async (group) => {
     const msg = `確定要刪除主項目 [${group.name}] 嗎？\n\n`
       + `底下的 ${group.main_count} 個主要檢查功能、${group.detail_count} 個細項與 ${group.photo_count || 0} 個拍照項目會一併刪除。\n`
-      + '已經套用到設備上的檢查表不受影響（設備端保留的是套用當下的內容）。';
+      + '設備上還沒勾選、填寫或拍照的同一批項目會一併移除；已經有紀錄的保留，可在設備上自行移除。';
     if (!window.confirm(msg)) return;
     try {
+      // 先清設備上沒有紀錄的：範本一刪，設備列的來源就被設成 NULL，對不回來了
+      const cleaned = await window.electronAPI.namedQuery('deleteUnusedAssetChecklistItemsByGroup', [group.id]);
+      if (!cleaned.success) throw new Error(cleaned.error || '清除設備上的項目失敗');
       const res = await window.electronAPI.namedQuery('deleteChecklistGroup', [group.id]);
       if (!res.success) throw new Error(res.error || '刪除失敗');
-      logDelete('SETTING', group.id, group.name, `刪除出機檢查表主項目 [${group.name}]`, { name: group.name, brand: group.brand });
+      const removed = (cleaned.rows || []).length;
+      logDelete('SETTING', group.id, group.name,
+        `刪除出機檢查表主項目 [${group.name}]${removed > 0 ? `，並從設備上移除 ${removed} 筆未使用的項目` : ''}`,
+        { name: group.name, brand: group.brand, removedFromDevices: removed });
+      if (removed > 0) setSyncNotice(`已從設備上移除 ${removed} 筆還沒使用的項目`);
       await fetchAll();
     } catch (err) {
       alert(`刪除主項目失敗：${err.message}`);
@@ -408,11 +415,19 @@ const ChecklistTemplates = () => {
   };
 
   const handleDeleteItem = async (item) => {
-    if (!window.confirm(`確定要刪除 [${item.name}] 嗎？\n已經套用到設備上的相同項目不會被移除。`)) return;
+    if (!window.confirm(`確定要刪除 [${item.name}] 嗎？\n\n`
+      + '設備上還沒勾選、填寫或拍照的同一項會一併移除；已經有紀錄的保留，可在設備上自行移除。')) return;
     try {
+      // 先清設備上沒有紀錄的：範本一刪，設備列的來源就被設成 NULL，對不回來了
+      const cleaned = await window.electronAPI.namedQuery('deleteUnusedAssetChecklistItemsBySource', [item.id]);
+      if (!cleaned.success) throw new Error(cleaned.error || '清除設備上的項目失敗');
       const res = await window.electronAPI.namedQuery('deleteChecklistItem', [item.id]);
       if (!res.success) throw new Error(res.error || '刪除失敗');
-      logDelete('SETTING', item.id, item.name, `刪除出機檢查項目 [${item.name}]`, { name: item.name, kind: item.kind });
+      const removed = (cleaned.rows || []).length;
+      logDelete('SETTING', item.id, item.name,
+        `刪除出機檢查項目 [${item.name}]${removed > 0 ? `，並從 ${removed} 台設備上移除` : ''}`,
+        { name: item.name, kind: item.kind, removedFromDevices: removed });
+      if (removed > 0) setSyncNotice(`「${item.name}」已從 ${removed} 台設備上移除`);
       await fetchAll();
     } catch (err) {
       alert(`刪除失敗：${err.message}`);
@@ -689,7 +704,8 @@ const ChecklistTemplates = () => {
             會自動套用；人員在設備檢查表的「主機照片」區<b style={{ color: '#ea580c' }}>逐項上傳，有照片就算完成</b>。
           </div>
           <div>
-            • 在這裡刪除任何項目，<b style={{ color: 'var(--text-main)' }}>都不會影響已經套用到設備上的檢查表</b>：設備端保留的是套用當下的內容。
+            • 刪除範本項目時，設備上<b style={{ color: 'var(--text-main)' }}>還沒勾選、填寫或拍照的會一併移除</b>；
+            已經有紀錄的保留下來（勾選、內容與照片都不會消失），可在設備上自行移除。
           </div>
         </div>
       </div>
