@@ -1,3 +1,5 @@
+import { cleanFreeText } from './freeTextParams.js';
+
 /**
  * 依照 SECURITY_GUIDELINES.md 實作的安全性過濾函式
  * 用於處理 Named Query 的參數過濾
@@ -9,11 +11,16 @@
  *
  * 注意：本函式會「刪除」字串中的特殊字元，屬於破壞性處理。
  * 密碼相關流程刻意不使用它（見 server/authRoutes.js 的說明）。
+ * 說明文字類的參數另有白名單（見 server/freeTextParams.js），由 freeTextIdx 指定。
+ *
+ * @param {unknown[]} params
+ * @param {Set<number>} [freeTextIdx] 這些索引的參數視為說明文字，只做 cleanFreeText
  */
-export function sanitizeParams(params) {
+export function sanitizeParams(params, freeTextIdx = new Set()) {
   if (!Array.isArray(params)) return [];
-  return params.map(val => {
+  return params.map((val, idx) => {
     if (typeof val !== 'string') return val;
+    if (freeTextIdx.has(idx)) return cleanFreeText(val);
 
     // 1. 濾除規範要求的特殊字元列表 (排除雙引號 " 以支援 JSON)
     // | & ; $ % @ ' \ ( ) + CR LF ,

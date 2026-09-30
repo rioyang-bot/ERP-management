@@ -54,7 +54,7 @@ const resolveParams = (params, results) =>
  * @param {object} deps
  * @param {import('pg').Pool} deps.pool
  * @param {Record<string,string>} deps.namedQueries  具名查詢字典
- * @param {(params: unknown[]) => unknown[]} deps.prepareParams
+ * @param {(params: unknown[], sql: string, queryName: string) => unknown[]} deps.prepareParams
  *        參數前處理（清洗、JSON 字串化、補齊數量），與單筆查詢保持一致
  * @param {Array<{id?: string, queryName: string, params?: unknown[], expectRows?: number, errorMessage?: string}>} steps
  * @returns {Promise<{success: boolean, results?: object, error?: string, failedStep?: number}>}
@@ -83,7 +83,7 @@ export const runTransaction = async ({ pool, namedQueries, prepareParams }, step
     for (let i = 0; i < steps.length; i++) {
       const step = steps[i];
       const sql = namedQueries[step.queryName];
-      const params = prepareParams(resolveParams(step.params, results), sql);
+      const params = prepareParams(resolveParams(step.params, results), sql, step.queryName);
       const r = await client.query(sql, params);
 
       // 防呆條件未成立時 SQL 不會報錯，只是 0 筆異動。
