@@ -140,3 +140,19 @@ describe('履歷查詢的事件分類', () => {
     expect(sql).not.toContain("(l.details->>'itemMasterId')::integer");
   });
 });
+
+/**
+ * 耗材初始庫存那一列先前直接拿 stock_qty（目前庫存）當數量：
+ * 匯入 74、出貨 15，履歷卻顯示「初始 59」，看起來像出貨沒扣庫存。
+ */
+describe('耗材初始庫存要從現況倒推回匯入當下的數量', () => {
+  it.each(['fetchItemFlowHistory', 'fetchFlowHistory'])('%s 不再把目前庫存當初始數量', (name) => {
+    const sql = queries[name];
+    expect(sql).not.toContain('im.stock_qty as quantity');
+    const oneLine = sql.replace(/\s+/g, ' ');
+    // 實驗室與借出在外的量只是換位置，要加回來
+    expect(oneLine).toContain('COALESCE(im.stock_qty, 0) + COALESCE(im.lab_qty, 0) + COALESCE(im.lent_qty, 0)');
+    // 已出貨的銷貨單要加回來，借用單不算（借出中的已在 lent_qty，歸還的已回到 stock_qty）
+    expect(oneLine).toContain("o.status = 'SHIPPED' AND COALESCE(o.request_type, 'SALE') <> 'LEND'");
+  });
+});

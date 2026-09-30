@@ -1485,7 +1485,14 @@ export const queries = {
       im.created_at::date as transaction_date,
       '初始庫存/批次匯入' as order_no,
       '系統初始建立' as partner_name,
-      im.stock_qty as quantity,
+      -- 初始數量的算法見 fetchItemFlowHistory 同一段
+      (COALESCE(im.stock_qty, 0) + COALESCE(im.lab_qty, 0) + COALESCE(im.lent_qty, 0)
+        + COALESCE((
+          SELECT SUM(oi.quantity) FROM outbound_items oi
+          JOIN outbound_requests o ON oi.request_id = o.id
+          WHERE oi.item_id = im.id AND o.status = 'SHIPPED'
+            AND COALESCE(o.request_type, 'SALE') <> 'LEND'
+        ), 0))::integer as quantity,
       NULL as sn,
       im.brand,
       im.model,
@@ -1574,7 +1581,18 @@ export const queries = {
       im.created_at::date as transaction_date,
       '初始庫存/批次匯入' as order_no,
       '系統初始建立' as partner_name,
-      im.stock_qty as quantity,
+      -- 匯入當下的數量沒有另外存，只能從現況倒推。
+      -- 先前直接拿 stock_qty（目前庫存）當初始數量，出貨扣掉的量在這裡看不到，
+      -- 履歷就變成「初始 59、出了 15、庫存還是 59」，看起來像沒扣。
+      -- 移到實驗室、借出在外只是換位置，連同已出貨（銷貨）的量一併加回；
+      -- 借用單歸還後已回到 stock_qty，不必另外處理。
+      (COALESCE(im.stock_qty, 0) + COALESCE(im.lab_qty, 0) + COALESCE(im.lent_qty, 0)
+        + COALESCE((
+          SELECT SUM(oi.quantity) FROM outbound_items oi
+          JOIN outbound_requests o ON oi.request_id = o.id
+          WHERE oi.item_id = im.id AND o.status = 'SHIPPED'
+            AND COALESCE(o.request_type, 'SALE') <> 'LEND'
+        ), 0))::integer as quantity,
       NULL as sn,
       im.brand,
       im.model,
