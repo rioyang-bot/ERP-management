@@ -687,7 +687,8 @@ export const queries = {
   // 累加模式改由資料庫自行加總，避免「先讀出再算好寫回」在同時匯入時互相覆蓋。
   incrementConsumableStockQtyOnImport: `UPDATE item_master SET stock_qty = COALESCE(stock_qty, 0) + $1 WHERE id = $2 RETURNING id`,
   fetchRecentConsumables: `SELECT i.* FROM item_master i LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '耗材' ORDER BY i.id DESC LIMIT 10`,
-  insertConsumableMaster: `INSERT INTO item_master (specification, type, brand, model, unit, safety_stock, stock_qty, category_id, purchase_price) VALUES ($1, UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g'))), UPPER(TRIM(REGEXP_REPLACE(COALESCE($3, ''), '[[:space:]]+', ' ', 'g'))), UPPER(TRIM(REGEXP_REPLACE(COALESCE($4, ''), '[[:space:]]+', ' ', 'g'))), $5, $6, $7, (SELECT id FROM categories WHERE name = $8), 0) RETURNING id`,
+  // initial_stock_qty 與 stock_qty 同值，建立後不再變動，供品項履歷顯示初始庫存
+  insertConsumableMaster: `INSERT INTO item_master (specification, type, brand, model, unit, safety_stock, stock_qty, initial_stock_qty, category_id, purchase_price) VALUES ($1, UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g'))), UPPER(TRIM(REGEXP_REPLACE(COALESCE($3, ''), '[[:space:]]+', ' ', 'g'))), UPPER(TRIM(REGEXP_REPLACE(COALESCE($4, ''), '[[:space:]]+', ' ', 'g'))), $5, $6, $7, $7, (SELECT id FROM categories WHERE name = $8), 0) RETURNING id`,
   // 型號隸屬於廠牌（item_models.brand_id）。舊版以 INNER JOIN 串接 item_models.type_id
   // 與 item_types.brand_id，但這兩個欄位是相容用的舊欄位、實際從未寫入，
   // 導致此下拉選單永遠是空的。改用與 fetchHwModelsByBrand 相同的 LEFT JOIN 寫法。
@@ -1485,14 +1486,8 @@ export const queries = {
       im.created_at::date as transaction_date,
       '初始庫存/批次匯入' as order_no,
       '系統初始建立' as partner_name,
-      -- 初始數量的算法見 fetchItemFlowHistory 同一段
-      (COALESCE(im.stock_qty, 0) + COALESCE(im.lab_qty, 0) + COALESCE(im.lent_qty, 0)
-        + COALESCE((
-          SELECT SUM(oi.quantity) FROM outbound_items oi
-          JOIN outbound_requests o ON oi.request_id = o.id
-          WHERE oi.item_id = im.id AND o.status = 'SHIPPED'
-            AND COALESCE(o.request_type, 'SALE') <> 'LEND'
-        ), 0))::integer as quantity,
+      -- 為何不用 stock_qty，見 fetchItemFlowHistory 同一段
+      im.initial_stock_qty as quantity,
       NULL as sn,
       im.brand,
       im.model,
@@ -1501,9 +1496,7 @@ export const queries = {
     FROM item_master im
     JOIN categories c ON im.category_id = c.id
     WHERE c.name = '耗材'
-      AND NOT EXISTS (
-        SELECT 1 FROM inbound_items ii WHERE ii.item_id = im.id
-      )
+      AND COALESCE(im.initial_stock_qty, 0) > 0
     
     UNION ALL
     
@@ -1581,18 +1574,11 @@ export const queries = {
       im.created_at::date as transaction_date,
       '初始庫存/批次匯入' as order_no,
       '系統初始建立' as partner_name,
-      -- 匯入當下的數量沒有另外存，只能從現況倒推。
-      -- 先前直接拿 stock_qty（目前庫存）當初始數量，出貨扣掉的量在這裡看不到，
+      -- 讀建立當下存下的數量，不讀 stock_qty（目前庫存）。
+      -- 先前拿目前庫存當初始數量，出貨扣掉的量在這裡看不到，
       -- 履歷就變成「初始 59、出了 15、庫存還是 59」，看起來像沒扣。
-      -- 移到實驗室、借出在外只是換位置，連同已出貨（銷貨）的量一併加回；
-      -- 借用單歸還後已回到 stock_qty，不必另外處理。
-      (COALESCE(im.stock_qty, 0) + COALESCE(im.lab_qty, 0) + COALESCE(im.lent_qty, 0)
-        + COALESCE((
-          SELECT SUM(oi.quantity) FROM outbound_items oi
-          JOIN outbound_requests o ON oi.request_id = o.id
-          WHERE oi.item_id = im.id AND o.status = 'SHIPPED'
-            AND COALESCE(o.request_type, 'SALE') <> 'LEND'
-        ), 0))::integer as quantity,
+      -- 從現況倒推也不行：盤點調整、覆蓋匯入之後倒推值會跟著變。
+      im.initial_stock_qty as quantity,
       NULL as sn,
       im.brand,
       im.model,
@@ -1602,9 +1588,9 @@ export const queries = {
     FROM item_master im
     JOIN categories c ON im.category_id = c.id
     WHERE im.id = $1::integer AND c.name = '耗材'
-      AND NOT EXISTS (
-        SELECT 1 FROM inbound_items ii WHERE ii.item_id = im.id
-      )
+      -- 先前的條件是「沒有任何進貨」：匯入 74 之後只要進過一次貨，
+      -- 初始那列就整列消失。改看有沒有初始數量。
+      AND COALESCE(im.initial_stock_qty, 0) > 0
     
     UNION ALL
     
