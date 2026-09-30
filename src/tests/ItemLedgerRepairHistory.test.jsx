@@ -144,15 +144,24 @@ describe('履歷查詢的事件分類', () => {
 /**
  * 耗材初始庫存那一列先前直接拿 stock_qty（目前庫存）當數量：
  * 匯入 74、出貨 15，履歷卻顯示「初始 59」，看起來像出貨沒扣庫存。
+ * 從現況倒推也不行，盤點調整、覆蓋匯入之後就會跑掉 —— 改讀建立時存下的值。
  */
-describe('耗材初始庫存要從現況倒推回匯入當下的數量', () => {
-  it.each(['fetchItemFlowHistory', 'fetchFlowHistory'])('%s 不再把目前庫存當初始數量', (name) => {
+describe('耗材初始庫存讀建立當下存下的數量', () => {
+  it.each(['fetchItemFlowHistory', 'fetchFlowHistory'])('%s 讀 initial_stock_qty，不讀目前庫存', (name) => {
     const sql = queries[name];
     expect(sql).not.toContain('im.stock_qty as quantity');
-    const oneLine = sql.replace(/\s+/g, ' ');
-    // 實驗室與借出在外的量只是換位置，要加回來
-    expect(oneLine).toContain('COALESCE(im.stock_qty, 0) + COALESCE(im.lab_qty, 0) + COALESCE(im.lent_qty, 0)');
-    // 已出貨的銷貨單要加回來，借用單不算（借出中的已在 lent_qty，歸還的已回到 stock_qty）
-    expect(oneLine).toContain("o.status = 'SHIPPED' AND COALESCE(o.request_type, 'SALE') <> 'LEND'");
+    expect(sql).toContain('im.initial_stock_qty as quantity');
+  });
+
+  it.each(['fetchItemFlowHistory', 'fetchFlowHistory'])('%s 進過貨之後初始那列不會消失', (name) => {
+    const sql = queries[name];
+    expect(sql).toContain('COALESCE(im.initial_stock_qty, 0) > 0');
+    expect(sql).not.toContain('SELECT 1 FROM inbound_items ii WHERE ii.item_id = im.id');
+  });
+
+  it('建立耗材時把建立數量同時寫進 initial_stock_qty', () => {
+    const sql = queries.insertConsumableMaster;
+    expect(sql).toContain('stock_qty, initial_stock_qty, category_id');
+    expect(sql).toContain('$6, $7, $7, (SELECT id FROM categories');
   });
 });
