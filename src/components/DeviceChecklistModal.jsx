@@ -20,10 +20,14 @@ import { groupScopeLabel, groupMatchLevel, pickDefaultGroup } from '../utils/che
  * 細項記錄的是「這台設備實際是什麼」而不是「做完了沒有」，因此不勾選，
  * 改為在旁邊填寫內容（例如細項「OS」填「RH9.6」）。
  *
+ * 拍照項目（例如正面、背面）與主要檢查功能一樣自動套用，列在主機照片區，
+ * 每一項各自上傳，有照片就算完成。
+ *
  * 已套用的項目是「套用當下的快照」，範本日後被刪除或改名都不會讓它消失。
  */
 const KIND_MAIN = 'MAIN';
 const KIND_DETAIL = 'DETAIL';
+const KIND_PHOTO = 'PHOTO';
 const CUSTOM_GROUP = '自訂細項';
 
 const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
@@ -80,6 +84,31 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
       setLoading(false);
     }
   }, [device?.id]);
+
+  /**
+   * 照片增減後只重讀這台設備的項目（拍照完成度），不整頁重載 ——
+   * 整頁重載會把主機照片區收掉再展開，剛上傳的縮圖要重抓一次。
+   */
+  const refreshApplied = useCallback(async () => {
+    if (!device?.id) return;
+    try {
+      const res = await window.electronAPI.namedQuery('fetchAssetChecklist', [device.id]);
+      if (res.success) setApplied((prev) => {
+        // 還沒儲存的勾選與內容不能被蓋掉
+        const local = new Map(prev.map((r) => [r.id, r]));
+        return (res.rows || []).map((r) => (local.has(r.id)
+          ? { ...r, is_checked: local.get(r.id).is_checked, content: local.get(r.id).content }
+          : r));
+      });
+    } catch (e) {
+      console.error('重新讀取檢查項目失敗:', e);
+    }
+  }, [device?.id]);
+
+  const handlePhotosChanged = async () => {
+    await refreshApplied();
+    if (onChanged) onChanged();
+  };
 
   useEffect(() => {
     if (!isOpen) return;
@@ -271,7 +300,7 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
 
   /** 範本裡仍存在、且設定為自動套用的項目 id */
   const autoAppliedSourceIds = useMemo(
-    () => new Set(templateItems.filter((i) => i.kind === KIND_MAIN || i.auto_apply).map((i) => i.id)),
+    () => new Set(templateItems.filter((i) => i.kind === KIND_MAIN || i.kind === KIND_PHOTO || i.auto_apply).map((i) => i.id)),
     [templateItems]
   );
 
@@ -331,6 +360,9 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
   const mainRows = applied.filter((a) => a.kind === KIND_MAIN);
   const autoCount = mainRows.length;
   const doneCount = mainRows.filter((a) => a.is_checked).length;
+  // 拍照項目有照片就算完成，與勾選分開計算
+  const photoRows = applied.filter((a) => a.kind === KIND_PHOTO);
+  const photoDoneCount = photoRows.filter((a) => Number(a.photo_count) > 0).length;
 
   if (!isOpen || !device) return null;
 
@@ -360,6 +392,14 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
                 {autoCount > 0 && (
                   <span style={{ marginLeft: '10px', fontWeight: 800, color: doneCount === autoCount ? '#10b981' : '#f59e0b' }}>
                     已完成 {doneCount} / {autoCount}
+                  </span>
+                )}
+                {photoRows.length > 0 && (
+                  <span
+                    style={{ marginLeft: '10px', fontWeight: 800, color: photoDoneCount === photoRows.length ? '#10b981' : '#f59e0b' }}
+                    data-testid="header-photo-progress"
+                  >
+                    照片 {photoDoneCount} / {photoRows.length}
                   </span>
                 )}
               </p>
@@ -412,7 +452,14 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
                 </section>
 
                 {/* 主機照片：這一台自己的外觀與機況，日後開立驗收單會用到 */}
-                <AssetPhotoSection device={device} card={card} />
+                <AssetPhotoSection
+                  device={device}
+                  card={card}
+                  photoItems={photoRows}
+                  onChanged={handlePhotosChanged}
+                  canRemove={canRemove}
+                  onRemoveItem={handleRemoveItem}
+                />
 
                 {/* 細項：逐台挑選或自行新增 */}
                 <section style={{ ...card, padding: '16px', backgroundColor: 'var(--bg-surface-subtle)' }}>

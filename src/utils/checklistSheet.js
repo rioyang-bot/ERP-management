@@ -114,8 +114,9 @@ export function buildChecklistSheet(device, items = []) {
 
   const groups = groupChecklistItems(items);
   const all = Array.isArray(items) ? items : [];
-  // 細項不勾選，因此完成度只算主要檢查功能
-  const mainRows = all.filter((i) => i.kind !== 'DETAIL');
+  // 細項不勾選、拍照項目看有沒有照片，因此完成度只算主要檢查功能
+  const isCheckRow = (r) => r.kind !== 'DETAIL' && r.kind !== 'PHOTO';
+  const mainRows = all.filter(isCheckRow);
   const total = mainRows.length;
   const done = mainRows.filter((i) => i.is_checked).length;
 
@@ -123,7 +124,7 @@ export function buildChecklistSheet(device, items = []) {
   // 檢查項目：只放主要檢查功能，依主項目分段
   let seq = 0;
   const mainGroups = groups
-    .map((g) => ({ name: g.name, rows: g.rows.filter((r) => r.kind !== 'DETAIL') }))
+    .map((g) => ({ name: g.name, rows: g.rows.filter(isCheckRow) }))
     .filter((g) => g.rows.length > 0);
 
   const checklistRows = mainGroups.map((g) => {
@@ -171,6 +172,29 @@ export function buildChecklistSheet(device, items = []) {
         </tbody>
       </table>`;
 
+  // 拍照項目：列出該拍的照片與已上傳張數，照片本身不印
+  const photoRows = all.filter((r) => r.kind === 'PHOTO');
+  const photoHtml = photoRows.length === 0 ? '' : `
+      <div class="section-title">拍照項目（共 ${photoRows.length} 項，已上傳 ${photoRows.filter((r) => Number(r.photo_count) > 0).length} 項）</div>
+
+      <table class="detail-table">
+        <thead>
+          <tr>
+            <th class="col-seq">項次</th>
+            <th class="col-name">拍照項目</th>
+            <th>上傳狀態</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${photoRows.map((row, idx) => `
+          <tr>
+            <td class="col-seq">${idx + 1}</td>
+            <td class="col-name">${escapeHtml(row.item_name)}</td>
+            <td>${Number(row.photo_count) > 0 ? `☑ 已上傳 ${Number(row.photo_count)} 張` : '☐ 尚未上傳'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+
   const body = `
     <div class="checklist-sheet">
       <div class="sheet-head">
@@ -204,6 +228,7 @@ export function buildChecklistSheet(device, items = []) {
         </tbody>
       </table>
 ${detailHtml}
+${photoHtml}
 
       <table class="sign-table">
         <tbody>
