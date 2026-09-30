@@ -272,8 +272,9 @@ describe('Inbound 頁面非採購單入庫品項選取整合測試', () => {
       expect(screen.getByText('選取庫存品項 (Select Item Master)')).toBeInTheDocument();
     });
 
-    // 選擇 Cisco 交換器
-    fireEvent.click(screen.getByTestId('item-row-1'));
+    // 選擇 Cisco 交換器。挑選視窗現在一律可複選，點整列是「勾選」，
+    // 要直接帶入一筆就按那一列的「選取」
+    fireEvent.click(screen.getByTestId('single-add-btn-1'));
 
     // 彈窗關閉，明細格顯示已選品項卡片
     await waitFor(() => {
@@ -291,15 +292,26 @@ describe('Inbound 頁面非採購單入庫品項選取整合測試', () => {
     });
   });
 
-  it('支援從表格底部「從品項庫挑選 (可批次勾選加入)」批次加入多項品項', async () => {
+  /**
+   * 表格下方原本有一顆「從品項庫挑選」，開的是同一個視窗 ——
+   * 兩個入口做同一件事，留明細列上的那一個就好。
+   * 因此批次勾選也要能從明細列進去。
+   */
+  it('表格下方不再有另一顆重複的挑選按鈕', async () => {
+    render(<Inbound />);
+    await screen.findByText(/點擊選取庫存品項/i);
+    expect(screen.queryByTestId('open-inbound-item-modal-btn')).toBeNull();
+    expect(screen.queryByText(/從品項庫挑選/)).toBeNull();
+  });
+
+  it('從明細列的挑選視窗可以批次勾選加入多項品項', async () => {
     render(<Inbound />);
 
     await waitFor(() => {
-      expect(screen.getByTestId('open-inbound-item-modal-btn')).toBeInTheDocument();
+      expect(screen.getByText(/點擊選取庫存品項/i)).toBeInTheDocument();
     });
 
-    // 點擊底部批次挑選按鈕
-    fireEvent.click(screen.getByTestId('open-inbound-item-modal-btn'));
+    fireEvent.click(screen.getByText(/點擊選取庫存品項/i));
 
     await waitFor(() => {
       expect(screen.getByText('選取庫存品項 (Select Item Master)')).toBeInTheDocument();
@@ -317,5 +329,9 @@ describe('Inbound 頁面非採購單入庫品項選取整合測試', () => {
       expect(screen.getByText('Cisco N3K-C3548P-XL')).toBeInTheDocument();
       expect(screen.getByText('METECH LC-LC-OM4-3M')).toBeInTheDocument();
     });
+
+    // 第一筆要填回使用者按的那一列，不是全部跑到後面另開新列
+    const rows = document.querySelectorAll('tbody tr');
+    expect(rows[0].textContent).toContain('Cisco N3K-C3548P-XL');
   });
 });

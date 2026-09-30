@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Trash2, Save, FileText, ShoppingBag, Layers, AlertCircle, ArrowDownToLine, Search, Package } from 'lucide-react';
+import { Plus, Trash2, Save, FileText, ShoppingBag, Layers, AlertCircle, ArrowDownToLine, Search } from 'lucide-react';
 import InboundItemSelectModal from '../components/InboundItemSelectModal';
 import { logCreate, getCurrentUser } from '../utils/auditLogger';
 import { parseSnLines, validateSnBatch } from '../utils/snBatch';
@@ -112,30 +112,50 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
   };
 
 
+  /** 挑選到的品項轉成一列明細 */
+  const toItemRow = (item, idx = 0) => ({
+    id: Date.now() + idx,
+    selectedOrderNo: '',
+    purchaseRecordId: '',
+    orderSource: '',
+    itemId: item.id,
+    pendingMaster: null,
+    cat_name: item.cat_name || '',
+    unit: item.unit || '個',
+    sn: '',
+    qty: item.quantity || 1
+  });
+
   const handleBatchAddItems = (selectedList) => {
     if (!selectedList || selectedList.length === 0) return;
 
-    // 若當前只有一筆尚未選取品項且未綁定採購單的空白列，則優先取代該空白列
-    const isSingleEmpty = items.length === 1 && !items[0].purchaseRecordId && !items[0].itemId;
-
-    const newRows = selectedList.map((item, idx) => ({
-      id: Date.now() + idx,
-      selectedOrderNo: '',
-      purchaseRecordId: '',
-      orderSource: '',
-      itemId: item.id,
-      pendingMaster: null,
-      cat_name: item.cat_name || '',
-      unit: item.unit || '個',
-      sn: '',
-      qty: item.quantity || 1
-    }));
-
-    if (isSingleEmpty) {
-      setItems(newRows);
-    } else {
-      setItems([...items, ...newRows]);
+    // 挑選視窗現在只從明細列打開（表格下方那顆重複的按鈕已移除），
+    // 所以勾了好幾筆時，第一筆要填回使用者按的那一列 ——
+    // 按的是這一列，結果全部跑到最後面另開新列會很奇怪。
+    if (activeRowId) {
+      const [first, ...rest] = selectedList;
+      // 一次算完再更新：分兩次 setItems 會各自以同一份舊資料為基準，後者蓋掉前者
+      setItems((prev) => {
+        const filled = prev.map((row) => (row.id === activeRowId ? {
+          ...row,
+          itemId: first.id,
+          pendingMaster: null,
+          cat_name: first.cat_name || '',
+          unit: first.unit || '個',
+          qty: first.quantity || row.qty || 1,
+        } : row));
+        return [...filled, ...rest.map(toItemRow)];
+      });
+      setShowItemSelectModal(false);
+      setActiveRowId(null);
+      return;
     }
+
+    // 若當前只有一筆尚未選取品項、未綁採購單、也沒有待建立品項的空白列，優先取代它
+    const isSingleEmpty = items.length === 1
+      && !items[0].purchaseRecordId && !items[0].itemId && !items[0].pendingMaster;
+    const newRows = selectedList.map(toItemRow);
+    setItems(isSingleEmpty ? newRows : [...items, ...newRows]);
   };
 
   const handleSingleAddItem = (selectedItem, qty = 1) => {
@@ -699,19 +719,7 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
       </table>
       <div style={{ padding: '14px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-surface-subtle)', borderTop: '1px solid var(--border-color)', flexWrap: 'wrap', gap: '12px', marginTop: '12px', borderRadius: '10px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-          <button 
-            type="button" 
-            onClick={() => openItemSelectModal(null)}
-            style={{ 
-              display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 18px', 
-              backgroundColor: 'var(--primary-color)', color: '#ffffff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 800, fontSize: '13px',
-              boxShadow: '0 4px 10px rgba(37, 99, 235, 0.25)'
-            }}
-            data-testid="open-inbound-item-modal-btn"
-          >
-            <Package size={16} /> 📦 從品項庫挑選 (可批次勾選加入)
-          </button>
-          <button 
+          <button  
             type="button" 
             onClick={handleAddItem} 
             style={{ 
@@ -949,7 +957,6 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
           setActiveRowId(null);
         }}
         items={availableItems}
-        isSingleSelect={!!activeRowId}
         onSelect={(item) => handleSingleAddItem(item, item.quantity || 1)}
         onBatchAdd={handleBatchAddItems}
         onSingleAdd={handleSingleAddItem}

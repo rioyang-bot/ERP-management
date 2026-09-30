@@ -50,7 +50,7 @@ describe('進貨單：快速建檔品項', () => {
   /** 開啟「快速建檔品項範本」視窗 */
   const openQuickAdd = async () => {
     render(<Inbound />);
-    await userEvent.click(await screen.findByTestId('open-inbound-item-modal-btn'));
+    await userEvent.click(await screen.findByTestId('open-item-select-btn-1'));
     await userEvent.click(await screen.findByRole('button', { name: /快速新增品項/i }));
     return screen.findByText('快速建檔品項範本');
   };
@@ -85,7 +85,7 @@ describe('進貨單：快速建檔品項', () => {
 
   it('載入該類別既有的值當作輸入建議', async () => {
     const { container } = render(<Inbound />);
-    await userEvent.click(await screen.findByTestId('open-inbound-item-modal-btn'));
+    await userEvent.click(await screen.findByTestId('open-item-select-btn-1'));
     await userEvent.click(await screen.findByRole('button', { name: /快速新增品項/i }));
 
     await waitFor(() => expect(called('fetchExistingCards')[0].params).toEqual(['設備']));
@@ -97,7 +97,7 @@ describe('進貨單：快速建檔品項', () => {
 
   it('型號建議會依已輸入的廠牌縮小範圍', async () => {
     const { container } = render(<Inbound />);
-    await userEvent.click(await screen.findByTestId('open-inbound-item-modal-btn'));
+    await userEvent.click(await screen.findByTestId('open-item-select-btn-1'));
     await userEvent.click(await screen.findByRole('button', { name: /快速新增品項/i }));
     await screen.findByText('快速建檔品項範本');
 
