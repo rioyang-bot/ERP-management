@@ -192,6 +192,19 @@ if (!window.electronAPI) {
       }
     },
 
+    // /uploads 擋在 requireAuth 後面，而驗證看的是 Authorization 標頭。
+    // 瀏覽器的 <img src="/uploads/x.jpg"> 不會帶標頭，直接拿只會收到 401，
+    // 因此改為在這裡帶著標頭取回檔案內容，由呼叫端轉成 blob 網址使用。
+    loadMedia: async (fileName) => {
+      try {
+        const response = await authFetch(`${API_BASE}/uploads/${encodeURIComponent(fileName)}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return { success: true, blob: await response.blob() };
+      } catch (error) {
+        return { success: false, error: error.message || '讀取檔案失敗' };
+      }
+    },
+
     saveFile: async (fileName, arrayBuffer) => {
       try {
         const formData = new FormData();

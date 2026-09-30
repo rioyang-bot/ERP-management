@@ -153,6 +153,11 @@
       "file": "migration_consumable_unique_key.sql",
       "type": "schema",
       "note": "耗材主檔唯一鍵（廠牌+類型+型號）"
+    },
+    {
+      "file": "migration_asset_photos.sql",
+      "type": "schema",
+      "note": "設備主機照片，供出機檢查表上傳與日後開立驗收單使用"
     }
   ]
 }

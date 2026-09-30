@@ -245,7 +245,10 @@ const storage = multer.diskStorage({
     cb(null, `${baseName}-${Date.now()}${ext}`);
   }
 });
-const upload = multer({ storage });
+// 上傳沒有上限時，一支手機連拍就能把磁碟塞滿。
+// 25 MB 容得下掃描的報價單與手機直出的照片，又不至於讓單一檔案失控。
+const MAX_UPLOAD_MB = 25;
+const upload = multer({ storage, limits: { fileSize: MAX_UPLOAD_MB * 1024 * 1024 } });
 
 // CORS：僅允許自家前端來源，避免任意網站透過瀏覽器讀取本系統資料。
 // 以環境變數 ALLOWED_ORIGINS 設定（逗號分隔），未設定時僅允許同源與本機。
@@ -335,7 +338,22 @@ app.use('/api/auth', createAuthRoutes(pool, auth));
 app.use('/api/preferences', createPreferenceRoutes(pool, auth));
 
 
-app.post('/api/upload', auth.requireAuth, upload.single('file'), (req, res) => {
+const uploadSingle = upload.single('file');
+
+app.post('/api/upload', auth.requireAuth, (req, res, next) => {
+  // multer 丟出的錯誤若不接住，會變成一頁 HTML 的 500 ——
+  // 前端拿到的是一段解析不了的字串，使用者只看到「上傳失敗」而不知道是檔案太大
+  uploadSingle(req, res, (err) => {
+    if (!err) return next();
+    const tooBig = err.code === 'LIMIT_FILE_SIZE';
+    return res.status(tooBig ? 413 : 400).json({
+      success: false,
+      error: tooBig
+        ? `檔案超過上限 ${MAX_UPLOAD_MB} MB，請壓縮後再上傳。`
+        : (err.message || '檔案上傳失敗'),
+    });
+  });
+}, (req, res) => {
   if (!req.file) return res.status(400).json({ success: false, error: 'No file uploaded' });
   
   let fileUrl = req.file.path.replace(/\\/g, '/');

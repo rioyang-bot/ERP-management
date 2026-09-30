@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { logUpdate } from '../utils/auditLogger';
 import DeviceChecklistPrintModal from './DeviceChecklistPrintModal';
+import AssetPhotoSection from './AssetPhotoSection';
 
 /**
  * 單一設備的出機檢查表
@@ -411,6 +412,9 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
                     {groups.length === 0 && ' 目前還沒有任何範本，請先到該頁面建立主項目。'}
                   </div>
                 </section>
+
+                {/* 主機照片：這一台自己的外觀與機況，日後開立驗收單會用到 */}
+                <AssetPhotoSection device={device} card={card} />
 
                 {/* 細項：逐台挑選或自行新增 */}
                 <section style={{ ...card, padding: '16px', backgroundColor: 'var(--bg-surface-subtle)' }}>
