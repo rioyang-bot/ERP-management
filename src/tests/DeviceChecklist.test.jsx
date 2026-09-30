@@ -139,34 +139,60 @@ describe('出機檢查表：單一設備', () => {
   });
 
   describe('細項由這台設備自己決定', () => {
-    it('細項不會自動出現，要自己勾選加入', async () => {
+    /**
+     * 細項一律是填寫內容，勾選只用在主要檢查功能。
+     * 先前範本細項要先勾選、按「加入勾選的細項」才出現填寫欄位，看起來就像勾選項目。
+     */
+    it('範本細項直接是填寫欄位，沒有勾選框', async () => {
       renderModal();
-      await screen.findByLabelText('主項目');
-      // 範本裡有兩個細項，但都還沒加到這台設備上
-      const box = await screen.findByRole('checkbox', { name: /開機順序/ });
-      expect(box).not.toBeChecked();
+      expect(await screen.findByRole('textbox', { name: '開機順序 內容' })).toBeInTheDocument();
+      expect(screen.getByRole('textbox', { name: 'SR-IOV 開啟 內容' })).toBeInTheDocument();
+      expect(screen.queryByRole('checkbox', { name: /開機順序/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /加入勾選的細項/ })).not.toBeInTheDocument();
     });
 
-    it('只加入勾選的細項', async () => {
+    it('只記錄有填內容的細項，儲存時一併寫入內容', async () => {
       renderModal();
-      await screen.findByLabelText('主項目');
-
-      await userEvent.click(await screen.findByRole('checkbox', { name: /開機順序/ }));
-      await userEvent.click(screen.getByRole('button', { name: /加入勾選的細項/ }));
+      await userEvent.type(await screen.findByRole('textbox', { name: '開機順序 內容' }), 'UEFI → PXE');
+      await saveChanges();
 
       await waitFor(() => expect(called('insertAssetChecklistItem')).toHaveLength(1));
-      const [, groupName, kind, name] = called('insertAssetChecklistItem')[0].params;
-      expect([groupName, kind, name]).toEqual(['SecretHFT 出機檢查', 'DETAIL', '開機順序']);
+      const [assetId, groupName, kind, name, sourceId] = called('insertAssetChecklistItem')[0].params;
+      expect([assetId, groupName, kind, name, sourceId]).toEqual([DEVICE.id, 'SecretHFT 出機檢查', 'DETAIL', '開機順序', 23]);
+      const newId = 1000 + AUTO_APPLIED.length;
+      await waitFor(() => expect(called('setAssetChecklistItemContent')[0]?.params).toEqual(['UEFI → PXE', newId]));
+      // 沒填的 SR-IOV 開啟 不會被記錄
+      expect(called('insertAssetChecklistItem').map((c) => c.params[3])).not.toContain('SR-IOV 開啟');
+      await waitFor(() => expect(called('insertAuditLog')[0]?.params[8]).toContain('新增細項：開機順序=UEFI → PXE'));
     });
 
-    it('沒勾選就按加入時提示要先勾選，不會寫入空的', async () => {
+    it('沒填內容就沒有東西要儲存，不會寫入空的細項', async () => {
       renderModal();
-      await screen.findByLabelText('主項目');
-
-      // 下拉一出現不代表已自動選好主項目，要等按鈕真的渲染出來再按
-      await userEvent.click(await screen.findByRole('button', { name: /加入勾選的細項/ }));
-      expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('請先勾選'));
+      const input = await screen.findByRole('textbox', { name: '開機順序 內容' });
+      await userEvent.type(input, '   ');
+      expect(screen.queryByRole('button', { name: /儲存變更/ })).not.toBeInTheDocument();
       expect(called('insertAssetChecklistItem')).toHaveLength(0);
+    });
+
+    it('填了又放棄，資料庫不會留下東西', async () => {
+      renderModal();
+      await userEvent.type(await screen.findByRole('textbox', { name: '開機順序 內容' }), 'UEFI');
+      await userEvent.click(screen.getByRole('button', { name: '放棄變更' }));
+
+      await waitFor(() => expect(screen.getByRole('textbox', { name: '開機順序 內容' }).value).toBe(''));
+      expect(called('insertAssetChecklistItem')).toHaveLength(0);
+    });
+
+    it('已經記錄的細項不在上面重複列，到細項紀錄修改', async () => {
+      setup({ applied: [
+        ...AUTO_APPLIED,
+        { id: 960, group_name: 'SecretHFT 出機檢查', kind: 'DETAIL', item_name: '開機順序', source_item_id: 23, content: 'UEFI' },
+      ] });
+      renderModal();
+      await screen.findByText(/另有 1 項已經記錄/);
+      // 只剩細項紀錄裡那一個，填寫區不再重複一份
+      expect(screen.getAllByRole('textbox', { name: '開機順序 內容' })).toHaveLength(1);
+      expect(screen.getByRole('textbox', { name: '開機順序 內容' }).value).toBe('UEFI');
     });
 
     it('可以直接為這台設備新增範本裡沒有的細項', async () => {
