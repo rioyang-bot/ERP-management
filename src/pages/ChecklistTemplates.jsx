@@ -463,10 +463,8 @@ const ChecklistTemplates = () => {
     const accent = meta.accent;
     const { Icon } = meta;
 
-    // 拍照項目的說明多半是指令，擠在三欄裡最窄的一欄會一直折行、把整欄拉得很長，
-    // 因此獨立成一整列放在另外兩欄下面
     return (
-      <div style={{ ...card, padding: '16px', display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, boxSizing: 'border-box', flex: isPhoto ? '1 1 100%' : '1 1 300px' }}>
+      <div style={{ ...card, padding: '16px', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
           <Icon size={18} color={accent} />
           <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 900, color: 'var(--text-main)' }}>
@@ -479,10 +477,6 @@ const ChecklistTemplates = () => {
           {list.length > 1 && '　拖曳左側的握把即可調整順序，設備上與列印的先後會跟著改。'}
         </p>
 
-        <div style={isPhoto
-          ? { display: 'flex', gap: '6px', marginBottom: '12px', flexWrap: 'wrap', alignItems: 'flex-start' }
-          : { display: 'flex', gap: '6px', marginBottom: '12px' }}
-        >
         {isPhoto && (
           <select
             value=""
@@ -492,7 +486,7 @@ const ChecklistTemplates = () => {
             }}
             disabled={!selectedGroup || photoExamples.length === 0}
             aria-label="從範例加入拍照項目"
-            style={{ ...inputStyle, width: 'auto', flex: '0 1 220px', minWidth: '160px' }}
+            style={{ ...inputStyle, marginBottom: '6px' }}
           >
             <option value="">
               {photoExamples.length === 0 ? '尚無範例，可在下方「拍照項目範例」建立' : '從範例加入…'}
@@ -507,6 +501,7 @@ const ChecklistTemplates = () => {
             })}
           </select>
         )}
+        <div style={{ display: 'flex', gap: '6px', marginBottom: isPhoto ? '6px' : '12px' }}>
           <input
             type="text"
             value={newItemText[kind]}
@@ -515,20 +510,8 @@ const ChecklistTemplates = () => {
             placeholder={meta.placeholder}
             aria-label={`${meta.title}名稱`}
             disabled={!selectedGroup}
-            style={isPhoto ? { ...inputStyle, width: 'auto', flex: '1 1 180px', minWidth: '140px' } : inputStyle}
+            style={inputStyle}
           />
-          {isPhoto && (
-            // 預設一行高，要寫多行時再往下拉大
-            <textarea
-              value={newPhotoDesc}
-              onChange={(e) => setNewPhotoDesc(e.target.value)}
-              placeholder="拍攝說明（選填），可多行，例如：lscpu"
-              aria-label="拍照項目說明"
-              disabled={!selectedGroup}
-              rows={1}
-              style={{ ...textareaStyle, width: 'auto', minHeight: '35px', flex: '2 1 260px', minWidth: '200px' }}
-            />
-          )}
           <button
             type="button"
             onClick={() => handleAddItem(kind)}
@@ -537,7 +520,6 @@ const ChecklistTemplates = () => {
             aria-label={`新增${meta.title}`}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '0 12px',
-              ...(isPhoto ? { height: '35px' } : {}),
               borderRadius: '8px', border: 'none', backgroundColor: selectedGroup ? accent : 'var(--border-color)',
               color: '#fff', fontWeight: 800, fontSize: '13px',
               cursor: selectedGroup ? 'pointer' : 'not-allowed', whiteSpace: 'nowrap',
@@ -546,6 +528,16 @@ const ChecklistTemplates = () => {
             <Plus size={15} /> 新增
           </button>
         </div>
+        {isPhoto && (
+          <textarea
+            value={newPhotoDesc}
+            onChange={(e) => setNewPhotoDesc(e.target.value)}
+            placeholder={'拍攝說明（選填），例如：\n關機狀態、正面平視，前面板與序號貼紙都要清楚入鏡'}
+            aria-label="拍照項目說明"
+            disabled={!selectedGroup}
+            style={{ ...textareaStyle, marginBottom: '12px' }}
+          />
+        )}
 
         <div style={{ flex: 1, overflowY: 'auto', minHeight: '120px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
           {list.length === 0 ? (
@@ -561,7 +553,7 @@ const ChecklistTemplates = () => {
               onDrop={(e) => handleItemDrop(e, item)}
               onDragEnd={handleItemDragEnd}
               style={{
-                display: 'flex', alignItems: 'center', gap: '8px', padding: isPhoto ? '6px 10px' : '8px 10px',
+                display: 'flex', alignItems: isPhoto ? 'flex-start' : 'center', gap: '8px', padding: '8px 10px',
                 borderRadius: '8px',
                 border: dragOverId === item.id && draggingItem?.id !== item.id
                   ? `2px solid ${accent}`
@@ -618,27 +610,15 @@ const ChecklistTemplates = () => {
                 </>
               ) : (
                 <>
-                  <span style={{
-                    flex: 1, minWidth: 0, fontSize: '13px', color: 'var(--text-main)', fontWeight: 600, wordBreak: 'break-word',
-                    ...(isPhoto ? { display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', columnGap: '14px', rowGap: '2px' } : {}),
-                  }}>
-                    {isPhoto ? <span style={{ flex: '0 0 auto', maxWidth: '100%' }}>{item.name}</span> : item.name}
+                  <span style={{ flex: 1, minWidth: 0, fontSize: '13px', color: 'var(--text-main)', fontWeight: 600, wordBreak: 'break-word' }}>
+                    {item.name}
                     {isDetail && item.auto_apply && (
                       <span style={{ marginLeft: '6px', fontSize: '10px', fontWeight: 800, padding: '1px 7px', borderRadius: '8px', backgroundColor: 'rgba(8, 145, 178, 0.14)', color: '#0891b2', whiteSpace: 'nowrap' }}>
                         自動套用
                       </span>
                     )}
                     {isPhoto && item.description && (
-                      // 最多兩行，全文放在滑鼠提示；按修改時可以看到並編輯完整內容
-                      <span
-                        title={item.description}
-                        data-testid={`photo-template-desc-${item.id}`}
-                        style={{
-                          flex: '1 1 240px', minWidth: 0, fontSize: '12px', fontWeight: 500, color: 'var(--text-muted)',
-                          whiteSpace: 'pre-wrap', lineHeight: 1.6, fontFamily: 'ui-monospace, SFMono-Regular, Consolas, monospace',
-                          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
-                        }}
-                      >
+                      <span style={{ display: 'block', marginTop: '4px', fontSize: '12px', fontWeight: 500, color: 'var(--text-muted)', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
                         {item.description}
                       </span>
                     )}
@@ -880,8 +860,7 @@ const ChecklistTemplates = () => {
                 </>
               ) : '請先於左側選擇或新增主項目'}
             </div>
-            {/* 主要檢查功能、細項最多兩欄並排，拍照項目獨佔下面一整列 */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', alignItems: 'flex-start' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
               {renderItemColumn(KIND_MAIN)}
               {renderItemColumn(KIND_DETAIL)}
               {renderItemColumn(KIND_PHOTO)}
