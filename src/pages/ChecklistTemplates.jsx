@@ -5,12 +5,14 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { logCreate, logDelete, logUpdate } from '../utils/auditLogger';
 import { moveItem, buildOrderParam } from '../utils/reorderList';
+import { groupScopeLabel } from '../utils/checklistGroupScope';
 
 /**
  * 出機檢查表範本 (Pre-delivery Checklist Templates)
  *
  * 結構是兩層：
- *   主項目（綁定廠牌，例如「BLACKCORE 出機檢查」）
+ *   主項目（綁定廠牌，例如「BLACKCORE 出機檢查」；可再指定型號，
+ *           例如「LDA · NEOTAP」只套用到 NEOTAP，型號留空則整個廠牌適用）
  *     ├─ 主要檢查功能：該廠牌的每一台設備自動套用，勾選表示檢查完成
  *     └─ 細項：在設備上填寫內容而不是勾選（例如細項「OS」填「RH9.6」）。
  *              預設由每台設備各自挑選；勾「自動」之後就跟主要檢查功能一樣
@@ -33,8 +35,10 @@ const ChecklistTemplates = () => {
   const [error, setError] = useState('');
 
   // 新增主項目
-  const [newGroup, setNewGroup] = useState({ name: '', brand: '' });
-  const [editingGroup, setEditingGroup] = useState(null); // { id, name, brand }
+  const [newGroup, setNewGroup] = useState({ name: '', brand: '', model: '' });
+  const [editingGroup, setEditingGroup] = useState(null); // { id, name, brand, model }
+  // 各廠牌底下的設備型號，選了廠牌才去讀：{ [brand]: ['NEOTAP', ...] }
+  const [modelsByBrand, setModelsByBrand] = useState({});
 
   // 新增項目（兩組各自一個輸入框）
   const [newItemText, setNewItemText] = useState({ [KIND_MAIN]: '', [KIND_DETAIL]: '' });
@@ -66,6 +70,37 @@ const ChecklistTemplates = () => {
   }, []);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  const loadModels = useCallback(async (brand) => {
+    if (!brand || modelsByBrand[brand]) return;
+    try {
+      const res = await window.electronAPI.namedQuery('fetchModelsByBrand', [brand]);
+      if (res.success) {
+        setModelsByBrand((prev) => ({ ...prev, [brand]: (res.rows || []).map((r) => r.name) }));
+      }
+    } catch (e) {
+      console.error('讀取型號失敗:', e);
+    }
+  }, [modelsByBrand]);
+
+  // 編輯既有主項目時，它的廠牌底下的型號也要先讀好
+  useEffect(() => { if (editingGroup?.brand) loadModels(editingGroup.brand); }, [editingGroup?.brand, loadModels]);
+  useEffect(() => { if (newGroup.brand) loadModels(newGroup.brand); }, [newGroup.brand, loadModels]);
+
+  /**
+   * 型號下拉。沒選廠牌時不給選 —— 不同廠牌可能有同名型號，型號一定要搭配廠牌。
+   * 既有主項目綁的型號若已經沒有設備在用，仍保留在選單裡，不會被悄悄清掉。
+   */
+  const renderModelSelect = (brand, value, onChange, ariaLabel) => {
+    const models = modelsByBrand[brand] || [];
+    const options = value && !models.some((m) => m.toUpperCase() === value.toUpperCase()) ? [value, ...models] : models;
+    return (
+      <select value={value || ''} onChange={(e) => onChange(e.target.value)} disabled={!brand} aria-label={ariaLabel} style={inputStyle}>
+        <option value="">{brand ? '不指定型號（整個廠牌）' : '先選廠牌才能指定型號'}</option>
+        {options.map((m) => (<option key={m} value={m}>{m}</option>))}
+      </select>
+    );
+  };
 
   /**
    * 把主項目底下的主要檢查功能補到所有符合廠牌的設備上。
@@ -105,11 +140,12 @@ const ChecklistTemplates = () => {
     const name = newGroup.name.trim();
     if (!name) return alert('請輸入主項目名稱');
     try {
-      const res = await window.electronAPI.namedQuery('insertChecklistGroup', [name, newGroup.brand || null, groups.length]);
+      const model = newGroup.brand ? (newGroup.model || null) : null;
+      const res = await window.electronAPI.namedQuery('insertChecklistGroup', [name, newGroup.brand || null, groups.length, model]);
       if (!res.success) throw new Error(res.error || '建立失敗');
       const created = res.rows?.[0];
-      logCreate('SETTING', created?.id, name, `新增出機檢查表主項目 [${name}]${newGroup.brand ? `（廠牌: ${newGroup.brand}）` : '（通用）'}`, { name, brand: newGroup.brand || null });
-      setNewGroup({ name: '', brand: '' });
+      logCreate('SETTING', created?.id, name, `新增出機檢查表主項目 [${name}]（${groupScopeLabel({ brand: newGroup.brand, model })}）`, { name, brand: newGroup.brand || null, model });
+      setNewGroup({ name: '', brand: '', model: '' });
       await syncToDevices();
       await fetchAll();
       if (created?.id) setSelectedGroupId(created.id);
@@ -122,13 +158,14 @@ const ChecklistTemplates = () => {
     const name = (editingGroup.name || '').trim();
     if (!name) return alert('請輸入主項目名稱');
     try {
-      const res = await window.electronAPI.namedQuery('updateChecklistGroup', [name, editingGroup.brand || null, editingGroup.id]);
+      const model = editingGroup.brand ? (editingGroup.model || null) : null;
+      const res = await window.electronAPI.namedQuery('updateChecklistGroup', [name, editingGroup.brand || null, editingGroup.id, model]);
       if (!res.success || (res.rows || []).length === 0) throw new Error(res.error || '找不到該主項目');
       // 設備端已套用的分組名稱跟著改，否則同步會把新名稱再補一份進去
       await window.electronAPI.namedQuery('renameAssetChecklistGroupBySource', [name, editingGroup.id]);
-      logUpdate('SETTING', editingGroup.id, name, `修改出機檢查表主項目 [${name}]`, { name, brand: editingGroup.brand || null });
+      logUpdate('SETTING', editingGroup.id, name, `修改出機檢查表主項目 [${name}]（${groupScopeLabel({ brand: editingGroup.brand, model })}）`, { name, brand: editingGroup.brand || null, model });
       setEditingGroup(null);
-      // 廠牌可能被改掉，改完要重新套用到新廠牌的設備
+      // 廠牌、型號可能被改掉，改完要重新套用到符合的設備
       await syncToDevices();
       await fetchAll();
     } catch (err) {
@@ -167,7 +204,7 @@ const ChecklistTemplates = () => {
       if (kind === KIND_MAIN) {
         const n = await syncToDevices();
         setSyncNotice(n > 0
-          ? `已套用到 ${n} 台${selectedGroup.brand || ''}設備`
+          ? `已套用到 ${n} 台${selectedGroup.brand ? groupScopeLabel(selectedGroup) : ''}設備`
           : '所有符合的設備都已經有這個項目');
       }
       await fetchAll();
@@ -487,6 +524,9 @@ const ChecklistTemplates = () => {
             • <b style={{ color: 'var(--text-main)' }}>主項目</b>綁定廠牌。建立之後，
             <b style={{ color: '#0891b2' }}>該廠牌的每一台設備都會自動套用</b>，不需要逐台操作；
             不指定廠牌即為所有設備通用。
+            同廠牌不同機種要檢查的東西不一樣時，可再<b style={{ color: 'var(--text-main)' }}>指定型號</b>，
+            只套用到那個型號（例如 LDA · NEOTAP）。一台設備符合的主項目會全部套用，
+            例如「LDA 共通」與「LDA · NEOTAP」兩組都會出現在 NEOTAP 上。
           </div>
           <div>
             • <b style={{ color: 'var(--text-main)' }}>主要檢查功能</b>是自動套用、需勾選完成的部分；
@@ -531,7 +571,7 @@ const ChecklistTemplates = () => {
               <div style={{ display: 'flex', gap: '6px' }}>
                 <select
                   value={newGroup.brand}
-                  onChange={(e) => setNewGroup({ ...newGroup, brand: e.target.value })}
+                  onChange={(e) => setNewGroup({ ...newGroup, brand: e.target.value, model: '' })}
                   aria-label="適用廠牌"
                   style={inputStyle}
                 >
@@ -540,6 +580,9 @@ const ChecklistTemplates = () => {
                     <option key={b.id || b.name} value={b.name}>{b.name}</option>
                   ))}
                 </select>
+              </div>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                {renderModelSelect(newGroup.brand, newGroup.model, (model) => setNewGroup({ ...newGroup, model }), '適用型號')}
                 <button
                   type="submit"
                   style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '0 14px', borderRadius: '8px', border: 'none', backgroundColor: '#0891b2', color: '#fff', fontWeight: 800, fontSize: '13px', cursor: 'pointer', whiteSpace: 'nowrap' }}
@@ -580,13 +623,14 @@ const ChecklistTemplates = () => {
                         />
                         <select
                           value={editingGroup.brand || ''}
-                          onChange={(e) => setEditingGroup({ ...editingGroup, brand: e.target.value })}
+                          onChange={(e) => setEditingGroup({ ...editingGroup, brand: e.target.value, model: '' })}
                           style={inputStyle}
                           aria-label="修改適用廠牌"
                         >
                           <option value="">不指定廠牌（通用）</option>
                           {brands.map((b) => (<option key={b.id || b.name} value={b.name}>{b.name}</option>))}
                         </select>
+                        {renderModelSelect(editingGroup.brand, editingGroup.model, (model) => setEditingGroup({ ...editingGroup, model }), '修改適用型號')}
                         <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
                           <button type="button" onClick={handleSaveGroup} style={iconBtn('#10b981')} title="儲存" aria-label="儲存主項目"><Check size={14} /></button>
                           <button type="button" onClick={() => setEditingGroup(null)} style={iconBtn('var(--text-muted)')} title="取消" aria-label="取消修改主項目"><X size={14} /></button>
@@ -605,7 +649,7 @@ const ChecklistTemplates = () => {
                               color: g.brand ? '#0891b2' : 'var(--text-muted)',
                               border: '1px solid var(--border-color)',
                             }}>
-                              {g.brand || '通用'}
+                              {groupScopeLabel(g)}
                             </span>
                             <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700 }}>
                               主要 {g.main_count} · 細項 {g.detail_count}
@@ -614,7 +658,7 @@ const ChecklistTemplates = () => {
                         </div>
                         <button
                           type="button"
-                          onClick={(e) => { e.stopPropagation(); setEditingGroup({ id: g.id, name: g.name, brand: g.brand || '' }); }}
+                          onClick={(e) => { e.stopPropagation(); setEditingGroup({ id: g.id, name: g.name, brand: g.brand || '', model: g.model || '' }); }}
                           style={iconBtn('#f59e0b')}
                           title="修改主項目"
                           aria-label={`修改主項目 ${g.name}`}
@@ -643,7 +687,7 @@ const ChecklistTemplates = () => {
             <div style={{ marginBottom: '12px', fontSize: '14px', color: 'var(--text-muted)' }}>
               {selectedGroup ? (
                 <>目前編輯：<b style={{ color: 'var(--text-main)' }}>{selectedGroup.name}</b>
-                  <span style={{ marginLeft: '8px', fontSize: '12px' }}>（{selectedGroup.brand || '通用'}）</span>
+                  <span style={{ marginLeft: '8px', fontSize: '12px' }}>（{groupScopeLabel(selectedGroup)}）</span>
                 </>
               ) : '請先於左側選擇或新增主項目'}
             </div>

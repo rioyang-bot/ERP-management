@@ -117,7 +117,7 @@ describe('出機檢查表：單一設備', () => {
 
     it('說明寫清楚是依廠牌自動套用', async () => {
       renderModal();
-      expect(await screen.findByText(/主要檢查功能已依廠牌自動套用/)).toBeInTheDocument();
+      expect(await screen.findByText(/主要檢查功能已依廠牌／型號自動套用/)).toBeInTheDocument();
     });
 
     it('自動套用的項目不可從單台移除，避免移掉又被補回來', async () => {
@@ -218,6 +218,19 @@ describe('出機檢查表：單一設備', () => {
       const select = await screen.findByLabelText('主項目');
       await waitFor(() => expect(select.value).toBe('2'));
       expect(await screen.findByText(/這台設備的廠牌/)).toBeInTheDocument();
+    });
+
+    it('有指定這台設備型號的主項目時，預設看型號那一組', async () => {
+      setup({ groups: [
+        ...GROUPS,
+        { id: 3, name: 'SecretHFT 3122-SM 專屬', brand: 'SECRETHFT', model: '3122-SM', main_count: 0, detail_count: 0 },
+        { id: 4, name: 'SecretHFT 其他型號', brand: 'SECRETHFT', model: 'ARL', main_count: 0, detail_count: 0 },
+      ] });
+      renderModal();
+      const select = await screen.findByLabelText('主項目');
+      await waitFor(() => expect(select.value).toBe('3'));
+      expect(await screen.findByText(/這台設備的型號/)).toBeInTheDocument();
+      expect(screen.getByRole('option', { name: 'SecretHFT 3122-SM 專屬（SECRETHFT · 3122-SM）' })).toBeInTheDocument();
     });
   });
 
@@ -440,12 +453,16 @@ describe('出機檢查表：範本維護頁', () => {
       if (query === 'fetchChecklistGroups') return Promise.resolve({ success: true, rows: groups });
       if (query === 'fetchChecklistItems') return Promise.resolve({ success: true, rows: items });
       if (query === 'fetchDeviceBrands') return Promise.resolve({ success: true, rows: [{ id: 1, name: 'SECRETHFT' }, { id: 2, name: 'DELL' }] });
+      if (query === 'fetchModelsByBrand') {
+        const byBrand = { DELL: ['R660XS', 'R6615'], SECRETHFT: ['SECRETHFT-ARL'] };
+        return Promise.resolve({ success: true, rows: (byBrand[params[0]] || []).map((name, i) => ({ id: i + 1, name })) });
+      }
       if (query === 'syncBrandChecklistToAssets') {
         // 假裝補了 15 台設備
         return Promise.resolve({ success: true, rows: Array.from({ length: 15 }, (_, i) => ({ id: i, asset_id: i })) });
       }
       if (query === 'insertChecklistGroup') {
-        const row = { id: 99, name: params[0], brand: params[1], main_count: 0, detail_count: 0 };
+        const row = { id: 99, name: params[0], brand: params[1], model: params[3], main_count: 0, detail_count: 0 };
         groups = [...groups, row];
         return Promise.resolve({ success: true, rows: [row] });
       }
@@ -497,6 +514,52 @@ describe('出機檢查表：範本維護頁', () => {
 
     await waitFor(() => expect(called('insertChecklistGroup')).toHaveLength(1));
     expect(called('insertChecklistGroup')[0].params[1]).toBeNull();
+  });
+
+  describe('主項目可再指定型號', () => {
+    it('沒選廠牌時不能指定型號', async () => {
+      renderPage();
+      await screen.findByText('SecretHFT 出機檢查');
+      expect(screen.getByLabelText('適用型號')).toBeDisabled();
+    });
+
+    it('選了廠牌之後列出該廠牌的型號，並一併存下', async () => {
+      renderPage();
+      await screen.findByText('SecretHFT 出機檢查');
+
+      await userEvent.type(screen.getByLabelText('主項目名稱'), 'DELL R6615 出機檢查');
+      await userEvent.selectOptions(screen.getByLabelText('適用廠牌'), 'DELL');
+      await waitFor(() => expect(called('fetchModelsByBrand')[0]?.params).toEqual(['DELL']));
+      await userEvent.selectOptions(screen.getByLabelText('適用型號'), await screen.findByRole('option', { name: 'R6615' }));
+      await userEvent.click(screen.getByRole('button', { name: /新增$/ }));
+
+      await waitFor(() => expect(called('insertChecklistGroup')).toHaveLength(1));
+      expect(called('insertChecklistGroup')[0].params).toEqual(['DELL R6615 出機檢查', 'DELL', 2, 'R6615']);
+      expect(await screen.findByText('DELL · R6615')).toBeInTheDocument();
+    });
+
+    it('型號留空就是整個廠牌適用', async () => {
+      renderPage();
+      await screen.findByText('SecretHFT 出機檢查');
+
+      await userEvent.type(screen.getByLabelText('主項目名稱'), 'DELL 出機檢查');
+      await userEvent.selectOptions(screen.getByLabelText('適用廠牌'), 'DELL');
+      await userEvent.click(screen.getByRole('button', { name: /新增$/ }));
+
+      await waitFor(() => expect(called('insertChecklistGroup')).toHaveLength(1));
+      expect(called('insertChecklistGroup')[0].params[3]).toBeNull();
+    });
+
+    it('換廠牌時清掉已選的型號，不會帶著別家的型號存進去', async () => {
+      renderPage();
+      await screen.findByText('SecretHFT 出機檢查');
+
+      await userEvent.type(screen.getByLabelText('主項目名稱'), '測試');
+      await userEvent.selectOptions(screen.getByLabelText('適用廠牌'), 'DELL');
+      await userEvent.selectOptions(screen.getByLabelText('適用型號'), await screen.findByRole('option', { name: 'R6615' }));
+      await userEvent.selectOptions(screen.getByLabelText('適用廠牌'), 'SECRETHFT');
+      expect(screen.getByLabelText('適用型號').value).toBe('');
+    });
   });
 
   describe('新增主要檢查功能後自動套用到該廠牌的所有設備', () => {

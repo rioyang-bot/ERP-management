@@ -269,15 +269,30 @@ export const queries = {
            (SELECT COUNT(*) FROM checklist_items i WHERE i.group_id = g.id AND i.kind = 'MAIN') AS main_count,
            (SELECT COUNT(*) FROM checklist_items i WHERE i.group_id = g.id AND i.kind = 'DETAIL') AS detail_count
     FROM checklist_groups g
-    ORDER BY COALESCE(NULLIF(TRIM(g.brand), ''), 'zzz') ASC, g.sort_order ASC, g.id ASC
+    ORDER BY COALESCE(NULLIF(TRIM(g.brand), ''), 'zzz') ASC,
+             -- 同廠牌裡，整個廠牌適用的排在各型號前面
+             COALESCE(NULLIF(TRIM(g.model), ''), '') ASC,
+             g.sort_order ASC, g.id ASC
   `,
+  // 型號必須搭配廠牌：不同廠牌可能有同名的型號，沒有廠牌的型號對不準。
+  // 因此沒有廠牌時型號一律存成 NULL。
   insertChecklistGroup: `
-    INSERT INTO checklist_groups (name, brand, sort_order)
-    VALUES (TRIM($1), NULLIF(TRIM(COALESCE($2, '')), ''), COALESCE($3, 0))
-    RETURNING id, name, brand`,
+    INSERT INTO checklist_groups (name, brand, sort_order, model)
+    VALUES (
+      TRIM($1),
+      NULLIF(TRIM(COALESCE($2, '')), ''),
+      COALESCE($3, 0),
+      CASE WHEN NULLIF(TRIM(COALESCE($2, '')), '') IS NULL THEN NULL
+           ELSE NULLIF(TRIM(COALESCE($4, '')), '') END
+    )
+    RETURNING id, name, brand, model`,
   updateChecklistGroup: `
     UPDATE checklist_groups
-    SET name = TRIM($1), brand = NULLIF(TRIM(COALESCE($2, '')), ''), updated_at = CURRENT_TIMESTAMP
+    SET name = TRIM($1),
+        brand = NULLIF(TRIM(COALESCE($2, '')), ''),
+        model = CASE WHEN NULLIF(TRIM(COALESCE($2, '')), '') IS NULL THEN NULL
+                     ELSE NULLIF(TRIM(COALESCE($4, '')), '') END,
+        updated_at = CURRENT_TIMESTAMP
     WHERE id = $3
     RETURNING id`,
   // 主項目刪除會連帶刪掉底下的項目（外鍵 CASCADE），
@@ -396,6 +411,8 @@ export const queries = {
   // 這種每台都要填的欄位，逐台加太費工。帶進去之後仍然是細項（填內容）。
   //
   // 廠牌留空的主項目視為通用，套用到所有設備。
+  // 主項目另外指定了型號的，只套用到該廠牌的那個型號；型號留空則整個廠牌都套用。
+  // 同一台設備符合的主項目全部套用（例如「LDA 共通」+「LDA NEOTAP」）。
   // 寫進去的是名稱而不是外鍵參照：範本日後被刪掉，設備上已套用的內容仍然留著。
   //
   // $1 傳入資產 id 只同步那一台，傳 null 則同步全部。
@@ -408,7 +425,13 @@ export const queries = {
     JOIN item_master m ON m.category_id = (SELECT id FROM categories WHERE name = '設備' LIMIT 1)
                       AND (
                         COALESCE(NULLIF(TRIM(g.brand), ''), '') = ''
-                        OR UPPER(TRIM(COALESCE(m.brand, ''))) = UPPER(TRIM(g.brand))
+                        OR (
+                          UPPER(TRIM(COALESCE(m.brand, ''))) = UPPER(TRIM(g.brand))
+                          AND (
+                            COALESCE(NULLIF(TRIM(g.model), ''), '') = ''
+                            OR UPPER(TRIM(COALESCE(m.model, ''))) = UPPER(TRIM(g.model))
+                          )
+                        )
                       )
     JOIN assets a ON a.item_master_id = m.id
     WHERE ($1::integer IS NULL OR a.id = $1::integer)
