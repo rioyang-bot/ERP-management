@@ -12,6 +12,7 @@ import { screenPhotoFiles, formatFileSize } from '../utils/assetPhotos';
  *
  * 範本裡的「拍照項目」（例如正面、背面、機櫃內配線）會列在最上面，
  * 每一項各自上傳，人員才知道該拍哪些、拍漏了哪些。有照片就算完成。
+ * 範本寫了拍攝說明的，直接顯示在該項底下，照著拍就不會拍錯角度。
  * 不屬於任何拍照項目的照片（包含先前上傳的）列在「其他照片」。
  *
  * 縮圖走 blob 網址而不是 <img src="/uploads/...">：/uploads 擋在 requireAuth
@@ -346,6 +347,14 @@ const AssetPhotoSection = ({ device, card, photoItems = [], onChanged, canRemove
                         </button>
                       )}
                     </div>
+                    {item.description && (
+                      <div
+                        style={{ marginTop: '6px', marginLeft: '24px', fontSize: '12px', color: 'var(--text-muted)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.7 }}
+                        data-testid={`photo-item-desc-${item.id}`}
+                      >
+                        {item.description}
+                      </div>
+                    )}
                     {list.length > 0 && (
                       <div style={{ marginTop: '10px', display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
                         {list.map(renderPhoto)}

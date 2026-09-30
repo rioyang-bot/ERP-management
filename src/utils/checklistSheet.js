@@ -189,7 +189,7 @@ export function buildChecklistSheet(device, items = []) {
           ${photoRows.map((row, idx) => `
           <tr>
             <td class="col-seq">${idx + 1}</td>
-            <td class="col-name">${escapeHtml(row.item_name)}</td>
+            <td class="col-name">${escapeHtml(row.item_name)}${row.description ? `<div class="photo-desc">${escapeHtml(row.description)}</div>` : ''}</td>
             <td>${Number(row.photo_count) > 0 ? `☑ 已上傳 ${Number(row.photo_count)} 張` : '☐ 尚未上傳'}</td>
           </tr>`).join('')}
         </tbody>
@@ -271,6 +271,7 @@ ${photoHtml}
     .check-table .group-row td { background: #e2e8f0; font-weight: 800; text-align: left; }
     .check-table .empty { text-align: center; color: #666; padding: 20px; }
     .detail-table .col-name { width: 180px; font-weight: 700; }
+    .photo-desc { font-weight: 400; font-size: 11px; color: #444; white-space: pre-wrap; margin-top: 2px; }
 
     .sign-table { margin-top: 20px; }
     .sign-table th { width: 78px; background: #f1f5f9; font-weight: 700; white-space: nowrap; }
