@@ -4,7 +4,7 @@
 const CHECKLIST_TARGETS_SQL = `
     FROM checklist_groups g
     JOIN checklist_items i ON i.group_id = g.id
-                          AND (i.kind IN ('MAIN', 'PHOTO') OR COALESCE(i.auto_apply, FALSE))
+                          AND i.kind IN ('MAIN', 'DETAIL', 'PHOTO')
     JOIN item_master m ON m.category_id = (SELECT id FROM categories WHERE name = '設備' LIMIT 1)
                       AND (
                         COALESCE(NULLIF(TRIM(g.brand), ''), '') = ''
@@ -368,9 +368,6 @@ export const queries = {
     WHERE id = $3
     RETURNING id`,
   deleteChecklistPhotoExample: `DELETE FROM checklist_photo_examples WHERE id = $1 RETURNING id, name`,
-  // 細項是否隨主要檢查功能一起自動套用到該廠牌的每一台設備
-  setChecklistItemAutoApply: `
-    UPDATE checklist_items SET auto_apply = $1 WHERE id = $2 RETURNING id, auto_apply`,
   deleteChecklistItem: `DELETE FROM checklist_items WHERE id = $1 RETURNING id`,
   // 刪範本項目之前，先把設備上還沒有任何紀錄的同一項清掉；
   // 已經勾選、填了內容或拍了照的留著（範本刪掉後變成可自行移除的舊項目）。
@@ -483,10 +480,10 @@ export const queries = {
   // 主項目綁定廠牌之後，該廠牌的每一台設備都要有這組「主要檢查功能」，
   // 不需要逐台按套用。這支查詢把還缺的補上（已經有的不動，勾選狀態不受影響）。
   //
-  // 拍照項目（PHOTO）與主要檢查功能一樣一律自動套用：人員要看得到每台該拍哪些照片。
-  //
-  // 細項預設不自動套用，但勾了 auto_apply 的也一起帶入 —— 像 OS、BMC IP
-  // 這種每台都要填的欄位，逐台加太費工。帶進去之後仍然是細項（填內容）。
+  // 三種項目一律自動套用：主要檢查功能（勾選）、細項（填內容）、拍照項目（上傳照片）。
+  // 細項先前要勾 auto_apply 才會帶入，沒勾的在設備上變成「先勾選再加入」，
+  // 看起來像勾選項目 —— 細項一律是填寫內容，因此改為與其他兩種一樣直接套用。
+  // auto_apply 欄位保留在資料表裡，不再使用。
   //
   // 廠牌留空的主項目視為通用，套用到所有設備。
   // 主項目另外指定了型號的，只套用到該廠牌的那個型號；型號留空則整個廠牌都套用。

@@ -251,8 +251,10 @@ describe('列印', () => {
 describe('資料庫', () => {
   const oneLine = (s) => s.replace(/\s+/g, ' ');
 
-  it('拍照項目與主要檢查功能一樣自動套用', () => {
-    expect(oneLine(queries.syncBrandChecklistToAssets)).toContain("i.kind IN ('MAIN', 'PHOTO') OR COALESCE(i.auto_apply, FALSE)");
+  it('三種項目都自動套用，細項不再需要另外勾選', () => {
+    const sql = oneLine(queries.syncBrandChecklistToAssets);
+    expect(sql).toContain("i.kind IN ('MAIN', 'DETAIL', 'PHOTO')");
+    expect(sql).not.toContain('auto_apply');
   });
 
   it('照片只能掛到同一台設備的拍照項目上', () => {
