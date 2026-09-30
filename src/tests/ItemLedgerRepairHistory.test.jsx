@@ -118,9 +118,25 @@ describe('履歷查詢的事件分類', () => {
   });
 
   it('每一段的欄位數一致，UNION 才成立', () => {
+    // 六段：進貨、批次匯入、耗材初始庫存、出貨、稽核紀錄（靠序號）、稽核紀錄（靠品項 id）
     const selects = sql.split(/UNION ALL/).length;
-    expect(selects).toBe(5);
-    // 既有四段沒有說明文字，補 NULL 佔位
+    expect(selects).toBe(6);
+    // 前四段沒有說明文字，補 NULL 佔位
     expect((sql.match(/NULL::text as summary/g) || []).length).toBe(4);
+  });
+
+  /**
+   * 耗材沒有序號，進貨數量更正與刪單記的是進貨單號 ——
+   * 靠序號回接的那一段接不到它們，得靠 details.itemMasterId。
+   */
+  it('另有一段以品項 id 對回，沒有序號的品項才看得到自己的異動', () => {
+    expect(sql).toContain("l.details->>'itemMasterId' = $1::text");
+    expect(sql).toContain('LAB_TRANSFER');
+  });
+
+  it('品項 id 用文字比對，不做型別轉換', () => {
+    // details 是使用者資料，裡面可能是任何東西。
+    // 轉型會讓整張履歷查詢在遇到一筆爛資料時直接失敗。
+    expect(sql).not.toContain("(l.details->>'itemMasterId')::integer");
   });
 });

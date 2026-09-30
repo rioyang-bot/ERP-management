@@ -137,6 +137,29 @@ export async function logUpdate(module, targetId, targetName, summary, details =
 }
 
 /**
+ * 批次建檔 (CREATE)
+ *
+ * 批次建了幾十台，先前只記一筆、目標寫成「批次 12 台」。
+ * 品項履歷是拿序號接回資產的，「批次 12 台」接不上任何一台 ——
+ * 那幾十台設備的履歷上完全看不到自己是什麼時候建檔的。
+ *
+ * 整批那一筆仍然保留（看得出這是一次批次作業），另外每一支序號各記一筆。
+ */
+export async function logBulkCreate(module, {
+  bulkTarget, isBulk = false, snList = [], targetName, summary, details = {}, perSn,
+} = {}) {
+  await logCreate(module, bulkTarget, targetName, summary, details);
+  if (!isBulk) return;
+
+  const sns = [...new Set((snList || []).map((s) => String(s ?? '').trim()).filter(Boolean))];
+  await Promise.all(sns.map((sn) => logCreate(
+    module, sn, targetName,
+    perSn ? perSn(sn) : `${summary}（序號: ${sn}）`,
+    { ...details, sn, isBulkMember: true }
+  )));
+}
+
+/**
  * 序號變更 (UPDATE)
  *
  * 序號會從三個地方被改：設備編輯、硬體編輯、進貨明細單更正。
@@ -232,6 +255,7 @@ export default {
   ACTION_TYPES,
   logEvent,
   logCreate,
+  logBulkCreate,
   logUpdate,
   logDelete,
   logSnChange,

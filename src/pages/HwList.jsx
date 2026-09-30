@@ -4,7 +4,7 @@ import { Search, Columns3, Edit2, X, Server, User, MapPin, MoreHorizontal, Trash
 import ItemLedgerModal from '../components/ItemLedgerModal';
 import HwRegistrationModal from '../components/HwRegistrationModal';
 import RmaReplacementModal from '../components/RmaReplacementModal';
-import { logUpdate, logDelete, logStatusChange, logSnChange } from '../utils/auditLogger';
+import { logUpdate, logDelete, logStatusChange, logSnChange, logMountChange } from '../utils/auditLogger';
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 import FilterResultSummary from '../components/common/FilterResultSummary';
@@ -305,6 +305,14 @@ const HwList = ({ isSplitMode = false }) => {
       const currentHwSn = (editItem.sn || '').trim();
 
       if (currentHwSn && origServerSn !== newServerSn) {
+        // 從設備端加掛／卸下會記一筆搭載硬體異動，從硬體端改卻不會 ——
+        // 同一件事只有一半留得下履歷。兩邊都記，設備與硬體各自的履歷才對得上。
+        if (origServerSn) {
+          await logMountChange(origServerSn, origServerSn, { removed: [currentHwSn] });
+        }
+        if (newServerSn) {
+          await logMountChange(newServerSn, newServerSn, { added: [currentHwSn] });
+        }
         if (origServerSn) {
           try {
             await window.electronAPI.namedQuery('removeMountedHwSnFromDevice', [origServerSn, currentHwSn]);

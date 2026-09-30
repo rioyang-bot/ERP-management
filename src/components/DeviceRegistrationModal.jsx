@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { getMatchingSpecs } from '../utils/matchingSpecs';
 import { Plus, Save, X, Monitor, User, MapPin, ListFilter, Server, FileSpreadsheet, Check, Layers } from 'lucide-react';
-import { logCreate } from '../utils/auditLogger';
+import { logBulkCreate } from '../utils/auditLogger';
 import CardPickerModal from './CardPickerModal';
 import DeviceBatchImportModal from './DeviceBatchImportModal';
 import { normalizeMasterName } from '../utils/normalizeMasterData';
@@ -280,12 +280,17 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
         throw new Error('未成功建立任何設備紀錄，請確認資料是否正確');
       }
 
-      logCreate(
+      logBulkCreate(
         'DEVICE',
-        isBulkMode ? `批次 ${snList.length} 台` : (formData.sn || '無序號'),
-        `${formData.brand} ${formData.model}`,
-        `新增設備 [${formData.brand} ${formData.model}] ${isBulkMode ? `批次建立 ${successCount} 筆` : `序號: ${formData.sn || '未指定'}`}`,
-        { isBulkMode, count: successCount, brand: formData.brand, type: formData.type, model: formData.model, snList: isBulkMode ? snList : [formData.sn], client: formData.client, location: formData.location }
+        {
+          bulkTarget: isBulkMode ? `批次 ${snList.length} 台` : (formData.sn || '無序號'),
+          isBulk: isBulkMode,
+          snList,
+          targetName: `${formData.brand} ${formData.model}`,
+          summary: `新增設備 [${formData.brand} ${formData.model}] ${isBulkMode ? `批次建立 ${successCount} 筆` : `序號: ${formData.sn || '未指定'}`}`,
+          perSn: (sn) => `新增設備 [${formData.brand} ${formData.model}] 序號: ${sn}（批次建檔）`,
+          details: { isBulkMode, count: successCount, brand: formData.brand, type: formData.type, model: formData.model, snList: isBulkMode ? snList : [formData.sn], client: formData.client, location: formData.location },
+        }
       );
 
       const createdInfo = {

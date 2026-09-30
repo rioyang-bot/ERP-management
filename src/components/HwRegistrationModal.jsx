@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { getMatchingSpecs } from '../utils/matchingSpecs';
 import { Plus, Save, Trash2, Cpu, Settings2, X, Server, FileSpreadsheet, Check, Layers } from 'lucide-react';
-import { logCreate } from '../utils/auditLogger';
+import { logBulkCreate } from '../utils/auditLogger';
 import CardPickerModal from './CardPickerModal';
 import HwBatchImportModal from './HwBatchImportModal';
 import { normalizeMasterName } from '../utils/normalizeMasterData';
@@ -301,12 +301,17 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
       }
 
       if (successCount > 0) {
-        logCreate(
+        logBulkCreate(
           'HARDWARE',
-          isBulkMode ? `批次 ${snList.length} 件` : (formData.sn || '無序號'),
-          `${safeBrand} ${safeModel}`,
-          `新增硬體 (${safeBrand} ${safeModel} x${successCount})`,
-          { brand: safeBrand, type: safeType, model: safeModel, count: successCount, sns: snList }
+          {
+            bulkTarget: isBulkMode ? `批次 ${snList.length} 件` : (formData.sn || '無序號'),
+            isBulk: isBulkMode,
+            snList,
+            targetName: `${safeBrand} ${safeModel}`,
+            summary: `新增硬體 (${safeBrand} ${safeModel} x${successCount})`,
+            perSn: (sn) => `新增硬體 [${safeBrand} ${safeModel}] 序號: ${sn}（批次建檔）`,
+            details: { brand: safeBrand, type: safeType, model: safeModel, count: successCount, sns: snList },
+          }
         );
 
         alert(`成功建檔 ${successCount} 筆硬體資料！${failCount > 0 ? ` (失敗 ${failCount} 筆)` : ''}`);
