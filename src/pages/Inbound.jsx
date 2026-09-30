@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Trash2, Save, FileText, ShoppingBag, Layers, AlertCircle, ArrowDownToLine, Search } from 'lucide-react';
+import { Trash2, Save, FileText, ShoppingBag, Layers, AlertCircle, ArrowDownToLine } from 'lucide-react';
 import InboundItemSelectModal from '../components/InboundItemSelectModal';
 import { logCreate, getCurrentUser } from '../utils/auditLogger';
 import { parseSnLines, validateSnBatch } from '../utils/snBatch';
@@ -693,7 +693,7 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
                       }}
                       data-testid={`open-item-select-btn-${row.id}`}
                     >
-                      <Search size={15} /> 🔍 點擊選取庫存品項...
+                      🔍 點擊選取庫存品項...
                     </button>
                   );
                 })()}
@@ -728,7 +728,7 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
             }}
             data-testid="add-empty-inbound-row-btn"
           >
-            <Plus size={16} /> ➕ 增加空白品項明細
+            ➕ 增加空白品項明細
           </button>
         </div>
       </div>
