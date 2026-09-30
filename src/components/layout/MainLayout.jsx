@@ -100,6 +100,9 @@ const MainLayout = () => {
     return saved ? JSON.parse(saved) : null;
   });
   const [draggingMenuId, setDraggingMenuId] = useState(null);
+  // 目前滑過哪一項。先前拖曳時只有被拖的那一項變淡，
+  // 完全看不出放開之後會落在哪裡。
+  const [dragOverMenuId, setDragOverMenuId] = useState(null);
 
   // 當切換登入使用者時，載入該帳號專屬的排序設定
   useEffect(() => {
@@ -171,15 +174,35 @@ const MainLayout = () => {
 
   const handleMenuDragEnd = (e) => {
     setDraggingMenuId(null);
+    setDragOverMenuId(null);
     e.currentTarget.style.opacity = '1';
   };
 
-  const handleMenuDragOver = (e) => {
+  const handleMenuDragOver = (e, targetId) => {
     e.preventDefault();
+    if (targetId !== draggingMenuId) setDragOverMenuId(targetId);
+  };
+
+  const handleMenuDragLeave = (targetId) => {
+    setDragOverMenuId((prev) => (prev === targetId ? null : prev));
+  };
+
+  /**
+   * 放開之後會插在這一項的哪一邊。
+   *
+   * 排序是「先把來源抽掉，再插到目標當時的位置」：
+   * 往下拖時目標會遞補上來，來源因此落在它下面；往上拖則插在它上面。
+   * 指示線要畫在真正會落下的那一邊，不然看到的位置與結果會差一格。
+   */
+  const dropEdge = (targetId) => {
+    if (!draggingMenuId || dragOverMenuId !== targetId || draggingMenuId === targetId) return null;
+    const ids = menuItems.map((i) => i.id);
+    return ids.indexOf(draggingMenuId) < ids.indexOf(targetId) ? 'bottom' : 'top';
   };
 
   const handleMenuDrop = (e, targetId) => {
     e.preventDefault();
+    setDragOverMenuId(null);
     const sourceId = e.dataTransfer.getData('menuId');
     if (sourceId === targetId) return;
 
@@ -220,9 +243,24 @@ const MainLayout = () => {
               draggable 
               onDragStart={(e) => handleMenuDragStart(e, item.id)}
               onDragEnd={handleMenuDragEnd}
-              onDragOver={handleMenuDragOver}
+              onDragOver={(e) => handleMenuDragOver(e, item.id)}
+              onDragLeave={() => handleMenuDragLeave(item.id)}
               onDrop={(e) => handleMenuDrop(e, item.id)}
-              style={{ cursor: 'move', transition: 'all 0.2s', borderLeft: draggingMenuId === item.id ? '2px solid var(--primary-color)' : 'none' }}
+              data-testid={`sidebar-menu-${item.id}`}
+              data-drop-edge={dropEdge(item.id) || undefined}
+              style={{
+                cursor: 'move',
+                transition: 'background-color 0.15s',
+                borderLeft: draggingMenuId === item.id ? '2px solid var(--primary-color)' : 'none',
+                // 指示線用 inset 陰影而不是 border：border 會把該項撐高，
+                // 拖曳過程中整排選單會跟著上下跳動
+                boxShadow: dropEdge(item.id) === 'top'
+                  ? 'inset 0 3px 0 0 var(--primary-color)'
+                  : dropEdge(item.id) === 'bottom'
+                    ? 'inset 0 -3px 0 0 var(--primary-color)'
+                    : 'none',
+                backgroundColor: dropEdge(item.id) ? 'rgba(37, 99, 235, 0.10)' : 'transparent',
+              }}
             >
               <NavLink to={item.path} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
