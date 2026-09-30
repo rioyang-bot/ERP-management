@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
-  ClipboardCheck, Plus, Trash2, Pencil, Check, X, Layers, ListChecks, Info, Tag, RefreshCw, GripVertical,
+  ClipboardCheck, Plus, Trash2, Pencil, Check, X, Layers, ListChecks, Info, Tag, RefreshCw, GripVertical, Camera,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { logCreate, logDelete, logUpdate } from '../utils/auditLogger';
@@ -14,9 +14,11 @@ import { groupScopeLabel } from '../utils/checklistGroupScope';
  *   主項目（綁定廠牌，例如「BLACKCORE 出機檢查」；可再指定型號，
  *           例如「LDA · NEOTAP」只套用到 NEOTAP，型號留空則整個廠牌適用）
  *     ├─ 主要檢查功能：該廠牌的每一台設備自動套用，勾選表示檢查完成
- *     └─ 細項：在設備上填寫內容而不是勾選（例如細項「OS」填「RH9.6」）。
- *              預設由每台設備各自挑選；勾「自動」之後就跟主要檢查功能一樣
- *              自動出現在該廠牌的每一台設備上，省去逐台加的功夫。
+ *     ├─ 細項：在設備上填寫內容而不是勾選（例如細項「OS」填「RH9.6」）。
+ *     │        預設由每台設備各自挑選；勾「自動」之後就跟主要檢查功能一樣
+ *     │        自動出現在該廠牌的每一台設備上，省去逐台加的功夫。
+ *     └─ 拍照項目：每台設備要拍的照片（例如正面、背面），自動套用，
+ *                  在設備的主機照片區逐項上傳，有照片就算完成。
  *
  * 這裡改的是「範本」。新增主項目或主要檢查功能之後會立刻同步到所有符合的
  * 設備；但設備端保留的是套用當下的快照，在這裡刪掉任何項目都不會讓已經
@@ -24,6 +26,28 @@ import { groupScopeLabel } from '../utils/checklistGroupScope';
  */
 const KIND_MAIN = 'MAIN';
 const KIND_DETAIL = 'DETAIL';
+const KIND_PHOTO = 'PHOTO';
+
+/** 三種項目各自的標題、說明與顏色 */
+const KIND_META = {
+  [KIND_MAIN]: {
+    title: '主要檢查功能', label: '主要功能', Icon: ListChecks, accent: 'var(--primary-color)',
+    desc: '新增後立即套用到所有符合廠牌的設備，勾選表示檢查完成。',
+    placeholder: '例如：BIOS 設定、韌體版本確認',
+  },
+  [KIND_DETAIL]: {
+    title: '細項', label: '細項', Icon: Tag, accent: '#7c3aed',
+    desc: '這裡定義的是欄位名稱（例如「OS」），由每台設備填寫內容（例如「RH9.6」）。勾選前面的框，就跟主要檢查功能一樣自動套用到該廠牌的每一台設備。',
+    placeholder: '欄位名稱，例如：OS、BMC IP、開機順序',
+  },
+  [KIND_PHOTO]: {
+    title: '拍照項目', label: '拍照項目', Icon: Camera, accent: '#ea580c',
+    desc: '每台設備要拍的照片。新增後立即套用到所有符合的設備，人員在設備的「主機照片」區逐項上傳，有照片就算完成。',
+    placeholder: '例如：正面、背面、機櫃內配線',
+  },
+};
+/** 一建立就要發到所有符合設備上的種類 */
+const AUTO_KINDS = [KIND_MAIN, KIND_PHOTO];
 
 const ChecklistTemplates = () => {
   const navigate = useNavigate();
@@ -41,7 +65,7 @@ const ChecklistTemplates = () => {
   const [modelsByBrand, setModelsByBrand] = useState({});
 
   // 新增項目（兩組各自一個輸入框）
-  const [newItemText, setNewItemText] = useState({ [KIND_MAIN]: '', [KIND_DETAIL]: '' });
+  const [newItemText, setNewItemText] = useState({ [KIND_MAIN]: '', [KIND_DETAIL]: '', [KIND_PHOTO]: '' });
   const [editingItem, setEditingItem] = useState(null); // { id, name }
   // 「已套用到 N 台設備」的提示，讓使用者看得到自動套用真的發生了
   const [syncNotice, setSyncNotice] = useState('');
@@ -133,6 +157,8 @@ const ChecklistTemplates = () => {
   const bySortOrder = (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.id - b.id;
   const mainItems = groupItems.filter((i) => i.kind === KIND_MAIN).sort(bySortOrder);
   const detailItems = groupItems.filter((i) => i.kind === KIND_DETAIL).sort(bySortOrder);
+  const photoItems = groupItems.filter((i) => i.kind === KIND_PHOTO).sort(bySortOrder);
+  const itemsOfKind = { [KIND_MAIN]: mainItems, [KIND_DETAIL]: detailItems, [KIND_PHOTO]: photoItems };
 
   // --- 主項目 ---
   const handleAddGroup = async (e) => {
@@ -175,7 +201,7 @@ const ChecklistTemplates = () => {
 
   const handleDeleteGroup = async (group) => {
     const msg = `確定要刪除主項目 [${group.name}] 嗎？\n\n`
-      + `底下的 ${group.main_count} 個主要檢查功能與 ${group.detail_count} 個細項會一併刪除。\n`
+      + `底下的 ${group.main_count} 個主要檢查功能、${group.detail_count} 個細項與 ${group.photo_count || 0} 個拍照項目會一併刪除。\n`
       + '已經套用到設備上的檢查表不受影響（設備端保留的是套用當下的內容）。';
     if (!window.confirm(msg)) return;
     try {
@@ -197,11 +223,11 @@ const ChecklistTemplates = () => {
     try {
       const res = await window.electronAPI.namedQuery('insertChecklistItem', [selectedGroup.id, kind, name, sameKind.length]);
       if (!res.success) throw new Error(res.error || '新增失敗');
-      logCreate('SETTING', res.rows?.[0]?.id, name, `新增出機檢查${kind === KIND_MAIN ? '主要功能' : '細項'} [${name}] 至 [${selectedGroup.name}]`, { group: selectedGroup.name, kind, name });
+      logCreate('SETTING', res.rows?.[0]?.id, name, `新增出機檢查${KIND_META[kind].label} [${name}] 至 [${selectedGroup.name}]`, { group: selectedGroup.name, kind, name });
       setNewItemText((prev) => ({ ...prev, [kind]: '' }));
 
-      // 主要檢查功能一建立就要出現在所有符合廠牌的設備上
-      if (kind === KIND_MAIN) {
+      // 主要檢查功能與拍照項目一建立就要出現在所有符合廠牌的設備上
+      if (AUTO_KINDS.includes(kind)) {
         const n = await syncToDevices();
         setSyncNotice(n > 0
           ? `已套用到 ${n} 台${selectedGroup.brand ? groupScopeLabel(selectedGroup) : ''}設備`
@@ -354,25 +380,25 @@ const ChecklistTemplates = () => {
     color, cursor: 'pointer', flexShrink: 0,
   });
 
-  /** 主要檢查功能 / 細項 共用的清單區塊 */
+  /** 主要檢查功能 / 細項 / 拍照項目 共用的清單區塊 */
   const renderItemColumn = (kind) => {
-    const isMain = kind === KIND_MAIN;
-    const list = isMain ? mainItems : detailItems;
-    const accent = isMain ? 'var(--primary-color)' : '#7c3aed';
+    const meta = KIND_META[kind];
+    const isDetail = kind === KIND_DETAIL;
+    const list = itemsOfKind[kind];
+    const accent = meta.accent;
+    const { Icon } = meta;
 
     return (
       <div style={{ ...card, padding: '16px', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-          {isMain ? <ListChecks size={18} color={accent} /> : <Tag size={18} color={accent} />}
+          <Icon size={18} color={accent} />
           <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 900, color: 'var(--text-main)' }}>
-            {isMain ? '主要檢查功能' : '細項'}
+            {meta.title}
           </h3>
           <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 700 }}>({list.length})</span>
         </div>
         <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
-          {isMain
-            ? '新增後立即套用到所有符合廠牌的設備，勾選表示檢查完成。'
-            : '這裡定義的是欄位名稱（例如「OS」），由每台設備填寫內容（例如「RH9.6」）。勾選前面的框，就跟主要檢查功能一樣自動套用到該廠牌的每一台設備。'}
+          {meta.desc}
           {list.length > 1 && '　拖曳左側的握把即可調整順序，設備上與列印的先後會跟著改。'}
         </p>
 
@@ -382,7 +408,8 @@ const ChecklistTemplates = () => {
             value={newItemText[kind]}
             onChange={(e) => setNewItemText((prev) => ({ ...prev, [kind]: e.target.value }))}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddItem(kind); } }}
-            placeholder={isMain ? '例如：BIOS 設定、韌體版本確認' : '欄位名稱，例如：OS、BMC IP、開機順序'}
+            placeholder={meta.placeholder}
+            aria-label={`${meta.title}名稱`}
             disabled={!selectedGroup}
             style={inputStyle}
           />
@@ -390,8 +417,8 @@ const ChecklistTemplates = () => {
             type="button"
             onClick={() => handleAddItem(kind)}
             disabled={!selectedGroup}
-            title={isMain ? '新增主要檢查功能' : '新增細項'}
-            aria-label={isMain ? '新增主要檢查功能' : '新增細項'}
+            title={`新增${meta.title}`}
+            aria-label={`新增${meta.title}`}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '0 12px',
               borderRadius: '8px', border: 'none', backgroundColor: selectedGroup ? accent : 'var(--border-color)',
@@ -432,7 +459,7 @@ const ChecklistTemplates = () => {
               >
                 <GripVertical size={14} />
               </span>
-              {isMain ? (
+              {!isDetail ? (
                 <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--text-subtle)', minWidth: '18px' }}>
                   {idx + 1}.
                 </span>
@@ -464,7 +491,7 @@ const ChecklistTemplates = () => {
                 <>
                   <span style={{ flex: 1, fontSize: '13px', color: 'var(--text-main)', fontWeight: 600, wordBreak: 'break-word' }}>
                     {item.name}
-                    {!isMain && item.auto_apply && (
+                    {isDetail && item.auto_apply && (
                       <span style={{ marginLeft: '6px', fontSize: '10px', fontWeight: 800, padding: '1px 7px', borderRadius: '8px', backgroundColor: 'rgba(8, 145, 178, 0.14)', color: '#0891b2', whiteSpace: 'nowrap' }}>
                         自動套用
                       </span>
@@ -534,6 +561,10 @@ const ChecklistTemplates = () => {
             <b style={{ color: '#7c3aed' }}>填寫內容而不是勾選</b>（例如細項「OS」填「RH9.6」）。
             細項預設由每台設備各自挑選，若每台都要填，勾選細項前面的框即可
             <b style={{ color: '#0891b2' }}>自動套用到該廠牌的所有設備</b>。
+          </div>
+          <div>
+            • <b style={{ color: 'var(--text-main)' }}>拍照項目</b>列出每台設備要拍的照片（例如正面、背面、機櫃內配線），
+            會自動套用；人員在設備檢查表的「主機照片」區<b style={{ color: '#ea580c' }}>逐項上傳，有照片就算完成</b>。
           </div>
           <div>
             • 在這裡刪除任何項目，<b style={{ color: 'var(--text-main)' }}>都不會影響已經套用到設備上的檢查表</b>：設備端保留的是套用當下的內容。
@@ -652,7 +683,7 @@ const ChecklistTemplates = () => {
                               {groupScopeLabel(g)}
                             </span>
                             <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700 }}>
-                              主要 {g.main_count} · 細項 {g.detail_count}
+                              主要 {g.main_count} · 細項 {g.detail_count}{Number(g.photo_count) > 0 ? ` · 拍照 ${g.photo_count}` : ''}
                             </span>
                           </div>
                         </div>
@@ -691,9 +722,10 @@ const ChecklistTemplates = () => {
                 </>
               ) : '請先於左側選擇或新增主項目'}
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
               {renderItemColumn(KIND_MAIN)}
               {renderItemColumn(KIND_DETAIL)}
+              {renderItemColumn(KIND_PHOTO)}
             </div>
           </div>
         </div>

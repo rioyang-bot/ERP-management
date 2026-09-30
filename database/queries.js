@@ -267,7 +267,8 @@ export const queries = {
   fetchChecklistGroups: `
     SELECT g.*,
            (SELECT COUNT(*) FROM checklist_items i WHERE i.group_id = g.id AND i.kind = 'MAIN') AS main_count,
-           (SELECT COUNT(*) FROM checklist_items i WHERE i.group_id = g.id AND i.kind = 'DETAIL') AS detail_count
+           (SELECT COUNT(*) FROM checklist_items i WHERE i.group_id = g.id AND i.kind = 'DETAIL') AS detail_count,
+           (SELECT COUNT(*) FROM checklist_items i WHERE i.group_id = g.id AND i.kind = 'PHOTO') AS photo_count
     FROM checklist_groups g
     ORDER BY COALESCE(NULLIF(TRIM(g.brand), ''), 'zzz') ASC,
              -- 同廠牌裡，整個廠牌適用的排在各型號前面
@@ -339,10 +340,13 @@ export const queries = {
     RETURNING a.id`,
 
   // --- 設備實際套用的檢查表 ---
+  // photo_count：拍照項目已經上傳了幾張，有照片就算完成
   fetchAssetChecklist: `
-    SELECT * FROM asset_checklist_items
-    WHERE asset_id = $1
-    ORDER BY sort_order ASC, id ASC
+    SELECT c.*,
+           (SELECT COUNT(*)::int FROM asset_photos p WHERE p.checklist_item_id = c.id) AS photo_count
+    FROM asset_checklist_items c
+    WHERE c.asset_id = $1
+    ORDER BY c.sort_order ASC, c.id ASC
   `,
   // 各設備的完成度，供設備列表顯示進度。
   // 單獨一支查詢而不是併進 fetchAssetsList：尚未套用資料庫變更時
@@ -388,16 +392,20 @@ export const queries = {
   // --- 設備主機照片 ---
   // 照片掛在單一台設備上，不是掛在型號上：同型號的兩台機器，機況與配置都不一樣，
   // 日後要據以開立驗收單的也是那一台自己的照片。
+  // checklist_item_id：為哪一個拍照項目拍的，NULL 為其他照片
   fetchAssetPhotos: `
     SELECT id, asset_id, file_name, original_name, mime_type, file_size,
-           uploaded_by, uploaded_by_name, created_at
+           uploaded_by, uploaded_by_name, created_at, checklist_item_id
     FROM asset_photos
     WHERE asset_id = $1
     ORDER BY id ASC`,
+  // 拍照項目必須是同一台設備的：只有對得上 asset_id 才寫入，否則記成其他照片
   insertAssetPhoto: `
-    INSERT INTO asset_photos (asset_id, file_name, original_name, mime_type, file_size, uploaded_by, uploaded_by_name)
-    VALUES ($1::integer, $2, $3, $4, $5::bigint, $6::integer, $7)
-    RETURNING id, file_name, original_name, mime_type, file_size, uploaded_by_name, created_at`,
+    INSERT INTO asset_photos (asset_id, file_name, original_name, mime_type, file_size, uploaded_by, uploaded_by_name, checklist_item_id)
+    VALUES ($1::integer, $2, $3, $4, $5::bigint, $6::integer, $7,
+      (SELECT c.id FROM asset_checklist_items c
+       WHERE c.id = $8::integer AND c.asset_id = $1::integer AND c.kind = 'PHOTO'))
+    RETURNING id, file_name, original_name, mime_type, file_size, uploaded_by_name, created_at, checklist_item_id`,
   // 一併回傳檔名：呼叫端要據此判斷刪的是哪一張，寫進事件紀錄
   deleteAssetPhoto: `
     DELETE FROM asset_photos WHERE id = $1::integer
@@ -406,6 +414,8 @@ export const queries = {
   // --- 依廠牌自動套用 ---
   // 主項目綁定廠牌之後，該廠牌的每一台設備都要有這組「主要檢查功能」，
   // 不需要逐台按套用。這支查詢把還缺的補上（已經有的不動，勾選狀態不受影響）。
+  //
+  // 拍照項目（PHOTO）與主要檢查功能一樣一律自動套用：人員要看得到每台該拍哪些照片。
   //
   // 細項預設不自動套用，但勾了 auto_apply 的也一起帶入 —— 像 OS、BMC IP
   // 這種每台都要填的欄位，逐台加太費工。帶進去之後仍然是細項（填內容）。
@@ -421,7 +431,7 @@ export const queries = {
     SELECT a.id, g.name, i.kind, i.name, i.id, COALESCE(i.sort_order, 0)
     FROM checklist_groups g
     JOIN checklist_items i ON i.group_id = g.id
-                          AND (i.kind = 'MAIN' OR COALESCE(i.auto_apply, FALSE))
+                          AND (i.kind IN ('MAIN', 'PHOTO') OR COALESCE(i.auto_apply, FALSE))
     JOIN item_master m ON m.category_id = (SELECT id FROM categories WHERE name = '設備' LIMIT 1)
                       AND (
                         COALESCE(NULLIF(TRIM(g.brand), ''), '') = ''
