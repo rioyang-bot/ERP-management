@@ -8,6 +8,7 @@
 
 import express from 'express';
 import { hashPassword, verifyPassword } from './auth.js';
+import { writeAuditLog, clientIp } from './auditLog.js';
 
 const MIN_PASSWORD_LENGTH = 8;
 
@@ -35,11 +36,33 @@ export const createAuthRoutes = (pool, auth) => {
       // 帳號不存在與密碼錯誤回傳相同訊息，避免被用來探測有效帳號
       if (!user) {
         await new Promise((r) => setTimeout(r, 300)); // 拉平回應時間
+        // 失敗的登入才是最該留下紀錄的：帳號不存在與密碼錯誤對外回同一句話，
+        // 但紀錄裡分得出來，才查得出是有人在猜帳號還是自己打錯密碼。
+        await writeAuditLog(pool, {
+          actionType: 'LOGIN_FAILED',
+          userName: String(username).trim(),
+          targetId: String(username).trim(),
+          targetName: String(username).trim(),
+          summary: `登入失敗：帳號 [${String(username).trim()}] 不存在或已停用`,
+          details: { reason: 'NO_SUCH_USER' },
+          ipAddress: clientIp(req),
+        });
         return res.status(401).json({ success: false, error: '帳號或密碼錯誤。' });
       }
 
       const { ok, needsUpgrade } = await verifyPassword(password, user.password_hash);
       if (!ok) {
+        await writeAuditLog(pool, {
+          actionType: 'LOGIN_FAILED',
+          userId: user.id,
+          userName: user.username,
+          userRole: user.role,
+          targetId: user.username,
+          targetName: user.full_name || user.username,
+          summary: `登入失敗：帳號 [${user.username}] 密碼錯誤`,
+          details: { reason: 'BAD_PASSWORD' },
+          ipAddress: clientIp(req),
+        });
         return res.status(401).json({ success: false, error: '帳號或密碼錯誤。' });
       }
 
@@ -57,6 +80,17 @@ export const createAuthRoutes = (pool, auth) => {
       }
 
       const { token, expiresAt } = await auth.createSession(user.id, req.get('user-agent'));
+      await writeAuditLog(pool, {
+        actionType: 'LOGIN',
+        userId: user.id,
+        userName: user.username,
+        userRole: user.role,
+        targetId: user.username,
+        targetName: user.full_name || user.username,
+        summary: `使用者 [${user.username}] 登入系統`,
+        details: { role: user.role, userAgent: req.get('user-agent') || '' },
+        ipAddress: clientIp(req),
+      });
       return res.json({
         success: true,
         token,
@@ -79,6 +113,16 @@ export const createAuthRoutes = (pool, auth) => {
   router.post('/logout', auth.requireAuth, async (req, res) => {
     try {
       await auth.destroySession(req.sessionToken);
+      await writeAuditLog(pool, {
+        actionType: 'LOGOUT',
+        userId: req.user?.id ?? null,
+        userName: req.user?.username || '未知',
+        userRole: req.user?.role || 'USER',
+        targetId: req.user?.username || '',
+        targetName: req.user?.full_name || req.user?.username || '',
+        summary: `使用者 [${req.user?.username || '未知'}] 登出系統`,
+        ipAddress: clientIp(req),
+      });
       res.json({ success: true });
     } catch {
       res.status(500).json({ success: false, error: '登出失敗。' });

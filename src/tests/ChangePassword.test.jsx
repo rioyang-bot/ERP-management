@@ -111,6 +111,50 @@ describe('使用者變更密碼功能 (Change Password) 測試', () => {
     });
   });
 
+  /**
+   * 自己改自己的密碼原本完全不留痕跡 —— 事件紀錄上查不到誰在什麼時候改過密碼。
+   */
+  it('變更成功後要寫進事件紀錄', async () => {
+    const user = userEvent.setup();
+    renderComponent();
+
+    await user.click(screen.getByText('變更密碼'));
+    await user.type(screen.getByPlaceholderText('請輸入原密碼'), 'oldPassword123');
+    await user.type(screen.getByPlaceholderText('請輸入新密碼'), 'newSecurePass456');
+    await user.type(screen.getByPlaceholderText('請再次輸入新密碼'), 'newSecurePass456');
+    await user.click(screen.getByText('確認變更'));
+
+    await waitFor(() => {
+      const audit = namedQuerySpy.mock.calls.find(([q]) => q === 'insertAuditLog');
+      expect(audit).toBeTruthy();
+      const [, params] = audit;
+      expect(params[3]).toBe('UPDATE');
+      expect(params[4]).toBe('USER');
+      expect(params[6]).toBe('testuser');
+      expect(params[8]).toContain('自行變更登入密碼');
+    });
+
+    // 密碼本身不能出現在紀錄裡
+    const audit = namedQuerySpy.mock.calls.find(([q]) => q === 'insertAuditLog');
+    expect(JSON.stringify(audit[1])).not.toContain('newSecurePass456');
+    expect(JSON.stringify(audit[1])).not.toContain('oldPassword123');
+  });
+
+  it('變更失敗時不留下事件紀錄', async () => {
+    const user = userEvent.setup();
+    changePasswordSpy.mockResolvedValue({ success: false, error: '目前密碼不正確。' });
+    renderComponent();
+
+    await user.click(screen.getByText('變更密碼'));
+    await user.type(screen.getByPlaceholderText('請輸入原密碼'), 'wrongPassword');
+    await user.type(screen.getByPlaceholderText('請輸入新密碼'), 'newSecurePass456');
+    await user.type(screen.getByPlaceholderText('請再次輸入新密碼'), 'newSecurePass456');
+    await user.click(screen.getByText('確認變更'));
+
+    await waitFor(() => expect(screen.getByText('目前密碼不正確。')).toBeInTheDocument());
+    expect(namedQuerySpy.mock.calls.filter(([q]) => q === 'insertAuditLog')).toHaveLength(0);
+  });
+
   it('新密碼與確認密碼不一致時應提示錯誤且不送出請求', async () => {
     const user = userEvent.setup();
     renderComponent();

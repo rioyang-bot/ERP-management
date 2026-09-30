@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useContext } from 'react';
 import { RoleContext } from '../context/RoleContext';
 import { validatePassword } from '../utils/auth';
 import { Shield, User, Settings as SettingsIcon, CheckSquare, Square, X, Save, Key, Lock, Trash2, Power, GitMerge, RefreshCw, Database, CheckCircle2 } from 'lucide-react';
-import { logCreate, logUpdate, logDelete, logStatusChange, logEvent } from '../utils/auditLogger';
+import { logCreate, logUpdate, logDelete, logStatusChange, logEvent, ACTION_TYPES } from '../utils/auditLogger';
 
 const MENU_OPTIONS = [
   { id: 'overview', label: '營運總覽 (Overview)' },
@@ -95,10 +95,12 @@ const Settings = () => {
       const data = await res.json();
       if (data.success) {
         logEvent({
-          action: 'MERGE_DUPLICATE_MASTERS',
+          actionType: ACTION_TYPES.UPDATE,
           module: 'SYSTEM_SETTINGS',
-          target_id: 'ITEM_MASTER',
-          details: `管理員執行品項主檔大小寫整併：共整併 ${data.mergedGroups} 組，刪除 ${data.removedMasters} 筆重複主檔`
+          targetId: 'ITEM_MASTER',
+          targetName: '品項主檔',
+          summary: `品項主檔大小寫整併：共整併 ${data.mergedGroups} 組，刪除 ${data.removedMasters} 筆重複主檔`,
+          details: { mergedGroups: data.mergedGroups, removedMasters: data.removedMasters },
         });
         setMergeMessage({
           type: 'success',

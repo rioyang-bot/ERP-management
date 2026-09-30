@@ -105,5 +105,18 @@ describe('品項主檔規格型號大小寫不區分比對 (Case-Insensitive) �
       );
       expect(screen.getByText(/成功完成大小寫主檔整併/)).toBeInTheDocument();
     });
+
+    // 6. 整併會刪掉重複的主檔，事件紀錄必須寫得清楚。
+    //    先前這裡的參數名寫錯（action / target_id / 字串 details），
+    //    結果紀錄上的目標是空的、摘要也變成一句沒有內容的字。
+    await waitFor(() => {
+      const audit = mockNamedQuery.mock.calls.find(([q]) => q === 'insertAuditLog');
+      expect(audit).toBeTruthy();
+      const [, params] = audit;
+      expect(params[4]).toBe('SYSTEM_SETTINGS');
+      expect(params[6]).toBe('ITEM_MASTER');
+      expect(params[8]).toContain('整併 1 組');
+      expect(params[9]).toEqual(expect.objectContaining({ mergedGroups: 1 }));
+    });
   });
 });

@@ -20,7 +20,9 @@ import {
   X,
   Copy,
   Check,
-  ChevronDown
+  ChevronDown,
+  LogIn,
+  LogOut
 } from 'lucide-react';
 import { MODULE_MAP, ACTION_TYPES } from '../utils/auditLogger';
 import { usePageSize } from '../utils/usePageSize';
@@ -135,13 +137,16 @@ const EventLogs = () => {
       if (selectedModule !== 'ALL' && log.module !== selectedModule) {
         return false;
       }
-      // 動作類型過濾
+      // 動作類型過濾。
+      // 有兩個鈕各自涵蓋不只一種動作：「變更」含狀態流轉，
+      // 「登入登出」含登入、登入失敗與登出 —— 要看登入情形不必切三次。
+      const ACTION_GROUPS = {
+        UPDATE: ['UPDATE', 'STATUS_CHANGE'],
+        LOGIN: ['LOGIN', 'LOGIN_FAILED', 'LOGOUT'],
+      };
       if (selectedAction !== 'ALL') {
-        if (selectedAction === 'UPDATE' && log.action_type !== 'UPDATE' && log.action_type !== 'STATUS_CHANGE') {
-          return false;
-        } else if (selectedAction !== 'UPDATE' && log.action_type !== selectedAction) {
-          return false;
-        }
+        const accepted = ACTION_GROUPS[selectedAction] || [selectedAction];
+        if (!accepted.includes(log.action_type)) return false;
       }
       // 操作者過濾
       if (selectedUser !== 'ALL' && log.user_name !== selectedUser) {
@@ -220,6 +225,30 @@ const EventLogs = () => {
           color: '#f59e0b',
           border: '1px solid rgba(245, 158, 11, 0.3)'
         };
+      case 'LOGIN':
+        return {
+          label: '登入',
+          icon: <LogIn size={14} style={{ flexShrink: 0 }} />,
+          bg: 'rgba(16, 185, 129, 0.12)',
+          color: '#10b981',
+          border: '1px solid rgba(16, 185, 129, 0.25)'
+        };
+      case 'LOGIN_FAILED':
+        return {
+          label: '登入失敗',
+          icon: <AlertTriangle size={14} style={{ flexShrink: 0 }} />,
+          bg: 'rgba(239, 68, 68, 0.12)',
+          color: '#ef4444',
+          border: '1px solid rgba(239, 68, 68, 0.25)'
+        };
+      case 'LOGOUT':
+        return {
+          label: '登出',
+          icon: <LogOut size={14} style={{ flexShrink: 0 }} />,
+          bg: 'var(--bg-surface-subtle)',
+          color: 'var(--text-muted)',
+          border: '1px solid var(--border-color)'
+        };
       case 'BATCH_IMPORT':
         return {
           label: '批次',
@@ -252,7 +281,9 @@ const EventLogs = () => {
       PARTNER: '#6366f1',
       PROJECT: '#ec4899',
       USER: '#475569',
-      SETTING: '#64748b'
+      SETTING: '#64748b',
+      REPAIR: '#dc2626',
+      SYSTEM_SETTINGS: '#0891b2'
     };
     const c = colors[moduleKey] || '#64748b';
     return (
@@ -418,7 +449,8 @@ const EventLogs = () => {
             { key: 'CREATE', label: '新增 (Create)', color: '#10b981' },
             { key: 'UPDATE', label: '變更 (Update)', color: '#3b82f6' },
             { key: 'DELETE', label: '移除 (Delete)', color: '#ef4444' },
-            { key: 'STATUS_CHANGE', label: '狀態流轉', color: '#f59e0b' }
+            { key: 'STATUS_CHANGE', label: '狀態流轉', color: '#f59e0b' },
+            { key: 'LOGIN', label: '登入登出', color: '#10b981' }
           ].map(action => (
             <button
               key={action.key}
