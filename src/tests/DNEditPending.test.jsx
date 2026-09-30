@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
@@ -147,6 +147,8 @@ describe('出貨單：編輯待出貨的單據', () => {
         return Promise.resolve({ success: true, rows: [], rowCount: 1 });
       });
       renderList();
+      // 已出貨的單收在歷史頁籤
+      fireEvent.click(await screen.findByTestId('dn-tab-history'));
       await waitFor(() => expect(screen.getByText('DN-20260914-05')).toBeInTheDocument());
       expect(screen.queryByLabelText('編輯')).not.toBeInTheDocument();
       // 已出貨也不可刪除，維持原本的限制

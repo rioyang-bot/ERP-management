@@ -213,6 +213,8 @@ describe('上傳客戶簽收單要先問過', () => {
       setUserPreference: vi.fn(async () => ({ success: true })),
     };
     render(<MemoryRouter><DNList /></MemoryRouter>);
+    // 出貨單列表分成兩個頁籤，已出貨的單收在歷史那一邊
+    if (dn.status !== 'PENDING') await userEvent.click(await screen.findByTestId('dn-tab-history'));
     await screen.findByText('DN-20260930-01');
     await userEvent.click(screen.getByTitle(/簽收單|上傳客戶簽收單據/));
     const input = document.querySelector('input[type="file"]');

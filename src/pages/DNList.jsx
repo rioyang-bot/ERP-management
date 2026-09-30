@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   FileText, Search, Filter, Eye, RefreshCw, AlertCircle, Trash2, Calendar, 
-  Printer, Paperclip, Upload, FileCheck, ExternalLink, X, Pencil 
+  Printer, Paperclip, Upload, FileCheck, ExternalLink, X, Pencil, Clock  
 } from 'lucide-react';
 import { logStatusChange, logDelete, logUpdate } from '../utils/auditLogger';
 import LentOrderPrintModal from '../components/LentOrderPrintModal';
@@ -13,7 +13,14 @@ import PageSizeSelector from '../components/common/PageSizeSelector';
 const DNList = ({ isSplitMode = false }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [searchField, setSearchField] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('ALL');
+  /**
+   * 兩個頁籤，與借用單列表一致。
+   *
+   * 「已出貨」收的是 PENDING 以外的全部，而不是只有 SHIPPED ——
+   * 這張清單也看得到借用單（request_type 為 LEND），它們結案後是 RETURNED，
+   * 只認 SHIPPED 的話那些單會整個消失。
+   */
+  const [activeTab, setActiveTab] = useState('PENDING');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -47,7 +54,7 @@ const DNList = ({ isSplitMode = false }) => {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, searchField, statusFilter, startDate, endDate]);
+  }, [searchTerm, searchField, activeTab, startDate, endDate]);
 
   const getMediaSrc = (fileName) => {
     if (!fileName) return null;
@@ -337,9 +344,8 @@ const DNList = ({ isSplitMode = false }) => {
 
     if (!matchSearch) return false;
 
-    if (statusFilter !== 'ALL') {
-      if (dn.status !== statusFilter) return false;
-    }
+    const isPending = dn.status === 'PENDING';
+    if (activeTab === 'PENDING' ? !isPending : isPending) return false;
 
     if (startDate || endDate) {
       const dnDate = new Date(dn.created_at || dn.shipping_date);
@@ -358,19 +364,16 @@ const DNList = ({ isSplitMode = false }) => {
     return true;
   });
 
-  const sortedAndFiltered = [...filteredRecords].sort((a, b) => {
-    const aIncomplete = a.status !== 'SHIPPED';
-    const bIncomplete = b.status !== 'SHIPPED';
-    if (aIncomplete && !bIncomplete) return -1;
-    if (!aIncomplete && bIncomplete) return 1;
-    return new Date(b.shipping_date) - new Date(a.shipping_date);
-  });
+  // 同一個頁籤裡的單據狀態一致，依日期新到舊即可
+  const sortedAndFiltered = [...filteredRecords]
+    .sort((a, b) => new Date(b.shipping_date || b.created_at) - new Date(a.shipping_date || a.created_at));
 
   const [itemsPerPage, setItemsPerPage] = usePageSize('dn_list', 10);
   const totalPages = Math.ceil(sortedAndFiltered.length / itemsPerPage) || 1;
   const currentRecords = sortedAndFiltered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
-  const pendingCount = dnRecords.filter(dn => dn.status !== 'SHIPPED').length;
+  const pendingCount = dnRecords.filter(dn => dn.status === 'PENDING').length;
+  const historyCount = dnRecords.length - pendingCount;
 
   return (
     <div className="page-container" style={isSplitMode ? { padding: 0, minHeight: 'auto', backgroundColor: 'transparent' } : {}}>
@@ -418,6 +421,58 @@ const DNList = ({ isSplitMode = false }) => {
       </div>
 
       <div className="card-surface" style={{ padding: '0', overflow: 'hidden', borderRadius: 'var(--card-radius, 14px)' }}>
+        {/* 兩大頁籤，與借用單列表一致 */}
+        <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)' }}>
+          <button
+            onClick={() => setActiveTab('PENDING')}
+            data-testid="dn-tab-pending"
+            style={{
+              padding: '10px 18px',
+              border: 'none',
+              backgroundColor: activeTab === 'PENDING' ? 'var(--bg-surface)' : 'transparent',
+              borderBottom: activeTab === 'PENDING' ? '3px solid #3b82f6' : '3px solid transparent',
+              color: activeTab === 'PENDING' ? '#3b82f6' : 'var(--text-muted)',
+              fontWeight: activeTab === 'PENDING' ? 800 : 600,
+              fontSize: '0.9rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            <Clock size={16} /> 已建立 (待確認)
+            {pendingCount > 0 && (
+              <span style={{ backgroundColor: '#3b82f6', color: '#fff', padding: '1px 6px', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 800 }}>
+                {pendingCount}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('HISTORY')}
+            data-testid="dn-tab-history"
+            style={{
+              padding: '10px 18px',
+              border: 'none',
+              backgroundColor: activeTab === 'HISTORY' ? 'var(--bg-surface)' : 'transparent',
+              borderBottom: activeTab === 'HISTORY' ? '3px solid #10b981' : '3px solid transparent',
+              color: activeTab === 'HISTORY' ? '#10b981' : 'var(--text-muted)',
+              fontWeight: activeTab === 'HISTORY' ? 800 : 600,
+              fontSize: '0.9rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            <FileCheck size={16} /> 已出貨 (歷史紀錄)
+            {historyCount > 0 && (
+              <span style={{ backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', padding: '1px 6px', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 800, border: '1px solid var(--border-color)' }}>
+                {historyCount}
+              </span>
+            )}
+          </button>
+        </div>
+
         <div style={{ padding: '12px 18px', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '12px', alignItems: 'center', backgroundColor: 'var(--bg-surface-subtle)', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flex: 1, flexWrap: 'wrap' }}>
             <select 
@@ -437,17 +492,6 @@ const DNList = ({ isSplitMode = false }) => {
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
-            
-            <select
-              value={statusFilter}
-              onChange={e => setStatusFilter(e.target.value)}
-              style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--input-border)', outline: 'none', fontSize: '0.88rem', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', cursor: 'pointer', minWidth: '120px' }}
-            >
-              <option value="ALL">全部狀態</option>
-              <option value="PENDING">已建立 (待出貨)</option>
-              <option value="SHIPPED">已出貨</option>
-              <option value="RETURNED">已歸還</option>
-            </select>
             
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '8px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)' }}>
               <Calendar size={16} color="var(--text-subtle)" />
@@ -494,7 +538,9 @@ const DNList = ({ isSplitMode = false }) => {
               {loading ? (
                 <tr><td colSpan="8" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>讀取中...</td></tr>
               ) : currentRecords.length === 0 ? (
-                <tr><td colSpan="8" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>目前尚無出貨單資料</td></tr>
+                <tr><td colSpan="8" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                  {activeTab === 'PENDING' ? '目前尚無待確認的出貨單' : '目前尚無已出貨的歷史紀錄'}
+                </td></tr>
               ) : currentRecords.map(dn => (
                 <tr key={dn.id} className="row-hover" style={{ borderBottom: '1px solid var(--table-border)', color: 'var(--text-main)' }}>
                   <td style={{ padding: '12px', fontWeight: 700, color: 'var(--text-main)' }}>
