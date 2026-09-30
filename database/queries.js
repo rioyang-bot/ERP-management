@@ -1,3 +1,31 @@
+// 出機檢查表：哪些範本項目套用到哪些設備。
+// 同步與「接回孤兒項目」共用同一套比對，兩邊的規則才不會各改各的。
+// 使用前須有 $1：資產 id，傳 null 則為全部設備。
+const CHECKLIST_TARGETS_SQL = `
+    FROM checklist_groups g
+    JOIN checklist_items i ON i.group_id = g.id
+                          AND (i.kind IN ('MAIN', 'PHOTO') OR COALESCE(i.auto_apply, FALSE))
+    JOIN item_master m ON m.category_id = (SELECT id FROM categories WHERE name = '設備' LIMIT 1)
+                      AND (
+                        COALESCE(NULLIF(TRIM(g.brand), ''), '') = ''
+                        OR (
+                          UPPER(TRIM(COALESCE(m.brand, ''))) = UPPER(TRIM(g.brand))
+                          AND (
+                            COALESCE(NULLIF(TRIM(g.model), ''), '') = ''
+                            OR UPPER(TRIM(COALESCE(m.model, ''))) = UPPER(TRIM(g.model))
+                          )
+                        )
+                      )
+    JOIN assets a ON a.item_master_id = m.id
+    WHERE ($1::integer IS NULL OR a.id = $1::integer)`;
+
+// 設備上的這一列還沒有任何紀錄：沒勾選、沒填內容、沒有照片。
+// 範本刪掉時只清這種；已經有紀錄的留著，交給使用者在設備上自己決定。
+const CHECKLIST_ROW_UNUSED_SQL = `
+      NOT COALESCE(a.is_checked, FALSE)
+      AND NULLIF(TRIM(COALESCE(a.content, '')), '') IS NULL
+      AND NOT EXISTS (SELECT 1 FROM asset_photos p WHERE p.checklist_item_id = a.id)`;
+
 export const queries = {
   // AssetList.jsx
   fetchAssetsList: `SELECT a.*, a.id as id, i.id as item_master_id, i.specification, i.type, i.brand, i.model, i.unit, c.name as category_name,
@@ -344,6 +372,18 @@ export const queries = {
   setChecklistItemAutoApply: `
     UPDATE checklist_items SET auto_apply = $1 WHERE id = $2 RETURNING id, auto_apply`,
   deleteChecklistItem: `DELETE FROM checklist_items WHERE id = $1 RETURNING id`,
+  // 刪範本項目之前，先把設備上還沒有任何紀錄的同一項清掉；
+  // 已經勾選、填了內容或拍了照的留著（範本刪掉後變成可自行移除的舊項目）。
+  // 必須在刪範本之前執行：範本一刪，source_item_id 就被設成 NULL，對不回來了。
+  deleteUnusedAssetChecklistItemsBySource: `
+    DELETE FROM asset_checklist_items a
+    WHERE a.source_item_id = $1 AND ${CHECKLIST_ROW_UNUSED_SQL}
+    RETURNING a.id, a.asset_id`,
+  deleteUnusedAssetChecklistItemsByGroup: `
+    DELETE FROM asset_checklist_items a
+    WHERE a.source_item_id IN (SELECT id FROM checklist_items WHERE group_id = $1)
+      AND ${CHECKLIST_ROW_UNUSED_SQL}
+    RETURNING a.id, a.asset_id`,
   // 拖曳排序：一次把整組的順序寫回去。
   // id 以逗號分隔的字串傳入而不是陣列 —— 具名查詢的參數前處理會把陣列
   // 轉成 JSON 字串，::integer[] 收到 ["1","2"] 會轉型失敗。
@@ -451,28 +491,36 @@ export const queries = {
   // 廠牌留空的主項目視為通用，套用到所有設備。
   // 主項目另外指定了型號的，只套用到該廠牌的那個型號；型號留空則整個廠牌都套用。
   // 同一台設備符合的主項目全部套用（例如「LDA 共通」+「LDA NEOTAP」）。
-  // 寫進去的是名稱而不是外鍵參照：範本日後被刪掉，設備上已套用的內容仍然留著。
+  // 寫進去的是名稱而不是外鍵參照：範本日後被刪掉，設備上已有紀錄的內容仍然留著。
+  //
+  // 範本項目刪掉又用同一個名稱重建時，設備上會留著一筆同名、但已經不連著範本的舊列。
+  // 先前 NOT EXISTS 只比名稱，看到舊列就當成「已經有了」跳過 —— 新範本項目與它的說明
+  // 永遠套不上去。現在先把這種同名舊列接回新的範本項目（勾選、內容、照片都保留），
+  // 再補上真正缺少的。回傳值只算新補上的列。
   //
   // $1 傳入資產 id 只同步那一台，傳 null 則同步全部。
   syncBrandChecklistToAssets: `
+    WITH relinked AS (
+      UPDATE asset_checklist_items x
+      SET source_item_id = t.item_id, description = t.description,
+          sort_order = t.sort_order, updated_at = CURRENT_TIMESTAMP
+      FROM (
+        SELECT DISTINCT ON (a.id, UPPER(TRIM(g.name)), i.kind, UPPER(TRIM(i.name)))
+               a.id AS asset_id, g.name AS group_name, i.kind, i.name, i.id AS item_id,
+               i.description, COALESCE(i.sort_order, 0) AS sort_order
+        ${CHECKLIST_TARGETS_SQL}
+        ORDER BY a.id, UPPER(TRIM(g.name)), i.kind, UPPER(TRIM(i.name)), i.id
+      ) t
+      WHERE x.asset_id = t.asset_id
+        AND x.source_item_id IS NULL
+        AND x.kind = t.kind
+        AND UPPER(TRIM(x.group_name)) = UPPER(TRIM(t.group_name))
+        AND UPPER(TRIM(x.item_name)) = UPPER(TRIM(t.name))
+      RETURNING x.id
+    )
     INSERT INTO asset_checklist_items (asset_id, group_name, kind, item_name, source_item_id, sort_order, description)
     SELECT a.id, g.name, i.kind, i.name, i.id, COALESCE(i.sort_order, 0), i.description
-    FROM checklist_groups g
-    JOIN checklist_items i ON i.group_id = g.id
-                          AND (i.kind IN ('MAIN', 'PHOTO') OR COALESCE(i.auto_apply, FALSE))
-    JOIN item_master m ON m.category_id = (SELECT id FROM categories WHERE name = '設備' LIMIT 1)
-                      AND (
-                        COALESCE(NULLIF(TRIM(g.brand), ''), '') = ''
-                        OR (
-                          UPPER(TRIM(COALESCE(m.brand, ''))) = UPPER(TRIM(g.brand))
-                          AND (
-                            COALESCE(NULLIF(TRIM(g.model), ''), '') = ''
-                            OR UPPER(TRIM(COALESCE(m.model, ''))) = UPPER(TRIM(g.model))
-                          )
-                        )
-                      )
-    JOIN assets a ON a.item_master_id = m.id
-    WHERE ($1::integer IS NULL OR a.id = $1::integer)
+    ${CHECKLIST_TARGETS_SQL}
       AND NOT EXISTS (
         SELECT 1 FROM asset_checklist_items x
         WHERE x.asset_id = a.id

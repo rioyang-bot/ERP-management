@@ -178,6 +178,11 @@
       "file": "migration_checklist_photo_examples.sql",
       "type": "schema",
       "note": "出機檢查表拍照項目說明與拍照項目範例"
+    },
+    {
+      "file": "migration_checklist_orphan_cleanup.sql",
+      "type": "data",
+      "note": "出機檢查表：同名舊項目接回範本，範本已刪除且沒有紀錄的舊項目清除"
     }
   ]
 }
