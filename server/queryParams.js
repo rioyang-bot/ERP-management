@@ -6,15 +6,17 @@
 // ============================================================================
 
 import { sanitizeParams } from './sanitize.js';
+import { freeTextIndexes } from './freeTextParams.js';
 
 /**
  * @param {unknown[]} params 原始參數
  * @param {string} sql       目標 SQL，用於推算需要補齊到幾個參數
+ * @param {string} [queryName] 具名查詢名稱；白名單裡的說明文字參數不刪特殊字元
  * @returns {unknown[]}
  */
-export const prepareQueryParams = (params, sql) => {
-  // 1. 安全性過濾（依 SECURITY_GUIDELINES）
-  const sanitized = sanitizeParams(Array.isArray(params) ? params : []);
+export const prepareQueryParams = (params, sql, queryName) => {
+  // 1. 安全性過濾（依 SECURITY_GUIDELINES；說明文字例外見 freeTextParams.js）
+  const sanitized = sanitizeParams(Array.isArray(params) ? params : [], freeTextIndexes(queryName));
 
   // 2. 物件轉為 JSON 字串（供 JSONB 欄位使用）
   const processed = sanitized.map((p) =>

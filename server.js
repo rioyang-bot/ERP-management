@@ -309,7 +309,7 @@ app.post('/api/namedQuery', auth.requireAuth, async (req, res) => {
 
   try {
     // 參數前處理與 /api/transaction、Electron IPC 共用同一份實作
-    const result = await pool.query(sql, prepareQueryParams(params, sql));
+    const result = await pool.query(sql, prepareQueryParams(params, sql, queryName));
     res.json({ success: true, rows: result.rows });
   } catch (error) {
     console.error(`[DB Error] ${queryName}:`, error.message);

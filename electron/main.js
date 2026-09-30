@@ -142,7 +142,7 @@ ipcMain.handle('db:namedQuery', async (event, queryName, params = []) => {
   try {
     const sql = namedQueries[queryName];
     // 參數前處理與網頁版共用
-    const result = await query(sql, prepareQueryParams(params, sql));
+    const result = await query(sql, prepareQueryParams(params, sql, queryName));
     return { success: true, rows: result.rows };
   } catch (error) {
     console.error(`[DB] NamedQuery Error (${queryName}):`, error);
