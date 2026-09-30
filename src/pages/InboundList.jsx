@@ -255,7 +255,10 @@ const InboundList = ({ isSplitMode = false }) => {
         selectedOrder?.order_no,
         name,
         `更正進貨數量 [${name}] ${item.quantity} → ${check.next}（庫存同步${word}）`,
-        { orderNo: selectedOrder?.order_no, itemId: item.id, from: item.quantity, to: check.next, delta: check.delta }
+        // itemMasterId 是給品項履歷用的：履歷靠它把這筆更正接回那個品項，
+        // 否則單號底下記了也不會出現在品項自己的履歷裡
+        { orderNo: selectedOrder?.order_no, itemMasterId: item.item_id, itemId: item.id,
+          from: item.quantity, to: check.next, delta: check.delta }
       );
 
       setQtyEdit(null);
@@ -322,6 +325,14 @@ const InboundList = ({ isSplitMode = false }) => {
         `刪除進貨單 [${order.order_no}]（已扣回庫存、退回採購數量、刪除 ${assetSns.length} 筆資產）`,
         { orderNo: order.order_no, items: items.length, assets: assetSns.length }
       );
+
+      // 單號底下那一筆進不了任何一個品項的履歷。這張單扣回了誰的庫存，
+      // 就替誰各記一筆，打開該品項的履歷才看得出這次進貨被整張刪掉。
+      await Promise.all(items.map((it) => logDelete(
+        'INBOUND', order.order_no, [it.brand, it.model].filter(Boolean).join(' ') || '品項',
+        `進貨單 [${order.order_no}] 整張刪除，扣回 ${[it.brand, it.model].filter(Boolean).join(' ')} ${it.quantity} ${it.unit || ''}`.trim(),
+        { itemMasterId: it.item_id, orderNo: order.order_no, quantity: it.quantity, sn: it.sn || null }
+      )));
 
       // 刪完之後，這張單用到的品項可能變成「從來沒真正進過貨」的孤兒 ——
       // 進貨頁的快速新增會當場建出主檔，單子刪了它還留在列表上。

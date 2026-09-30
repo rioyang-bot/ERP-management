@@ -1627,6 +1627,36 @@ export const queries = {
     WHERE a.item_master_id = $1::integer
       AND l.module IN ('DEVICE', 'HARDWARE', 'ASSET')
 
+    UNION ALL
+
+    -- 沒有序號的品項（耗材），以及記在單號底下的更正。
+    -- 上面那條是靠序號接回資產的，這些紀錄接不上：耗材根本沒有序號，
+    -- 進貨數量更正與刪單記的是進貨單號。結果是耗材的 Stock ⇄ LAB 調撥
+    -- 完全不會出現在它自己的履歷裡，進貨數量被改過也看不出痕跡。
+    --
+    -- 改以 details.itemMasterId 對回品項：寫紀錄時把品項 id 帶上就接得回來。
+    -- 這裡刻意用文字比對，不做型別轉換 —— details 是使用者資料，
+    -- 裡面可能是任何東西，轉型會讓整張履歷查詢在遇到一筆爛資料時直接失敗。
+    SELECT
+      CASE
+        WHEN l.details->>'direction' IN ('TO_LAB', 'TO_STOCK') THEN 'LAB_TRANSFER'
+        ELSE 'ADJUST'
+      END as transaction_type,
+      l.timestamp::date as transaction_date,
+      COALESCE(substring(l.summary from '[A-Z]{2,5}-[0-9]{6,8}-[0-9]+'), '-') as order_no,
+      COALESCE(NULLIF(TRIM(l.user_name), ''), '系統') as partner_name,
+      -- 調撥記了數量就顯示數量，其餘（改資料、刪單）以 1 筆計
+      COALESCE(NULLIF(left(regexp_replace(COALESCE(l.details->>'quantity', ''), '[^0-9]', '', 'g'), 9), '')::int, 1) as quantity,
+      NULL as sn,
+      im.brand,
+      im.model,
+      im.specification,
+      l.timestamp as created_at,
+      l.summary
+    FROM system_audit_logs l
+    JOIN item_master im ON im.id = $1::integer
+    WHERE l.details->>'itemMasterId' = $1::text
+
     ORDER BY transaction_date DESC, created_at DESC
   `,
 

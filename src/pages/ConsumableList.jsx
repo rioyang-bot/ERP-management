@@ -134,7 +134,8 @@ const ConsumableList = ({ isSplitMode = false }) => {
     // 因此改由 SQL 端一併驗證庫存與關聯單據，避免歷史帳務被連鎖刪除
     const res = await window.electronAPI.namedQuery('deleteConsumableMasterIfSafe', [id]);
     if (res && res.success && res.rows && res.rows.length > 0) {
-      logDelete('CONSUMABLE', id, specification, `刪除耗材品項 [${specification}]`, { id, specification });
+      logDelete('CONSUMABLE', id, specification, `刪除耗材品項 [${specification}]`,
+        { itemMasterId: id, id, specification });
       fetchConsumables();
     } else if (res && res.success) {
       alert(`⚠️ 無法刪除耗材品項 [${specification}]！\n\n該品項仍有庫存，或已存在進出庫、借測、資產等關聯紀錄。\n直接刪除會一併抹除這些歷史帳務；如需停用請改以庫存歸零保留紀錄。`);
@@ -157,6 +158,7 @@ const ConsumableList = ({ isSplitMode = false }) => {
     ]);
     if (res.success) {
       logUpdate('CONSUMABLE', editItem.id, `${editItem.brand} ${editItem.model}`, `編輯耗材型號/規格 [${editItem.brand} ${editItem.model}]`, {
+        itemMasterId: editItem.id,
         brand: editItem.brand,
         type: editItem.type,
         model: editItem.model,
@@ -210,7 +212,8 @@ const ConsumableList = ({ isSplitMode = false }) => {
         itemId,
         `${targetItem.brand} ${targetItem.model}`,
         `耗材庫存調撥 [${targetItem.brand} ${targetItem.model}]: ${direction === 'TO_LAB' ? 'Stock ➔ LAB' : 'LAB ➔ Stock'} 數量 ${quantity}${currentDeviceSn ? ` (對應設備: ${currentDeviceSn})` : ''}`,
-        { direction, quantity, deviceSn: currentDeviceSn, note, prevStock: targetItem.stock_qty, prevLab: targetItem.lab_qty }
+        { itemMasterId: itemId, direction, quantity, deviceSn: currentDeviceSn, note,
+          prevStock: targetItem.stock_qty, prevLab: targetItem.lab_qty }
       );
       // 只有在有選擇設備或移至 LAB 時才紀錄詳細 assignment
       if (finalAssetId || direction === 'TO_LAB') {

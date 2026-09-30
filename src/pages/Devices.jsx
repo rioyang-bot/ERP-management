@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Save, Settings2, Trash2, X, Monitor, User, MapPin, ListFilter, Layers, Server, FileSpreadsheet } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { logCreate } from '../utils/auditLogger';
+import { logBulkCreate } from '../utils/auditLogger';
 import { deleteItemType } from '../utils/deleteItemType';
 import { addDictionaryEntry } from '../utils/masterDictionary';
 import DeviceBatchImportModal from '../components/DeviceBatchImportModal';
@@ -230,12 +230,17 @@ const Devices = ({ isSplitMode = false }) => {
       }
 
       if (successCount > 0) {
-        logCreate(
+        logBulkCreate(
           'DEVICE',
-          isBulkMode ? `批次 ${snList.length} 台` : (formData.sn || '無序號'),
-          `${formData.brand} ${formData.model}`,
-          `新增設備 [${formData.brand} ${formData.model}] ${isBulkMode ? `批次建立 ${successCount} 筆` : `序號: ${formData.sn || '未指定'}`}`,
-          { isBulkMode, count: successCount, brand: formData.brand, type: formData.type, model: formData.model, snList: isBulkMode ? snList : [formData.sn], client: formData.client, location: formData.location }
+          {
+            bulkTarget: isBulkMode ? `批次 ${snList.length} 台` : (formData.sn || '無序號'),
+            isBulk: isBulkMode,
+            snList,
+            targetName: `${formData.brand} ${formData.model}`,
+            summary: `新增設備 [${formData.brand} ${formData.model}] ${isBulkMode ? `批次建立 ${successCount} 筆` : `序號: ${formData.sn || '未指定'}`}`,
+            perSn: (sn) => `新增設備 [${formData.brand} ${formData.model}] 序號: ${sn}（批次建檔）`,
+            details: { isBulkMode, count: successCount, brand: formData.brand, type: formData.type, model: formData.model, snList: isBulkMode ? snList : [formData.sn], client: formData.client, location: formData.location },
+          }
         );
       }
 

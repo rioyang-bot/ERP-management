@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Save, Trash2, Cpu, Settings2, X, Server, Layers, ListFilter, FileSpreadsheet } from 'lucide-react';
-import { logCreate } from '../utils/auditLogger';
+import { logBulkCreate } from '../utils/auditLogger';
 import HwBatchImportModal from '../components/HwBatchImportModal';
 import { normalizeMasterName } from '../utils/normalizeMasterData';
 import { addDictionaryEntry } from '../utils/masterDictionary';
@@ -238,12 +238,17 @@ const HwRegistration = ({ isSplitMode = false }) => {
       }
 
       if (successCount > 0) {
-        logCreate(
+        logBulkCreate(
           'HARDWARE',
-          isBulkMode ? `批次 ${snList.length} 件` : (formData.sn || '無序號'),
-          `${safeBrand} ${safeModel}`,
-          `登錄硬體零組件 [${safeBrand} ${safeModel}] ${isBulkMode ? `批次建立 ${successCount} 筆` : `序號: ${formData.sn || '未指定'}`}`,
-          { isBulkMode, count: successCount, brand: safeBrand, type: safeType, model: safeModel, snList: isBulkMode ? snList : [formData.sn], server_sn: safeServerSn, project_name: formData.project_name }
+          {
+            bulkTarget: isBulkMode ? `批次 ${snList.length} 件` : (formData.sn || '無序號'),
+            isBulk: isBulkMode,
+            snList,
+            targetName: `${safeBrand} ${safeModel}`,
+            summary: `登錄硬體零組件 [${safeBrand} ${safeModel}] ${isBulkMode ? `批次建立 ${successCount} 筆` : `序號: ${formData.sn || '未指定'}`}`,
+            perSn: (sn) => `登錄硬體零組件 [${safeBrand} ${safeModel}] 序號: ${sn}（批次建檔）`,
+            details: { isBulkMode, count: successCount, brand: safeBrand, type: safeType, model: safeModel, snList: isBulkMode ? snList : [formData.sn], server_sn: safeServerSn, project_name: formData.project_name },
+          }
         );
         alert(`成功建檔 ${successCount} 筆資料${failCount > 0 ? `，失敗 ${failCount} 筆` : ''}。`);
         setFormData({ ...formData, sn: '', server_sn: '', project_name: '' });
