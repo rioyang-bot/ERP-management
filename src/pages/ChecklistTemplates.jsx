@@ -15,9 +15,8 @@ import PhotoExampleLibrary from '../components/PhotoExampleLibrary';
  *   主項目（綁定廠牌，例如「BLACKCORE 出機檢查」；可再指定型號，
  *           例如「LDA · NEOTAP」只套用到 NEOTAP，型號留空則整個廠牌適用）
  *     ├─ 主要檢查功能：該廠牌的每一台設備自動套用，勾選表示檢查完成
- *     ├─ 細項：在設備上填寫內容而不是勾選（例如細項「OS」填「RH9.6」）。
- *     │        預設由每台設備各自挑選；勾「自動」之後就跟主要檢查功能一樣
- *     │        自動出現在該廠牌的每一台設備上，省去逐台加的功夫。
+ *     ├─ 細項：在設備上填寫內容而不是勾選（例如細項「OS」填「RH9.6」），
+ *     │        與主要檢查功能一樣自動套用到符合的每一台設備。
  *     └─ 拍照項目：每台設備要拍的照片（例如正面、背面），自動套用，
  *                  在設備的主機照片區逐項上傳，有照片就算完成。
  *                  可附上拍攝說明，設備上每一項底下直接顯示；
@@ -40,7 +39,7 @@ const KIND_META = {
   },
   [KIND_DETAIL]: {
     title: '細項', label: '細項', Icon: Tag, accent: '#7c3aed',
-    desc: '這裡定義的是欄位名稱（例如「OS」），由每台設備填寫內容（例如「RH9.6」）。勾選前面的框，就跟主要檢查功能一樣自動套用到該廠牌的每一台設備。',
+    desc: '這裡定義的是欄位名稱（例如「OS」）。新增後立即套用到所有符合的設備，由每台設備填寫內容（例如「RH9.6」）。',
     placeholder: '欄位名稱，例如：OS、BMC IP、開機順序',
   },
   [KIND_PHOTO]: {
@@ -49,8 +48,6 @@ const KIND_META = {
     placeholder: '例如：正面、背面、機櫃內配線',
   },
 };
-/** 一建立就要發到所有符合設備上的種類 */
-const AUTO_KINDS = [KIND_MAIN, KIND_PHOTO];
 
 const ChecklistTemplates = () => {
   const navigate = useNavigate();
@@ -264,47 +261,14 @@ const ChecklistTemplates = () => {
         if (kind === KIND_PHOTO) setNewPhotoDesc('');
       }
 
-      // 主要檢查功能與拍照項目一建立就要出現在所有符合廠牌的設備上
-      if (AUTO_KINDS.includes(kind)) {
-        const n = await syncToDevices();
-        setSyncNotice(n > 0
-          ? `已套用到 ${n} 台${selectedGroup.brand ? groupScopeLabel(selectedGroup) : ''}設備`
-          : '所有符合的設備都已經有這個項目');
-      }
+      // 三種項目一建立就要出現在所有符合廠牌／型號的設備上
+      const n = await syncToDevices();
+      setSyncNotice(n > 0
+        ? `已套用到 ${n} 台${selectedGroup.brand ? groupScopeLabel(selectedGroup) : ''}設備`
+        : '所有符合的設備都已經有這個項目');
       await fetchAll();
     } catch (err) {
       alert(`新增失敗：${err.message}\n（同一主項目底下不可有重複的名稱）`);
-    }
-  };
-
-  /**
-   * 細項要不要跟著主要檢查功能一起自動套用。
-   * 像 OS、BMC IP 這種每台都要填的欄位，逐台加進去太費工。
-   */
-  const handleToggleAutoApply = async (item) => {
-    const next = !item.auto_apply;
-    // 這個勾選框點一下就會把項目發到所有符合廠牌的設備上（或停止再發），
-    // 影響範圍遠大於畫面上看起來的一次點擊
-    if (!window.confirm(next
-      ? `確定要把細項「${item.name}」設為自動套用嗎？\n\n它會立刻加到所有符合廠牌的設備檢查表上。`
-      : `確定要取消「${item.name}」的自動套用嗎？\n\n之後不再自動加入；已經發出去的仍保留在各設備上。`)) return;
-    try {
-      const res = await window.electronAPI.namedQuery('setChecklistItemAutoApply', [next, item.id]);
-      if (!res.success || (res.rows || []).length === 0) throw new Error(res.error || '找不到該項目');
-      if (next) {
-        const n = await syncToDevices();
-        setSyncNotice(n > 0
-          ? `「${item.name}」已套用到 ${n} 台設備`
-          : `「${item.name}」所有符合的設備都已經有了`);
-      } else {
-        setSyncNotice(`「${item.name}」之後不再自動套用；已經發出去的仍保留在各設備上`);
-      }
-      logUpdate('SETTING', item.id, item.name,
-        `出機檢查細項 [${item.name}] ${next ? '設為' : '取消'}自動套用`,
-        { name: item.name, group: item.group_id, autoApply: next });
-      await fetchAll();
-    } catch (err) {
-      alert(`設定自動套用失敗：${err.message}`);
     }
   };
 
@@ -457,7 +421,6 @@ const ChecklistTemplates = () => {
   /** 主要檢查功能 / 細項 / 拍照項目 共用的清單區塊 */
   const renderItemColumn = (kind) => {
     const meta = KIND_META[kind];
-    const isDetail = kind === KIND_DETAIL;
     const isPhoto = kind === KIND_PHOTO;
     const list = itemsOfKind[kind];
     const accent = meta.accent;
@@ -569,21 +532,10 @@ const ChecklistTemplates = () => {
               >
                 <GripVertical size={14} />
               </span>
-              {!isDetail ? (
-                <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--text-subtle)', minWidth: '18px' }}>
-                  {idx + 1}.
-                </span>
-              ) : (
-                // 勾起來就跟主要檢查功能一樣自動套用到該廠牌的每一台設備
-                <input
-                  type="checkbox"
-                  checked={!!item.auto_apply}
-                  onChange={() => handleToggleAutoApply(item)}
-                  aria-label={`${item.name} 自動套用到所有設備`}
-                  title="勾選後，這個細項會自動出現在該廠牌的每一台設備上，不必逐台加入"
-                  style={{ width: '15px', height: '15px', cursor: 'pointer', flexShrink: 0 }}
-                />
-              )}
+              {/* 三種項目外觀一致：前面一律是編號，細項不另外加勾選框或標籤，才好分辨 */}
+              <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--text-subtle)', minWidth: '18px' }}>
+                {idx + 1}.
+              </span>
               {editingItem?.id === item.id ? (
                 <>
                   <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -613,11 +565,6 @@ const ChecklistTemplates = () => {
                 <>
                   <span style={{ flex: 1, minWidth: 0, fontSize: '13px', color: 'var(--text-main)', fontWeight: 600, wordBreak: 'break-word' }}>
                     {item.name}
-                    {isDetail && item.auto_apply && (
-                      <span style={{ marginLeft: '6px', fontSize: '10px', fontWeight: 800, padding: '1px 7px', borderRadius: '8px', backgroundColor: 'rgba(8, 145, 178, 0.14)', color: '#0891b2', whiteSpace: 'nowrap' }}>
-                        自動套用
-                      </span>
-                    )}
                     {isPhoto && item.description && (
                       <span style={{ display: 'block', marginTop: '4px', fontSize: '12px', fontWeight: 500, color: 'var(--text-muted)', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
                         {item.description}
@@ -697,8 +644,7 @@ const ChecklistTemplates = () => {
             • <b style={{ color: 'var(--text-main)' }}>主要檢查功能</b>是自動套用、需勾選完成的部分；
             <b style={{ color: 'var(--text-main)' }}>細項</b>在設備上
             <b style={{ color: '#7c3aed' }}>填寫內容而不是勾選</b>（例如細項「OS」填「RH9.6」）。
-            細項預設由每台設備各自挑選，若每台都要填，勾選細項前面的框即可
-            <b style={{ color: '#0891b2' }}>自動套用到該廠牌的所有設備</b>。
+            細項與主要檢查功能一樣<b style={{ color: '#0891b2' }}>新增後自動套用到符合的所有設備</b>。
           </div>
           <div>
             • <b style={{ color: 'var(--text-main)' }}>拍照項目</b>列出每台設備要拍的照片（例如正面、背面、機櫃內配線），

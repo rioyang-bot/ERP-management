@@ -5,7 +5,7 @@ import {
 import { logUpdate } from '../utils/auditLogger';
 import DeviceChecklistPrintModal from './DeviceChecklistPrintModal';
 import AssetPhotoSection from './AssetPhotoSection';
-import { groupScopeLabel, groupMatchLevel, pickDefaultGroup } from '../utils/checklistGroupScope';
+import { groupMatchLevel, pickDefaultGroup } from '../utils/checklistGroupScope';
 
 /**
  * 單一設備的出機檢查表
@@ -14,10 +14,9 @@ import { groupScopeLabel, groupMatchLevel, pickDefaultGroup } from '../utils/che
  * 就都有那一組；主項目再指定型號的，只套用到那個型號。開啟這個視窗時會先
  * 同步一次，不需要逐台按套用。
  *
- * 細項才是逐台決定的 —— 每台設備要記錄的東西不盡相同。
  * 細項記錄的是「這台設備實際是什麼」而不是「做完了沒有」，一律填寫內容、不勾選
- * （例如細項「OS」填「RH9.6」）：範本上的細項直接在旁邊填，有填的才記錄到這台設備；
- * 範本沒有的也可以直接為這台設備新增。勾選只用在主要檢查功能。
+ * （例如細項「OS」填「RH9.6」）。範本上的細項與主要檢查功能一樣自動套用；
+ * 範本沒有的，可以直接為這台設備新增。勾選只用在主要檢查功能。
  *
  * 拍照項目（例如正面、背面）與主要檢查功能一樣自動套用，列在主機照片區，
  * 每一項各自上傳，有照片就算完成。
@@ -38,13 +37,7 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
   const [error, setError] = useState('');
   const [showPrint, setShowPrint] = useState(false);
 
-  const [selectedGroupId, setSelectedGroupId] = useState(null);
   // 細項逐台挑選，因此各自記住勾了哪些
-  /**
-   * 範本上、這台設備還沒記錄的細項，直接填內容：{ [範本項目 id]: 內容 }。
-   * 細項一律是填寫內容，不用先勾選再加入；有填的才在儲存時寫進這台設備。
-   */
-  const [newDetailDrafts, setNewDetailDrafts] = useState({});
   const [customDetail, setCustomDetail] = useState('');
   // 細項內容改成邊打邊記在本地，離開欄位才收進待儲存
   const [contentDraft, setContentDraft] = useState({});
@@ -115,24 +108,14 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
 
   useEffect(() => {
     if (!isOpen) return;
-    setNewDetailDrafts({});
     setCustomDetail('');
     setContentDraft({});
-    setSelectedGroupId(null);
     loadAll();
   }, [isOpen, loadAll]);
 
-  // 挑細項時預設看這台設備自己型號的那一組；沒有就看廠牌的，再退回通用的
-  useEffect(() => {
-    if (!isOpen || groups.length === 0 || selectedGroupId !== null) return;
-    setSelectedGroupId(pickDefaultGroup(groups, device).id);
-  }, [isOpen, groups, selectedGroupId, device]);
-
-  const selectedGroup = groups.find((g) => g.id === selectedGroupId) || null;
-  const detailItems = useMemo(
-    () => templateItems.filter((i) => i.group_id === selectedGroupId && i.kind === KIND_DETAIL),
-    [templateItems, selectedGroupId]
-  );
+  // 自行新增的細項歸在這台設備自己的主項目（型號 > 廠牌 > 通用）底下，沒有就歸「自訂細項」
+  const ownGroup = pickDefaultGroup(groups, device);
+  const customGroupName = ownGroup && groupMatchLevel(ownGroup, device) ? ownGroup.name : CUSTOM_GROUP;
 
   /** 這台設備已經有的項目（以主項目＋種類＋名稱比對，與資料庫的唯一鍵一致） */
   const appliedKeySet = useMemo(
@@ -151,15 +134,10 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
     return (res.rows || []).length > 0;
   };
 
-  /** 範本細項填了內容、還沒儲存的：[範本項目, 內容] */
-  const newDetailEntries = Object.entries(newDetailDrafts)
-    .map(([id, value]) => [templateItems.find((t) => String(t.id) === id), (value || '').trim()])
-    .filter(([item, value]) => item && value);
-
   const handleAddCustomDetail = async () => {
     const name = customDetail.trim();
     if (!name) return;
-    const groupName = selectedGroup?.name || CUSTOM_GROUP;
+    const groupName = customGroupName;
     if (isApplied(groupName, KIND_DETAIL, name)) {
       alert('這台設備已經有同名的細項了。');
       return;
@@ -208,13 +186,12 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
   };
 
   /** 尚未寫回資料庫的變更筆數 */
-  const pendingCount = Object.keys(pendingChecks).length + Object.keys(pendingContents).length + newDetailEntries.length;
+  const pendingCount = Object.keys(pendingChecks).length + Object.keys(pendingContents).length;
 
   const discardChanges = async () => {
     setPendingChecks({});
     setPendingContents({});
     setContentDraft({});
-    setNewDetailDrafts({});
     await loadAll();
   };
 
@@ -234,18 +211,6 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
         const res = await window.electronAPI.namedQuery('setAssetChecklistItemContent', [content, Number(rowId)]);
         if (!res.success || (res.rows || []).length === 0) throw new Error(res.error || '找不到該項目');
       }
-      // 範本細項第一次填內容：先把這一項記到這台設備上，再寫入內容
-      let order = applied.length;
-      for (const [item, content] of newDetailEntries) {
-        const ins = await window.electronAPI.namedQuery('insertAssetChecklistItem', [
-          device.id, item.group_name || selectedGroup?.name || CUSTOM_GROUP, KIND_DETAIL, item.name, item.id, order,
-        ]);
-        const newId = ins.rows?.[0]?.id;
-        if (!ins.success || !newId) throw new Error(ins.error || `細項「${item.name}」已經在這台設備上了，請重新讀取後再填`);
-        const res = await window.electronAPI.namedQuery('setAssetChecklistItemContent', [content, newId]);
-        if (!res.success || (res.rows || []).length === 0) throw new Error(res.error || '寫入內容失敗');
-        order += 1;
-      }
 
       const named = (rowId) => applied.find((r) => String(r.id) === String(rowId))?.item_name || rowId;
       const parts = [];
@@ -255,20 +220,13 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
       if (contents.length) {
         parts.push('內容：' + contents.map(([id, v]) => `${named(id)}=${v || '（清空）'}`).join('、'));
       }
-      if (newDetailEntries.length) {
-        parts.push('新增細項：' + newDetailEntries.map(([item, v]) => `${item.name}=${v}`).join('、'));
-      }
       // 出機檢查的結果是出貨憑據的一部分，改過什麼要留得下來
       await logUpdate('DEVICE', device.sn || device.id, device.sn,
         `設備 [${device.sn || device.id}] 出機檢查表更新 ${pendingCount} 項 —— ${parts.join('；')}`,
-        {
-          sn: device.sn, checked: Object.fromEntries(checks), contents: Object.fromEntries(contents),
-          newDetails: Object.fromEntries(newDetailEntries.map(([item, v]) => [item.name, v])),
-        });
+        { sn: device.sn, checked: Object.fromEntries(checks), contents: Object.fromEntries(contents) });
 
       setPendingChecks({});
       setPendingContents({});
-      setNewDetailDrafts({});
       await loadAll();
       if (onChanged) onChanged();
     } catch (e) {
@@ -286,13 +244,12 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
     setPendingChecks({});
     setPendingContents({});
     setContentDraft({});
-    setNewDetailDrafts({});
     onClose();
   };
 
   /** 範本裡仍存在、且設定為自動套用的項目 id */
   const autoAppliedSourceIds = useMemo(
-    () => new Set(templateItems.filter((i) => i.kind === KIND_MAIN || i.kind === KIND_PHOTO || i.auto_apply).map((i) => i.id)),
+    () => new Set(templateItems.map((i) => i.id)),
     [templateItems]
   );
 
@@ -453,94 +410,6 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
                   onRemoveItem={handleRemoveItem}
                 />
 
-                {/* 細項：一律填寫內容，不勾選。有填的才記錄到這台設備 */}
-                <section style={{ ...card, padding: '16px', backgroundColor: 'var(--bg-surface-subtle)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                    <Tag size={17} color="#7c3aed" />
-                    <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 900, color: 'var(--text-main)' }}>細項（依這台設備填寫）</h3>
-                  </div>
-                  <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.7 }}>
-                    細項是填寫內容，不是勾選 —— 直接在這台設備要記錄的細項旁填上實際內容（例如「OS」填「RH9.6」），
-                    沒填的不會記錄。填好按下方的「儲存變更」。範本沒有的細項也可以直接新增。
-                  </p>
-
-                  {groups.length > 0 && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '12px' }}>
-                      <label style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-main)' }} htmlFor="checklist-group-select">主項目</label>
-                      <select
-                        id="checklist-group-select"
-                        value={selectedGroupId || ''}
-                        onChange={(e) => setSelectedGroupId(Number(e.target.value))}
-                        style={{ padding: '8px 10px', borderRadius: '8px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', fontSize: '13px', minWidth: '260px' }}
-                      >
-                        {groups.map((g) => (
-                          <option key={g.id} value={g.id}>{g.name}（{groupScopeLabel(g)}）</option>
-                        ))}
-                      </select>
-                      {selectedGroup && ['model', 'brand'].includes(groupMatchLevel(selectedGroup, device)) && (
-                        <span style={{ fontSize: '11px', fontWeight: 800, padding: '2px 10px', borderRadius: '10px', backgroundColor: 'rgba(8, 145, 178, 0.14)', color: '#0891b2' }}>
-                          {groupMatchLevel(selectedGroup, device) === 'model' ? '這台設備的型號' : '這台設備的廠牌'}
-                        </span>
-                      )}
-                    </div>
-                  )}
-
-                  {groups.length > 0 && (() => {
-                    // 已經記錄在這台設備上的，到下方「細項紀錄」修改，這裡不重複列
-                    const unfilled = detailItems.filter((i) => !isApplied(selectedGroup?.name, KIND_DETAIL, i.name));
-                    const filledCount = detailItems.length - unfilled.length;
-                    return (
-                      <div style={{ ...card, padding: '10px 12px', marginBottom: '12px' }}>
-                        {detailItems.length === 0 ? (
-                          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>此主項目沒有範本細項</div>
-                        ) : unfilled.length === 0 ? (
-                          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>這個主項目的細項都已經記錄了，請在下方「細項紀錄」修改內容。</div>
-                        ) : unfilled.map((i) => (
-                          <div key={i.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '4px 0' }}>
-                            <span style={{ flex: '0 0 160px', fontSize: '13px', color: 'var(--text-main)', fontWeight: 700, wordBreak: 'break-word' }}>
-                              {i.name}
-                            </span>
-                            <input
-                              type="text"
-                              value={newDetailDrafts[i.id] || ''}
-                              onChange={(e) => setNewDetailDrafts((prev) => ({ ...prev, [i.id]: e.target.value }))}
-                              placeholder="填寫這台設備的內容，沒填就不記錄"
-                              aria-label={`${i.name} 內容`}
-                              style={{ flex: 1, minWidth: 0, padding: '5px 9px', borderRadius: '6px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', fontSize: '13px', outline: 'none' }}
-                            />
-                          </div>
-                        ))}
-                        {filledCount > 0 && unfilled.length > 0 && (
-                          <div style={{ marginTop: '6px', fontSize: '11px', color: 'var(--text-muted)' }}>
-                            <span>另有 {filledCount} 項已經記錄，請在下方「細項紀錄」修改。</span>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
-
-                  {/* 直接為這台設備新增細項 */}
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    <input
-                      type="text"
-                      value={customDetail}
-                      onChange={(e) => setCustomDetail(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddCustomDetail(); } }}
-                      placeholder="直接為這台設備新增細項，例如：客戶指定 IP 設定"
-                      aria-label="新增這台設備的細項"
-                      style={inputStyle}
-                    />
-                    <button
-                      type="button"
-                      onClick={handleAddCustomDetail}
-                      disabled={busy}
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '0 14px', borderRadius: '8px', border: 'none', backgroundColor: busy ? 'var(--border-color)' : '#7c3aed', color: '#fff', fontWeight: 800, fontSize: '13px', cursor: busy ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}
-                    >
-                      <Plus size={15} /> 新增細項
-                    </button>
-                  </div>
-                </section>
-
                 {/* 已有的檢查項目 */}
                 <section>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', flexWrap: 'wrap' }}>
@@ -623,9 +492,9 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
                   </div>
                 </section>
 
-                {/* 細項紀錄：這台設備個別的內容，與檢查項目分開 */}
-                {appliedDetails.length > 0 && (
-                  <section>
+                {/* 細項紀錄：這台設備個別的內容，與檢查項目分開。
+                    範本細項自動套用進來，範本沒有的在最下面直接新增 */}
+                <section>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', flexWrap: 'wrap' }}>
                       <Tag size={17} color="#7c3aed" />
                       <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 900, color: 'var(--text-main)' }}>細項紀錄</h3>
@@ -635,6 +504,11 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
                     </div>
 
                     <div style={{ ...card, padding: '14px' }}>
+                      {appliedDetails.length === 0 && (
+                        <div style={{ padding: '4px 8px 10px', fontSize: '12px', color: 'var(--text-muted)' }}>
+                          範本沒有細項。需要記錄的內容可以在下方直接新增。
+                        </div>
+                      )}
                       {appliedDetails.map((row) => (
                         <div key={row.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 8px' }}>
                           <span style={{ flex: '0 0 160px', fontSize: '13px', color: 'var(--text-main)', fontWeight: 700, wordBreak: 'break-word' }}>
@@ -661,7 +535,7 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
                             </button>
                           ) : (
                             <span
-                              title="依廠牌自動套用的細項，需到「報表中心 → 出機檢查表」調整範本"
+                              title="範本上的細項，需到「報表中心 → 出機檢查表」調整範本"
                               style={{ fontSize: '11px', color: 'var(--text-subtle)', fontWeight: 700, whiteSpace: 'nowrap', width: '26px', textAlign: 'center' }}
                             >
                               自動
@@ -669,6 +543,27 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
                           )}
                         </div>
                       ))}
+
+                      {/* 範本沒有的細項，直接為這台設備新增 */}
+                      <div style={{ display: 'flex', gap: '6px', marginTop: '8px', padding: '8px 8px 0', borderTop: appliedDetails.length > 0 ? '1px dashed var(--border-color)' : 'none' }}>
+                        <input
+                          type="text"
+                          value={customDetail}
+                          onChange={(e) => setCustomDetail(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddCustomDetail(); } }}
+                          placeholder="範本沒有的細項，直接為這台設備新增，例如：客戶指定 IP 設定"
+                          aria-label="新增這台設備的細項"
+                          style={inputStyle}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAddCustomDetail}
+                          disabled={busy}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '0 14px', borderRadius: '8px', border: 'none', backgroundColor: busy ? 'var(--border-color)' : '#7c3aed', color: '#fff', fontWeight: 800, fontSize: '13px', cursor: busy ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}
+                        >
+                          <Plus size={15} /> 新增細項
+                        </button>
+                      </div>
                     </div>
 
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.7, marginTop: '8px' }}>
@@ -678,8 +573,7 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
                         勾選與內容都要按下方的「儲存變更」才會寫回，按錯了可以直接放棄。
                       </span>
                     </div>
-                  </section>
-                )}
+                </section>
               </>
             )}
           </div>

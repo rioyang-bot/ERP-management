@@ -140,59 +140,34 @@ describe('出機檢查表：單一設備', () => {
 
   describe('細項由這台設備自己決定', () => {
     /**
-     * 細項一律是填寫內容，勾選只用在主要檢查功能。
-     * 先前範本細項要先勾選、按「加入勾選的細項」才出現填寫欄位，看起來就像勾選項目。
+     * 細項一律是填寫內容，勾選只用在主要檢查功能；範本細項與主要檢查功能一樣自動套用。
+     * 先前沒設自動套用的細項，在設備上要先勾選、按「加入勾選的細項」才能填。
      */
-    it('範本細項直接是填寫欄位，沒有勾選框', async () => {
+    it('沒有勾選細項的步驟，也不用挑主項目', async () => {
       renderModal();
-      expect(await screen.findByRole('textbox', { name: '開機順序 內容' })).toBeInTheDocument();
-      expect(screen.getByRole('textbox', { name: 'SR-IOV 開啟 內容' })).toBeInTheDocument();
+      await screen.findByLabelText('新增這台設備的細項');
       expect(screen.queryByRole('checkbox', { name: /開機順序/ })).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /加入勾選的細項/ })).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('主項目')).not.toBeInTheDocument();
     });
 
-    it('只記錄有填內容的細項，儲存時一併寫入內容', async () => {
-      renderModal();
-      await userEvent.type(await screen.findByRole('textbox', { name: '開機順序 內容' }), 'UEFI → PXE');
-      await saveChanges();
-
-      await waitFor(() => expect(called('insertAssetChecklistItem')).toHaveLength(1));
-      const [assetId, groupName, kind, name, sourceId] = called('insertAssetChecklistItem')[0].params;
-      expect([assetId, groupName, kind, name, sourceId]).toEqual([DEVICE.id, 'SecretHFT 出機檢查', 'DETAIL', '開機順序', 23]);
-      const newId = 1000 + AUTO_APPLIED.length;
-      await waitFor(() => expect(called('setAssetChecklistItemContent')[0]?.params).toEqual(['UEFI → PXE', newId]));
-      // 沒填的 SR-IOV 開啟 不會被記錄
-      expect(called('insertAssetChecklistItem').map((c) => c.params[3])).not.toContain('SR-IOV 開啟');
-      await waitFor(() => expect(called('insertAuditLog')[0]?.params[8]).toContain('新增細項：開機順序=UEFI → PXE'));
-    });
-
-    it('沒填內容就沒有東西要儲存，不會寫入空的細項', async () => {
-      renderModal();
-      const input = await screen.findByRole('textbox', { name: '開機順序 內容' });
-      await userEvent.type(input, '   ');
-      expect(screen.queryByRole('button', { name: /儲存變更/ })).not.toBeInTheDocument();
-      expect(called('insertAssetChecklistItem')).toHaveLength(0);
-    });
-
-    it('填了又放棄，資料庫不會留下東西', async () => {
-      renderModal();
-      await userEvent.type(await screen.findByRole('textbox', { name: '開機順序 內容' }), 'UEFI');
-      await userEvent.click(screen.getByRole('button', { name: '放棄變更' }));
-
-      await waitFor(() => expect(screen.getByRole('textbox', { name: '開機順序 內容' }).value).toBe(''));
-      expect(called('insertAssetChecklistItem')).toHaveLength(0);
-    });
-
-    it('已經記錄的細項不在上面重複列，到細項紀錄修改', async () => {
+    it('套用進來的細項直接填寫', async () => {
       setup({ applied: [
         ...AUTO_APPLIED,
-        { id: 960, group_name: 'SecretHFT 出機檢查', kind: 'DETAIL', item_name: '開機順序', source_item_id: 23, content: 'UEFI' },
+        { id: 960, group_name: 'SecretHFT 出機檢查', kind: 'DETAIL', item_name: '開機順序', source_item_id: 23, content: null },
       ] });
       renderModal();
-      await screen.findByText(/另有 1 項已經記錄/);
-      // 只剩細項紀錄裡那一個，填寫區不再重複一份
-      expect(screen.getAllByRole('textbox', { name: '開機順序 內容' })).toHaveLength(1);
-      expect(screen.getByRole('textbox', { name: '開機順序 內容' }).value).toBe('UEFI');
+      const input = await screen.findByRole('textbox', { name: '開機順序 內容' });
+      await userEvent.type(input, 'UEFI');
+      await userEvent.tab();
+      await saveChanges();
+      await waitFor(() => expect(called('setAssetChecklistItemContent')[0]?.params).toEqual(['UEFI', 960]));
+    });
+
+    it('範本沒有細項時仍然可以直接新增', async () => {
+      renderModal();
+      expect(await screen.findByText(/範本沒有細項/)).toBeInTheDocument();
+      expect(screen.getByLabelText('新增這台設備的細項')).toBeInTheDocument();
     });
 
     it('可以直接為這台設備新增範本裡沒有的細項', async () => {
@@ -221,42 +196,40 @@ describe('出機檢查表：單一設備', () => {
       await waitFor(() => expect(called('deleteAssetChecklistItem')[0].params).toEqual([950]));
     });
 
-    it('設成自動套用的細項不可從單台移除，避免移掉又被補回來', async () => {
+    it('範本上的細項不可從單台移除，避免移掉又被補回來；範本已刪除的才可以', async () => {
       setup({
-        items: TEMPLATE_ITEMS.map((i) => (i.id === 23 ? { ...i, auto_apply: true } : i)),
         applied: [
           ...AUTO_APPLIED,
           { id: 970, group_name: 'SecretHFT 出機檢查', kind: 'DETAIL', item_name: '開機順序', source_item_id: 23, is_checked: false },
           { id: 971, group_name: 'SecretHFT 出機檢查', kind: 'DETAIL', item_name: 'SR-IOV 開啟', source_item_id: 24, is_checked: false },
+          { id: 972, group_name: 'SecretHFT 出機檢查', kind: 'DETAIL', item_name: '舊細項', source_item_id: 999, content: '有填' },
         ],
       });
       renderModal();
       await screen.findByText('開機順序');
 
-      // 自動套用的那一個沒有移除鈕
       expect(screen.queryByLabelText('移除 開機順序')).not.toBeInTheDocument();
-      // 逐台加入的那一個仍可移除
-      expect(screen.getByLabelText('移除 SR-IOV 開啟')).toBeInTheDocument();
+      expect(screen.queryByLabelText('移除 SR-IOV 開啟')).not.toBeInTheDocument();
+      expect(screen.getByLabelText('移除 舊細項')).toBeInTheDocument();
     });
 
-    it('預設看的是這台設備自己廠牌的那一組', async () => {
+    it('自行新增的細項歸在這台設備自己廠牌的主項目底下', async () => {
       renderModal();
-      const select = await screen.findByLabelText('主項目');
-      await waitFor(() => expect(select.value).toBe('2'));
-      expect(await screen.findByText(/這台設備的廠牌/)).toBeInTheDocument();
+      await userEvent.type(await screen.findByLabelText('新增這台設備的細項'), '客戶指定 IP');
+      await userEvent.click(screen.getByRole('button', { name: /新增細項/ }));
+      await waitFor(() => expect(called('insertAssetChecklistItem')[0]?.params[1]).toBe('SecretHFT 出機檢查'));
     });
 
-    it('有指定這台設備型號的主項目時，預設看型號那一組', async () => {
+    it('有指定這台設備型號的主項目時，自行新增的細項歸在型號那一組', async () => {
       setup({ groups: [
         ...GROUPS,
         { id: 3, name: 'SecretHFT 3122-SM 專屬', brand: 'SECRETHFT', model: '3122-SM', main_count: 0, detail_count: 0 },
         { id: 4, name: 'SecretHFT 其他型號', brand: 'SECRETHFT', model: 'ARL', main_count: 0, detail_count: 0 },
       ] });
       renderModal();
-      const select = await screen.findByLabelText('主項目');
-      await waitFor(() => expect(select.value).toBe('3'));
-      expect(await screen.findByText(/這台設備的型號/)).toBeInTheDocument();
-      expect(screen.getByRole('option', { name: 'SecretHFT 3122-SM 專屬（SECRETHFT · 3122-SM）' })).toBeInTheDocument();
+      await userEvent.type(await screen.findByLabelText('新增這台設備的細項'), '客戶指定 IP');
+      await userEvent.click(screen.getByRole('button', { name: /新增細項/ }));
+      await waitFor(() => expect(called('insertAssetChecklistItem')[0]?.params[1]).toBe('SecretHFT 3122-SM 專屬'));
     });
   });
 
@@ -611,7 +584,7 @@ describe('出機檢查表：範本維護頁', () => {
       expect(await screen.findByText(/已套用到 15 台/)).toBeInTheDocument();
     });
 
-    it('新增細項不會觸發自動套用', async () => {
+    it('新增細項同樣立刻套用到設備', async () => {
       renderPage();
       await userEvent.click(await screen.findByText('SecretHFT 出機檢查'));
 
@@ -620,81 +593,28 @@ describe('出機檢查表：範本維護頁', () => {
 
       await waitFor(() => expect(called('insertChecklistItem')).toHaveLength(1));
       expect(called('insertChecklistItem')[0].params.slice(1, 3)).toEqual(['DETAIL', 'IPMI 帳號']);
-      expect(called('syncBrandChecklistToAssets')).toHaveLength(0);
+      await waitFor(() => expect(called('syncBrandChecklistToAssets').length).toBeGreaterThan(0));
     });
   });
 
   /**
-   * 細項逐台加太費工：像 OS、BMC IP 這種每台都要填的欄位，
-   * 勾起來就跟主要檢查功能一樣自動套用到該廠牌的每一台設備。
+   * 細項新增後就自動套用，不需要另外勾選。
+   * 先前細項前面有「自動套用」勾選框與標籤，看起來跟主要檢查功能不一樣、不好分辨。
    */
-  describe('細項也可以設成自動套用', () => {
-    it('每個細項前面都有自動套用的勾選框', async () => {
+  describe('細項與主要檢查功能外觀一致', () => {
+    it('細項前面沒有勾選框', async () => {
       renderPage();
       await userEvent.click(await screen.findByText('SecretHFT 出機檢查'));
-      expect(await screen.findByLabelText('開機順序 自動套用到所有設備')).toBeInTheDocument();
-      expect(screen.getByLabelText('SR-IOV 開啟 自動套用到所有設備')).toBeInTheDocument();
+      await screen.findByText('開機順序');
+      expect(screen.queryByLabelText('開機順序 自動套用到所有設備')).not.toBeInTheDocument();
     });
 
-    it('主要檢查功能沒有這個勾選框，它本來就一定自動套用', async () => {
-      renderPage();
-      await userEvent.click(await screen.findByText('SecretHFT 出機檢查'));
-      await screen.findByText('BIOS 設定');
-      expect(screen.queryByLabelText('BIOS 設定 自動套用到所有設備')).not.toBeInTheDocument();
-    });
-
-    it('勾選後寫回設定並立刻同步到設備', async () => {
-      renderPage();
-      await userEvent.click(await screen.findByText('SecretHFT 出機檢查'));
-
-      await userEvent.click(await screen.findByLabelText('開機順序 自動套用到所有設備'));
-
-      await waitFor(() => expect(called('setChecklistItemAutoApply')[0].params).toEqual([true, 23]));
-      await waitFor(() => expect(called('syncBrandChecklistToAssets').length).toBeGreaterThan(0));
-      expect(await screen.findByText(/「開機順序」已套用到 15 台設備/)).toBeInTheDocument();
-    });
-
-    it('取消勾選時說明已發出去的仍保留在各設備上', async () => {
+    it('就算資料上標過自動套用，也不再顯示標籤', async () => {
       items = items.map((i) => (i.id === 23 ? { ...i, auto_apply: true } : i));
       renderPage();
       await userEvent.click(await screen.findByText('SecretHFT 出機檢查'));
-
-      await userEvent.click(await screen.findByLabelText('開機順序 自動套用到所有設備'));
-
-      await waitFor(() => expect(called('setChecklistItemAutoApply')[0].params).toEqual([false, 23]));
-      expect(await screen.findByText(/已經發出去的仍保留在各設備上/)).toBeInTheDocument();
-    });
-
-    /**
-     * 這個勾選框點一下就會把項目發到所有符合廠牌的設備上，
-     * 影響範圍遠大於畫面上看起來的一次點擊。
-     */
-    it('沒有按下確定就不會設成自動套用', async () => {
-      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
-      renderPage();
-      await userEvent.click(await screen.findByText('SecretHFT 出機檢查'));
-      await userEvent.click(await screen.findByLabelText('開機順序 自動套用到所有設備'));
-
-      expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining('所有符合廠牌的設備'));
-      expect(called('setChecklistItemAutoApply')).toHaveLength(0);
-      confirmSpy.mockRestore();
-    });
-
-    it('設定自動套用會留下事件紀錄', async () => {
-      renderPage();
-      await userEvent.click(await screen.findByText('SecretHFT 出機檢查'));
-      await userEvent.click(await screen.findByLabelText('開機順序 自動套用到所有設備'));
-
-      await waitFor(() => expect(called('insertAuditLog')).toHaveLength(1));
-      expect(called('insertAuditLog')[0].params[8]).toContain('開機順序');
-      expect(called('insertAuditLog')[0].params[8]).toContain('設為自動套用');
-    });
-
-    it('已設為自動套用的細項會標示出來', async () => {
-      items = items.map((i) => (i.id === 23 ? { ...i, auto_apply: true } : i));
-      renderPage();
-      await userEvent.click(await screen.findByText('SecretHFT 出機檢查'));
-      expect(await screen.findByText('自動套用')).toBeInTheDocument();
+      await screen.findByText('開機順序');
+      expect(screen.queryByText('自動套用')).not.toBeInTheDocument();
     });
   });
 
