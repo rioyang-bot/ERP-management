@@ -555,8 +555,8 @@ const LentList = () => {
       </div>
 
       <div className="card-surface" style={{ padding: '0', overflow: 'hidden', borderRadius: 'var(--card-radius, 14px)' }}>
-        {/* 三大頁籤 */}
-        <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)' }}>
+        {/* 三大頁籤；搜尋放在同一列的右側，不另佔一列（與維修單列表相同） */}
+        <div data-testid="lent-tab-bar" style={{ display: 'flex', alignItems: 'stretch', flexWrap: 'wrap', borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)' }}>
           <button 
             onClick={() => setActiveTab('PENDING')}
             style={{ 
@@ -621,10 +621,8 @@ const LentList = () => {
           >
             <CheckCircle size={18} /> 已結案 (歷史紀錄)
           </button>
-        </div>
 
-        <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', backgroundColor: 'var(--bg-surface)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1 }}>
+          <div data-testid="lent-toolbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', flexWrap: 'wrap', padding: '6px 16px', marginLeft: 'auto' }}>
             <div style={{ position: 'relative', width: '320px' }}>
               <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-subtle)' }} />
               <input 
@@ -675,7 +673,7 @@ const LentList = () => {
           </div>
         )}
 
-        <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 290px)', minHeight: '300px', margin: '0 16px 16px', borderRadius: '10px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)' }}>
+        <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 290px)', minHeight: '300px', margin: '16px', borderRadius: '10px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)' }}>
           <table className="vibrant-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead style={{ position: 'sticky', top: 0, zIndex: 4, backgroundColor: 'var(--table-header-bg)', borderBottom: '2px solid var(--border-color)' }}>
               <tr style={{ textAlign: 'left' }}>

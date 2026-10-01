@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -49,8 +49,11 @@ describe('維修單列表的欄位', () => {
     };
   });
 
+  // 這張單已完工；列表預設停在「現場處理」，切到「完工結案」才看得到
   const open = async () => {
     render(<MemoryRouter><RepairList /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByTestId('stat-3').textContent).toBe('1'));
+    fireEvent.click(screen.getByTestId('repair-tab-COMPLETED'));
     await screen.findByText('RMA-20260923-01');
   };
 

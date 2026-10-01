@@ -63,16 +63,25 @@ describe('維修單列表', () => {
     };
   });
 
+  /** 列表預設停在「現場處理」（「全部維修單」頁籤已拿掉），等資料讀進來 */
   const open = async () => {
     render(<MemoryRouter><RepairList /></MemoryRouter>);
-    await screen.findByText('RMA-OPEN-OLD');
+    await waitFor(() => expect(screen.getByTestId('stat-1').textContent).toBe('1'));
   };
+  const goTab = (key) => userEvent.click(screen.getByTestId(`repair-tab-${key}`));
 
-  it('預設只列近 3 個月結案的，未結案的不管多舊都列出', async () => {
+  it('完工結案預設只列近 3 個月結案的', async () => {
     await open();
+    await goTab('COMPLETED');
     expect(screen.getByText('RMA-DONE-RECENT')).toBeInTheDocument();
     expect(screen.getByText('RMA-DONE-JULY')).toBeInTheDocument();
     expect(screen.queryByText('RMA-DONE-2025')).not.toBeInTheDocument();
+  });
+
+  it('未結案的不管多舊都列出', async () => {
+    await open();
+    await goTab('SENT_OEM');
+    expect(screen.getByText('RMA-OPEN-OLD')).toBeInTheDocument();
   });
 
   it('完工卡片只算期間內的，並標示期間', async () => {
@@ -88,24 +97,27 @@ describe('維修單列表', () => {
 
   it('講清楚有幾張較早結案的沒列出，並可一鍵顯示全部', async () => {
     await open();
+    await goTab('COMPLETED');
     expect(screen.getByTestId('hidden-closed-hint').textContent).toContain('另有 1 張較早結案的維修單未列出');
     await userEvent.click(screen.getByRole('button', { name: '顯示全部' }));
     expect(await screen.findByText('RMA-DONE-2025')).toBeInTheDocument();
     expect(screen.queryByTestId('hidden-closed-hint')).not.toBeInTheDocument();
   });
 
-  it('切到本月，完工數跟著變', async () => {
+  it('切到本月，完工數跟著變；未結案的不受影響', async () => {
     await open();
+    await goTab('COMPLETED');
     await userEvent.selectOptions(screen.getByLabelText('已結案顯示期間'), 'MONTH');
     expect(screen.getByTestId('completed-period').textContent).toBe('本月');
     expect(screen.getByTestId('stat-3').textContent).toBe('0');
     expect(screen.queryByText('RMA-DONE-RECENT')).not.toBeInTheDocument();
-    // 未結案的照樣在
+    await goTab('SENT_OEM');
     expect(screen.getByText('RMA-OPEN-OLD')).toBeInTheDocument();
   });
 
   it('自訂起訖日', async () => {
     await open();
+    await goTab('COMPLETED');
     await userEvent.selectOptions(screen.getByLabelText('已結案顯示期間'), 'CUSTOM');
     await userEvent.type(screen.getByLabelText('結案起日'), '2025-11-01');
     await userEvent.type(screen.getByLabelText('結案迄日'), '2025-11-30');
@@ -120,9 +132,18 @@ describe('維修單列表', () => {
     expect(screen.getByTestId('search-all-history-hint')).toBeInTheDocument();
   });
 
+  it('搜尋不分頁籤：停在完工結案也找得到未結案的單', async () => {
+    await open();
+    await goTab('COMPLETED');
+    await userEvent.type(screen.getByPlaceholderText(/搜尋單號/), 'RMA-OPEN');
+    expect(await screen.findByText('RMA-OPEN-OLD')).toBeInTheDocument();
+    expect(screen.queryByText('RMA-DONE-RECENT')).not.toBeInTheDocument();
+    expect(screen.getByTestId('search-all-history-hint').textContent).toContain('不限目前的頁籤');
+  });
+
   it('看未結案的頁籤時不提示較早結案的單', async () => {
     await open();
-    await userEvent.click(screen.getByTestId('repair-tab-SENT_OEM'));
+    await goTab('SENT_OEM');
     expect(screen.queryByTestId('hidden-closed-hint')).not.toBeInTheDocument();
   });
 });

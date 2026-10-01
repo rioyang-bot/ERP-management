@@ -22,8 +22,8 @@ const TIMELINE_STEPS = [
   { key: 'completion_date', label: '完工', color: '#3b82f6' },
 ];
 
+// 「全部維修單」頁籤已拿掉（總數卡片先前就拿掉了）；要跨狀態找單直接搜尋
 const STATUS_CONFIG = {
-  ALL: { label: '全部維修單', color: 'var(--text-main)', bg: 'transparent' },
   ON_SITE_HANDLING: { label: '現場處理', color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' },
   SENT_OEM: { label: '送修原廠', color: '#d97706', bg: 'rgba(217, 119, 6, 0.12)' },
   OEM_RETURNED: { label: '原廠返還', color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.12)' },
@@ -33,17 +33,15 @@ const STATUS_CONFIG = {
 // 頁籤的圖示與選取時的顏色。樣式比照借用列表／出貨單列表的頁籤：
 // 整排貼在卡片頂端，選取的那一個底線加粗、背景變亮，未結案的帶數量徽章
 const TAB_ICONS = {
-  ALL: FileText,
   ON_SITE_HANDLING: Home,
   SENT_OEM: Truck,
   OEM_RETURNED: RotateCcw,
   COMPLETED: CheckCircle,
 };
-const tabColor = (key) => (key === 'ALL' ? '#3b82f6' : STATUS_CONFIG[key].color);
 
 const RepairList = () => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState('ALL');
+  const [activeTab, setActiveTab] = useState('ON_SITE_HANDLING');
   const [repairOrders, setRepairOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -160,8 +158,8 @@ const RepairList = () => {
 
   // 過濾清單
   const filteredOrders = repairOrders.filter(order => {
-    // 狀態篩選
-    if (activeTab !== 'ALL' && order.status !== activeTab) {
+    // 狀態篩選。搜尋時不分頁籤：打單號、序號或客戶就找得到，不必先猜它在哪個階段
+    if (!searching && order.status !== activeTab) {
       return false;
     }
 
@@ -197,7 +195,7 @@ const RepairList = () => {
     completed: repairOrders.filter(o => isClosed(o) && inPeriod(o, range)).length
   };
   // 期間外、沒顯示出來的已結案單（目前頁籤看得到已結案時才提示）
-  const hiddenClosedCount = (searching || (activeTab !== 'ALL' && activeTab !== 'COMPLETED'))
+  const hiddenClosedCount = (searching || activeTab !== 'COMPLETED')
     ? 0
     : repairOrders.filter(o => isClosed(o) && !inPeriod(o, range)).length;
   const currentPeriodLabel = periodLabel(period, customRange);
@@ -273,14 +271,15 @@ const RepairList = () => {
         </div>
       </div>
 
-      {/* 頁籤與搜尋列：頁籤樣式比照借用列表 */}
+      {/* 頁籤列：頁籤樣式比照借用列表；期間與搜尋放在同一列的右側，不另佔一列 */}
       <div className="card-surface" style={{ padding: '0', overflow: 'hidden', borderRadius: 'var(--card-radius, 14px)', marginBottom: '12px' }}>
-        <div data-testid="repair-tabs" style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)', flexWrap: 'wrap' }}>
+        <div data-testid="repair-tab-bar" style={{ display: 'flex', alignItems: 'stretch', backgroundColor: 'var(--bg-surface-subtle)', flexWrap: 'wrap' }}>
+        <div data-testid="repair-tabs" style={{ display: 'flex', flexWrap: 'wrap' }}>
           {Object.entries(STATUS_CONFIG).map(([key, cfg]) => {
             const isSelected = activeTab === key;
-            const color = tabColor(key);
+            const color = cfg.color;
             const Icon = TAB_ICONS[key];
-            // 未結案的三種帶數量徽章，與右上角的數字一致；全部與完工不帶（完工另有期間）
+            // 未結案的三種帶數量徽章，與右上角的數字一致；完工不帶（完工另有期間）
             const count = { ON_SITE_HANDLING: stats.on_site, SENT_OEM: stats.sent_oem, OEM_RETURNED: stats.oem_returned }[key];
             return (
               <button
@@ -313,7 +312,7 @@ const RepairList = () => {
           })}
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '8px', flexWrap: 'wrap', padding: '8px 14px' }}>
+        <div data-testid="repair-toolbar" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '8px', flexWrap: 'wrap', padding: '6px 14px', marginLeft: 'auto' }}>
         {/* 已結案顯示期間：未結案的單不受影響，一律全部顯示 */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
           <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>已結案顯示</span>
@@ -368,6 +367,7 @@ const RepairList = () => {
           <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
         </div>
         </div>
+        </div>
       </div>
 
       {/* 期間外的已結案單沒有顯示時講清楚，並提供看全部的方法 */}
@@ -387,9 +387,9 @@ const RepairList = () => {
           <span>或直接搜尋單號、序號、客戶（搜尋會查全部歷史）。</span>
         </div>
       )}
-      {searching && period !== 'ALL' && (
+      {searching && (
         <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '10px', padding: '0 4px' }} data-testid="search-all-history-hint">
-          搜尋中：查的是全部歷史，不限「{currentPeriodLabel}」。
+          搜尋中：查的是所有狀態與全部歷史，不限目前的頁籤{period !== 'ALL' ? `與「${currentPeriodLabel}」` : ''}。
         </div>
       )}
 

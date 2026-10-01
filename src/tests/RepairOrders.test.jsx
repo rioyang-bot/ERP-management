@@ -186,16 +186,19 @@ describe('維修單管理系統 (Repair Orders / RMA List) 四階段流程與設
       </MemoryRouter>
     );
 
+    // 預設停在「現場處理」頁籤（「全部維修單」頁籤已拿掉）
     await waitFor(() => {
       expect(screen.getByText('維修單列表 (Repair Orders / RMA List)')).toBeInTheDocument();
       expect(screen.getByText('RMA-20260902-001')).toBeInTheDocument();
-      expect(screen.getByText('RMA-20260902-002')).toBeInTheDocument();
       expect(screen.getByText(/X0342639/)).toBeInTheDocument();
-      expect(screen.getByText(/BC025778/)).toBeInTheDocument();
       expect(screen.getByText('取回 重灌OS')).toBeInTheDocument();
       // 現場處理日和送修完工資訊併成「維修時程」後，日期仍然列得出來
       expect(screen.getAllByText('2026-06-25').length).toBeGreaterThan(0);
     });
+
+    fireEvent.click(screen.getByTestId('repair-tab-SENT_OEM'));
+    expect(screen.getByText('RMA-20260902-002')).toBeInTheDocument();
+    expect(screen.getByText(/BC025778/)).toBeInTheDocument();
   });
 
   it('2. 階段 1 建立維修單：寫入 On-site handling Date 與 Status，並將設備標記為維修中 (REPAIRING)', async () => {
