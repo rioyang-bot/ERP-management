@@ -30,6 +30,17 @@ const STATUS_CONFIG = {
   COMPLETED: { label: '完工結案', color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.12)' }
 };
 
+// 頁籤的圖示與選取時的顏色。樣式比照借用列表／出貨單列表的頁籤：
+// 整排貼在卡片頂端，選取的那一個底線加粗、背景變亮，未結案的帶數量徽章
+const TAB_ICONS = {
+  ALL: FileText,
+  ON_SITE_HANDLING: Home,
+  SENT_OEM: Truck,
+  OEM_RETURNED: RotateCcw,
+  COMPLETED: CheckCircle,
+};
+const tabColor = (key) => (key === 'ALL' ? '#3b82f6' : STATUS_CONFIG[key].color);
+
 const RepairList = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('ALL');
@@ -262,46 +273,47 @@ const RepairList = () => {
         </div>
       </div>
 
-      {/* 搜尋與頁籤列 */}
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        backgroundColor: 'var(--bg-surface)',
-        padding: '8px 14px',
-        borderRadius: '10px',
-        border: '1px solid var(--border-color)',
-        marginBottom: '12px',
-        flexWrap: 'wrap',
-        gap: '10px'
-      }}>
-        {/* 頁籤切換 */}
-        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+      {/* 頁籤與搜尋列：頁籤樣式比照借用列表 */}
+      <div className="card-surface" style={{ padding: '0', overflow: 'hidden', borderRadius: 'var(--card-radius, 14px)', marginBottom: '12px' }}>
+        <div data-testid="repair-tabs" style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)', flexWrap: 'wrap' }}>
           {Object.entries(STATUS_CONFIG).map(([key, cfg]) => {
             const isSelected = activeTab === key;
+            const color = tabColor(key);
+            const Icon = TAB_ICONS[key];
+            // 未結案的三種帶數量徽章，與右上角的數字一致；全部與完工不帶（完工另有期間）
+            const count = { ON_SITE_HANDLING: stats.on_site, SENT_OEM: stats.sent_oem, OEM_RETURNED: stats.oem_returned }[key];
             return (
               <button
                 key={key}
                 onClick={() => setActiveTab(key)}
+                data-testid={`repair-tab-${key}`}
+                aria-pressed={isSelected}
                 style={{
-                  padding: '5px 12px',
-                  borderRadius: '6px',
-                  border: isSelected ? '1px solid var(--primary-color)' : '1px solid transparent',
-                  backgroundColor: isSelected ? 'var(--primary-bg)' : 'transparent',
-                  color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)',
-                  fontSize: '12px',
-                  fontWeight: 700,
+                  padding: '10px 18px',
+                  border: 'none',
+                  backgroundColor: isSelected ? 'var(--bg-surface)' : 'transparent',
+                  borderBottom: isSelected ? `3px solid ${color}` : '3px solid transparent',
+                  color: isSelected ? color : 'var(--text-muted)',
+                  fontWeight: isSelected ? 800 : 600,
+                  fontSize: '0.9rem',
                   cursor: 'pointer',
-                  transition: 'all 0.15s'
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
                 }}
               >
-                {cfg.label}
+                <Icon size={16} /> {cfg.label}
+                {count > 0 && (
+                  <span style={{ backgroundColor: color, color: '#fff', padding: '1px 6px', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 800 }}>
+                    {count}
+                  </span>
+                )}
               </button>
             );
           })}
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '8px', flexWrap: 'wrap', padding: '8px 14px' }}>
         {/* 已結案顯示期間：未結案的單不受影響，一律全部顯示 */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
           <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>已結案顯示</span>
