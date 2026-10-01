@@ -253,11 +253,11 @@ const RepairList = () => {
           style={{ backgroundColor: 'var(--bg-surface)', padding: '8px 16px', borderRadius: '12px', border: '1px solid var(--border-color)', display: 'flex', gap: '16px', boxShadow: 'var(--card-shadow)', flexWrap: 'wrap' }}
         >
           {[
-            // 階段名稱不括設備狀態：同一階段，客戶送修與公司內部維修的設備狀態不同
-            { label: '現場處理', value: stats.on_site, color: '#10b981' },
-            { label: '送修原廠', value: stats.sent_oem, color: '#d97706' },
-            { label: '原廠返還', value: stats.oem_returned, color: '#8b5cf6' },
-            { label: '完工出貨', value: stats.completed, color: '#3b82f6', period: currentPeriodLabel },
+            // 標籤附上常見情況下的設備狀態（使用者要求）。內部維修的實際狀態以各單的詳情為準。
+            { label: '現場處理 (在庫)', value: stats.on_site, color: '#10b981' },
+            { label: '送修原廠 (維修中)', value: stats.sent_oem, color: '#d97706' },
+            { label: '原廠返還 (在庫)', value: stats.oem_returned, color: '#8b5cf6' },
+            { label: '完工出貨 (已結案)', value: stats.completed, color: '#3b82f6', period: currentPeriodLabel },
           ].map((st, idx) => (
             <div key={st.label} style={idx > 0 ? { borderLeft: '1px solid var(--border-color)', paddingLeft: '16px' } : undefined}>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>{st.label}</div>

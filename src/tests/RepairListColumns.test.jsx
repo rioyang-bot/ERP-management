@@ -69,7 +69,7 @@ describe('維修單列表的欄位', () => {
     await open();
     const box = screen.getByTestId('repair-stats');
     const labels = [...box.children].map((el) => el.firstChild.textContent);
-    expect(labels).toEqual(['現場處理', '送修原廠', '原廠返還', '完工出貨']);
+    expect(labels).toEqual(['現場處理 (在庫)', '送修原廠 (維修中)', '原廠返還 (在庫)', '完工出貨 (已結案)']);
     expect(screen.queryByText('總維修單數')).not.toBeInTheDocument();
   });
 
