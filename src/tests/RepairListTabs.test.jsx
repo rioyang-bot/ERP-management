@@ -9,7 +9,10 @@ import RepairList from '../pages/RepairList';
  *
  * 原本是搜尋列裡的一排小膠囊按鈕，與借用列表、出貨單列表的頁籤長得不一樣。
  * 改成貼在卡片頂端的一整排頁籤：圖示＋名稱，選取的底線加粗、背景變亮，
- * 未結案的三種帶數量徽章。期間與搜尋放在頁籤下方那一列。
+ * 未結案的三種帶數量徽章。
+ *
+ * 「全部維修單」頁籤拿掉（總數卡片先前就拿掉了），預設停在「現場處理」；
+ * 期間與搜尋放在頁籤列的右側，不另佔一列。要跨狀態找單直接搜尋。
  */
 beforeAll(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-01T10:00:00')); });
 afterAll(() => { vi.useRealTimers(); });
@@ -37,13 +40,22 @@ const open = async () => {
 const tab = (key) => screen.getByTestId(`repair-tab-${key}`);
 
 describe('維修單列表的頁籤', () => {
-  it('五個頁籤依序排在卡片頂端', async () => {
+  it('四個頁籤依序排在卡片頂端，沒有「全部維修單」', async () => {
     await open();
+    const bar = screen.getByTestId('repair-tab-bar');
+    expect(bar.parentElement.className).toBe('card-surface');
+    expect(bar.parentElement.children).toHaveLength(1);
     const strip = screen.getByTestId('repair-tabs');
-    expect(strip.parentElement.className).toBe('card-surface');
-    expect(strip.parentElement.firstElementChild).toBe(strip);
     expect([...strip.children].map((b) => b.textContent.replace(/\d+$/, '').trim()))
-      .toEqual(['全部維修單', '現場處理', '送修原廠', '原廠返還', '完工結案']);
+      .toEqual(['現場處理', '送修原廠', '原廠返還', '完工結案']);
+    expect(screen.queryByText('全部維修單')).not.toBeInTheDocument();
+  });
+
+  it('預設停在現場處理', async () => {
+    await open();
+    expect(tab('ON_SITE_HANDLING').getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByText('RMA-1')).toBeInTheDocument();
+    expect(screen.queryByText('RMA-2')).not.toBeInTheDocument();
   });
 
   it('與借用列表同樣式：圖示、底線、字級', async () => {
@@ -54,8 +66,8 @@ describe('維修單列表的頁籤', () => {
       expect(b.style.fontSize).toBe('0.9rem');
       expect(b.style.borderRadius).toBe('');
     }
-    // 預設選「全部」：底線加粗
-    expect(tab('ALL').style.borderBottom).toBe('3px solid rgb(59, 130, 246)');
+    // 選取的那一個底線加粗，用該狀態的顏色
+    expect(tab('ON_SITE_HANDLING').style.borderBottom).toBe('3px solid rgb(16, 185, 129)');
     expect(tab('SENT_OEM').style.borderBottom).toBe('3px solid transparent');
   });
 
@@ -64,23 +76,27 @@ describe('維修單列表的頁籤', () => {
     fireEvent.click(tab('SENT_OEM'));
     expect(tab('SENT_OEM').getAttribute('aria-pressed')).toBe('true');
     expect(tab('SENT_OEM').style.borderBottom).toBe('3px solid rgb(217, 119, 6)');
-    expect(tab('ALL').style.borderBottom).toBe('3px solid transparent');
+    expect(tab('ON_SITE_HANDLING').style.borderBottom).toBe('3px solid transparent');
     expect(screen.queryByText('RMA-1')).not.toBeInTheDocument();
+    expect(screen.getByText('RMA-2')).toBeInTheDocument();
   });
 
-  it('未結案的頁籤帶數量徽章，沒有的不顯示；全部與完工不帶', async () => {
+  it('未結案的頁籤帶數量徽章，沒有的不顯示；完工不帶', async () => {
     await open();
     expect(tab('ON_SITE_HANDLING')).toHaveTextContent('現場處理1');
     expect(tab('SENT_OEM')).toHaveTextContent('送修原廠2');
     expect(tab('OEM_RETURNED').textContent.trim()).toBe('原廠返還');
-    expect(tab('ALL').textContent.trim()).toBe('全部維修單');
     expect(tab('COMPLETED').textContent.trim()).toBe('完工結案');
   });
 
-  it('期間與搜尋放在頁籤下方，不跟頁籤擠在同一列', async () => {
+  it('期間與搜尋放在頁籤列右側，不另佔一列', async () => {
     await open();
-    const strip = screen.getByTestId('repair-tabs');
-    expect(strip.contains(screen.getByLabelText('已結案顯示期間'))).toBe(false);
-    expect(strip.nextElementSibling.contains(screen.getByPlaceholderText(/搜尋單號/))).toBe(true);
+    const bar = screen.getByTestId('repair-tab-bar');
+    const toolbar = screen.getByTestId('repair-toolbar');
+    expect(bar.lastElementChild).toBe(toolbar);
+    expect(toolbar.style.marginLeft).toBe('auto');
+    expect(toolbar.contains(screen.getByLabelText('已結案顯示期間'))).toBe(true);
+    expect(toolbar.contains(screen.getByPlaceholderText(/搜尋單號/))).toBe(true);
+    expect(screen.getByTestId('repair-tabs').contains(toolbar)).toBe(false);
   });
 });
