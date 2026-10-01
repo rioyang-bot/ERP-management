@@ -666,15 +666,17 @@ const InboundList = ({ isSplitMode = false }) => {
   const currentRecords = sortedAndFiltered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   return (
-    <div className="inbound-list-container" style={isSplitMode ? { padding: 0, minHeight: 'auto', backgroundColor: 'transparent' } : {}}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--page-title-margin, 14px)', flexWrap: 'wrap', gap: '10px' }}>
+    // 外框、標題列與卡片的間距與出貨單列表相同（page-container / page-header / card-surface），
+    // 兩頁切換時版面才不會跳動
+    <div className="page-container" style={isSplitMode ? { padding: 0, minHeight: 'auto', backgroundColor: 'transparent' } : {}}>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--page-title-margin, 14px)', flexWrap: 'wrap', gap: '10px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <div>
             <h1 style={{ fontSize: 'var(--page-title-size, 1.35rem)', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
               <ArrowDownToLine size={24} color="#10b981" />
               進貨單列表(Stock in List)
             </h1>
-            <p style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '2px', fontWeight: 500, letterSpacing: '0.3px' }}>
+            <p style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '2px', marginBottom: 0 }}>
               追查所有入庫單據明細、核銷與對帳關聯。
             </p>
           </div>
@@ -702,15 +704,19 @@ const InboundList = ({ isSplitMode = false }) => {
           )}
         </div>
 
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <div style={{ padding: '8px 16px', borderRadius: '12px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: 'var(--card-shadow)' }}>
-            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 600 }}>待確認進貨單</span>
-            <span style={{ fontSize: '1.15rem', fontWeight: 800, color: '#f97316' }} data-testid="inbound-pending-count">{pendingCount}</span>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <div style={{ backgroundColor: 'var(--bg-surface)', padding: '8px 16px', borderRadius: '12px', border: '1px solid var(--border-color)', display: 'flex', gap: '16px', boxShadow: 'var(--card-shadow)' }}>
+            <div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>待確認進貨單</div>
+              <div style={{ fontSize: '1.15rem', fontWeight: 700, color: '#f97316' }}>
+                <span data-testid="inbound-pending-count">{pendingCount}</span> <span style={{ fontSize: '0.8rem', fontWeight: 400, opacity: 0.8 }}>單</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      <div style={{ backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--card-radius, 14px)', boxShadow: 'var(--card-shadow)', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
+      <div className="card-surface" style={{ padding: '0', overflow: 'hidden', borderRadius: 'var(--card-radius, 14px)' }}>
         {/* 兩大頁籤，與出貨單列表一致 */}
         <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)' }}>
           <button
