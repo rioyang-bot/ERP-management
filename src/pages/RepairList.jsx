@@ -203,23 +203,12 @@ const RepairList = () => {
         gap: '16px'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{
-            width: '44px',
-            height: '44px',
-            borderRadius: '12px',
-            backgroundColor: 'rgba(239, 68, 68, 0.12)',
-            color: '#ef4444',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}>
-            <Wrench size={24} />
-          </div>
           <div>
             {/* 新增維修單放在標題旁邊；重新整理拿掉（操作後列表會自動重新讀取） */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
-              <h1 style={{ fontSize: 'var(--page-title-size, 1.35rem)', fontWeight: 900, margin: 0, letterSpacing: '-0.5px' }}>
-                維修單列表 (Repair Orders / RMA List)
+              {/* 標題前的小圖示與出貨單列表、借用列表一致 */}
+              <h1 style={{ fontSize: 'var(--page-title-size, 1.35rem)', fontWeight: 900, margin: 0, letterSpacing: '-0.5px', display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-main)' }}>
+                <Wrench size={24} color="var(--primary-color)" /> 維修單列表 (Repair Orders / RMA List)
               </h1>
               <button
                 onClick={() => setIsCreateModalOpen(true)}
