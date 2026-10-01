@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Building, Plus, Edit3, Trash2, X, Check, Image as ImageIcon, Shield, Save, RotateCcw } from 'lucide-react';
-import { getCompanyPresets, saveCompanyPreset, deleteCompanyPreset, resetBuiltinCompanyPreset, DEFAULT_BUILTIN_PRESETS } from '../utils/companyPresets';
+import { getCompanyPresets, saveCompanyPreset, deleteCompanyPreset, DEFAULT_BUILTIN_PRESETS } from '../utils/companyPresets';
 import logoImg from '../assets/logo.png';
 import './CompanyPresetModal.css';
 
@@ -9,11 +9,7 @@ const emptyForm = {
   label: '',
   logo: logoImg,
   headerRight: '',
-  companySignName: '',
-  dealerName: '',
-  dealerSales: '',
-  dealerPhone: '',
-  dealerAddress: ''
+  companySignName: ''
 };
 
 const CompanyPresetModal = ({ isOpen, onClose, onPresetsUpdated }) => {
@@ -51,11 +47,7 @@ const CompanyPresetModal = ({ isOpen, onClose, onPresetsUpdated }) => {
       label: preset.label || '',
       logo: preset.logo || logoImg,
       headerRight: preset.headerRight || '',
-      companySignName: preset.companySignName || '',
-      dealerName: preset.dealerName || '',
-      dealerSales: preset.dealerSales || '',
-      dealerPhone: preset.dealerPhone || '',
-      dealerAddress: preset.dealerAddress || ''
+      companySignName: preset.companySignName || ''
     });
     setIsEditing(true);
     setErrorMsg('');
@@ -90,20 +82,6 @@ const CompanyPresetModal = ({ isOpen, onClose, onPresetsUpdated }) => {
       }
     } catch (err) {
       setErrorMsg(err.message || '儲存範本失敗');
-    }
-  };
-
-  const handleResetBuiltin = (presetId) => {
-    if (window.confirm('確定要將此內建範本還原為原廠預設值嗎？')) {
-      try {
-        resetBuiltinCompanyPreset(presetId);
-        loadPresets();
-        if (onPresetsUpdated) {
-          onPresetsUpdated(presetId);
-        }
-      } catch (err) {
-        alert(err.message || '還原失敗');
-      }
     }
   };
 
@@ -189,17 +167,8 @@ const CompanyPresetModal = ({ isOpen, onClose, onPresetsUpdated }) => {
                     <Edit3 size={13} /> 編輯
                   </button>
 
-                  {preset.isBuiltin ? (
-                    preset.isModified && (
-                      <button
-                        onClick={() => handleResetBuiltin(preset.id)}
-                        className="preset-btn preset-btn-secondary"
-                        title="還原為原廠預設資訊"
-                      >
-                        <RotateCcw size={13} /> 還原
-                      </button>
-                    )
-                  ) : (
+                  {/* 內建範本不可刪除，也不提供還原原廠預設：原廠值當初就建錯了，以改過的為準 */}
+                  {!preset.isBuiltin && (
                     <button
                       onClick={() => handleDelete(preset.id)}
                       className="preset-btn preset-btn-danger"
@@ -296,39 +265,6 @@ const CompanyPresetModal = ({ isOpen, onClose, onPresetsUpdated }) => {
                     type="text"
                     value={formData.companySignName}
                     onChange={(e) => setFormData({ ...formData, companySignName: e.target.value })}
-                    className="preset-form-input"
-                  />
-                </div>
-
-                {/* 經銷商名稱 */}
-                <div className="preset-form-group">
-                  <label className="preset-form-label">經銷商/公司名稱</label>
-                  <input
-                    type="text"
-                    value={formData.dealerName}
-                    onChange={(e) => setFormData({ ...formData, dealerName: e.target.value })}
-                    className="preset-form-input"
-                  />
-                </div>
-
-                {/* 經銷商聯絡電話 */}
-                <div className="preset-form-group">
-                  <label className="preset-form-label">聯絡電話</label>
-                  <input
-                    type="text"
-                    value={formData.dealerPhone}
-                    onChange={(e) => setFormData({ ...formData, dealerPhone: e.target.value })}
-                    className="preset-form-input"
-                  />
-                </div>
-
-                {/* 經銷商地址 */}
-                <div className="preset-form-group full-width">
-                  <label className="preset-form-label">公司地址</label>
-                  <input
-                    type="text"
-                    value={formData.dealerAddress}
-                    onChange={(e) => setFormData({ ...formData, dealerAddress: e.target.value })}
                     className="preset-form-input"
                   />
                 </div>

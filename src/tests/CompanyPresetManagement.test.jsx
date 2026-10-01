@@ -4,7 +4,8 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import CompanyPresetModal from '../components/CompanyPresetModal';
 import DeliveryReceiptPrintModal from '../components/DeliveryReceiptPrintModal';
 import LentOrderPrintModal from '../components/LentOrderPrintModal';
-import { getCompanyPresets, saveCompanyPreset, deleteCompanyPreset, resetBuiltinCompanyPreset } from '../utils/companyPresets';
+import * as presetsModule from '../utils/companyPresets';
+import { getCompanyPresets, saveCompanyPreset, deleteCompanyPreset } from '../utils/companyPresets';
 
 describe('公司資訊範本自訂與管理功能測試 (Company Presets Management)', () => {
   beforeEach(() => {
@@ -116,29 +117,32 @@ describe('公司資訊範本自訂與管理功能測試 (Company Presets Managem
     expect(() => deleteCompanyPreset('PRESET_B')).toThrow('系統內建範本不可刪除');
   });
 
-  it('支援編輯修改系統內建範本 (版本 B / 版本 A) 且可隨時還原為原廠預設', () => {
-    // 1. 修改內建版本 B 的公司抬頭與電話
+  /**
+   * 內建範本的原廠值當初建錯了，改過之後一律以改過的為準，不提供還原。
+   * 經銷商不屬於公司範本，借貨申請單上另外從客戶/廠商管理挑選。
+   */
+  it('可以修改系統內建範本，改過的就是準的，沒有還原原廠預設', () => {
     saveCompanyPreset({
       id: 'PRESET_B',
       label: '版本 B (竣喆國際 - 台北總部)',
       headerRight: '竣喆國際有限公司 台北總部\nTEL: 02-9999-8888',
       companySignName: '竣喆國際有限公司 台北總部',
-      dealerName: '竣喆國際台北總部',
-      dealerPhone: '02-9999-8888',
-      dealerAddress: '台北市信義區松高路 1 號'
     });
 
     const modifiedPresets = getCompanyPresets();
     expect(modifiedPresets.PRESET_B.label).toBe('版本 B (竣喆國際 - 台北總部)');
-    expect(modifiedPresets.PRESET_B.dealerPhone).toBe('02-9999-8888');
+    expect(modifiedPresets.PRESET_B.companySignName).toBe('竣喆國際有限公司 台北總部');
     expect(modifiedPresets.PRESET_B.isModified).toBe(true);
     expect(modifiedPresets.PRESET_B.isBuiltin).toBe(true);
+    expect(presetsModule.resetBuiltinCompanyPreset).toBeUndefined();
+  });
 
-    // 2. 還原為原廠預設值
-    resetBuiltinCompanyPreset('PRESET_B');
-
-    const restoredPresets = getCompanyPresets();
-    expect(restoredPresets.PRESET_B.label).toBe('版本 B (台灣公司 / 竣喆國際)');
-    expect(restoredPresets.PRESET_B.isModified).toBe(false);
+  it('公司範本不再帶經銷商資料', () => {
+    Object.values(presetsModule.DEFAULT_BUILTIN_PRESETS).forEach((p) => {
+      expect(p.dealerName).toBeUndefined();
+      expect(p.dealerSales).toBeUndefined();
+      expect(p.dealerPhone).toBeUndefined();
+      expect(p.dealerAddress).toBeUndefined();
+    });
   });
 });

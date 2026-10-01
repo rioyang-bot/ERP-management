@@ -116,6 +116,40 @@ describe('借貨申請單帶入經銷商', () => {
     expect(sheet.textContent).toContain('台北市內湖區瑞光路 1 號');
   });
 
+  const dealerSection = () => {
+    const title = [...document.querySelectorAll('.loan-section-header-title')].find((el) => el.textContent === '經銷商');
+    return title.closest('.loan-section-block');
+  };
+
+  it('沒選經銷商之前，經銷商區全部留空（不帶公司範本、也不帶建單人）', async () => {
+    render(<LentOrderPrintModal isOpen onClose={vi.fn()} dnData={dnData} items={[]} />);
+    await screen.findByLabelText('經銷商');
+    const text = dealerSection().textContent;
+    expect(text).not.toContain('Elain Lu');
+    expect(text).not.toContain('METECH GLOBAL CONSULTANT PTY LTD');
+    expect(text).not.toContain('竣喆國際有限公司');
+  });
+
+  it('換公司範本不會動到已選的經銷商', async () => {
+    render(<LentOrderPrintModal isOpen onClose={vi.fn()} dnData={dnData} items={[]} />);
+    const select = await screen.findByLabelText('經銷商');
+    await screen.findByRole('option', { name: '竣喆國際有限公司（王小明）' });
+    await userEvent.selectOptions(select, '9');
+    const presetSelect = screen.getAllByRole('combobox').find((s) => [...s.options].some((o) => o.value === 'PRESET_B'));
+    await userEvent.selectOptions(presetSelect, 'PRESET_B');
+    expect(dealerSection().textContent).toContain('王小明');
+    expect(select.value).toBe('9');
+  });
+
+  it('選回「請選擇」就清空經銷商區', async () => {
+    render(<LentOrderPrintModal isOpen onClose={vi.fn()} dnData={dnData} items={[]} />);
+    const select = await screen.findByLabelText('經銷商');
+    await screen.findByRole('option', { name: '竣喆國際有限公司（王小明）' });
+    await userEvent.selectOptions(select, '9');
+    await userEvent.selectOptions(select, '');
+    expect(dealerSection().textContent).not.toContain('王小明');
+  });
+
   it('客戶聯絡人從客戶主檔帶入（欄位名稱是 contact）', async () => {
     render(<LentOrderPrintModal isOpen onClose={vi.fn()} dnData={dnData} items={[]} />);
     await waitFor(() => expect(document.getElementById('lent-order-printable-sheet').textContent).toContain('陳大文'));
