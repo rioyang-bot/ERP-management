@@ -589,16 +589,16 @@ const LentList = () => {
               borderBottom: activeTab === 'SHIPPED' ? '3px solid #f59e0b' : '3px solid transparent',
               color: activeTab === 'SHIPPED' ? '#f59e0b' : 'var(--text-muted)',
               fontWeight: activeTab === 'SHIPPED' ? 800 : 600,
-              fontSize: '0.95rem',
+              fontSize: '0.9rem',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: '8px'
+              gap: '6px'
             }}
           >
-            <Send size={18} /> 借出中 (待歸還)
+            <Send size={16} /> 借出中 (待歸還)
             {shippedCount > 0 && (
-              <span style={{ backgroundColor: '#f59e0b', color: '#fff', padding: '2px 8px', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 800 }}>
+              <span style={{ backgroundColor: '#f59e0b', color: '#fff', padding: '1px 6px', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 800 }}>
                 {shippedCount}
               </span>
             )}
@@ -606,23 +606,23 @@ const LentList = () => {
           <button 
             onClick={() => setActiveTab('RETURNED')}
             style={{ 
-              padding: '16px 24px', 
+              padding: '10px 18px', 
               border: 'none', 
               backgroundColor: activeTab === 'RETURNED' ? 'var(--bg-surface)' : 'transparent',
               borderBottom: activeTab === 'RETURNED' ? '3px solid #10b981' : '3px solid transparent',
               color: activeTab === 'RETURNED' ? '#10b981' : 'var(--text-muted)',
               fontWeight: activeTab === 'RETURNED' ? 800 : 600,
-              fontSize: '0.95rem',
+              fontSize: '0.9rem',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: '8px'
+              gap: '6px'
             }}
           >
-            <CheckCircle size={18} /> 已結案 (歷史紀錄)
+            <CheckCircle size={16} /> 已結案 (歷史紀錄)
           </button>
 
-          <div data-testid="lent-toolbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', flexWrap: 'wrap', padding: '6px 16px', marginLeft: 'auto' }}>
+          <div data-testid="lent-toolbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', flexWrap: 'wrap', padding: '4px 16px', marginLeft: 'auto' }}>
             <div style={{ position: 'relative', width: '320px' }}>
               <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-subtle)' }} />
               <input 
@@ -630,7 +630,7 @@ const LentList = () => {
                 placeholder="快速搜尋單號、客戶、專案、簽收單..." 
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
-                style={{ width: '100%', padding: '10px 12px 10px 40px', borderRadius: '20px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', outline: 'none', fontSize: '0.9rem' }}
+                style={{ width: '100%', padding: '7px 12px 7px 40px', borderRadius: '20px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', outline: 'none', fontSize: '0.9rem' }}
               />
               {searchTerm && (
                 <button 
