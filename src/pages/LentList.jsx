@@ -8,6 +8,7 @@ import { logStatusChange, logUpdate, logDelete } from '../utils/auditLogger';
 import LentOrderPrintModal from '../components/LentOrderPrintModal';
 import LendOrderRegistrationModal from '../components/LendOrderRegistrationModal';
 import { usePageSize } from '../utils/usePageSize';
+import { isMountedRow, findMountedMismatches, lendOutMountedSteps, lendReturnMountedSteps } from '../utils/mountedConsumables';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 
 const LentList = () => {
@@ -237,6 +238,8 @@ const LentList = () => {
 
       // 階段一：事前驗證 (Pre-check)
       for (const item of items) {
+        // 掛在設備上的耗材從 LAB 扣，不看庫存；數量另外與設備上的掛載核對
+        if (isMountedRow(item)) continue;
         if (item.category_name === '耗材') {
           const stockRes = await window.electronAPI.namedQuery('checkItemStock', [item.item_id]);
           if (!stockRes.success || !stockRes.rows.length) {
@@ -260,13 +263,24 @@ const LentList = () => {
         }
       }
 
+      // 掛多少借多少：建單之後設備上的掛載有變動，就要先編輯借用單同步
+      const mismatches = await findMountedMismatches(items);
+      if (mismatches.length > 0) {
+        throw new Error('掛載的耗材數量與設備上目前的不一致：\n'
+          + mismatches.map((m) => `· ${m}`).join('\n')
+          + '\n\n請先編輯這張借用單（會重新帶入設備上目前的掛載數量），再確認借出。');
+      }
+
       // 階段二：正式變更 (Commit)
       // 整張單放在同一個交易裡，任一步失敗全部回滾。
       // 先前是逐筆送出，中途失敗會留下「部分品項已扣庫存、單據狀態卻沒改」的狀態，
       // 再按一次確認就會重複扣一次。
       const steps = [];
       for (const item of items) {
-        if (item.category_name === '耗材') {
+        if (isMountedRow(item)) {
+          // 隨設備借出的掛載耗材：從 LAB 扣、記為借出中，並從那台設備上扣掉
+          steps.push(...lendOutMountedSteps(item, dn.request_no));
+        } else if (item.category_name === '耗材') {
           // 借出用專屬查詢：扣庫存的同時把數量記為「借出中」，歸還時才知道要加回多少
           steps.push({
             queryName: 'updateStockQtyOnLendOut',
@@ -343,7 +357,10 @@ const LentList = () => {
 
       const steps = [];
       for (const item of items) {
-        if (item.category_name === '耗材') {
+        if (isMountedRow(item)) {
+          // 掛載耗材回到 LAB，重新掛回原來那台設備
+          steps.push(...lendReturnMountedSteps(item, dn.request_no, '退回待借出'));
+        } else if (item.category_name === '耗材') {
           steps.push({
             queryName: 'updateStockQtyOnLendReturn',
             params: [item.quantity, item.item_id],
@@ -409,7 +426,10 @@ const LentList = () => {
       // 與確認借出相同：整張單放在同一個交易裡，避免只回補一半的庫存
       const steps = [];
       for (const item of items) {
-        if (item.category_name === '耗材') {
+        if (isMountedRow(item)) {
+          // 隨設備借出的掛載耗材：回到 LAB，重新掛回原來那台設備
+          steps.push(...lendReturnMountedSteps(item, dn.request_no, '歸還'));
+        } else if (item.category_name === '耗材') {
           // 耗材沒有序號可以改狀態，借出時扣掉的數量要在這裡加回庫存，
           // 否則單子雖然標記為已歸還，庫存卻永遠短少那些數量
           steps.push({

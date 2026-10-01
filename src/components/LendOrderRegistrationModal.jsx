@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { RoleContext } from '../context/RoleContext';
 import { logCreate } from '../utils/auditLogger';
+import { mountedLabel } from '../utils/mountedConsumables';
 import '../pages/Outbound.css';
 
 /**
@@ -114,7 +115,9 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess, editingDn = nu
 
       const res = await window.electronAPI.namedQuery('fetchDNItems', [editingDn.id]);
       if (cancelled || !res.success) return;
-      setOutboundItems((res.rows || []).map((r, i) => ({
+      // 掛載的耗材不照存檔時的數量，而是重新抓設備上目前掛的：掛多少出多少，
+      // 要調整只能到設備上卸載，再回來編輯存檔。
+      const mapped = (res.rows || []).filter((r) => !r.lab_asset_id).map((r, i) => ({
         tempId: `edit-${r.id || i}`,
         item_id: r.item_id,
         item_master_id: r.item_id,
@@ -129,7 +132,16 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess, editingDn = nu
         purpose: r.purpose || '運作測試',
         isSerialized: !!r.sn,
         components: [],
-      })));
+        asset_id: r.asset_id,
+        mountedConsumables: [],
+      }));
+      const withMounted = await Promise.all(mapped.map(async (it) => {
+        if (it.category_name !== '設備' || !it.asset_id) return it;
+        const m = await window.electronAPI.namedQuery('fetchMountedConsumables', [it.asset_id]);
+        return { ...it, mountedConsumables: m.success ? (m.rows || []) : [] };
+      }));
+      if (cancelled) return;
+      setOutboundItems(withMounted);
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -182,7 +194,9 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess, editingDn = nu
             isSerialized: true,
             location: header.location,
             purpose: header.purpose || '運作測試',
-            components: item.components || []
+            components: item.components || [],
+            asset_id: item.id,
+            mountedConsumables: item.mounted_consumables || []
           }));
 
           setOutboundItems(prev => {
@@ -238,7 +252,10 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess, editingDn = nu
           isSerialized: true,
           location: item.location || header.location,
           purpose: header.purpose || '運作測試',
-          components: item.components || []
+          components: item.components || [],
+          // 掛在這台設備上的耗材：掛多少出多少，單上不能改
+          asset_id: item.id,
+          mountedConsumables: item.mounted_consumables || []
         };
 
         setOutboundItems(prev => [...prev, newItem]);
@@ -445,6 +462,14 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess, editingDn = nu
               ],
             });
           }
+        }
+
+        // 掛在設備上的耗材：隨設備借出，確認借出時從 LAB 扣（lab_asset_id 記著是哪一台）
+        for (const mc of item.mountedConsumables || []) {
+          steps.push({
+            queryName: 'insertLendOutboundLabItem',
+            params: [requestIdRef, mc.item_master_id, mc.quantity, item.location || header.location, itemPurpose, item.asset_id],
+          });
         }
       }
 
@@ -1004,6 +1029,23 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess, editingDn = nu
                                 <div key={cIdx} className="comp-badge">
                                   <span>{comp.type} - {comp.brand} {comp.model}</span>
                                   <strong>{comp.sn}</strong>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 掛載耗材：掛多少借出多少，單上不能改；要調整請到設備上卸載 */}
+                        {item.mountedConsumables && item.mountedConsumables.length > 0 && (
+                          <div className="item-components-box" data-testid={`mounted-consumables-${item.sn}`}>
+                            <div className="components-title">
+                              掛載耗材 ({item.mountedConsumables.length})：隨設備借出，從 LAB 扣除；數量依設備上的掛載，要調整請到設備上卸載
+                            </div>
+                            <div className="components-list">
+                              {item.mountedConsumables.map((mc) => (
+                                <div key={mc.item_master_id} className="comp-badge" title="掛在設備上的耗材，單上不能修改">
+                                  <span>🔒 {mountedLabel(mc)}</span>
+                                  <strong>× {mc.quantity}{mc.unit ? ` ${mc.unit}` : ''}</strong>
                                 </div>
                               ))}
                             </div>

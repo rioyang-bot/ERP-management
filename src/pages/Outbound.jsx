@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { logCreate, logUpdate } from '../utils/auditLogger';
 import DeliveryReceiptPrintModal from '../components/DeliveryReceiptPrintModal';
 import { toReceiptItems } from '../utils/deliveryReceiptItems';
+import { mountedLabel } from '../utils/mountedConsumables';
 import './Outbound.css';
 
 /**
@@ -144,7 +145,9 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null, ed
       if (cancelled || !res.success) return;
       // 原本掛在設備底下的硬體在明細裡本來就是獨立一列，這裡照樣攤平呈現，
       // 存檔時寫回去的列數與內容才會與原單一致。
-      setOutboundItems((res.rows || []).map((r, i) => ({
+      // 掛載的耗材不照存檔時的數量，而是重新抓設備上目前掛的：掛多少出多少，
+      // 要調整只能到設備上卸載，再回來編輯存檔。
+      const mapped = (res.rows || []).filter((r) => !r.lab_asset_id).map((r, i) => ({
         tempId: `edit-${r.id || i}`,
         item_id: r.item_id,
         item_master_id: r.item_id,
@@ -157,8 +160,17 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null, ed
         qty: r.quantity || 1,
         location: r.location || '',
         isSerialized: !!r.sn,
-        components: []
-      })));
+        components: [],
+        asset_id: r.asset_id,
+        mountedConsumables: []
+      }));
+      const withMounted = await Promise.all(mapped.map(async (it) => {
+        if (it.category_name !== '設備' || !it.asset_id) return it;
+        const m = await window.electronAPI.namedQuery('fetchMountedConsumables', [it.asset_id]);
+        return { ...it, mountedConsumables: m.success ? (m.rows || []) : [] };
+      }));
+      if (cancelled) return;
+      setOutboundItems(withMounted);
     })();
     return () => { cancelled = true; };
   }, [isEditing, editingDn?.id]);
@@ -182,7 +194,9 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null, ed
             qty: 1,
             isSerialized: true,
             location: header.location,
-            components: item.components || []
+            components: item.components || [],
+            asset_id: item.id,
+            mountedConsumables: item.mounted_consumables || []
           }));
           
           setOutboundItems(prev => {
@@ -251,7 +265,10 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null, ed
           qty: 1,
           isSerialized: true,
           location: item.location || header.location,
-          components: item.components || [] // 搭載的硬體
+          components: item.components || [], // 搭載的硬體
+          // 掛在這台設備上的耗材：掛多少出多少，單上不能改
+          asset_id: item.id,
+          mountedConsumables: item.mounted_consumables || []
         };
 
         setOutboundItems(prev => [...prev, newItem]);
@@ -475,6 +492,14 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null, ed
               steps.push({ queryName: 'updateAssetProjectAndClientBySn', params: [cleanProject, header.customer, comp.sn] });
             }
           }
+        }
+
+        // 掛在設備上的耗材：隨設備出貨，確認出貨時從 LAB 扣（lab_asset_id 記著是哪一台）
+        for (const mc of item.mountedConsumables || []) {
+          steps.push({
+            queryName: 'insertOutboundLabItem',
+            params: [requestIdRef, mc.item_master_id, mc.quantity, item.location || header.location, item.asset_id],
+          });
         }
       }
 
@@ -1008,6 +1033,23 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null, ed
                             <div key={cIdx} className="comp-badge">
                               <span>{comp.type} - {comp.brand} {comp.model}</span>
                               <strong>{comp.sn}</strong>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 掛載耗材：掛多少出貨多少，單上不能改；要調整請到設備上卸載 */}
+                    {item.mountedConsumables && item.mountedConsumables.length > 0 && (
+                      <div className="item-components-box" data-testid={`mounted-consumables-${item.sn}`}>
+                        <div className="components-title">
+                          掛載耗材 ({item.mountedConsumables.length})：隨設備出貨，從 LAB 扣除；數量依設備上的掛載，要調整請到設備上卸載
+                        </div>
+                        <div className="components-list">
+                          {item.mountedConsumables.map((mc) => (
+                            <div key={mc.item_master_id} className="comp-badge" title="掛在設備上的耗材，單上不能修改">
+                              <span>🔒 {mountedLabel(mc)}</span>
+                              <strong>× {mc.quantity}{mc.unit ? ` ${mc.unit}` : ''}</strong>
                             </div>
                           ))}
                         </div>

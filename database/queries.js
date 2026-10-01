@@ -26,6 +26,16 @@ const CHECKLIST_ROW_UNUSED_SQL = `
       AND NULLIF(TRIM(COALESCE(a.content, '')), '') IS NULL
       AND NOT EXISTS (SELECT 1 FROM asset_photos p WHERE p.checklist_item_id = a.id)`;
 
+// 設備上目前掛載的耗材（item_lab_assignments 加總後仍大於 0 的），給出貨單／借用單帶入用。
+// 使用時外層要有別名 a 的 assets。
+const MOUNTED_CONSUMABLES_SQL = `(SELECT json_agg(json_build_object(
+        'item_master_id', im.id, 'brand', im.brand, 'type', im.type, 'model', im.model,
+        'specification', im.specification, 'unit', im.unit, 'quantity', m.qty
+      ) ORDER BY im.brand, im.model)
+     FROM (SELECT item_master_id, SUM(quantity)::int AS qty FROM item_lab_assignments
+           WHERE asset_id = a.id GROUP BY item_master_id HAVING SUM(quantity) > 0) m
+     JOIN item_master im ON im.id = m.item_master_id) as mounted_consumables`;
+
 export const queries = {
   // AssetList.jsx
   fetchAssetsList: `SELECT a.*, a.id as id, i.id as item_master_id, i.specification, i.type, i.brand, i.model, i.unit, c.name as category_name,
@@ -796,7 +806,52 @@ export const queries = {
   updateConsumableMaster: `UPDATE item_master SET brand = UPPER(TRIM(REGEXP_REPLACE(COALESCE($1, ''), '[[:space:]]+', ' ', 'g'))), type = UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g'))), model = UPPER(TRIM(REGEXP_REPLACE(COALESCE($3, ''), '[[:space:]]+', ' ', 'g'))), specification = $4, unit = $5, safety_stock = $6 WHERE id = $7`,
   transferStockToLab: `UPDATE item_master SET stock_qty = stock_qty - $1, lab_qty = lab_qty + $1 WHERE id = $2`,
   transferLabToStock: `UPDATE item_master SET stock_qty = stock_qty + $1, lab_qty = lab_qty - $1 WHERE id = $2`,
-  insertLabAssignment: `INSERT INTO item_lab_assignments (item_master_id, asset_id, quantity, note) VALUES ($1, $2, $3, $4)`,
+  insertLabAssignment: `INSERT INTO item_lab_assignments (item_master_id, asset_id, quantity, note) VALUES ($1, $2, $3, $4) RETURNING id`,
+
+  // --- 耗材掛載到設備上 ---
+  // 掛載＝庫存移到 LAB，並在 item_lab_assignments 記一筆 +n；卸載、隨設備出貨或借出記 −n。
+  // 某台設備目前掛了多少 = SUM(quantity)。每一支扣數量的查詢都帶防呆條件並回傳資料列，
+  // 交給交易的 expectRows 把關：數量不夠就整筆退回。
+  fetchMountedConsumables: `
+    SELECT im.id AS item_master_id, im.brand, im.type, im.model, im.specification, im.unit,
+           SUM(la.quantity)::int AS quantity, COALESCE(im.stock_qty, 0) AS stock_qty
+    FROM item_lab_assignments la
+    JOIN item_master im ON im.id = la.item_master_id
+    WHERE la.asset_id = $1
+    GROUP BY im.id, im.brand, im.type, im.model, im.specification, im.unit, im.stock_qty
+    HAVING SUM(la.quantity) > 0
+    ORDER BY im.brand, im.model`,
+  mountConsumableStock: `
+    UPDATE item_master SET stock_qty = stock_qty - $1::int, lab_qty = COALESCE(lab_qty, 0) + $1::int
+    WHERE id = $2 AND $1::int > 0 AND COALESCE(stock_qty, 0) >= $1::int RETURNING id`,
+  unmountConsumableStock: `
+    UPDATE item_master SET stock_qty = COALESCE(stock_qty, 0) + $1::int, lab_qty = lab_qty - $1::int
+    WHERE id = $2 AND $1::int > 0 AND COALESCE(lab_qty, 0) >= $1::int RETURNING id`,
+  // 移回庫存但不指定設備：只能動 LAB 裡沒有掛在任何設備上的那部分
+  transferUnassignedLabToStock: `
+    UPDATE item_master SET stock_qty = COALESCE(stock_qty, 0) + $1::int, lab_qty = lab_qty - $1::int
+    WHERE id = $2 AND $1::int > 0
+      AND COALESCE(lab_qty, 0) - COALESCE((SELECT SUM(quantity) FROM item_lab_assignments WHERE item_master_id = $2), 0) >= $1::int
+    RETURNING id`,
+  // 從某台設備上扣掉 n 個（記一筆 −n）；那台設備掛的不夠就不寫入
+  deductLabAssignment: `
+    INSERT INTO item_lab_assignments (item_master_id, asset_id, quantity, note)
+    SELECT $1::int, $2::int, -($3::int), $4
+    WHERE $3::int > 0
+      AND (SELECT COALESCE(SUM(quantity), 0) FROM item_lab_assignments
+           WHERE item_master_id = $1::int AND asset_id = $2::int) >= $3::int
+    RETURNING id`,
+  // 隨設備出貨：從 LAB 扣
+  updateLabQtyOnOutbound: `
+    UPDATE item_master SET lab_qty = lab_qty - $1::int
+    WHERE id = $2 AND COALESCE(lab_qty, 0) >= $1::int RETURNING id`,
+  // 隨設備借出：LAB 減、借出中加；歸還時回到 LAB（並重新掛回那台設備）
+  updateLabQtyOnLendOut: `
+    UPDATE item_master SET lab_qty = lab_qty - $1::int, lent_qty = COALESCE(lent_qty, 0) + $1::int
+    WHERE id = $2 AND COALESCE(lab_qty, 0) >= $1::int RETURNING id`,
+  updateLabQtyOnLendReturn: `
+    UPDATE item_master SET lab_qty = COALESCE(lab_qty, 0) + $1::int, lent_qty = GREATEST(COALESCE(lent_qty, 0) - $1::int, 0)
+    WHERE id = $2 RETURNING id`,
   fetchCurrentLabUsage: `
     SELECT a.id as asset_id, a.sn, a.hostname, i.brand, i.model, SUM(la.quantity) as current_qty
     FROM item_lab_assignments la
@@ -1286,7 +1341,8 @@ export const queries = {
              AND TRIM(LOWER(ex.custom_attributes->>'server_sn')) = TRIM(LOWER(a.sn))
              AND TRIM(LOWER(ex.sn)) = TRIM(LOWER(elem))
          )
-     ) comp) as components
+     ) comp) as components,
+    ${MOUNTED_CONSUMABLES_SQL}
     FROM assets a 
     JOIN item_master i ON a.item_master_id = i.id 
     LEFT JOIN categories c ON i.category_id = c.id 
@@ -1303,6 +1359,9 @@ export const queries = {
   updateMountedHardwareProjectAndClient: `UPDATE assets SET custom_attributes = jsonb_set(COALESCE(custom_attributes, '{}'::jsonb), '{project_name}', to_jsonb($1::text)), client = COALESCE($2, client) WHERE custom_attributes->>'server_sn' IS NOT NULL AND TRIM(custom_attributes->>'server_sn') = TRIM($3)`,
   checkProjectExistsByName: `SELECT id, project_no, name FROM projects WHERE TRIM(LOWER(name)) = TRIM(LOWER($1)) LIMIT 1`,
   insertOutboundItem: `INSERT INTO outbound_items (request_id, item_id, sn, quantity, location) VALUES ($1, $2, $3, $4, $5)`,
+  // 掛在設備上、隨設備一起出的耗材（lab_asset_id = 那台設備）
+  insertOutboundLabItem: `INSERT INTO outbound_items (request_id, item_id, sn, quantity, location, lab_asset_id) VALUES ($1, $2, NULL, $3, $4, $5)`,
+  insertLendOutboundLabItem: `INSERT INTO outbound_items (request_id, item_id, sn, quantity, location, purpose, lab_asset_id) VALUES ($1, $2, NULL, $3, $4, COALESCE($5, '運作測試'), $6)`,
   insertLendOutboundItem: `INSERT INTO outbound_items (request_id, item_id, sn, quantity, location, purpose) VALUES ($1, $2, $3, $4, $5, COALESCE($6, '運作測試'))`,
   migrateOutboundItemPurpose: `ALTER TABLE outbound_items ADD COLUMN IF NOT EXISTS purpose VARCHAR(255) DEFAULT '運作測試'`,
   searchActiveAssetSNs: `
@@ -1327,7 +1386,8 @@ export const queries = {
       ) ORDER BY NULLIF(hi.model, '') ASC NULLS LAST, NULLIF(hi.brand, '') ASC NULLS LAST, ha.sn) 
      FROM assets ha JOIN item_master hi ON ha.item_master_id = hi.id 
      WHERE ha.custom_attributes->>'server_sn' IS NOT NULL 
-     AND TRIM(ha.custom_attributes->>'server_sn') = TRIM(a.sn)) as components
+     AND TRIM(ha.custom_attributes->>'server_sn') = TRIM(a.sn)) as components,
+    ${MOUNTED_CONSUMABLES_SQL}
     FROM assets a 
     JOIN item_master i ON a.item_master_id = i.id 
     LEFT JOIN categories c ON i.category_id = c.id 
@@ -1377,11 +1437,15 @@ export const queries = {
   fetchDNItems: `
     SELECT oi.*, i.brand, i.model, i.specification, i.type, i.unit, c.name as category_name,
            a.system_date, a.customer_warranty_expire, a.warranty_expire, a.installed_date, a.shipping_date,
-           a.custom_attributes->>'project_name' as asset_project_name
+           a.custom_attributes->>'project_name' as asset_project_name,
+           a.id AS asset_id,
+           -- 掛載耗材：掛在哪一台設備上（lab_asset_id 由 oi.* 帶出）
+           lad.sn AS lab_device_sn
     FROM outbound_items oi
     LEFT JOIN item_master i ON oi.item_id = i.id
     LEFT JOIN categories c ON i.category_id = c.id
     LEFT JOIN assets a ON oi.sn = a.sn
+    LEFT JOIN assets lad ON lad.id = oi.lab_asset_id
     WHERE oi.request_id = $1
     ORDER BY oi.id ASC
   `,
