@@ -20,6 +20,7 @@ import AssetIdentityCell from '../components/common/AssetIdentityCell';
 import CardAggregationSelect from '../components/common/CardAggregationSelect';
 import { useCardLayoutByMode } from '../hooks/useCardLayout';
 import DeviceChecklistModal from '../components/DeviceChecklistModal';
+import MountedConsumablesSection from '../components/MountedConsumablesSection';
 
 // 設備列表的欄位清單：id 對應表格的每一欄，always 代表不可隱藏
 const DEVICE_COLUMNS = [
@@ -250,6 +251,19 @@ const DeviceList = ({ isSplitMode = false }) => {
   const handleDelete = async (id, sn) => {
     const targetItem = items.find(i => i.id === id);
     const displayName = sn || (targetItem ? `${targetItem.brand || ''} ${targetItem.model || ''}`.trim() : id);
+
+    // 還掛著耗材就不能刪：刪掉設備會連帶刪掉掛載紀錄，LAB 數量卻還在，帳就對不起來
+    try {
+      const mountedRes = await window.electronAPI.namedQuery('fetchMountedConsumables', [id]);
+      if (mountedRes.success && (mountedRes.rows || []).length > 0) {
+        alert(`⚠️ 設備 [${displayName}] 還掛載著耗材：\n\n`
+          + mountedRes.rows.map((m) => `· ${m.brand || ''} ${m.model || ''} × ${m.quantity}`).join('\n')
+          + '\n\n請先在設備的編輯視窗「掛載耗材」卸載，再刪除設備。');
+        return;
+      }
+    } catch (e) {
+      console.error('檢查掛載耗材失敗:', e);
+    }
     
     // 檢查是否有搭載硬體
     let mountedSns = [];
@@ -1106,7 +1120,19 @@ const DeviceList = ({ isSplitMode = false }) => {
                                     )}
                                   </>
                                 ) : (
-                                  <span style={{ color: 'var(--text-subtle)', fontSize: '11px' }}>-</span>
+                                  !(item.lab_consumables && item.lab_consumables.length > 0) && (
+                                    <span style={{ color: 'var(--text-subtle)', fontSize: '11px' }}>-</span>
+                                  )
+                                )}
+                                {/* 掛載的耗材（在 LAB、記在這台設備上），出貨時一併帶入 */}
+                                {item.lab_consumables && item.lab_consumables.length > 0 && (
+                                  <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '2px' }} data-testid={`device-mounted-consumables-${item.id}`}>
+                                    {item.lab_consumables.map((mc, idx) => (
+                                      <div key={idx} style={{ fontSize: '10px', color: '#7c3aed', fontWeight: 700 }} title="掛載在這台設備上的耗材（LAB），出貨時一併帶入">
+                                        耗材 {mc.brand} {mc.model} × {mc.quantity}
+                                      </div>
+                                    ))}
+                                  </div>
                                 )}
                               </td>
                               <td style={{ ...tdStyle, ...hideCol('client') }}>
@@ -1749,6 +1775,17 @@ const DeviceList = ({ isSplitMode = false }) => {
                   );
                 })()}
               </div>
+
+              {/* 掛載耗材：按下就生效（實際的庫存移動），不必等設備資料按儲存 */}
+              {editItem.id && (
+                <MountedConsumablesSection
+                  device={editItem}
+                  onChanged={fetchAssets}
+                  labelStyle={editLabelStyle}
+                  inputStyle={editInputStyle}
+                />
+              )}
+
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
                 <div>
                   <label htmlFor="edit-client-select" style={editLabelStyle}>客戶名稱</label>

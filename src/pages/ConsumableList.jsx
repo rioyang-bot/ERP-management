@@ -203,8 +203,31 @@ const ConsumableList = ({ isSplitMode = false }) => {
       return alert('⚠️ 移至 LAB 時，請選擇欲對應的設備序號');
     }
 
-    const query = direction === 'TO_LAB' ? 'transferStockToLab' : 'transferLabToStock';
-    const res = await window.electronAPI.namedQuery(query, [quantity, itemId]);
+    // 數量異動與 LAB 流水帳放在同一個交易：先前分兩次送出，第二步失敗時
+    // （例如移回庫存要記負數，被 quantity > 0 的限制擋掉）錯誤被吞掉，帳只增不減。
+    const label = `${targetItem.brand} ${targetItem.model}`;
+    const steps = direction === 'TO_LAB'
+      ? [
+          { queryName: 'mountConsumableStock', params: [quantity, itemId], expectRows: 1,
+            errorMessage: `[${label}] 庫存不足，無法移到 LAB。` },
+          { queryName: 'insertLabAssignment', params: [itemId, finalAssetId, quantity, note || ''], expectRows: 1,
+            errorMessage: '記錄掛載的設備失敗。' },
+        ]
+      : finalAssetId
+        ? [
+            { queryName: 'unmountConsumableStock', params: [quantity, itemId], expectRows: 1,
+              errorMessage: `[${label}] LAB 數量不足，無法移回庫存。` },
+            { queryName: 'deductLabAssignment',
+              params: [itemId, finalAssetId, quantity, `(從 ${currentDeviceSn} 移回 Stock) ${note || ''}`.trim()],
+              expectRows: 1,
+              errorMessage: `設備 [${currentDeviceSn}] 上掛載的 [${label}] 不足 ${quantity}，無法移回。` },
+          ]
+        : [
+            // 沒指定設備：只能動 LAB 裡沒有掛在任何設備上的那部分
+            { queryName: 'transferUnassignedLabToStock', params: [quantity, itemId], expectRows: 1,
+              errorMessage: `LAB 裡的 [${label}] 掛在設備上，請填寫要從哪一台設備移回的序號。` },
+          ];
+    const res = await window.electronAPI.runTransaction(steps);
     
     if (res.success) {
       logUpdate(
@@ -215,24 +238,11 @@ const ConsumableList = ({ isSplitMode = false }) => {
         { itemMasterId: itemId, direction, quantity, deviceSn: currentDeviceSn, note,
           prevStock: targetItem.stock_qty, prevLab: targetItem.lab_qty }
       );
-      // 只有在有選擇設備或移至 LAB 時才紀錄詳細 assignment
-      if (finalAssetId || direction === 'TO_LAB') {
-        const insertRes = await window.electronAPI.namedQuery('insertLabAssignment', [
-          itemId, 
-          finalAssetId, 
-          direction === 'TO_LAB' ? quantity : -quantity, 
-          direction === 'TO_LAB' ? note : `(從 ${currentDeviceSn || '未知設備'} 移回 Stock) ${note}`
-        ]);
-        if (!insertRes.success) {
-          console.error('Assignment Log Error:', insertRes.error);
-          // 不直接將系統錯誤顯示給使用者
-        }
-      }
       setShowTransferModal(false);
       fetchConsumables();
     } else {
-      // 遵循規範 2：避免直接輸出系統預設錯誤訊息或日誌
-      alert('⚠️ 庫存移動處理失敗，請確認資料格式或聯絡技術人員。');
+      // 錯誤訊息是上面各步驟自己寫的說明（例如數量不足），不是資料庫的原始錯誤
+      alert(`⚠️ 庫存移動失敗：${res.error || '請確認資料格式或聯絡技術人員。'}\n\n所有變更已退回，數量維持原樣。`);
     }
   };
 

@@ -7,6 +7,7 @@ import { logStatusChange, logDelete, logUpdate } from '../utils/auditLogger';
 import DeliveryReceiptPrintModal from '../components/DeliveryReceiptPrintModal';
 import OutboundRegistrationModal from '../components/OutboundRegistrationModal';
 import { usePageSize } from '../utils/usePageSize';
+import { isMountedRow, findMountedMismatches, shipMountedSteps } from '../utils/mountedConsumables';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 
 const DNList = ({ isSplitMode = false }) => {
@@ -211,6 +212,8 @@ const DNList = ({ isSplitMode = false }) => {
     try {
       // 階段一：事前驗證 (Pre-check)
       for (const item of dnItems) {
+        // 掛在設備上的耗材從 LAB 扣，不看庫存；數量另外與設備上的掛載核對
+        if (isMountedRow(item)) continue;
         if (item.category_name === '耗材') {
           const res = await window.electronAPI.namedQuery('checkItemStock', [item.item_id]);
           if (!res.success || !res.rows.length) {
@@ -234,6 +237,14 @@ const DNList = ({ isSplitMode = false }) => {
         }
       }
 
+      // 掛多少出多少：建單之後設備上的掛載有變動，就要先編輯出貨單同步
+      const mismatches = await findMountedMismatches(dnItems);
+      if (mismatches.length > 0) {
+        throw new Error('掛載的耗材數量與設備上目前的不一致：\n'
+          + mismatches.map((m) => `· ${m}`).join('\n')
+          + '\n\n請先編輯這張出貨單（會重新帶入設備上目前的掛載數量），再確認出貨。');
+      }
+
       // 階段二：正式變更 (Commit)
       // 整張單的庫存異動與狀態變更放在同一個交易裡：任一步失敗全部回滾。
       // 先前是逐筆送出，第 3 個品項失敗時前 2 個已經扣掉、單據狀態卻還是待出貨，
@@ -241,7 +252,10 @@ const DNList = ({ isSplitMode = false }) => {
       const steps = [];
       const shipDate = selectedDN.shipping_date || new Date().toISOString().split('T')[0];
       for (const item of dnItems) {
-        if (item.category_name === '耗材') {
+        if (isMountedRow(item)) {
+          // 隨設備出貨的掛載耗材：從 LAB 扣，並從那台設備上扣掉
+          steps.push(...shipMountedSteps(item, selectedDN.request_no));
+        } else if (item.category_name === '耗材') {
            steps.push({
              queryName: 'updateStockQtyOnOutbound',
              params: [item.quantity, item.item_id],
@@ -733,6 +747,11 @@ const DNList = ({ isSplitMode = false }) => {
                           <td style={{ padding: '6px 12px' }}>
                             <div style={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--text-main)' }}>{item.brand} {item.model}</div>
                             <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{item.specification}</div>
+                            {isMountedRow(item) && (
+                              <div style={{ fontSize: '0.68rem', color: '#7c3aed', fontWeight: 700, marginTop: '2px' }}>
+                                掛載於 {item.lab_device_sn || '設備'}，隨設備出貨（從 LAB 扣）
+                              </div>
+                            )}
                           </td>
                           <td style={{ padding: '6px 12px' }}>
                             {item.sn && (
