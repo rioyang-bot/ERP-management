@@ -425,8 +425,9 @@ describe('設備狀態相關的文案', () => {
     expect(src).not.toContain('自動設為在庫');
   });
 
+  // 列表右上角的數量標籤，使用者明確要求附上（在庫）（維修中），不在這條規則內
   it('階段名稱不再括著設備狀態 —— 同樣是結案，兩種對象的狀態不同', async () => {
-    for (const f of ['src/pages/RepairList.jsx', 'src/components/RepairOrderDetailModal.jsx']) {
+    for (const f of ['src/components/RepairOrderDetailModal.jsx']) {
       const src = await read(f);
       expect(src).not.toContain("'現場處理 (在庫)'");
       expect(src).not.toContain("'原廠返還 (在庫)'");
