@@ -122,7 +122,7 @@ describe('維修單列表', () => {
 
   it('看未結案的頁籤時不提示較早結案的單', async () => {
     await open();
-    await userEvent.click(screen.getByRole('button', { name: '送修原廠' }));
+    await userEvent.click(screen.getByTestId('repair-tab-SENT_OEM'));
     expect(screen.queryByTestId('hidden-closed-hint')).not.toBeInTheDocument();
   });
 });
