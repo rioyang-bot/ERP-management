@@ -201,16 +201,10 @@ const RepairList = () => {
   const currentPeriodLabel = periodLabel(period, customRange);
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1600px', margin: '0 auto', color: 'var(--text-main)' }}>
+    // 外框與標題列的間距與借用列表相同（page-container / page-header），兩頁切換時版面才不會跳
+    <div className="page-container" style={{ color: 'var(--text-main)' }}>
       {/* 頂部 Header */}
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: '24px',
-        flexWrap: 'wrap',
-        gap: '16px'
-      }}>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--page-title-margin, 14px)', flexWrap: 'wrap', gap: '10px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div>
             {/* 新增維修單放在標題旁邊；重新整理拿掉（操作後列表會自動重新讀取） */}
@@ -239,7 +233,7 @@ const RepairList = () => {
                 <Plus size={16} /> 新增維修單 (New RMA)
               </button>
             </div>
-            <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
+            <p style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '2px', marginBottom: 0 }}>
               維修流程全週期管理：現場取件 ➔ 送修原廠 ➔ 原廠修復返還 ➔ 客戶完工出貨，自動同步設備在庫與維修狀態。
             </p>
           </div>
@@ -312,16 +306,17 @@ const RepairList = () => {
           })}
         </div>
 
-        <div data-testid="repair-toolbar" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '8px', flexWrap: 'wrap', padding: '6px 14px', marginLeft: 'auto' }}>
+        {/* 字級與借用列表頁籤列右側的搜尋框相同 */}
+        <div data-testid="repair-toolbar" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '12px', flexWrap: 'wrap', padding: '4px 16px', marginLeft: 'auto' }}>
         {/* 已結案顯示期間：未結案的單不受影響，一律全部顯示 */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>已結案顯示</span>
+          <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>已結案顯示</span>
           <select
             value={period}
             onChange={(e) => setPeriod(e.target.value)}
             aria-label="已結案顯示期間"
             title="完工結案的單只顯示這段期間內完工的；搜尋時查全部歷史"
-            style={{ padding: '6px 8px', borderRadius: '8px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', fontSize: '12px', fontWeight: 700, outline: 'none' }}
+            style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', fontSize: '0.85rem', fontWeight: 700, outline: 'none' }}
           >
             {Object.entries(PERIODS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
           </select>
@@ -347,24 +342,15 @@ const RepairList = () => {
         </div>
 
         {/* 搜尋輸入框 */}
-        <div style={{ position: 'relative', width: '280px', maxWidth: '100%' }}>
+        <div style={{ position: 'relative', width: '320px', maxWidth: '100%' }}>
+          <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-subtle)' }} />
           <input
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="搜尋單號、客戶、設備、序號或狀況..."
-            style={{
-              width: '100%',
-              padding: '7px 10px 7px 32px',
-              borderRadius: '8px',
-              border: '1px solid var(--input-border)',
-              backgroundColor: 'var(--input-bg)',
-              color: 'var(--input-text)',
-              fontSize: '12px',
-              outline: 'none'
-            }}
+            style={{ width: '100%', padding: '7px 12px 7px 40px', borderRadius: '20px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', outline: 'none', fontSize: '0.9rem' }}
           />
-          <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
         </div>
         </div>
         </div>
