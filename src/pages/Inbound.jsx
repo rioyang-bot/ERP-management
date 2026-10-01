@@ -573,12 +573,12 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
           <tr style={{ backgroundColor: 'var(--table-header-bg)', textAlign: 'left' }}>
             {/* 對應採購單號不常用，縮小；其餘欄位固定寬度，剩下的空間都給入庫設備項目 */}
             <th style={{ ...thStyle, width: '120px' }}>對應採購單號</th>
-            <th style={thStyle}>入庫設備項目</th>
+            <th style={{ ...thStyle, minWidth: '300px' }}>入庫設備項目</th>
             <th style={{ ...thStyle, width: '72px' }}>類別</th>
-            <th style={{ ...thStyle, width: '170px' }}>序號(SN)</th>
-            <th style={{ ...thStyle, width: '150px' }}>訂單來源</th>
-            <th style={{ ...thStyle, width: '90px' }}>數量</th>
-            <th style={{ ...thStyle, width: '56px', textAlign: 'center' }}>移除</th>
+            <th style={{ ...thStyle, width: '160px' }}>序號(SN)</th>
+            <th style={{ ...thStyle, width: '130px' }}>訂單來源</th>
+            <th style={{ ...thStyle, width: '84px' }}>數量</th>
+            <th style={{ ...thStyle, width: '52px', textAlign: 'center' }}>移除</th>
           </tr>
         </thead>
         <tbody>
@@ -726,7 +726,7 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
                 })()}
               </td>
               <td style={tdStyle}>
-                {row.cat_name ? <span style={{ padding: '4px 10px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '6px', fontSize: '0.8rem', color: 'var(--text-main)', border: '1px solid var(--border-color)', fontWeight: 600 }}>{row.cat_name}</span> : <span style={{ color: 'var(--text-subtle)', fontSize: '0.8rem' }}>--</span>}
+                {row.cat_name ? <span style={{ whiteSpace: 'nowrap', display: 'inline-block', padding: '4px 10px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '6px', fontSize: '0.8rem', color: 'var(--text-main)', border: '1px solid var(--border-color)', fontWeight: 600 }}>{row.cat_name}</span> : <span style={{ color: 'var(--text-subtle)', fontSize: '0.8rem' }}>--</span>}
               </td>
               <td style={tdStyle}>{(row.cat_name === '設備' || row.cat_name === '硬體') ? <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><input placeholder="SN / 序號" value={row.sn} onChange={(e) => handleRowChange(row.id, 'sn', e.target.value)} style={{ ...inputStyle, border: '1px solid var(--input-border)' }} />{row.qty > 1 && <button onClick={() => openSnBatch(row.id)} title="批次序號清單（每行一個序號）" style={expandButtonStyle}><Layers size={16} /></button>}</div> : <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>耗材無需序號</span>}</td>
               <td style={tdStyle}>{row.cat_name === '硬體'
