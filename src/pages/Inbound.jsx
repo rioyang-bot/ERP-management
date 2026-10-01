@@ -382,16 +382,18 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
       }
     }
 
-    if (window.confirm('確認將此單據入庫？')) {
+    // 兩段式，與出貨單相同：這裡只建立單據（待確認），不加庫存、不建資產、不動採購單。
+    // 到進貨單列表的「已建立 (待確認)」按「確認進貨」才真正入庫
+    // （見 utils/inboundEdit.js 的 buildInboundConfirmSteps）。
+    if (window.confirm('確認建立此進貨單？\n\n建立後會放在進貨單列表的「已建立 (待確認)」，\n到貨核對無誤後按「確認進貨」才會入庫。')) {
       // 整張進貨單的所有寫入集中成一個交易送出。
-      // 先前是一筆一筆分別送出，中途任何一筆失敗都會留下半套資料：
-      // 進貨單建立了但明細不全、庫存加了但採購單的已到貨數量沒更新。
+      // 先前是一筆一筆分別送出，中途任何一筆失敗都會留下半套資料。
       const steps = [];
       steps.push({
         id: 'order',
         queryName: 'insertInboundOrder',
         // 記下建立者，列表才查得出這批貨是誰入的
-        params: [orderNo, partnerId || null, invoiceNo, 'COMPLETED', JSON.stringify(attachments), inboundDate || null, getCurrentUser().id],
+        params: [orderNo, partnerId || null, invoiceNo, 'DRAFT', JSON.stringify(attachments), inboundDate || null, getCurrentUser().id],
       });
 
       items.forEach((item, idx) => {
@@ -423,20 +425,11 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
         }
         if (!itemIdRef) return; // 無品項可寫入，略過此列
 
-        if (item.cat_name === '設備' || item.cat_name === '硬體') {
-          const qty = parseInt(item.qty, 10) || 1;
-          for (let n = 0; n < qty; n++) {
-            steps.push({ queryName: 'insertInboundAssets', params: [item.sn || null, itemIdRef, null, item.orderSource || null] });
-          }
-        }
+        // 訂單來源先記在明細上，確認進貨建資產時才帶過去
         steps.push({
           queryName: 'insertInboundItems',
-          params: [{ $ref: 'order.rows.0.id' }, itemIdRef, item.sn || null, item.qty, item.purchaseRecordId || null],
+          params: [{ $ref: 'order.rows.0.id' }, itemIdRef, item.sn || null, item.qty, item.purchaseRecordId || null, item.orderSource || null],
         });
-        steps.push({ queryName: 'updateStockQtyOnInbound', params: [item.qty, itemIdRef] });
-        if (item.purchaseRecordId) {
-          steps.push({ queryName: 'updatePurchaseRecordStatus', params: [item.qty, item.purchaseRecordId] });
-        }
       });
 
       const txRes = await window.electronAPI.runTransaction(steps);
@@ -449,7 +442,7 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
           `建立進貨單 [${orderNo}] 供應商: ${partner?.name || '未指定'} 共 ${items.length} 個品項${invoiceNo ? ` (發票號: ${invoiceNo})` : ''}`,
           { orderNo, partnerId, partnerName: partner?.name, invoiceNo, itemsCount: items.length, items: items.map(i => ({ itemId: i.itemId, sn: i.sn, qty: i.qty, poNo: i.selectedOrderNo })) }
         );
-        alert('進貨入庫成功！');
+        alert(`進貨單 [${orderNo}] 已建立。\n\n請到進貨單列表的「已建立 (待確認)」核對後按「確認進貨」，庫存才會加上。`);
         setItems([{ id: Date.now(), selectedOrderNo: '', itemId: '', pendingMaster: null, purchaseRecordId: '', cat_name: '', orderSource: '', unit: '', sn: '', qty: 1 }]);
         setInvoiceNo('');
         setAttachments([]);
@@ -457,7 +450,7 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
         fetchData();
         if (onClose) onClose();
       } else {
-        alert('入庫失敗，所有變更已取消：\n' + (txRes.error || '未知錯誤'));
+        alert('建立進貨單失敗，所有變更已取消：\n' + (txRes.error || '未知錯誤'));
       }
     }
   };
@@ -791,7 +784,7 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '16px', borderTop: '1px solid var(--border-color)', paddingTop: '32px' }}>
-        <button onClick={handleSubmit} style={submitButtonStyle}><ShoppingBag size={20} /> 確認入庫作業</button>
+        <button onClick={handleSubmit} style={submitButtonStyle}><ShoppingBag size={20} /> 建立進貨單</button>
       </div>
       {/* 批次序號清單 */}
       {snBatch.show && (() => {

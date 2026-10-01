@@ -193,6 +193,11 @@
       "file": "migration_consumable_mount_on_device.sql",
       "type": "schema",
       "note": "耗材掛載到設備上：LAB 流水帳可記負數，出貨明細記錄耗材掛在哪台設備"
+    },
+    {
+      "file": "migration_inbound_two_step.sql",
+      "type": "schema",
+      "note": "進貨單改為兩段式：建立後待確認，確認進貨才入庫；明細記錄訂單來源"
     }
   ]
 }

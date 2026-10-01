@@ -61,7 +61,7 @@ describe('進貨單：快速建檔品項', () => {
    * 庫存 0、沒有任何單據用過）。因此欄位改從送出的交易步驟檢查。
    */
   const submitAndFindMasterStep = async () => {
-    await userEvent.click(screen.getByRole('button', { name: /確認入庫作業/ }));
+    await userEvent.click(screen.getByRole('button', { name: /建立進貨單/ }));
     await waitFor(() => expect(window.electronAPI.runTransaction).toHaveBeenCalled());
     const steps = window.electronAPI.runTransaction.mock.calls.at(-1)[0];
     return steps.find((st) => st.queryName === 'insertItemMaster');

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { ArrowDownToLine, Search, Filter, Eye, RefreshCw, AlertCircle, Trash2, Calendar, Hash, FileText, Plus, Edit2, Save, X } from 'lucide-react';
-import { logUpdate, logDelete, logSnChange } from '../utils/auditLogger';
+import { ArrowDownToLine, Search, Filter, Eye, RefreshCw, AlertCircle, Trash2, Calendar, Hash, FileText, Plus, Edit2, Save, X, Clock, FileCheck, CheckCircle } from 'lucide-react';
+import { logUpdate, logDelete, logSnChange, logStatusChange } from '../utils/auditLogger';
 import InboundRegistrationModal from '../components/InboundRegistrationModal';
 import { usePageSize } from '../utils/usePageSize';
 import { buildSnRenameSteps, validateSnRename, summariseSnRename } from '../utils/snRename';
@@ -8,6 +8,7 @@ import {
   validateQtyChange, buildQtyChangeSteps, isQtyEditable,
   findUsedAssets, describeUsage, buildInboundDeleteSteps,
   collectMasterIds, describeOrphanMaster,
+  isDraftOrder, buildInboundConfirmSteps, findSnConflicts, collectAssetSns,
 } from '../utils/inboundEdit';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 
@@ -17,6 +18,9 @@ const InboundList = ({ isSplitMode = false }) => {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
+  // 兩段式，與出貨單相同：建立的單先放「已建立 (待確認)」，確認進貨後才入庫、移到歷史紀錄
+  const [activeTab, setActiveTab] = useState('PENDING');
+  const [isConfirming, setIsConfirming] = useState(false);
 
   const searchOptions = [
     { value: 'all', label: '全部欄位' },
@@ -53,7 +57,7 @@ const InboundList = ({ isSplitMode = false }) => {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, searchField, startDate, endDate]);
+  }, [searchTerm, searchField, startDate, endDate, activeTab]);
 
   const fetchRecords = useCallback(async () => {
     setLoading(true);
@@ -188,7 +192,9 @@ const InboundList = ({ isSplitMode = false }) => {
 
     setOrderSourceSaving(true);
     try {
-      const res = await window.electronAPI.namedQuery('updateOrderSourceByInboundOrder',
+      // 待確認的單還沒有資產，訂單來源記在明細上，確認進貨時才寫進資產
+      const res = await window.electronAPI.namedQuery(
+        isDraftOrder(selectedOrder) ? 'updateDraftInboundOrderSource' : 'updateOrderSourceByInboundOrder',
         [selectedOrder.id, value, overwrite]);
       if (!res.success) throw new Error(res.error || '未知錯誤');
       const changed = res.rows?.length || 0;
@@ -233,10 +239,14 @@ const InboundList = ({ isSplitMode = false }) => {
 
     const name = [item.brand, item.model].filter(Boolean).join(' ') || '此品項';
     const word = check.delta > 0 ? `增加 ${check.delta}` : `減少 ${Math.abs(check.delta)}`;
+    // 待確認的單還沒入庫，只改單據，庫存要等確認進貨才加
+    const draft = isDraftOrder(selectedOrder);
     if (!window.confirm(
       `確定把「${name}」的數量從 ${item.quantity} 改成 ${check.next} 嗎？\n\n`
-      + `庫存會同步${word}。\n`
-      + (check.delta < 0 ? '若這些貨已經領用出去，庫存最低只會扣到 0。\n' : '')
+      + (draft
+        ? '這張單還沒確認進貨，庫存不受影響。\n'
+        : `庫存會同步${word}。\n`
+          + (check.delta < 0 ? '若這些貨已經領用出去，庫存最低只會扣到 0。\n' : ''))
       + '\n此動作會記錄在事件紀錄中。'
     )) return;
 
@@ -247,6 +257,7 @@ const InboundList = ({ isSplitMode = false }) => {
         itemMasterId: item.item_id,
         nextQty: check.next,
         delta: check.delta,
+        draft,
       }));
       if (!res.success) throw new Error(res.error || '更正失敗');
 
@@ -254,7 +265,7 @@ const InboundList = ({ isSplitMode = false }) => {
         'INBOUND',
         selectedOrder?.order_no,
         name,
-        `更正進貨數量 [${name}] ${item.quantity} → ${check.next}（庫存同步${word}）`,
+        `更正進貨數量 [${name}] ${item.quantity} → ${check.next}${draft ? '（待確認，庫存未變動）' : `（庫存同步${word}）`}`,
         // itemMasterId 是給品項履歷用的：履歷靠它把這筆更正接回那個品項，
         // 否則單號底下記了也不會出現在品項自己的履歷裡
         { orderNo: selectedOrder?.order_no, itemMasterId: item.item_id, itemId: item.id,
@@ -282,12 +293,141 @@ const InboundList = ({ isSplitMode = false }) => {
    * 這批貨若已經流出去（出貨、維修、借測，或有硬體掛在上面）就一律拒絕 ——
    * 那該走退貨或報廢，不是把進貨紀錄抹掉。
    */
+  /**
+   * 刪完之後，這張單用到的品項可能變成「從來沒真正進過貨」的孤兒 ——
+   * 進貨頁的快速新增會在建立單據時一起建出主檔，單子刪了它還留在列表上。
+   * 不自動刪：品項定義本來就能獨立於單據存在，只是這次很可能是跟著
+   * 打錯的單一起建的，因此問一句由使用者決定。回傳實際移除的筆數。
+   */
+  const offerOrphanMasterCleanup = async (order, items) => {
+    let removedMasters = 0;
+    const masterIds = collectMasterIds(items);
+    if (masterIds.length === 0) return 0;
+    const orphanRes = await window.electronAPI.namedQuery('fetchOrphanItemMasters', [masterIds]);
+    const orphans = (orphanRes.success && orphanRes.rows) || [];
+    if (orphans.length > 0 && window.confirm(
+      `進貨單 [${order.order_no}] 已刪除。\n\n`
+      + `以下 ${orphans.length} 個品項在刪除後庫存為 0，也沒有任何其他單據用過：\n`
+      + orphans.map(describeOrphanMaster).join('\n')
+      + '\n\n要一併移除這些品項嗎？\n'
+      + '（保留的話它們會繼續留在列表上，庫存 0）'
+    )) {
+      for (const m of orphans) {
+        const del = await window.electronAPI.namedQuery('deleteItemMasterIfOrphan', [m.id]);
+        if (del.success && del.rows?.length) removedMasters += 1;
+      }
+      if (removedMasters > 0) {
+        await logDelete(
+          'INBOUND', order.order_no, order.partner_name || '進貨單',
+          `刪除進貨單 [${order.order_no}] 後一併移除 ${removedMasters} 個未使用品項`,
+          { orderNo: order.order_no, removedMasters: orphans.map((m) => m.id) }
+        );
+      }
+    }
+    return removedMasters;
+  };
+
+  /**
+   * 確認進貨：把待確認的單真正入庫（建資產、加庫存、記到採購單），
+   * 整批同一個交易。先檢查序號 —— 已經在系統裡的或同一張單重複的，
+   * 交易一定失敗，而資料庫的錯誤訊息不會說是哪一支。
+   */
+  const handleConfirmInbound = async () => {
+    const order = selectedOrder;
+    if (!order || !isDraftOrder(order)) return;
+    if (snEdit || qtyEdit) { alert('明細還有未儲存的修改，請先儲存或取消。'); return; }
+
+    setIsConfirming(true);
+    try {
+      const itemsRes = await window.electronAPI.namedQuery('fetchInboundItems', [order.id]);
+      if (!itemsRes.success) throw new Error(itemsRes.error || '無法讀取明細');
+      const items = itemsRes.rows || [];
+      if (items.length === 0) { alert('這張進貨單沒有任何明細，無法確認進貨。'); return; }
+
+      const sns = collectAssetSns(items);
+      let existingSns = [];
+      if (sns.length > 0) {
+        const exRes = await window.electronAPI.namedQuery('fetchExistingAssetSns', [sns]);
+        if (!exRes.success) throw new Error(exRes.error || '無法檢查序號');
+        existingSns = (exRes.rows || []).map((r) => r.sn);
+      }
+      const { existing, repeated } = findSnConflicts(items, existingSns);
+      if (existing.length > 0 || repeated.length > 0) {
+        alert(
+          `進貨單 [${order.order_no}] 有序號無法入庫：\n\n`
+          + (existing.length > 0 ? `已經在資產列表裡：${existing.join('、')}\n` : '')
+          + (repeated.length > 0 ? `這張單重複出現：${repeated.join('、')}\n` : '')
+          + '\n請先在明細上更正序號，再確認進貨。'
+        );
+        return;
+      }
+
+      const totalQty = items.reduce((s, it) => s + (parseInt(it.quantity, 10) || 0), 0);
+      if (!window.confirm(
+        `確認將進貨單 [${order.order_no}] 入庫嗎？\n\n`
+        + `共 ${items.length} 項、${totalQty} 個，庫存會加上，設備／硬體會建立資產`
+        + (items.some((it) => it.purchase_record_id) ? '，並記到對應的採購單' : '')
+        + '。\n\n確認後移到「已進貨 (歷史紀錄)」。'
+      )) return;
+
+      const res = await window.electronAPI.runTransaction(buildInboundConfirmSteps({ orderId: order.id, items }));
+      if (!res.success) {
+        throw new Error((res.error || '確認進貨失敗') + '\n\n所有變更已全部退回，庫存與單據狀態維持原樣。');
+      }
+
+      await logStatusChange(
+        'INBOUND', order.order_no, order.partner_name || '進貨單',
+        'DRAFT', 'COMPLETED',
+        `進貨單 [${order.order_no}] 確認進貨並完成入庫（${items.length} 項、${totalQty} 個）`,
+        { orderNo: order.order_no, itemsCount: items.length,
+          items: items.map((i) => ({ itemMasterId: i.item_id, brand: i.brand, model: i.model, sn: i.sn, qty: i.quantity })) }
+      );
+
+      alert(`進貨單 [${order.order_no}] 已確認進貨，庫存已加上。`);
+      setIsModalOpen(false);
+      setSelectedOrder(null);
+      fetchRecords();
+    } catch (err) {
+      alert('確認進貨失敗：\n' + err.message);
+    } finally {
+      setIsConfirming(false);
+    }
+  };
+
   const handleDeleteOrder = async (order) => {
     setDeleting(true);
     try {
       const itemsRes = await window.electronAPI.namedQuery('fetchInboundItems', [order.id]);
       if (!itemsRes.success) throw new Error(itemsRes.error || '無法讀取明細');
       const items = itemsRes.rows || [];
+
+      // 待確認的單還沒入庫：沒加庫存、沒建資產、沒動採購單，刪掉單據就好
+      if (isDraftOrder(order)) {
+        if (!window.confirm(
+          `確定要刪除待確認的進貨單 [${order.order_no}] 嗎？此動作無法復原。\n\n`
+          + '這張單還沒確認進貨，庫存、資產與採購單都不受影響。'
+        )) return;
+        const res = await window.electronAPI.runTransaction([{
+          queryName: 'deleteDraftInboundOrder',
+          params: [order.id],
+          expectRows: 1,
+          errorMessage: '這張進貨單已經不是待確認狀態（可能剛被確認進貨），請重新整理後再操作',
+        }]);
+        if (!res.success) throw new Error(res.error || '刪除失敗');
+        await logDelete(
+          'INBOUND', order.order_no, order.partner_name || '進貨單',
+          `刪除待確認的進貨單 [${order.order_no}]（尚未入庫，庫存未變動）`,
+          { orderNo: order.order_no, items: items.length, draft: true }
+        );
+        const removedMasters = await offerOrphanMasterCleanup(order, items);
+        alert(`進貨單 [${order.order_no}] 已刪除。`
+          + (removedMasters > 0 ? `\n並移除 ${removedMasters} 個未使用的品項。` : ''));
+        setIsModalOpen(false);
+        setSelectedOrder(null);
+        fetchRecords();
+        return;
+      }
+
       const assetSns = items.map((i) => (i.sn || '').trim()).filter(Boolean);
 
       if (assetSns.length > 0) {
@@ -334,35 +474,7 @@ const InboundList = ({ isSplitMode = false }) => {
         { itemMasterId: it.item_id, orderNo: order.order_no, quantity: it.quantity, sn: it.sn || null }
       )));
 
-      // 刪完之後，這張單用到的品項可能變成「從來沒真正進過貨」的孤兒 ——
-      // 進貨頁的快速新增會當場建出主檔，單子刪了它還留在列表上。
-      // 不自動刪：品項定義本來就能獨立於單據存在，只是這次很可能是跟著
-      // 打錯的單一起建的，因此問一句由使用者決定。
-      let removedMasters = 0;
-      const masterIds = collectMasterIds(items);
-      if (masterIds.length > 0) {
-        const orphanRes = await window.electronAPI.namedQuery('fetchOrphanItemMasters', [masterIds]);
-        const orphans = (orphanRes.success && orphanRes.rows) || [];
-        if (orphans.length > 0 && window.confirm(
-          `進貨單 [${order.order_no}] 已刪除。\n\n`
-          + `以下 ${orphans.length} 個品項在刪除後庫存為 0，也沒有任何其他單據用過：\n`
-          + orphans.map(describeOrphanMaster).join('\n')
-          + '\n\n要一併移除這些品項嗎？\n'
-          + '（保留的話它們會繼續留在列表上，庫存 0）'
-        )) {
-          for (const m of orphans) {
-            const del = await window.electronAPI.namedQuery('deleteItemMasterIfOrphan', [m.id]);
-            if (del.success && del.rows?.length) removedMasters += 1;
-          }
-          if (removedMasters > 0) {
-            await logDelete(
-              'INBOUND', order.order_no, order.partner_name || '進貨單',
-              `刪除進貨單 [${order.order_no}] 後一併移除 ${removedMasters} 個未使用品項`,
-              { orderNo: order.order_no, removedMasters: orphans.map((m) => m.id) }
-            );
-          }
-        }
-      }
+      const removedMasters = await offerOrphanMasterCleanup(order, items);
 
       alert(`進貨單 [${order.order_no}] 已刪除，庫存與採購數量已還原。`
         + (removedMasters > 0 ? `\n並移除 ${removedMasters} 個未使用的品項。` : ''));
@@ -380,6 +492,34 @@ const InboundList = ({ isSplitMode = false }) => {
     const newSn = (snEdit?.value || '').trim();
     const invalid = validateSnRename(oldSn, newSn);
     if (invalid) { alert(invalid); return; }
+
+    // 待確認的單還沒有資產，也還沒有其他單據用到這支序號，只改這一筆明細
+    if (isDraftOrder(selectedOrder)) {
+      setSnSaving(true);
+      try {
+        const res = await window.electronAPI.runTransaction([{
+          queryName: 'updateDraftInboundItemSn',
+          params: [item.id, newSn],
+          expectRows: 1,
+          errorMessage: '這張進貨單已經不是待確認狀態（可能剛被確認進貨），請重新整理後再操作',
+        }]);
+        if (!res.success) throw new Error(res.error || '更正失敗');
+        logUpdate(
+          'INBOUND', selectedOrder?.order_no, selectedOrder?.partner_name || '進貨單',
+          `更正待確認進貨單的序號 [${oldSn}] → [${newSn}]`,
+          { orderNo: selectedOrder?.order_no, oldSn, newSn, draft: true }
+        );
+        setSnEdit(null);
+        const itemsRes = await window.electronAPI.namedQuery('fetchInboundItems', [selectedOrder.id]);
+        if (itemsRes.success) setOrderItems(itemsRes.rows);
+      } catch (e) {
+        alert(`更正序號失敗：${e.message}`);
+      } finally {
+        setSnSaving(false);
+      }
+      return;
+    }
+
     if (!window.confirm(`確定要把序號 [${oldSn}] 改成 [${newSn}] 嗎？\n\n資產本身、掛載關係，以及進貨／出貨／維修單上的這個序號都會一起更新。`)) return;
 
     setSnSaving(true);
@@ -474,15 +614,21 @@ const InboundList = ({ isSplitMode = false }) => {
   };
 
   const filteredRecords = inboundRecords.filter(order => {
+    // 與出貨單相同：待確認一個頁籤，其餘（已進貨）是歷史紀錄
+    if (activeTab === 'PENDING' ? !isDraftOrder(order) : isDraftOrder(order)) return false;
+
+    // 沒打關鍵字時不比對文字，但日期區間照樣要套用
+    // （先前沒打字就直接 return true，日期篩選形同無效）
     const search = searchTerm.toLowerCase();
-    if (!search) return true;
 
     const orderNo = (order.order_no || '').toLowerCase();
     const partner = (order.partner_name || '').toLowerCase();
     const invoice = (order.invoice_no || '').toLowerCase();
 
     let matchSearch = true;
-    if (searchField === 'all') {
+    if (!search) {
+      matchSearch = true;
+    } else if (searchField === 'all') {
       matchSearch = orderNo.includes(search) || partner.includes(search) || invoice.includes(search);
     } else if (searchField === 'order_no') {
       matchSearch = orderNo.includes(search);
@@ -512,6 +658,8 @@ const InboundList = ({ isSplitMode = false }) => {
   });
 
   const sortedAndFiltered = [...filteredRecords]
+  const pendingCount = inboundRecords.filter(isDraftOrder).length;
+  const historyCount = inboundRecords.length - pendingCount;
 
   const [itemsPerPage, setItemsPerPage] = usePageSize('inbound_list', 10);
   const totalPages = Math.ceil(sortedAndFiltered.length / itemsPerPage) || 1;
@@ -556,13 +704,65 @@ const InboundList = ({ isSplitMode = false }) => {
 
         <div style={{ display: 'flex', gap: '12px' }}>
           <div style={{ padding: '8px 16px', borderRadius: '12px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: 'var(--card-shadow)' }}>
-            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 600 }}>總進貨單數</span>
-            <span style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-main)' }}>{inboundRecords.length}</span>
+            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 600 }}>待確認進貨單</span>
+            <span style={{ fontSize: '1.15rem', fontWeight: 800, color: '#f97316' }} data-testid="inbound-pending-count">{pendingCount}</span>
           </div>
         </div>
       </div>
 
       <div style={{ backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--card-radius, 14px)', boxShadow: 'var(--card-shadow)', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
+        {/* 兩大頁籤，與出貨單列表一致 */}
+        <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)' }}>
+          <button
+            onClick={() => setActiveTab('PENDING')}
+            data-testid="inbound-tab-pending"
+            style={{
+              padding: '10px 18px',
+              border: 'none',
+              backgroundColor: activeTab === 'PENDING' ? 'var(--bg-surface)' : 'transparent',
+              borderBottom: activeTab === 'PENDING' ? '3px solid #3b82f6' : '3px solid transparent',
+              color: activeTab === 'PENDING' ? '#3b82f6' : 'var(--text-muted)',
+              fontWeight: activeTab === 'PENDING' ? 800 : 600,
+              fontSize: '0.9rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            <Clock size={16} /> 已建立 (待確認)
+            {pendingCount > 0 && (
+              <span style={{ backgroundColor: '#3b82f6', color: '#fff', padding: '1px 6px', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 800 }}>
+                {pendingCount}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('HISTORY')}
+            data-testid="inbound-tab-history"
+            style={{
+              padding: '10px 18px',
+              border: 'none',
+              backgroundColor: activeTab === 'HISTORY' ? 'var(--bg-surface)' : 'transparent',
+              borderBottom: activeTab === 'HISTORY' ? '3px solid #10b981' : '3px solid transparent',
+              color: activeTab === 'HISTORY' ? '#10b981' : 'var(--text-muted)',
+              fontWeight: activeTab === 'HISTORY' ? 800 : 600,
+              fontSize: '0.9rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            <FileCheck size={16} /> 已進貨 (歷史紀錄)
+            {historyCount > 0 && (
+              <span style={{ backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)', padding: '1px 6px', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 800, border: '1px solid var(--border-color)' }}>
+                {historyCount}
+              </span>
+            )}
+          </button>
+        </div>
+
         <div style={{ padding: '12px 18px', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '12px', alignItems: 'center', backgroundColor: 'var(--bg-surface-subtle)', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flex: 1, flexWrap: 'wrap' }}>
             <select
@@ -628,7 +828,9 @@ const InboundList = ({ isSplitMode = false }) => {
                 {loading ? (
                   <tr><td colSpan="8" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>讀取中...</td></tr>
                 ) : currentRecords.length === 0 ? (
-                  <tr><td colSpan="8" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>目前尚無進貨單資料</td></tr>
+                  <tr><td colSpan="8" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                    {activeTab === 'PENDING' ? '目前尚無待確認的進貨單' : '目前尚無已進貨的歷史紀錄'}
+                  </td></tr>
                 ) : currentRecords.map(order => (
                   <tr key={order.id} className="row-hover" style={{ borderBottom: '1px solid var(--table-border)', color: 'var(--text-main)' }}>
                     <td style={{ padding: '12px', fontWeight: 700, color: 'var(--text-main)' }}>{order.order_no}</td>
@@ -710,6 +912,11 @@ const InboundList = ({ isSplitMode = false }) => {
                   <FileText size={24} color="#059669" />
                   進貨明細單：{selectedOrder.order_no}
                   {isEditing && <span style={{fontSize: '0.9rem', color: '#16a34a', backgroundColor: 'rgba(22, 163, 74, 0.15)', padding: '4px 8px', borderRadius: '6px'}}>編輯模式</span>}
+                  {isDraftOrder(selectedOrder) && (
+                    <span data-testid="inbound-draft-badge" style={{ fontSize: '0.9rem', color: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.12)', padding: '4px 8px', borderRadius: '6px' }}>
+                      待確認・尚未入庫
+                    </span>
+                  )}
                 </h2>
                 <div style={{ display: 'flex', gap: '20px', color: 'var(--text-muted)', fontSize: '0.9rem', fontWeight: 500 }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Calendar size={14} /> 進貨日期：{(selectedOrder.effective_date || selectedOrder.order_date || selectedOrder.created_at || '').toString().slice(0, 10)}</span>
@@ -817,7 +1024,7 @@ const InboundList = ({ isSplitMode = false }) => {
               )}
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
-                <h3 style={{ fontSize: '1.1rem', color: 'var(--text-main)', margin: 0 }}>進貨項目 (無法修改數量)</h3>
+                <h3 style={{ fontSize: '1.1rem', color: 'var(--text-main)', margin: 0 }}>進貨項目</h3>
                 {/* 訂單來源存在資產上，逐筆到硬體列表改不切實際；整張單一次填 */}
                 {orderSourceStats.withSn > 0 && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
@@ -917,7 +1124,7 @@ const InboundList = ({ isSplitMode = false }) => {
                                 <button
                                   type="button"
                                   onClick={() => setSnEdit({ itemId: item.id, value: item.sn })}
-                                  title="更正序號（資產、掛載關係與相關單據會一起更新）"
+                                  title={isDraftOrder(selectedOrder) ? '更正序號（尚未入庫，只改這一筆明細）' : '更正序號（資產、掛載關係與相關單據會一起更新）'}
                                   aria-label={`更正序號 ${item.sn}`}
                                   style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '26px', height: '26px', padding: 0, borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: '#f59e0b', cursor: 'pointer' }}
                                 >
@@ -990,7 +1197,7 @@ const InboundList = ({ isSplitMode = false }) => {
                                   <button
                                     type="button"
                                     onClick={() => setQtyEdit({ itemId: item.id, value: String(item.quantity ?? '') })}
-                                    title="更正數量（庫存會同步調整）"
+                                    title={isDraftOrder(selectedOrder) ? '更正數量（尚未入庫，庫存不受影響）' : '更正數量（庫存會同步調整）'}
                                     aria-label={`修改數量 ${[item.brand, item.model].filter(Boolean).join(' ')}`}
                                     style={{
                                       display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -1023,7 +1230,7 @@ const InboundList = ({ isSplitMode = false }) => {
               <button
                 onClick={() => handleDeleteOrder(selectedOrder)}
                 disabled={deleting || !selectedOrder}
-                title="刪除整張進貨單，並還原庫存、採購數量與該單建立的資產"
+                title={isDraftOrder(selectedOrder) ? '刪除這張待確認的進貨單（尚未入庫，庫存不受影響）' : '刪除整張進貨單，並還原庫存、採購數量與該單建立的資產'}
                 style={{
                   padding: '10px 20px', borderRadius: '8px',
                   border: '1px solid rgba(239, 68, 68, 0.4)',
@@ -1041,6 +1248,15 @@ const InboundList = ({ isSplitMode = false }) => {
               >
                 關閉視窗
               </button>
+              {isDraftOrder(selectedOrder) && !isEditing && (
+                <button
+                  onClick={handleConfirmInbound}
+                  disabled={isConfirming || isDetailLoading}
+                  style={{ padding: '10px 24px', backgroundColor: '#3b82f6', border: 'none', borderRadius: '8px', cursor: isConfirming ? 'wait' : 'pointer', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '8px', opacity: isConfirming ? 0.7 : 1 }}
+                >
+                  <CheckCircle size={18} /> {isConfirming ? '處理中...' : '確認進貨'}
+                </button>
+              )}
               {isEditing && (
                  <button
                    onClick={handleSaveEdit}
@@ -1079,7 +1295,8 @@ const InboundList = ({ isSplitMode = false }) => {
       <InboundRegistrationModal
         isOpen={showAddModal}
         onClose={() => setShowAddModal(false)}
-        onSuccess={fetchRecords}
+        // 新建的單是待確認，切回那個頁籤才看得到
+        onSuccess={() => { setActiveTab('PENDING'); fetchRecords(); }}
       />
 
       <style>{`
