@@ -64,14 +64,20 @@ describe('維修單列表的欄位', () => {
   };
 
   // 總維修單數會一直累積、日常用不到，已拿掉（見 RepairListPeriod.test.jsx）
-  it('上方統計卡片依處理流程排列，沒有累積的總維修單數', async () => {
+  // 數量放在右上角、只顯示不能點（與借用列表同樣式）；切換狀態用下方頁籤
+  it('右上角依處理流程顯示數量，沒有累積的總維修單數', async () => {
     await open();
-    const CARDS = ['🟢 現場處理 (在庫)', '🟠 送修原廠 (維修中)', '🟣 原廠返還 (在庫)', '🔵 完工出貨 (已結案)'];
-    const labels = [...document.querySelectorAll('div')]
-      .map((d) => d.textContent.trim())
-      .filter((t) => CARDS.includes(t));
-    expect(labels).toEqual(CARDS);
+    const box = screen.getByTestId('repair-stats');
+    const labels = [...box.children].map((el) => el.firstChild.textContent);
+    expect(labels).toEqual(['現場處理', '送修原廠', '原廠返還', '完工出貨']);
     expect(screen.queryByText('總維修單數')).not.toBeInTheDocument();
+  });
+
+  it('右上角的數量不能點，不會切換頁籤', async () => {
+    await open();
+    const box = screen.getByTestId('repair-stats');
+    expect(box.querySelector('button, [onclick]')).toBeNull();
+    [...box.children].forEach((el) => expect(el.style.cursor).not.toBe('pointer'));
   });
 
   it('欄位順序：維修時程排在當前狀態後面', async () => {
