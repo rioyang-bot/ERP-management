@@ -241,11 +241,8 @@ const RepairList = () => {
                 <Plus size={16} /> 新增維修單 (New RMA)
               </button>
             </div>
-            {/* 說明太長，分兩行 */}
-            <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '4px 0 0 0', lineHeight: 1.6 }}>
-              維修流程全週期管理：現場取件 ➔ 送修原廠 ➔ 原廠修復返還 ➔ 客戶完工出貨
-              <br />
-              自動同步設備在庫與維修狀態。
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
+              維修流程全週期管理：現場取件 ➔ 送修原廠 ➔ 原廠修復返還 ➔ 客戶完工出貨，自動同步設備在庫與維修狀態。
             </p>
           </div>
         </div>
