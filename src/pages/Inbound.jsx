@@ -571,21 +571,28 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
       <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '20px' }}>
         <thead>
           <tr style={{ backgroundColor: 'var(--table-header-bg)', textAlign: 'left' }}>
-            <th style={thStyle}>對應採購單號</th>
+            {/* 對應採購單號不常用，縮小；其餘欄位固定寬度，剩下的空間都給入庫設備項目 */}
+            <th style={{ ...thStyle, width: '120px' }}>對應採購單號</th>
             <th style={thStyle}>入庫設備項目</th>
-            <th style={{ ...thStyle, width: '80px' }}>類別</th>
-            <th style={thStyle}>序號(SN)</th>
-            <th style={thStyle}>訂單來源</th>
-            <th style={thStyle}>數量</th>
-            <th style={{ ...thStyle, textAlign: 'center' }}>移除</th>
+            <th style={{ ...thStyle, width: '72px' }}>類別</th>
+            <th style={{ ...thStyle, width: '170px' }}>序號(SN)</th>
+            <th style={{ ...thStyle, width: '150px' }}>訂單來源</th>
+            <th style={{ ...thStyle, width: '90px' }}>數量</th>
+            <th style={{ ...thStyle, width: '56px', textAlign: 'center' }}>移除</th>
           </tr>
         </thead>
         <tbody>
           {items.map(row => (
             <tr key={row.id} style={{ borderBottom: '1px solid var(--table-border)' }}>
               <td style={tdStyle}>
-                <select value={row.selectedOrderNo || ''} onChange={(e) => handleOrderNoChange(row.id, e.target.value)} style={{ ...inputStyle, backgroundColor: row.selectedOrderNo ? 'var(--primary-bg)' : 'var(--input-bg)', color: 'var(--input-text)' }}>
-                  <option value="">-- 非採購單入庫 --</option>
+                <select
+                  value={row.selectedOrderNo || ''}
+                  onChange={(e) => handleOrderNoChange(row.id, e.target.value)}
+                  aria-label="對應採購單號"
+                  title={row.selectedOrderNo || '非採購單入庫'}
+                  style={{ ...inputStyle, padding: '8px 6px', fontSize: '12px', backgroundColor: row.selectedOrderNo ? 'var(--primary-bg)' : 'var(--input-bg)', color: 'var(--input-text)' }}
+                >
+                  <option value="">非採購單</option>
                   {uniqueOrderNos.map(orderNo => <option key={orderNo} value={orderNo}>{orderNo}</option>)}
                 </select>
               </td>
