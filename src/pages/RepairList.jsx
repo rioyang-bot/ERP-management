@@ -12,6 +12,7 @@ import { logDelete, logUpdate } from '../utils/auditLogger';
 import { getRepairScopeLabel, getRepairSubLabel, INTERNAL_LABEL } from '../utils/repairScope';
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
+import { PERIODS, DEFAULT_PERIOD, periodRange, inPeriod, isClosed, periodLabel } from '../utils/repairPeriod';
 
 // 維修時程欄位的四個階段，顏色沿用詳情頁的時間軸
 const TIMELINE_STEPS = [
@@ -43,10 +44,13 @@ const RepairList = () => {
   const [printModal, setPrintModal] = useState({ isOpen: false, order: null });
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = usePageSize('repair_list', 10);
+  // 已結案的單只看一段期間，預設近 3 個月；未結案的一律全部顯示（見 utils/repairPeriod.js）
+  const [period, setPeriod] = useState(DEFAULT_PERIOD);
+  const [customRange, setCustomRange] = useState({ from: '', to: '' });
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, activeTab]);
+  }, [searchTerm, activeTab, period, customRange]);
 
   // 載入資料
   const fetchRecords = useCallback(async () => {
@@ -140,10 +144,18 @@ const RepairList = () => {
     }
   };
 
+  const range = periodRange(period, customRange);
+  const searching = !!searchTerm.trim();
+
   // 過濾清單
   const filteredOrders = repairOrders.filter(order => {
     // 狀態篩選
     if (activeTab !== 'ALL' && order.status !== activeTab) {
+      return false;
+    }
+
+    // 已結案的只看選定期間；搜尋時查全部歷史，以前的單打關鍵字就找得到
+    if (!searching && !inPeriod(order, range)) {
       return false;
     }
 
@@ -166,13 +178,18 @@ const RepairList = () => {
   const currentRecords = filteredOrders.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   // 統計數據
+  // 未結案的三種是現況，全部算；完工只算選定期間內的，數字才不會一路累積
   const stats = {
-    total: repairOrders.length,
     on_site: repairOrders.filter(o => o.status === 'ON_SITE_HANDLING').length,
     sent_oem: repairOrders.filter(o => o.status === 'SENT_OEM').length,
     oem_returned: repairOrders.filter(o => o.status === 'OEM_RETURNED').length,
-    completed: repairOrders.filter(o => o.status === 'COMPLETED').length
+    completed: repairOrders.filter(o => isClosed(o) && inPeriod(o, range)).length
   };
+  // 期間外、沒顯示出來的已結案單（目前頁籤看得到已結案時才提示）
+  const hiddenClosedCount = (searching || (activeTab !== 'ALL' && activeTab !== 'COMPLETED'))
+    ? 0
+    : repairOrders.filter(o => isClosed(o) && !inPeriod(o, range)).length;
+  const currentPeriodLabel = periodLabel(period, customRange);
 
   return (
     <div style={{ padding: '24px', maxWidth: '1600px', margin: '0 auto', color: 'var(--text-main)' }}>
@@ -314,22 +331,10 @@ const RepairList = () => {
           }}
         >
           <div style={{ fontSize: '11px', fontWeight: 700, color: '#3b82f6' }}>🔵 完工出貨 (已結案)</div>
-          <div style={{ fontSize: '20px', fontWeight: 900, marginTop: '2px', color: '#3b82f6' }}>{stats.completed}</div>
-        </div>
-
-        <div
-          onClick={() => setActiveTab('ALL')}
-          style={{
-            backgroundColor: 'var(--bg-surface)',
-            padding: '10px 14px',
-            borderRadius: '10px',
-            border: activeTab === 'ALL' ? '2px solid var(--primary-color)' : '1px solid var(--border-color)',
-            cursor: 'pointer',
-            boxShadow: 'var(--card-shadow)'
-          }}
-        >
-          <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)' }}>總維修單數</div>
-          <div style={{ fontSize: '20px', fontWeight: 900, marginTop: '2px', color: 'var(--text-main)' }}>{stats.total}</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '2px' }}>
+            <span style={{ fontSize: '20px', fontWeight: 900, color: '#3b82f6' }}>{stats.completed}</span>
+            <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)' }} data-testid="completed-period">{currentPeriodLabel}</span>
+          </div>
         </div>
       </div>
 
@@ -372,6 +377,40 @@ const RepairList = () => {
           })}
         </div>
 
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+        {/* 已結案顯示期間：未結案的單不受影響，一律全部顯示 */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>已結案顯示</span>
+          <select
+            value={period}
+            onChange={(e) => setPeriod(e.target.value)}
+            aria-label="已結案顯示期間"
+            title="完工結案的單只顯示這段期間內完工的；搜尋時查全部歷史"
+            style={{ padding: '6px 8px', borderRadius: '8px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', fontSize: '12px', fontWeight: 700, outline: 'none' }}
+          >
+            {Object.entries(PERIODS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+          </select>
+          {period === 'CUSTOM' && (
+            <>
+              <input
+                type="date"
+                value={customRange.from}
+                onChange={(e) => setCustomRange((prev) => ({ ...prev, from: e.target.value }))}
+                aria-label="結案起日"
+                style={{ padding: '5px 6px', borderRadius: '8px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', fontSize: '12px' }}
+              />
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>～</span>
+              <input
+                type="date"
+                value={customRange.to}
+                onChange={(e) => setCustomRange((prev) => ({ ...prev, to: e.target.value }))}
+                aria-label="結案迄日"
+                style={{ padding: '5px 6px', borderRadius: '8px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', fontSize: '12px' }}
+              />
+            </>
+          )}
+        </div>
+
         {/* 搜尋輸入框 */}
         <div style={{ position: 'relative', width: '280px', maxWidth: '100%' }}>
           <input
@@ -392,7 +431,31 @@ const RepairList = () => {
           />
           <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
         </div>
+        </div>
       </div>
+
+      {/* 期間外的已結案單沒有顯示時講清楚，並提供看全部的方法 */}
+      {hiddenClosedCount > 0 && (
+        <div
+          data-testid="hidden-closed-hint"
+          style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '10px', padding: '0 4px' }}
+        >
+          <span>已結案只顯示「{currentPeriodLabel}」，另有 <b style={{ color: 'var(--text-main)' }}>{hiddenClosedCount}</b> 張較早結案的維修單未列出。</span>
+          <button
+            type="button"
+            onClick={() => setPeriod('ALL')}
+            style={{ padding: '2px 10px', borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--primary-color)', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+          >
+            顯示全部
+          </button>
+          <span>或直接搜尋單號、序號、客戶（搜尋會查全部歷史）。</span>
+        </div>
+      )}
+      {searching && period !== 'ALL' && (
+        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '10px', padding: '0 4px' }} data-testid="search-all-history-hint">
+          搜尋中：查的是全部歷史，不限「{currentPeriodLabel}」。
+        </div>
+      )}
 
       {/* 錯誤提示 */}
       {error && (
