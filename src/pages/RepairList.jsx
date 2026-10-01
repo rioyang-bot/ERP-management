@@ -246,76 +246,30 @@ const RepairList = () => {
             </p>
           </div>
         </div>
-      </div>
 
-      {/* 統計指標卡片 */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-        gap: '10px',
-        marginBottom: '12px'
-      }}>
+        {/* 右上角只顯示數量、不能點；切換狀態用下方的頁籤（與借用列表同樣式） */}
         <div
-          onClick={() => setActiveTab('ON_SITE_HANDLING')}
-          style={{
-            backgroundColor: 'var(--bg-surface)',
-            padding: '10px 14px',
-            borderRadius: '10px',
-            border: activeTab === 'ON_SITE_HANDLING' ? '2px solid #10b981' : '1px solid var(--border-color)',
-            cursor: 'pointer',
-            boxShadow: 'var(--card-shadow)'
-          }}
+          data-testid="repair-stats"
+          style={{ backgroundColor: 'var(--bg-surface)', padding: '8px 16px', borderRadius: '12px', border: '1px solid var(--border-color)', display: 'flex', gap: '16px', boxShadow: 'var(--card-shadow)', flexWrap: 'wrap' }}
         >
-          <div style={{ fontSize: '11px', fontWeight: 700, color: '#10b981' }}>🟢 現場處理 (在庫)</div>
-          <div style={{ fontSize: '20px', fontWeight: 900, marginTop: '2px', color: '#10b981' }}>{stats.on_site}</div>
-        </div>
-
-        <div
-          onClick={() => setActiveTab('SENT_OEM')}
-          style={{
-            backgroundColor: 'var(--bg-surface)',
-            padding: '10px 14px',
-            borderRadius: '10px',
-            border: activeTab === 'SENT_OEM' ? '2px solid #d97706' : '1px solid var(--border-color)',
-            cursor: 'pointer',
-            boxShadow: 'var(--card-shadow)'
-          }}
-        >
-          <div style={{ fontSize: '11px', fontWeight: 700, color: '#d97706' }}>🟠 送修原廠 (維修中)</div>
-          <div style={{ fontSize: '20px', fontWeight: 900, marginTop: '2px', color: '#d97706' }}>{stats.sent_oem}</div>
-        </div>
-
-        <div
-          onClick={() => setActiveTab('OEM_RETURNED')}
-          style={{
-            backgroundColor: 'var(--bg-surface)',
-            padding: '10px 14px',
-            borderRadius: '10px',
-            border: activeTab === 'OEM_RETURNED' ? '2px solid #8b5cf6' : '1px solid var(--border-color)',
-            cursor: 'pointer',
-            boxShadow: 'var(--card-shadow)'
-          }}
-        >
-          <div style={{ fontSize: '11px', fontWeight: 700, color: '#8b5cf6' }}>🟣 原廠返還 (在庫)</div>
-          <div style={{ fontSize: '20px', fontWeight: 900, marginTop: '2px', color: '#8b5cf6' }}>{stats.oem_returned}</div>
-        </div>
-
-        <div
-          onClick={() => setActiveTab('COMPLETED')}
-          style={{
-            backgroundColor: 'var(--bg-surface)',
-            padding: '10px 14px',
-            borderRadius: '10px',
-            border: activeTab === 'COMPLETED' ? '2px solid #3b82f6' : '1px solid var(--border-color)',
-            cursor: 'pointer',
-            boxShadow: 'var(--card-shadow)'
-          }}
-        >
-          <div style={{ fontSize: '11px', fontWeight: 700, color: '#3b82f6' }}>🔵 完工出貨 (已結案)</div>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '2px' }}>
-            <span style={{ fontSize: '20px', fontWeight: 900, color: '#3b82f6' }}>{stats.completed}</span>
-            <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)' }} data-testid="completed-period">{currentPeriodLabel}</span>
-          </div>
+          {[
+            // 階段名稱不括設備狀態：同一階段，客戶送修與公司內部維修的設備狀態不同
+            { label: '現場處理', value: stats.on_site, color: '#10b981' },
+            { label: '送修原廠', value: stats.sent_oem, color: '#d97706' },
+            { label: '原廠返還', value: stats.oem_returned, color: '#8b5cf6' },
+            { label: '完工出貨', value: stats.completed, color: '#3b82f6', period: currentPeriodLabel },
+          ].map((st, idx) => (
+            <div key={st.label} style={idx > 0 ? { borderLeft: '1px solid var(--border-color)', paddingLeft: '16px' } : undefined}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>{st.label}</div>
+              <div style={{ fontSize: '1.15rem', fontWeight: 700, color: st.color, whiteSpace: 'nowrap' }}>
+                <span data-testid={`stat-${idx}`}>{st.value}</span>{' '}
+                <span style={{ fontSize: '0.8rem', fontWeight: 400, opacity: 0.8 }}>單</span>
+                {st.period && (
+                  <span style={{ marginLeft: '6px', fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-muted)' }} data-testid="completed-period">{st.period}</span>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 

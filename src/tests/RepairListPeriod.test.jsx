@@ -77,9 +77,8 @@ describe('維修單列表', () => {
 
   it('完工卡片只算期間內的，並標示期間', async () => {
     await open();
-    const label = screen.getByTestId('completed-period');
-    expect(label.textContent).toBe('近 3 個月');
-    expect(label.previousSibling.textContent).toBe('2');
+    expect(screen.getByTestId('completed-period').textContent).toBe('近 3 個月');
+    expect(screen.getByTestId('stat-3').textContent).toBe('2');
   });
 
   it('沒有累積的總維修單數卡片', async () => {
@@ -99,7 +98,7 @@ describe('維修單列表', () => {
     await open();
     await userEvent.selectOptions(screen.getByLabelText('已結案顯示期間'), 'MONTH');
     expect(screen.getByTestId('completed-period').textContent).toBe('本月');
-    expect(screen.getByTestId('completed-period').previousSibling.textContent).toBe('0');
+    expect(screen.getByTestId('stat-3').textContent).toBe('0');
     expect(screen.queryByText('RMA-DONE-RECENT')).not.toBeInTheDocument();
     // 未結案的照樣在
     expect(screen.getByText('RMA-OPEN-OLD')).toBeInTheDocument();
