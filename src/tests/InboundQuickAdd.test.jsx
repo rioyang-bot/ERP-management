@@ -142,6 +142,39 @@ describe('進貨單：快速建檔品項', () => {
     expect(step.params).toEqual(['', 'SERVER', 'SUPERMICRO', 'SYS-1029P', '台', '設備']);
   });
 
+  /**
+   * 列上要看得到類型、廠牌、型號、規格，才能確認打得對不對。
+   * 先前只顯示廠牌＋型號；快速新增的暫存品項規格存在 spec、畫面讀 specification，
+   * 規格永遠空白，「送出後才建立」的標籤擠到第二行，看起來就像把規格蓋掉了。
+   */
+  it('快速新增後，列上看得到類型、廠牌、型號與規格，標籤另起一行', async () => {
+    await openQuickAdd();
+    await userEvent.type(screen.getByPlaceholderText('例如：SUPERMICRO'), '光景資訊');
+    await userEvent.type(screen.getByPlaceholderText('例如：SERVER'), 'NVMe SSD');
+    await userEvent.type(screen.getByPlaceholderText('例如：SYS-1029P'), 'N-29NVMS');
+    await userEvent.type(screen.getByPlaceholderText(/26C \/ 256G/), '2TB U.2');
+    await userEvent.click(screen.getByRole('button', { name: /儲存並帶入單據/ }));
+
+    const cell = await screen.findByTestId('inbound-item-1');
+    const lines = [...cell.children].map((el) => el.textContent);
+    expect(lines[0]).toContain('NVMe SSD');
+    expect(lines[0]).toContain('光景資訊 N-29NVMS');
+    expect(lines[1]).toBe('2TB U.2');
+    expect(lines[2]).toContain('送出後才建立');
+    expect(cell.title).toBe('NVMe SSD / 光景資訊 / N-29NVMS / 2TB U.2');
+  });
+
+  it('沒填規格時明講「未填規格」，不留白', async () => {
+    await openQuickAdd();
+    await userEvent.type(screen.getByPlaceholderText('例如：SUPERMICRO'), 'SUPERMICRO');
+    await userEvent.type(screen.getByPlaceholderText('例如：SERVER'), 'SERVER');
+    await userEvent.type(screen.getByPlaceholderText('例如：SYS-1029P'), 'SYS-1029P');
+    await userEvent.click(screen.getByRole('button', { name: /儲存並帶入單據/ }));
+
+    const cell = await screen.findByTestId('inbound-item-1');
+    expect(cell.children[1].textContent).toBe('未填規格');
+  });
+
   it('四個欄位都寫進品項主檔，型號不會遺失', async () => {
     await openQuickAdd();
 
