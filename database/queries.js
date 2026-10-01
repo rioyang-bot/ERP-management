@@ -1366,7 +1366,9 @@ export const queries = {
   migrateOutboundItemPurpose: `ALTER TABLE outbound_items ADD COLUMN IF NOT EXISTS purpose VARCHAR(255) DEFAULT '運作測試'`,
   searchActiveAssetSNs: `
     SELECT a.id, a.sn, a.location, a.status,
-           COALESCE(c.name, '硬體') as category_name, i.brand, i.model, i.type, i.specification, i.unit
+           COALESCE(c.name, '硬體') as category_name, i.brand, i.model, i.type, i.specification, i.unit,
+           -- 掛在哪台設備上（硬體才有）：出貨單的勾選視窗會把它標出來，隨設備一起出貨
+           NULLIF(TRIM(a.custom_attributes->>'server_sn'), '') AS server_sn
     FROM assets a 
     JOIN item_master i ON a.item_master_id = i.id 
     LEFT JOIN categories c ON i.category_id = c.id 

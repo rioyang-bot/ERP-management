@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { ClipboardList, Search, Plus, Trash2, Send, Calendar, MapPin, User, Package, Cpu, ChevronRight, AlertCircle, Loader2, Truck, FolderGit2, Sparkles } from 'lucide-react';
+import { ClipboardList, Search, Plus, Trash2, Send, Calendar, MapPin, User, Package, Cpu, ChevronRight, AlertCircle, Loader2, Truck, FolderGit2, Sparkles, ListChecks } from 'lucide-react';
 import { RoleContext } from '../context/RoleContext';
 import { useNavigate } from 'react-router-dom';
 import { logCreate, logUpdate } from '../utils/auditLogger';
 import DeliveryReceiptPrintModal from '../components/DeliveryReceiptPrintModal';
 import { toReceiptItems } from '../utils/deliveryReceiptItems';
 import { mountedLabel } from '../utils/mountedConsumables';
+import AssetPickerModal from '../components/AssetPickerModal';
 import './Outbound.css';
 
 /**
@@ -61,6 +62,8 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null, ed
 
   // 快顯與列印
   const [showDeviceDropdown, setShowDeviceDropdown] = useState(false);
+  // 從清單勾選多台：'device' | 'hw' | null
+  const [pickerKind, setPickerKind] = useState(null);
   const [showHwDropdown, setShowHwDropdown] = useState(false);
   const [deliveryReceiptModal, setDeliveryReceiptModal] = useState({ show: false, dn: null, items: [] });
   
@@ -583,6 +586,19 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null, ed
     return tokens.every(token => combined.includes(token));
   };
 
+  /** 已在出貨單上的序號（含隨設備一起出的搭載硬體），勾選視窗裡不能再選 */
+  const sheetSns = new Set(outboundItems.flatMap((i) => [i.sn, ...(i.components || []).map((c) => c.sn)])
+    .filter(Boolean).map((sn) => sn.toLowerCase()));
+
+  const handlePickerConfirm = async (sns) => {
+    const kind = pickerKind;
+    setPickerKind(null);
+    // 逐台走既有的加入流程：會再確認是否在庫，並帶出搭載硬體與掛載的耗材
+    for (const sn of sns) {
+      await addAssetBySn(sn, kind);
+    }
+  };
+
   // 取得建議清單 (支援序號、廠牌、型號、類型、規格、存放位置多維度模糊搜尋)
   const getDeviceSuggestions = () => {
     if (!deviceSnInput.trim()) return [];
@@ -818,6 +834,9 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null, ed
                 {isSearching ? <Loader2 className="spinner" size={14} /> : <Search size={14} />}
                 加入設備
               </button>
+              <button type="button" className="pick-list-btn" onClick={() => setPickerKind('device')} title="列出所有在庫設備，勾選多台一次加入">
+                <ListChecks size={14} /> 從清單選取
+              </button>
               
               {showDeviceDropdown && (
                 <div className="autocomplete-dropdown">
@@ -872,6 +891,9 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null, ed
               <button type="submit" disabled={isSearching} title="按 Enter 或點擊直接加入">
                 {isSearching ? <Loader2 className="spinner" size={14} /> : <Search size={14} />}
                 加入硬體
+              </button>
+              <button type="button" className="pick-list-btn" onClick={() => setPickerKind('hw')} title="列出所有在庫硬體，勾選多件一次加入">
+                <ListChecks size={14} /> 從清單選取
               </button>
 
               {showHwDropdown && (
@@ -1100,6 +1122,16 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null, ed
           </div>
         </div>
       </div>
+
+      {/* 從清單勾選多台設備／硬體 */}
+      <AssetPickerModal
+        isOpen={!!pickerKind}
+        kind={pickerKind || 'device'}
+        assets={activeAssets}
+        excludedSns={sheetSns}
+        onClose={() => setPickerKind(null)}
+        onConfirm={handlePickerConfirm}
+      />
 
       {/* 交貨簽收單列印/預覽 Modal */}
       {deliveryReceiptModal.show && deliveryReceiptModal.dn && (
