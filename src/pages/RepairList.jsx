@@ -216,54 +216,38 @@ const RepairList = () => {
             <Wrench size={24} />
           </div>
           <div>
-            <h1 style={{ fontSize: 'var(--page-title-size, 1.35rem)', fontWeight: 900, margin: 0, letterSpacing: '-0.5px' }}>
-              維修單列表 (Repair Orders / RMA List)
-            </h1>
-            <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
-              維修流程全週期管理：現場取件 ➔ 送修原廠 ➔ 原廠修復返還 ➔ 客戶完工出貨，自動同步設備在庫與維修狀態。
+            {/* 新增維修單放在標題旁邊；重新整理拿掉（操作後列表會自動重新讀取） */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+              <h1 style={{ fontSize: 'var(--page-title-size, 1.35rem)', fontWeight: 900, margin: 0, letterSpacing: '-0.5px' }}>
+                維修單列表 (Repair Orders / RMA List)
+              </h1>
+              <button
+                onClick={() => setIsCreateModalOpen(true)}
+                style={{
+                  padding: '7px 14px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  backgroundColor: '#ef4444',
+                  color: '#ffffff',
+                  fontSize: '13px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: '0 4px 14px rgba(239, 68, 68, 0.35)'
+                }}
+              >
+                <Plus size={16} /> 新增維修單 (New RMA)
+              </button>
+            </div>
+            {/* 說明太長，分兩行 */}
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '4px 0 0 0', lineHeight: 1.6 }}>
+              維修流程全週期管理：現場取件 ➔ 送修原廠 ➔ 原廠修復返還 ➔ 客戶完工出貨
+              <br />
+              自動同步設備在庫與維修狀態。
             </p>
           </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <button
-            onClick={fetchRecords}
-            disabled={loading}
-            style={{
-              padding: '8px 14px',
-              borderRadius: '8px',
-              border: '1px solid var(--border-color)',
-              backgroundColor: 'var(--bg-surface)',
-              color: 'var(--text-main)',
-              fontSize: '12px',
-              fontWeight: 700,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}
-          >
-            <RefreshCw size={14} className={loading ? 'spin' : ''} /> 重新整理
-          </button>
-          <button
-            onClick={() => setIsCreateModalOpen(true)}
-            style={{
-              padding: '8px 16px',
-              borderRadius: '8px',
-              border: 'none',
-              backgroundColor: '#ef4444',
-              color: '#ffffff',
-              fontSize: '13px',
-              fontWeight: 800,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              boxShadow: '0 4px 14px rgba(239, 68, 68, 0.35)'
-            }}
-          >
-            <Plus size={16} /> 新增維修單 (New RMA)
-          </button>
         </div>
       </div>
 
