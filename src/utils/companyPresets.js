@@ -1,5 +1,8 @@
 import logoImg from '../assets/logo.png';
 
+// 內建範本只是第一次使用時的起點。使用者改過之後一律以改過的為準：
+// 原廠值當初就建錯了，因此不提供「還原原廠預設」。
+// 經銷商不屬於公司範本 —— 借貨申請單上的經銷商從「客戶/廠商管理」挑選，沒選之前留空。
 export const DEFAULT_BUILTIN_PRESETS = {
   PRESET_B: {
     id: 'PRESET_B',
@@ -7,10 +10,6 @@ export const DEFAULT_BUILTIN_PRESETS = {
     logo: logoImg,
     headerRight: `竣喆國際有限公司\nDREAMJET INTERNATIONAL`,
     companySignName: '竣喆國際有限公司',
-    dealerName: '竣喆國際有限公司',
-    dealerSales: '業務專員',
-    dealerPhone: '02-8765-4321',
-    dealerAddress: '台北市內湖區',
     isBuiltin: true
   },
   PRESET_A: {
@@ -19,10 +18,6 @@ export const DEFAULT_BUILTIN_PRESETS = {
     logo: logoImg,
     headerRight: `METECH GLOBAL CONSULTANT PTY LTD\nDREAMJET INTERNATIONAL`,
     companySignName: 'METECH GLOBAL CONSULTANT PTY LTD',
-    dealerName: 'METECH GLOBAL CONSULTANT PTY LTD',
-    dealerSales: 'METECH Sales Rep',
-    dealerPhone: '+61 2 XXXX XXXX',
-    dealerAddress: 'Sydney, Australia',
     isBuiltin: true
   }
 };
@@ -100,11 +95,7 @@ export const saveCompanyPreset = (presetData) => {
         label: presetData.label,
         logo: presetData.logo || logoImg,
         headerRight: presetData.headerRight || '',
-        companySignName: presetData.companySignName || '',
-        dealerName: presetData.dealerName || '',
-        dealerSales: presetData.dealerSales || '',
-        dealerPhone: presetData.dealerPhone || '',
-        dealerAddress: presetData.dealerAddress || ''
+        companySignName: presetData.companySignName || ''
       };
       localStorage.setItem(BUILTIN_OVERRIDES_KEY, JSON.stringify(builtinOverrides));
       return {
@@ -141,27 +132,6 @@ export const saveCompanyPreset = (presetData) => {
     return newPreset;
   } catch (err) {
     console.error('Failed to save company preset', err);
-    throw err;
-  }
-};
-
-/**
- * 還原內建範本為原廠預設值
- */
-export const resetBuiltinCompanyPreset = (presetId) => {
-  if (!DEFAULT_BUILTIN_PRESETS[presetId]) {
-    throw new Error('不是系統內建範本，無法還原');
-  }
-  try {
-    const rawOverrides = localStorage.getItem(BUILTIN_OVERRIDES_KEY);
-    if (rawOverrides) {
-      const builtinOverrides = JSON.parse(rawOverrides) || {};
-      delete builtinOverrides[presetId];
-      localStorage.setItem(BUILTIN_OVERRIDES_KEY, JSON.stringify(builtinOverrides));
-    }
-    return DEFAULT_BUILTIN_PRESETS[presetId];
-  } catch (err) {
-    console.error('Failed to reset builtin company preset', err);
     throw err;
   }
 };

@@ -44,11 +44,11 @@ const LentOrderPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
     if (headerLayout === 'CENTERED') return 'center';
     return 'right';
   };
-  const [dealerName, setDealerName] = useState(() => getCompanyPresets().PRESET_A?.dealerName || '');
-  const [dealerSales, setDealerSales] = useState(() => getCompanyPresets().PRESET_A?.dealerSales || '');
-  const [dealerPhone, setDealerPhone] = useState(() => getCompanyPresets().PRESET_A?.dealerPhone || '');
-  const [dealerAddress, setDealerAddress] = useState(() => getCompanyPresets().PRESET_A?.dealerAddress || '');
-  // 客戶/廠商管理裡類型為「經銷商」的資料，選了就帶入經銷商區；未選時沿用公司範本的預設值
+  // 經銷商區不屬於公司範本：從「客戶/廠商管理」裡類型為經銷商的資料挑選，沒選之前一律留空
+  const [dealerName, setDealerName] = useState('');
+  const [dealerSales, setDealerSales] = useState('');
+  const [dealerPhone, setDealerPhone] = useState('');
+  const [dealerAddress, setDealerAddress] = useState('');
   const [dealers, setDealers] = useState([]);
   const [selectedDealerId, setSelectedDealerId] = useState('');
 
@@ -77,14 +77,15 @@ const LentOrderPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
   useEffect(() => {
     if (!isOpen || !dnData) return;
 
-    // 1. 設定申請公司與經銷商業務
+    // 1. 設定申請公司；經銷商區留空，等使用者挑選經銷商
     const companyName = dnData.customer || '';
     setApplyCompany(companyName);
     setCustCompany(companyName);
     setApplyDate(formatDateDot(dnData.shipping_date) || formatDateDot(new Date()));
-    if (dnData.creator_name) {
-      setDealerSales(dnData.creator_name);
-    }
+    setDealerName('');
+    setDealerSales('');
+    setDealerPhone('');
+    setDealerAddress('');
 
     // 2. 聯絡人、電話、地址剖析
     let parsedContact = '';
@@ -161,24 +162,14 @@ const LentOrderPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
       .catch((err) => { console.error('Load dealers error:', err); setDealers([]); });
   }, [isOpen]);
 
-  /** 從客戶/廠商管理帶入經銷商；選回「公司範本預設」則恢復範本上的經銷商資料 */
+  /** 從客戶/廠商管理帶入經銷商；選回「未選擇」則清空 */
   const handleDealerChange = (dealerId) => {
     setSelectedDealerId(dealerId);
     const dealer = dealers.find((d) => String(d.id) === String(dealerId));
-    if (dealer) {
-      setDealerName(dealer.name || '');
-      setDealerSales(dealer.contact || '');
-      setDealerPhone(dealer.phone || '');
-      setDealerAddress(dealer.address || '');
-      return;
-    }
-    const preset = presetsMap[selectedPreset];
-    if (preset) {
-      setDealerName(preset.dealerName);
-      setDealerSales(dnData?.creator_name || preset.dealerSales);
-      setDealerPhone(preset.dealerPhone);
-      setDealerAddress(preset.dealerAddress);
-    }
+    setDealerName(dealer?.name || '');
+    setDealerSales(dealer?.contact || '');
+    setDealerPhone(dealer?.phone || '');
+    setDealerAddress(dealer?.address || '');
   };
 
   // 監聽 Modal 開啟載入最新自訂範本
@@ -192,10 +183,6 @@ const LentOrderPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
       if (fallback) {
         setCurrentLogo(fallback.logo);
         setHeaderRightText(fallback.headerRight);
-        setDealerName(fallback.dealerName);
-        setDealerSales(dnData?.creator_name || fallback.dealerSales);
-        setDealerPhone(fallback.dealerPhone);
-        setDealerAddress(fallback.dealerAddress);
       }
     }
   }, [isOpen]);
@@ -203,16 +190,11 @@ const LentOrderPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
   // 切換公司範本
   const handlePresetChange = (presetKey) => {
     setSelectedPreset(presetKey);
-    // 換範本會把經銷商區換回範本的預設值，經銷商選單一併回到未選
-    setSelectedDealerId('');
+    // 換範本只換頁首與公司資訊，已選的經銷商不受影響
     const preset = presetsMap[presetKey];
     if (preset) {
       setCurrentLogo(preset.logo);
       setHeaderRightText(preset.headerRight);
-      setDealerName(preset.dealerName);
-      setDealerSales(dnData?.creator_name || preset.dealerSales);
-      setDealerPhone(preset.dealerPhone);
-      setDealerAddress(preset.dealerAddress);
     }
   };
 
@@ -226,10 +208,6 @@ const LentOrderPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
     if (activePreset) {
       setCurrentLogo(activePreset.logo);
       setHeaderRightText(activePreset.headerRight);
-      setDealerName(activePreset.dealerName);
-      setDealerSales(dnData?.creator_name || activePreset.dealerSales);
-      setDealerPhone(activePreset.dealerPhone);
-      setDealerAddress(activePreset.dealerAddress);
     }
   };
 
@@ -457,7 +435,7 @@ const LentOrderPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
                   maxWidth: '240px'
                 }}
               >
-                <option value="">{dealers.length === 0 ? '經銷商：尚無資料（請到客戶/廠商管理新增）' : '經銷商：公司範本預設'}</option>
+                <option value="">{dealers.length === 0 ? '經銷商：尚無資料（請到客戶/廠商管理新增）' : '經銷商：請選擇'}</option>
                 {dealers.map((d) => (
                   <option key={d.id} value={d.id}>{d.name}{d.contact ? `（${d.contact}）` : ''}</option>
                 ))}
