@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Printer, Download, X, Edit3, Check, RefreshCw, Building, Image as ImageIcon, FileText, Loader2, Settings, Handshake } from 'lucide-react';
+import { Printer, Download, X, Check, RefreshCw, Building, Image as ImageIcon, FileText, Loader2, Settings, Handshake } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { getCompanyPresets, loadCompanyPresets, DEFAULT_BUILTIN_PRESETS } from '../utils/companyPresets';
 import CompanyPresetModal from './CompanyPresetModal';
@@ -379,88 +379,86 @@ const LentOrderPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
     <div className="loan-modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="loan-modal-container">
         
-        {/* 頂部操作與自訂工具列 */}
+        {/* 頂部工具列：第一列是標題與主要動作，第二列是單據設定 */}
         <div className="loan-toolbar">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '14px', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div className="loan-toolbar-row">
+            <span className="loan-toolbar-title">
               <FileText size={18} color="#60a5fa" /> 借貨申請單預覽
             </span>
+            <div className="loan-toolbar-actions">
+              <button
+                onClick={handlePrint}
+                disabled={isPrinting}
+                className="loan-toolbar-btn loan-btn-primary"
+                title="啟動印表機列印，或在列印視窗中選擇另存為 PDF"
+              >
+                {isPrinting ? <Loader2 size={16} className="animate-spin" /> : <Printer size={16} />}
+                {isPrinting ? '準備列印中...' : '列印單據'}
+              </button>
+              <button
+                onClick={handleDownload}
+                disabled={isDownloading}
+                className="loan-toolbar-btn loan-btn-download"
+                title="下載高解析度借貨申請單圖檔 (PNG)"
+              >
+                {isDownloading ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                {isDownloading ? '下載生成中...' : '下載圖檔'}
+              </button>
+              <button onClick={onClose} className="loan-toolbar-btn loan-btn-secondary">
+                <X size={16} /> 關閉
+              </button>
+            </div>
+          </div>
 
-            {/* 公司版本選擇 */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Building size={16} color="var(--text-muted)" />
+          <div className="loan-toolbar-row loan-toolbar-settings">
+            {/* 公司範本 */}
+            <div className="loan-toolbar-field">
+              <span className="loan-toolbar-label"><Building size={14} /> 公司範本</span>
               <select
                 value={selectedPreset}
                 onChange={(e) => handlePresetChange(e.target.value)}
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: '6px',
-                  border: '1px solid var(--border-color)',
-                  backgroundColor: 'var(--bg-surface-subtle)',
-                  color: 'var(--text-main)',
-                  fontSize: '12px',
-                  fontWeight: '700',
-                  outline: 'none'
-                }}
+                className="loan-toolbar-select"
+                aria-label="公司範本"
               >
                 {Object.values(presetsMap).map(p => (
                   <option key={p.id} value={p.id}>{p.label}</option>
                 ))}
               </select>
-
               <button
                 onClick={() => setIsPresetModalOpen(true)}
-                className="loan-toolbar-btn loan-btn-secondary"
+                className="loan-toolbar-btn loan-btn-secondary loan-toolbar-btn-sm"
                 title="管理與新增自訂公司範本"
-                style={{ padding: '6px 8px' }}
               >
                 <Settings size={13} /> 管理範本
               </button>
             </div>
 
             {/* 經銷商：從客戶/廠商管理帶入 */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Handshake size={16} color="var(--text-muted)" />
+            <div className="loan-toolbar-field">
+              <span className="loan-toolbar-label"><Handshake size={14} /> 經銷商</span>
               <select
                 value={selectedDealerId}
                 onChange={(e) => handleDealerChange(e.target.value)}
                 aria-label="經銷商"
                 title="從「客戶/廠商管理」帶入經銷商的名稱、聯絡人、電話與地址"
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: '6px',
-                  border: '1px solid var(--border-color)',
-                  backgroundColor: 'var(--bg-surface-subtle)',
-                  color: 'var(--text-main)',
-                  fontSize: '12px',
-                  fontWeight: '700',
-                  outline: 'none',
-                  maxWidth: '240px'
-                }}
+                className="loan-toolbar-select"
+                style={{ maxWidth: '240px' }}
               >
-                <option value="">{dealers.length === 0 ? '經銷商：尚無資料（請到客戶/廠商管理新增）' : '經銷商：請選擇'}</option>
+                <option value="">{dealers.length === 0 ? '尚無資料（請到客戶/廠商管理新增）' : '請選擇'}</option>
                 {dealers.map((d) => (
                   <option key={d.id} value={d.id}>{d.name}{d.contact ? `（${d.contact}）` : ''}</option>
                 ))}
               </select>
             </div>
 
-            {/* 頁首版型切換 */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '12px', fontWeight: 800, color: 'var(--text-muted)' }}>頁首版型:</span>
+            {/* 頁首版型 */}
+            <div className="loan-toolbar-field">
+              <span className="loan-toolbar-label"><ImageIcon size={14} /> 頁首版型</span>
               <select
                 value={headerLayout}
                 onChange={(e) => setHeaderLayout(e.target.value)}
-                style={{
-                  padding: '6px 10px',
-                  borderRadius: '6px',
-                  border: '1px solid var(--border-color)',
-                  backgroundColor: 'var(--bg-surface-subtle)',
-                  color: 'var(--text-main)',
-                  fontSize: '12px',
-                  fontWeight: '700',
-                  outline: 'none'
-                }}
+                className="loan-toolbar-select"
+                aria-label="頁首版型"
                 title="自訂頁首 LOGO 與公司文字排列方式"
               >
                 <option value="STANDARD">標準商務 (Logo左 / 文字右)</option>
@@ -469,58 +467,29 @@ const LentOrderPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
                 <option value="CENTERED">品牌置中 (Logo中 / 文字中 - 上下)</option>
                 <option value="REVERSE">現代反向 (Logo右 / 文字左)</option>
               </select>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="loan-toolbar-btn loan-btn-secondary loan-toolbar-btn-sm"
+                title="上傳並更換左上角 LOGO 圖片"
+              >
+                <ImageIcon size={13} /> 更換 LOGO
+              </button>
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleLogoUpload}
+                accept="image/*"
+                style={{ display: 'none' }}
+              />
             </div>
 
-            {/* 更換 LOGO 按鈕 */}
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="loan-toolbar-btn loan-btn-secondary"
-              title="上傳並更換左上角 LOGO 圖片"
-            >
-              <ImageIcon size={15} /> 更換 LOGO
-            </button>
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleLogoUpload}
-              accept="image/*"
-              style={{ display: 'none' }}
-            />
-
-            {/* 編輯開關 */}
+            {/* 編輯開關：只留橘色的筆，不再另外加圖示 */}
             <button
               onClick={() => setIsEditMode(!isEditMode)}
-              className={`loan-toolbar-btn ${isEditMode ? 'loan-btn-primary' : 'loan-btn-secondary'}`}
+              className={`loan-toolbar-btn loan-toolbar-btn-sm ${isEditMode ? 'loan-btn-primary' : 'loan-btn-secondary'}`}
+              style={{ marginLeft: 'auto' }}
             >
-              {isEditMode ? <Check size={15} /> : <Edit3 size={15} />}
-              {isEditMode ? '完成並鎖定編輯' : '✏️ 進入即時編輯模式'}
-            </button>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <button
-              onClick={handlePrint}
-              disabled={isPrinting}
-              className="loan-toolbar-btn loan-btn-primary"
-              title="啟動印表機列印，或在列印視窗中選擇另存為 PDF"
-            >
-              {isPrinting ? <Loader2 size={16} className="animate-spin" /> : <Printer size={16} />}
-              {isPrinting ? '準備列印中...' : '🖨️ 列印單據'}
-            </button>
-            <button
-              onClick={handleDownload}
-              disabled={isDownloading}
-              className="loan-toolbar-btn loan-btn-download"
-              title="下載高解析度借貨申請單圖檔 (PNG)"
-            >
-              {isDownloading ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-              {isDownloading ? '下載生成中...' : '📥 下載圖檔'}
-            </button>
-            <button
-              onClick={onClose}
-              className="loan-toolbar-btn loan-btn-secondary"
-            >
-              <X size={16} /> 關閉
+              {isEditMode ? <><Check size={13} /> 完成並鎖定編輯</> : '✏️ 進入即時編輯模式'}
             </button>
           </div>
         </div>
