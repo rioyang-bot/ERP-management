@@ -762,3 +762,14 @@
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+/* 「從清單選取」：次要按鈕，與「加入」主按鈕區分 */
+.sn-search-box button.pick-list-btn {
+  background: var(--bg-surface, #ffffff);
+  color: var(--primary-color, #2563eb);
+  border: 1px solid var(--primary-color, #2563eb);
+  white-space: nowrap;
+}
+.sn-search-box button.pick-list-btn:hover:not(:disabled) {
+  background: var(--primary-bg, rgba(37, 99, 235, 0.08));
+}
