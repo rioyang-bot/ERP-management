@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Printer, Download, X, Edit3, Check, RefreshCw, Building, Image as ImageIcon, Plus, Trash2, Loader2, Settings } from 'lucide-react';
 import html2canvas from 'html2canvas';
-import { getCompanyPresets, DEFAULT_BUILTIN_PRESETS } from '../utils/companyPresets';
+import { getCompanyPresets, loadCompanyPresets, DEFAULT_BUILTIN_PRESETS } from '../utils/companyPresets';
 import CompanyPresetModal from './CompanyPresetModal';
 import logoImg from '../assets/logo.png';
 import './DeliveryReceiptPrintModal.css';
@@ -165,20 +165,23 @@ const DeliveryReceiptPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
     setTableRows(parsedRows);
   }, [isOpen, dnData, items]);
 
-  // 監聽 Modal 開啟載入最新自訂範本
+  // 開啟時從伺服器讀取最新範本（所有人共用），並套用目前選的那一個
   useEffect(() => {
     if (!isOpen) return;
-    const allPresets = getCompanyPresets();
-    setPresetsMap(allPresets);
-    if (!allPresets[selectedPreset]) {
-      setSelectedPreset('PRESET_B');
-      const fallback = allPresets.PRESET_B || Object.values(allPresets)[0];
-      if (fallback) {
-        setCurrentLogo(fallback.logo);
-        setHeaderRightText(fallback.headerRight);
-        setCompanySignName(fallback.companySignName);
+    let cancelled = false;
+    loadCompanyPresets().then((allPresets) => {
+      if (cancelled) return;
+      setPresetsMap(allPresets);
+      const key = allPresets[selectedPreset] ? selectedPreset : (allPresets.PRESET_B ? 'PRESET_B' : Object.keys(allPresets)[0]);
+      setSelectedPreset(key);
+      const preset = allPresets[key];
+      if (preset) {
+        setCurrentLogo(preset.logo);
+        setHeaderRightText(preset.headerRight);
+        setCompanySignName(preset.companySignName);
       }
-    }
+    });
+    return () => { cancelled = true; };
   }, [isOpen]);
 
   // 切換公司預設

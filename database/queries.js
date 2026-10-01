@@ -872,6 +872,14 @@ export const queries = {
       FROM purchase_records pr LEFT JOIN partners p ON pr.partner_id = p.id LEFT JOIN categories c ON pr.category_id = c.id LEFT JOIN users u ON pr.purchaser_id = u.id 
       WHERE pr.order_no = $1 ORDER BY pr.id ASC`,
   deletePurchaseRecordById: `DELETE FROM purchase_records WHERE id = $1 AND COALESCE(received_quantity, 0) = 0 RETURNING id`,
+  // --- 公司範本（借貨申請單、簽收單的頁首與簽章公司），所有人共用一份 ---
+  // 整份範本存成一筆 JSON 文字，讀寫邏輯見 src/utils/companyPresets.js
+  fetchCompanyPresets: `SELECT value, updated_at FROM system_configs WHERE key = 'company_presets'`,
+  saveCompanyPresets: `
+    INSERT INTO system_configs (key, value, description, updated_at)
+    VALUES ('company_presets', $1, '公司範本（借貨申請單、簽收單的頁首 LOGO、頁首文字與簽章公司名稱）', CURRENT_TIMESTAMP)
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP
+    RETURNING updated_at`,
   // 借貨申請單的「經銷商」區從這裡帶入：名稱、聯絡人（經銷商業務）、電話、地址
   fetchDealers: `SELECT id, name, contact_person as contact, phone, address FROM partners WHERE partner_type = 'DEALER' AND COALESCE(is_active, TRUE) = true ORDER BY name ASC, contact_person ASC`,
   fetchSuppliers: `SELECT id, name, contact_person as contact, phone, address FROM partners WHERE partner_type IN ('SUPPLIER', 'DEALER') AND COALESCE(is_active, TRUE) = true ORDER BY name ASC, contact_person ASC`,

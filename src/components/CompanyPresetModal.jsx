@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Building, Plus, Edit3, Trash2, X, Check, Image as ImageIcon, Shield, Save, RotateCcw } from 'lucide-react';
-import { getCompanyPresets, saveCompanyPreset, deleteCompanyPreset, DEFAULT_BUILTIN_PRESETS } from '../utils/companyPresets';
+import { getCompanyPresets, loadCompanyPresets, saveCompanyPreset, deleteCompanyPreset, DEFAULT_BUILTIN_PRESETS, MAX_LOGO_BYTES } from '../utils/companyPresets';
+import { logCreate, logUpdate, logDelete } from '../utils/auditLogger';
 import logoImg from '../assets/logo.png';
 import './CompanyPresetModal.css';
 
@@ -19,9 +20,12 @@ const CompanyPresetModal = ({ isOpen, onClose, onPresetsUpdated }) => {
   const [errorMsg, setErrorMsg] = useState('');
   const fileInputRef = useRef(null);
 
-  const loadPresets = () => {
-    const list = getCompanyPresets();
-    setPresets(list);
+  const [saving, setSaving] = useState(false);
+
+  // 範本存在伺服器上，所有人共用；先顯示手上的，再換成伺服器上最新的
+  const loadPresets = async () => {
+    setPresets(getCompanyPresets());
+    setPresets(await loadCompanyPresets());
   };
 
   useEffect(() => {
@@ -55,6 +59,11 @@ const CompanyPresetModal = ({ isOpen, onClose, onPresetsUpdated }) => {
 
   const handleLogoUpload = (e) => {
     const file = e.target.files?.[0];
+    if (file && file.size > MAX_LOGO_BYTES) {
+      setErrorMsg(`LOGO 圖片不可超過 1 MB（目前 ${(file.size / 1024 / 1024).toFixed(1)} MB）`);
+      e.target.value = '';
+      return;
+    }
     if (file) {
       const reader = new FileReader();
       reader.onload = (event) => {
@@ -64,16 +73,22 @@ const CompanyPresetModal = ({ isOpen, onClose, onPresetsUpdated }) => {
     }
   };
 
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
     e.preventDefault();
     if (!formData.label.trim()) {
       setErrorMsg('請填寫範本名稱');
       return;
     }
 
+    setSaving(true);
     try {
-      const saved = saveCompanyPreset(formData);
-      loadPresets();
+      const isNew = !formData.id;
+      const saved = await saveCompanyPreset(formData);
+      // 範本是所有人共用的，改了什麼要留得下來
+      (isNew ? logCreate : logUpdate)('SETTING', saved.id, saved.label,
+        `${isNew ? '新增' : '修改'}公司範本 [${saved.label}]`,
+        { id: saved.id, label: saved.label, headerRight: saved.headerRight, companySignName: saved.companySignName });
+      await loadPresets();
       setIsEditing(false);
       setFormData(emptyForm);
       setErrorMsg('');
@@ -82,14 +97,18 @@ const CompanyPresetModal = ({ isOpen, onClose, onPresetsUpdated }) => {
       }
     } catch (err) {
       setErrorMsg(err.message || '儲存範本失敗');
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleDelete = (presetId) => {
-    if (window.confirm('確定要刪除此自訂公司範本嗎？')) {
+  const handleDelete = async (presetId) => {
+    if (window.confirm('確定要刪除此自訂公司範本嗎？\n\n範本是所有人共用的，刪除後其他人也看不到。')) {
       try {
-        deleteCompanyPreset(presetId);
-        loadPresets();
+        const label = presets[presetId]?.label || presetId;
+        await deleteCompanyPreset(presetId);
+        logDelete('SETTING', presetId, label, `刪除公司範本 [${label}]`, { id: presetId, label });
+        await loadPresets();
         if (onPresetsUpdated) {
           onPresetsUpdated('PRESET_B');
         }
@@ -116,6 +135,9 @@ const CompanyPresetModal = ({ isOpen, onClose, onPresetsUpdated }) => {
 
         {/* Modal 內容區 */}
         <div className="company-preset-body">
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '10px' }}>
+            範本存在伺服器上，所有人共用同一份；在這裡修改，其他人列印時也會看到。
+          </div>
           
           {/* 現有範本清單 */}
           <div className="preset-list-section">
@@ -282,8 +304,9 @@ const CompanyPresetModal = ({ isOpen, onClose, onPresetsUpdated }) => {
                 <button
                   type="submit"
                   className="preset-btn preset-btn-success"
+                  disabled={saving}
                 >
-                  <Save size={14} /> 儲存範本
+                  <Save size={14} /> {saving ? '儲存中…' : '儲存範本'}
                 </button>
               </div>
             </form>

@@ -275,7 +275,9 @@ app.use(cors({
   },
   credentials: true,
 }));
-app.use(express.json());
+// 公司範本的 LOGO 以 data: 網址存在範本裡（單張上限 1 MB，見 src/utils/companyPresets.js），
+// 預設的 100 KB 一張圖就超過了
+app.use(express.json({ limit: '5mb' }));
 
 const auth = createAuth(pool);
 
