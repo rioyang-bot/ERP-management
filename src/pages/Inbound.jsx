@@ -611,27 +611,47 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
                       border: '1px solid rgba(37, 99, 235, 0.3)',
                       gap: '8px'
                     }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 800, fontSize: '13px', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                          <span>{selected.brand} {selected.model}</span>
-                          {/* 標明這筆還沒建進資料庫，避免與既有品項混淆 */}
-                          {selected.isPending && (
-                            <span style={{ fontSize: '10px', fontWeight: 800, padding: '1px 6px', borderRadius: '10px', backgroundColor: 'rgba(217, 119, 6, 0.15)', color: '#d97706' }}>
-                              送出後才建立
-                            </span>
-                          )}
-                          {selected.current_stock !== undefined && (
-                            <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>
-                              (目前庫存: {selected.current_stock} {selected.unit || '個'})
-                            </span>
-                          )}
-                        </div>
-                        {selected.specification && (
-                          <div style={{ fontSize: '11px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={selected.specification}>
-                            {selected.specification}
+                      {(() => {
+                        // 類型、廠牌、型號、規格四項都要看得到，才能確認打得對不對。
+                        // 快速新增的暫存品項把規格存在 spec，資料庫的品項叫 specification。
+                        const spec = (selected.specification ?? selected.spec ?? '').trim();
+                        const fullName = [selected.type, selected.brand, selected.model, spec].filter(Boolean).join(' / ');
+                        return (
+                          <div style={{ flex: 1, minWidth: 0 }} title={fullName} data-testid={`inbound-item-${row.id}`}>
+                            {/* 第一行：類型＋廠牌＋型號 */}
+                            <div style={{ fontWeight: 800, fontSize: '13px', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                              {selected.type && (
+                                <span style={{ flexShrink: 0, fontSize: '10px', fontWeight: 800, padding: '1px 6px', borderRadius: '4px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
+                                  {selected.type}
+                                </span>
+                              )}
+                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {[selected.brand, selected.model].filter(Boolean).join(' ') || '（未填廠牌／型號）'}
+                              </span>
+                            </div>
+                            {/* 第二行：規格，沒填也要明講，不要留白讓人以為漏看 */}
+                            <div style={{ fontSize: '11px', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: spec ? 'var(--text-muted)' : 'var(--text-subtle)', fontStyle: spec ? 'normal' : 'italic' }}>
+                              {spec || '未填規格'}
+                            </div>
+                            {/* 第三行：狀態標籤，另起一行，不會擠掉上面的資料 */}
+                            {(selected.isPending || selected.current_stock !== undefined) && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px', flexWrap: 'wrap' }}>
+                                {/* 標明這筆還沒建進資料庫，避免與既有品項混淆 */}
+                                {selected.isPending && (
+                                  <span style={{ fontSize: '10px', fontWeight: 800, padding: '1px 6px', borderRadius: '10px', backgroundColor: 'rgba(217, 119, 6, 0.15)', color: '#d97706' }}>
+                                    送出後才建立
+                                  </span>
+                                )}
+                                {selected.current_stock !== undefined && (
+                                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600 }}>
+                                    (目前庫存: {selected.current_stock} {selected.unit || '個'})
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
+                        );
+                      })()}
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <button
                           type="button"
