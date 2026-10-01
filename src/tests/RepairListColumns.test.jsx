@@ -58,6 +58,15 @@ describe('維修單列表的欄位', () => {
     return cells()[i];
   };
 
+  it('上方統計卡片：總維修單數排在完工出貨（已結案）後面', async () => {
+    await open();
+    const CARDS = ['🟢 現場處理 (在庫)', '🟠 送修原廠 (維修中)', '🟣 原廠返還 (在庫)', '🔵 完工出貨 (已結案)', '總維修單數'];
+    const labels = [...document.querySelectorAll('div')]
+      .map((d) => d.textContent.trim())
+      .filter((t) => CARDS.includes(t));
+    expect(labels).toEqual(CARDS);
+  });
+
   it('欄位順序：維修時程排在當前狀態後面', async () => {
     await open();
     expect(headers()).toEqual([

@@ -258,21 +258,6 @@ const RepairList = () => {
         marginBottom: '12px'
       }}>
         <div
-          onClick={() => setActiveTab('ALL')}
-          style={{
-            backgroundColor: 'var(--bg-surface)',
-            padding: '10px 14px',
-            borderRadius: '10px',
-            border: activeTab === 'ALL' ? '2px solid var(--primary-color)' : '1px solid var(--border-color)',
-            cursor: 'pointer',
-            boxShadow: 'var(--card-shadow)'
-          }}
-        >
-          <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)' }}>總維修單數</div>
-          <div style={{ fontSize: '20px', fontWeight: 900, marginTop: '2px', color: 'var(--text-main)' }}>{stats.total}</div>
-        </div>
-
-        <div
           onClick={() => setActiveTab('ON_SITE_HANDLING')}
           style={{
             backgroundColor: 'var(--bg-surface)',
@@ -330,6 +315,21 @@ const RepairList = () => {
         >
           <div style={{ fontSize: '11px', fontWeight: 700, color: '#3b82f6' }}>🔵 完工出貨 (已結案)</div>
           <div style={{ fontSize: '20px', fontWeight: 900, marginTop: '2px', color: '#3b82f6' }}>{stats.completed}</div>
+        </div>
+
+        <div
+          onClick={() => setActiveTab('ALL')}
+          style={{
+            backgroundColor: 'var(--bg-surface)',
+            padding: '10px 14px',
+            borderRadius: '10px',
+            border: activeTab === 'ALL' ? '2px solid var(--primary-color)' : '1px solid var(--border-color)',
+            cursor: 'pointer',
+            boxShadow: 'var(--card-shadow)'
+          }}
+        >
+          <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)' }}>總維修單數</div>
+          <div style={{ fontSize: '20px', fontWeight: 900, marginTop: '2px', color: 'var(--text-main)' }}>{stats.total}</div>
         </div>
       </div>
 
