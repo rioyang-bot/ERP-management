@@ -1,7 +1,12 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
+
+// 維修單列表的已結案單預設只顯示近 3 個月：把「今天」固定住，
+// 假資料的日期才不會隔一段時間就過期、讓測試無緣無故失敗。只假造 Date，計時器照常。
+beforeAll(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-01T10:00:00')); });
+afterAll(() => { vi.useRealTimers(); });
 import RepairList from '../pages/RepairList';
 
 /**
@@ -58,13 +63,15 @@ describe('維修單列表的欄位', () => {
     return cells()[i];
   };
 
-  it('上方統計卡片：總維修單數排在完工出貨（已結案）後面', async () => {
+  // 總維修單數會一直累積、日常用不到，已拿掉（見 RepairListPeriod.test.jsx）
+  it('上方統計卡片依處理流程排列，沒有累積的總維修單數', async () => {
     await open();
-    const CARDS = ['🟢 現場處理 (在庫)', '🟠 送修原廠 (維修中)', '🟣 原廠返還 (在庫)', '🔵 完工出貨 (已結案)', '總維修單數'];
+    const CARDS = ['🟢 現場處理 (在庫)', '🟠 送修原廠 (維修中)', '🟣 原廠返還 (在庫)', '🔵 完工出貨 (已結案)'];
     const labels = [...document.querySelectorAll('div')]
       .map((d) => d.textContent.trim())
       .filter((t) => CARDS.includes(t));
     expect(labels).toEqual(CARDS);
+    expect(screen.queryByText('總維修單數')).not.toBeInTheDocument();
   });
 
   it('欄位順序：維修時程排在當前狀態後面', async () => {

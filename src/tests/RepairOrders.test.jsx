@@ -1,9 +1,14 @@
 import React from 'react';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
 import RepairList from '../pages/RepairList';
 import RepairOrderRegistrationModal from '../components/RepairOrderRegistrationModal';
 import RepairActionModal from '../components/RepairActionModal';
+
+// 維修單列表的已結案單預設只顯示近 3 個月：把「今天」固定住，
+// 假資料的日期才不會隔一段時間就過期、讓測試無緣無故失敗。只假造 Date，計時器照常。
+beforeAll(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-01T10:00:00')); });
+afterAll(() => { vi.useRealTimers(); });
 import { MemoryRouter } from 'react-router-dom';
 
 describe('維修單管理系統 (Repair Orders / RMA List) 四階段流程與設備狀態連動測試', () => {
