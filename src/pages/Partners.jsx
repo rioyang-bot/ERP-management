@@ -1,8 +1,21 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { UserPlus, Trash2, Edit2, Search, X, Save, UserCheck, Truck, Users, MapPin } from 'lucide-react';
+import { UserPlus, Trash2, Edit2, Search, X, Save, UserCheck, Truck, Users, MapPin, Handshake } from 'lucide-react';
 import { logCreate, logUpdate, logDelete, logStatusChange } from '../utils/auditLogger';
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
+
+/**
+ * 夥伴類型。經銷商同時出現在客戶與供應商的下拉選單裡
+ * （fetchCustomers / fetchSuppliers），出貨給它、向它採購都選得到。
+ */
+const PARTNER_TYPES = {
+  CUSTOMER: { value: 'CUSTOMER', label: '客戶', Icon: UserCheck, color: '#3b82f6', text: '#60a5fa', soft: 'rgba(59, 130, 246, 0.15)', border: 'rgba(59, 130, 246, 0.3)', shadow: 'rgba(59,130,246,0.3)' },
+  SUPPLIER: { value: 'SUPPLIER', label: '供應商', Icon: Truck, color: '#f97316', text: '#fb923c', soft: 'rgba(249, 115, 22, 0.15)', border: 'rgba(249, 115, 22, 0.3)', shadow: 'rgba(249,115,22,0.3)' },
+  DEALER: { value: 'DEALER', label: '經銷商', Icon: Handshake, color: '#8b5cf6', text: '#a78bfa', soft: 'rgba(139, 92, 246, 0.15)', border: 'rgba(139, 92, 246, 0.3)', shadow: 'rgba(139,92,246,0.3)' },
+};
+const PARTNER_TYPE_LIST = Object.values(PARTNER_TYPES);
+const typeMeta = (type) => PARTNER_TYPES[type] || PARTNER_TYPES.CUSTOMER;
+const typeLabel = (type) => (PARTNER_TYPES[type] ? PARTNER_TYPES[type].label : type);
 
 const Partners = () => {
   const [partners, setPartners] = useState([]);
@@ -67,7 +80,7 @@ const Partners = () => {
     try {
       const dupRes = await window.electronAPI.namedQuery('checkDuplicatePartner', [formData.type, cleanName, cleanContact]);
       if (dupRes.success && dupRes.rows.length > 0) {
-        return alert(`系統訊息：[${formData.type === 'CUSTOMER' ? '客戶' : '供應商'}]「${cleanName}」已存在聯絡人「${cleanContact}」，不可重複建立！`);
+        return alert(`系統訊息：[${typeLabel(formData.type)}]「${cleanName}」已存在聯絡人「${cleanContact}」，不可重複建立！`);
       }
     } catch(err) {
       console.error('Duplicate check error:', err);
@@ -90,8 +103,8 @@ const Partners = () => {
       logCreate(
         'PARTNER', 
         cleanName, 
-        formData.type === 'CUSTOMER' ? '客戶' : '供應商', 
-        `新增夥伴 [${cleanName}] 聯絡人: [${cleanContact}] 專案: [${cleanProjectInfo}] 類別: ${formData.type === 'CUSTOMER' ? '客戶' : '供應商'}`, 
+        typeLabel(formData.type), 
+        `新增夥伴 [${cleanName}] 聯絡人: [${cleanContact}] 專案: [${cleanProjectInfo}] 類別: ${typeLabel(formData.type)}`, 
         { type: formData.type, name: cleanName, contact: cleanContact, phone: cleanPhone, address: cleanAddress, project_info: cleanProjectInfo }
       );
       await fetchPartners();
@@ -134,7 +147,7 @@ const Partners = () => {
     try {
       const dupRes = await window.electronAPI.namedQuery('checkDuplicatePartnerForUpdate', [editingItem.type, cleanName, cleanContact, editingItem.id]);
       if (dupRes.success && dupRes.rows.length > 0) {
-        return alert(`系統訊息：[${editingItem.type === 'CUSTOMER' ? '客戶' : '供應商'}]「${cleanName}」已存在聯絡人「${cleanContact}」，不可重複建立！`);
+        return alert(`系統訊息：[${typeLabel(editingItem.type)}]「${cleanName}」已存在聯絡人「${cleanContact}」，不可重複建立！`);
       }
     } catch(err) {
       console.error('Duplicate check error on update:', err);
@@ -184,8 +197,7 @@ const Partners = () => {
   };
 
   const allCount = partners.length;
-  const customerCount = partners.filter(p => p.type === 'CUSTOMER').length;
-  const supplierCount = partners.filter(p => p.type === 'SUPPLIER').length;
+  const countOf = (type) => partners.filter(p => p.type === type).length;
 
   const filteredPartners = partners.filter(p => {
     if (typeFilter !== 'ALL' && p.type !== typeFilter) return false;
@@ -282,67 +294,43 @@ const Partners = () => {
                 }}>{allCount}</span>
               </button>
 
-              <button
-                type="button"
-                onClick={() => { setTypeFilter('CUSTOMER'); setCurrentPage(1); }}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '6px 14px',
-                  borderRadius: '7px',
-                  border: 'none',
-                  fontSize: '13px',
-                  fontWeight: '800',
-                  cursor: 'pointer',
-                  backgroundColor: typeFilter === 'CUSTOMER' ? '#3b82f6' : 'transparent',
-                  color: typeFilter === 'CUSTOMER' ? '#fff' : 'var(--text-muted)',
-                  boxShadow: typeFilter === 'CUSTOMER' ? '0 2px 6px rgba(59,130,246,0.3)' : 'none',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                <UserCheck size={14} />
-                <span>客戶</span>
-                <span style={{
-                  padding: '1px 6px',
-                  borderRadius: '10px',
-                  fontSize: '11px',
-                  fontWeight: '800',
-                  backgroundColor: typeFilter === 'CUSTOMER' ? 'rgba(255,255,255,0.25)' : 'rgba(59, 130, 246, 0.15)',
-                  color: typeFilter === 'CUSTOMER' ? '#fff' : '#3b82f6'
-                }}>{customerCount}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => { setTypeFilter('SUPPLIER'); setCurrentPage(1); }}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '6px 14px',
-                  borderRadius: '7px',
-                  border: 'none',
-                  fontSize: '13px',
-                  fontWeight: '800',
-                  cursor: 'pointer',
-                  backgroundColor: typeFilter === 'SUPPLIER' ? '#f97316' : 'transparent',
-                  color: typeFilter === 'SUPPLIER' ? '#fff' : 'var(--text-muted)',
-                  boxShadow: typeFilter === 'SUPPLIER' ? '0 2px 6px rgba(249,115,22,0.3)' : 'none',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                <Truck size={14} />
-                <span>供應商</span>
-                <span style={{
-                  padding: '1px 6px',
-                  borderRadius: '10px',
-                  fontSize: '11px',
-                  fontWeight: '800',
-                  backgroundColor: typeFilter === 'SUPPLIER' ? 'rgba(255,255,255,0.25)' : 'rgba(249, 115, 22, 0.15)',
-                  color: typeFilter === 'SUPPLIER' ? '#fff' : '#f97316'
-                }}>{supplierCount}</span>
-              </button>
+              {PARTNER_TYPE_LIST.map((t) => {
+                const active = typeFilter === t.value;
+                const { Icon } = t;
+                return (
+                  <button
+                    key={t.value}
+                    type="button"
+                    onClick={() => { setTypeFilter(t.value); setCurrentPage(1); }}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '6px 14px',
+                      borderRadius: '7px',
+                      border: 'none',
+                      fontSize: '13px',
+                      fontWeight: '800',
+                      cursor: 'pointer',
+                      backgroundColor: active ? t.color : 'transparent',
+                      color: active ? '#fff' : 'var(--text-muted)',
+                      boxShadow: active ? `0 2px 6px ${t.shadow}` : 'none',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <Icon size={14} />
+                    <span>{t.label}</span>
+                    <span style={{
+                      padding: '1px 6px',
+                      borderRadius: '10px',
+                      fontSize: '11px',
+                      fontWeight: '800',
+                      backgroundColor: active ? 'rgba(255,255,255,0.25)' : t.soft,
+                      color: active ? '#fff' : t.color
+                    }}>{countOf(t.value)}</span>
+                  </button>
+                );
+              })}
             </div>
 
             {/* 搜尋框 */}
@@ -371,6 +359,7 @@ const Partners = () => {
                 <select name="type" value={formData.type} onChange={handleChange} style={inputStyle}>
                   <option value="CUSTOMER">客戶 (Customer)</option>
                   <option value="SUPPLIER">供應商 (Supplier)</option>
+                  <option value="DEALER">經銷商 (Dealer)</option>
                 </select>
               </div>
               <div>
@@ -458,12 +447,12 @@ const Partners = () => {
                         <td style={tdStyle}>
                           <span style={{ 
                             padding: '4px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '800', display: 'inline-flex', alignItems: 'center', gap: '4px',
-                            backgroundColor: p.type === 'CUSTOMER' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(249, 115, 22, 0.15)',
-                            color: p.type === 'CUSTOMER' ? '#60a5fa' : '#fb923c',
-                            border: p.type === 'CUSTOMER' ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid rgba(249, 115, 22, 0.3)'
+                            backgroundColor: typeMeta(p.type).soft,
+                            color: typeMeta(p.type).text,
+                            border: `1px solid ${typeMeta(p.type).border}`
                           }}>
-                            {p.type === 'CUSTOMER' ? <UserCheck size={12} /> : <Truck size={12} />}
-                            {p.type === 'CUSTOMER' ? '客戶' : '供應商'}
+                            {React.createElement(typeMeta(p.type).Icon, { size: 12 })}
+                            {typeLabel(p.type)}
                           </span>
                         </td>
                         <td style={{ ...tdStyle, fontWeight: '800', color: 'var(--text-main)' }}>{p.name}</td>
@@ -570,6 +559,7 @@ const Partners = () => {
                 <select value={editingItem.type} onChange={(e) => setEditingItem({...editingItem, type: e.target.value})} style={inputStyle}>
                   <option value="CUSTOMER">客戶 (Customer)</option>
                   <option value="SUPPLIER">供應商 (Supplier)</option>
+                  <option value="DEALER">經銷商 (Dealer)</option>
                 </select>
               </div>
               <div>
