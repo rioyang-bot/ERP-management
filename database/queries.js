@@ -567,7 +567,8 @@ export const queries = {
     RETURNING id`,
 
   // Dashboard / Misc
-  fetchCustomers: `SELECT id, name, contact_person as contact, phone, address FROM partners WHERE partner_type = 'CUSTOMER' AND COALESCE(is_active, TRUE) = true ORDER BY name ASC, contact_person ASC`,
+  // 經銷商同時是客戶（出貨給它）與供應商（向它採購），兩邊的選單都要列出來
+  fetchCustomers: `SELECT id, name, contact_person as contact, phone, address FROM partners WHERE partner_type IN ('CUSTOMER', 'DEALER') AND COALESCE(is_active, TRUE) = true ORDER BY name ASC, contact_person ASC`,
   fetchAssetSns: `SELECT sn FROM assets WHERE sn IS NOT NULL AND sn != ''`,
   // 重新匯入補齊空白欄位：先取出檔案裡這些序號在系統中目前的內容，
   // 才知道哪些欄位是空的、哪些已經有值不能動。
@@ -605,7 +606,10 @@ export const queries = {
       updated_at = CURRENT_TIMESTAMP
     WHERE id = $1
     RETURNING id, sn`,
-  insertCustomerIfNotExist: `INSERT INTO partners (partner_type, name) SELECT 'CUSTOMER', $1 WHERE NOT EXISTS (SELECT 1 FROM partners WHERE name = $1 AND partner_type = 'CUSTOMER')`,
+  // 已經登記成經銷商的就不再另建一筆同名客戶。
+  // $1 要明確轉型：同一個參數同時出現在 SELECT 清單與 WHERE 比較裡，
+  // PostgreSQL 推斷出兩種型別而拒絕執行（先前這支一直失敗，批次匯入從未自動建立過客戶）。
+  insertCustomerIfNotExist: `INSERT INTO partners (partner_type, name) SELECT 'CUSTOMER', $1::varchar WHERE NOT EXISTS (SELECT 1 FROM partners WHERE name = $1::varchar AND partner_type IN ('CUSTOMER', 'DEALER'))`,
   
   // Assets.jsx
   fetchRecentAssets: `
@@ -868,7 +872,9 @@ export const queries = {
       FROM purchase_records pr LEFT JOIN partners p ON pr.partner_id = p.id LEFT JOIN categories c ON pr.category_id = c.id LEFT JOIN users u ON pr.purchaser_id = u.id 
       WHERE pr.order_no = $1 ORDER BY pr.id ASC`,
   deletePurchaseRecordById: `DELETE FROM purchase_records WHERE id = $1 AND COALESCE(received_quantity, 0) = 0 RETURNING id`,
-  fetchSuppliers: `SELECT id, name, contact_person as contact, phone, address FROM partners WHERE partner_type = 'SUPPLIER' AND COALESCE(is_active, TRUE) = true ORDER BY name ASC, contact_person ASC`,
+  // 借貨申請單的「經銷商」區從這裡帶入：名稱、聯絡人（經銷商業務）、電話、地址
+  fetchDealers: `SELECT id, name, contact_person as contact, phone, address FROM partners WHERE partner_type = 'DEALER' AND COALESCE(is_active, TRUE) = true ORDER BY name ASC, contact_person ASC`,
+  fetchSuppliers: `SELECT id, name, contact_person as contact, phone, address FROM partners WHERE partner_type IN ('SUPPLIER', 'DEALER') AND COALESCE(is_active, TRUE) = true ORDER BY name ASC, contact_person ASC`,
   fetchCategories: `SELECT id, name FROM categories`,
   fetchBrandsByCategory: `
       SELECT DISTINCT name FROM (

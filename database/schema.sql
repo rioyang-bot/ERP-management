@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS item_models (
 -- 客戶與供應商主檔
 CREATE TABLE IF NOT EXISTS partners (
     id SERIAL PRIMARY KEY,
-    partner_type VARCHAR(20) NOT NULL CHECK (partner_type IN ('CUSTOMER', 'SUPPLIER')),
+    partner_type VARCHAR(20) NOT NULL CHECK (partner_type IN ('CUSTOMER', 'SUPPLIER', 'DEALER')), -- DEALER 經銷商：同時列在客戶與供應商選單
     name VARCHAR(100) NOT NULL,
     contact_person VARCHAR(100),
     phone VARCHAR(50),

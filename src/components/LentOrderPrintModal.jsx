@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Printer, Download, X, Edit3, Check, RefreshCw, Building, Image as ImageIcon, FileText, Loader2, Settings } from 'lucide-react';
+import { Printer, Download, X, Edit3, Check, RefreshCw, Building, Image as ImageIcon, FileText, Loader2, Settings, Handshake } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { getCompanyPresets, DEFAULT_BUILTIN_PRESETS } from '../utils/companyPresets';
 import CompanyPresetModal from './CompanyPresetModal';
@@ -48,6 +48,9 @@ const LentOrderPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
   const [dealerSales, setDealerSales] = useState(() => getCompanyPresets().PRESET_A?.dealerSales || '');
   const [dealerPhone, setDealerPhone] = useState(() => getCompanyPresets().PRESET_A?.dealerPhone || '');
   const [dealerAddress, setDealerAddress] = useState(() => getCompanyPresets().PRESET_A?.dealerAddress || '');
+  // 客戶/廠商管理裡類型為「經銷商」的資料，選了就帶入經銷商區；未選時沿用公司範本的預設值
+  const [dealers, setDealers] = useState([]);
+  const [selectedDealerId, setSelectedDealerId] = useState('');
 
   // 客戶申請資訊
   const [applyCompany, setApplyCompany] = useState('');
@@ -107,7 +110,8 @@ const LentOrderPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
           if (res.success && res.rows) {
             const matched = res.rows.find(c => c.name === companyName);
             if (matched) {
-              if (matched.contact_person) setCustPerson(matched.contact_person);
+              // fetchCustomers 回傳的欄位叫 contact（contact_person AS contact）
+              if (matched.contact) setCustPerson(matched.contact);
               if (matched.phone) setCustPhone(matched.phone);
               if (matched.address) setCustAddress(matched.address);
             }
@@ -148,6 +152,35 @@ const LentOrderPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
 
   }, [isOpen, dnData, items]);
 
+  // 開啟時讀取經銷商清單
+  useEffect(() => {
+    if (!isOpen || !window.electronAPI?.namedQuery) return;
+    setSelectedDealerId('');
+    window.electronAPI.namedQuery('fetchDealers')
+      .then((res) => setDealers(res.success ? (res.rows || []) : []))
+      .catch((err) => { console.error('Load dealers error:', err); setDealers([]); });
+  }, [isOpen]);
+
+  /** 從客戶/廠商管理帶入經銷商；選回「公司範本預設」則恢復範本上的經銷商資料 */
+  const handleDealerChange = (dealerId) => {
+    setSelectedDealerId(dealerId);
+    const dealer = dealers.find((d) => String(d.id) === String(dealerId));
+    if (dealer) {
+      setDealerName(dealer.name || '');
+      setDealerSales(dealer.contact || '');
+      setDealerPhone(dealer.phone || '');
+      setDealerAddress(dealer.address || '');
+      return;
+    }
+    const preset = presetsMap[selectedPreset];
+    if (preset) {
+      setDealerName(preset.dealerName);
+      setDealerSales(dnData?.creator_name || preset.dealerSales);
+      setDealerPhone(preset.dealerPhone);
+      setDealerAddress(preset.dealerAddress);
+    }
+  };
+
   // 監聽 Modal 開啟載入最新自訂範本
   useEffect(() => {
     if (!isOpen) return;
@@ -170,6 +203,8 @@ const LentOrderPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
   // 切換公司範本
   const handlePresetChange = (presetKey) => {
     setSelectedPreset(presetKey);
+    // 換範本會把經銷商區換回範本的預設值，經銷商選單一併回到未選
+    setSelectedDealerId('');
     const preset = presetsMap[presetKey];
     if (preset) {
       setCurrentLogo(preset.logo);
@@ -400,6 +435,33 @@ const LentOrderPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
               >
                 <Settings size={13} /> 管理範本
               </button>
+            </div>
+
+            {/* 經銷商：從客戶/廠商管理帶入 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Handshake size={16} color="var(--text-muted)" />
+              <select
+                value={selectedDealerId}
+                onChange={(e) => handleDealerChange(e.target.value)}
+                aria-label="經銷商"
+                title="從「客戶/廠商管理」帶入經銷商的名稱、聯絡人、電話與地址"
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: 'var(--bg-surface-subtle)',
+                  color: 'var(--text-main)',
+                  fontSize: '12px',
+                  fontWeight: '700',
+                  outline: 'none',
+                  maxWidth: '240px'
+                }}
+              >
+                <option value="">{dealers.length === 0 ? '經銷商：尚無資料（請到客戶/廠商管理新增）' : '經銷商：公司範本預設'}</option>
+                {dealers.map((d) => (
+                  <option key={d.id} value={d.id}>{d.name}{d.contact ? `（${d.contact}）` : ''}</option>
+                ))}
+              </select>
             </div>
 
             {/* 頁首版型切換 */}
