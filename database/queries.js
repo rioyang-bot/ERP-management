@@ -1081,7 +1081,54 @@ export const queries = {
       AND ($3::boolean OR COALESCE(a.custom_attributes->>'order_source', '') = '')
     RETURNING a.id, a.sn
   `,
-  insertInboundItems: `INSERT INTO inbound_items (inbound_order_id, item_id, sn, quantity, purchase_record_id, unit_price) VALUES ($1, $2, $3, $4, $5, 0)`,
+  // 新增的進貨單是待確認（DRAFT），還沒有資產可以放訂單來源，先記在明細上（$6），
+  // 確認進貨時再寫進資產
+  insertInboundItems: `INSERT INTO inbound_items (inbound_order_id, item_id, sn, quantity, purchase_record_id, unit_price, order_source) VALUES ($1, $2, $3, $4, $5, 0, NULLIF(TRIM(COALESCE($6, '')), ''))`,
+
+  // --- 確認進貨（兩段式的第二步）--------------------------------------------
+  // 只有待確認的單能確認，交易以 expectRows 把關：兩個人同時按、或單已經被
+  // 確認過，第二次就整批退回，不會重複加庫存、重複建資產。
+  confirmInboundOrder: `
+    UPDATE inbound_orders SET status = 'COMPLETED'
+    WHERE id = $1::integer AND status = 'DRAFT'
+    RETURNING id, order_no`,
+
+  // 確認進貨時才把數量記到採購單上。待確認的單不佔採購單額度，
+  // 同一張採購單可能同時掛在兩張待確認的進貨單上，因此在這裡擋住超收。
+  receivePurchaseRecordOnInboundConfirm: `
+    UPDATE purchase_records SET
+      received_quantity = COALESCE(received_quantity, 0) + $1,
+      status = CASE WHEN COALESCE(received_quantity, 0) + $1 >= quantity THEN 'COMPLETED' ELSE 'PARTIAL' END,
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = $2 AND COALESCE(received_quantity, 0) + $1 <= quantity
+    RETURNING id`,
+
+  // 待確認的單還沒有資產，序號與訂單來源只改明細本身。
+  // 條件帶上 status = 'DRAFT'：已入庫的單必須走 buildSnRenameSteps，連資產一起改。
+  updateDraftInboundItemSn: `
+    UPDATE inbound_items ii SET sn = NULLIF(TRIM($2), '')
+    FROM inbound_orders io
+    WHERE ii.id = $1::integer AND io.id = ii.inbound_order_id AND io.status = 'DRAFT'
+    RETURNING ii.id`,
+  updateDraftInboundOrderSource: `
+    UPDATE inbound_items ii SET order_source = TRIM($2)
+    FROM inbound_orders io
+    WHERE ii.inbound_order_id = $1::integer AND io.id = ii.inbound_order_id AND io.status = 'DRAFT'
+      AND ii.sn IS NOT NULL AND TRIM(ii.sn) <> ''
+      AND ($3::boolean OR COALESCE(ii.order_source, '') = '')
+    RETURNING ii.id, ii.sn`,
+  updateDraftInboundItemQty: `
+    UPDATE inbound_items ii SET quantity = $1::integer
+    FROM inbound_orders io
+    WHERE ii.id = $2::integer AND io.id = ii.inbound_order_id AND io.status = 'DRAFT'
+    RETURNING ii.id, ii.item_id, ii.quantity`,
+  // 待確認的單沒有加過庫存、沒建資產、沒動採購單，直接刪掉單據即可（明細由外鍵連動刪除）
+  deleteDraftInboundOrder: `
+    DELETE FROM inbound_orders WHERE id = $1::integer AND status = 'DRAFT' RETURNING id, order_no`,
+  // 確認進貨前檢查序號是否已在資產列表裡（忽略大小寫與前後空白）
+  fetchExistingAssetSns: `
+    SELECT TRIM(a.sn) AS sn FROM assets a
+    WHERE UPPER(TRIM(a.sn)) IN (SELECT UPPER(TRIM(x)) FROM unnest($1::text[]) AS x)`,
   updateStockQtyOnInbound: `UPDATE item_master SET stock_qty = stock_qty + $1 WHERE id = $2`,
   // 刪除進貨單時把採購單的已入庫數量退回來，狀態依退回後的數量重算。
   // 與 updatePurchaseRecordStatus 對稱；以 GREATEST 夾住下限，避免歷史資料
@@ -1150,8 +1197,11 @@ export const queries = {
     ORDER BY io.created_at DESC`,
   fetchInboundItems: `
       SELECT ii.*, im.specification, im.brand, im.model, c.name as category_name, pr.order_no as po_order_no,
-             a.custom_attributes->>'order_source' AS order_source
+             -- 待確認的單還沒有資產，訂單來源記在明細上
+             CASE WHEN io.status = 'DRAFT' THEN ii.order_source
+                  ELSE a.custom_attributes->>'order_source' END AS order_source
       FROM inbound_items ii 
+      JOIN inbound_orders io ON io.id = ii.inbound_order_id
       LEFT JOIN item_master im ON ii.item_id = im.id 
       LEFT JOIN categories c ON im.category_id = c.id 
       LEFT JOIN purchase_records pr ON ii.purchase_record_id = pr.id

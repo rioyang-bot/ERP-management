@@ -1,8 +1,7 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { MemoryRouter } from 'react-router-dom';
-import InboundList from '../pages/InboundList';
+import { renderInboundHistory } from './helpers/renderInboundList';
 import { queries } from '../../database/queries';
 
 /**
@@ -15,12 +14,12 @@ import { queries } from '../../database/queries';
  */
 const ORDERS = [
   {
-    id: 11, order_no: 'IN-20260715-01', order_date: '2026-07-15', effective_date: '2026-07-15',
+    id: 11, order_no: 'IN-20260715-01', status: 'COMPLETED', order_date: '2026-07-15', effective_date: '2026-07-15',
     created_at: '2026-09-18T10:30:00.000Z', partner_id: 7, partner_name: '元大Yuanta',
     invoice_no: 'INV-001', attachments: '[]', item_count: 3, creator_name: 'Rio',
   },
   {
-    id: 12, order_no: 'IN-20260601-01', order_date: '2026-06-01', effective_date: '2026-06-01',
+    id: 12, order_no: 'IN-20260601-01', status: 'COMPLETED', order_date: '2026-06-01', effective_date: '2026-06-01',
     created_at: '2026-06-01T02:00:00.000Z', partner_id: null, partner_name: null,
     invoice_no: null, attachments: '[]', item_count: 0, creator_name: null,
   },
@@ -44,7 +43,7 @@ describe('進貨單列表：項目數與建立者', () => {
     };
   });
 
-  const renderList = () => render(<MemoryRouter><InboundList /></MemoryRouter>);
+  const renderList = () => renderInboundHistory();
 
   it('列表有項目數與建立者兩欄', async () => {
     renderList();

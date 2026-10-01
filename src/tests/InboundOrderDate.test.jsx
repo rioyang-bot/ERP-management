@@ -1,9 +1,8 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { MemoryRouter } from 'react-router-dom';
-import InboundList from '../pages/InboundList';
+import { renderInboundHistory } from './helpers/renderInboundList';
 
 /**
  * 進貨日期
@@ -15,7 +14,7 @@ import InboundList from '../pages/InboundList';
 const ORDERS = [
   {
     id: 11,
-    order_no: 'IN-20260715-01',
+    order_no: 'IN-20260715-01', status: 'COMPLETED',
     order_date: '2026-07-15',
     effective_date: '2026-07-15',
     created_at: '2026-09-18T10:30:00.000Z',
@@ -55,7 +54,7 @@ describe('進貨單列表：進貨日期', () => {
   });
 
   const called = (name) => calls.filter((c) => c.query === name);
-  const renderList = () => render(<MemoryRouter><InboundList /></MemoryRouter>);
+  const renderList = () => renderInboundHistory();
 
   /** 打開詳情並切到編輯模式 */
   const openEdit = async () => {

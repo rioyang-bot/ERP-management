@@ -1,9 +1,8 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { MemoryRouter } from 'react-router-dom';
-import InboundList from '../pages/InboundList';
+import { renderInboundHistory } from './helpers/renderInboundList';
 import { buildSnRenameSteps, validateSnRename, isSameSn, summariseSnRename } from '../utils/snRename';
 
 /**
@@ -16,7 +15,7 @@ import { buildSnRenameSteps, validateSnRename, isSameSn, summariseSnRename } fro
  */
 const ORDERS = [{
   id: 11,
-  order_no: 'IN-20260715-01',
+  order_no: 'IN-20260715-01', status: 'COMPLETED',
   order_date: '2026-07-15',
   effective_date: '2026-07-15',
   created_at: '2026-09-18T10:30:00.000Z',
@@ -62,7 +61,7 @@ describe('進貨單明細：更正序號', () => {
 
   /** 打開進貨明細，按下那一筆的更正序號 */
   const startEditingSn = async () => {
-    render(<MemoryRouter><InboundList /></MemoryRouter>);
+    renderInboundHistory();
     await userEvent.click(await screen.findByLabelText('查看進貨明細'));
     await userEvent.click(await screen.findByRole('button', { name: '更正序號 U5M16V560125' }));
     return screen.findByRole('textbox', { name: '更正序號 U5M16V560125' });
@@ -76,7 +75,7 @@ describe('進貨單明細：更正序號', () => {
   };
 
   it('沒有序號的那一筆不會出現更正入口', async () => {
-    render(<MemoryRouter><InboundList /></MemoryRouter>);
+    renderInboundHistory();
     await userEvent.click(await screen.findByLabelText('查看進貨明細'));
     await screen.findByText('U5M16V560125');
 

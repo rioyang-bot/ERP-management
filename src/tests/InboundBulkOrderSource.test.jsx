@@ -1,9 +1,8 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { MemoryRouter } from 'react-router-dom';
-import InboundList from '../pages/InboundList';
+import { renderInboundHistory } from './helpers/renderInboundList';
 import { queries } from '../../database/queries';
 
 /**
@@ -13,7 +12,7 @@ import { queries } from '../../database/queries';
  * 而要補的話得到硬體列表一筆一筆改 —— 八十筆不切實際。
  */
 const ORDERS = [{
-  id: 11, order_no: 'IN-20260921-01', order_date: '2026-09-21', effective_date: '2026-09-21',
+  id: 11, order_no: 'IN-20260921-01', status: 'COMPLETED', order_date: '2026-09-21', effective_date: '2026-09-21',
   created_at: '2026-09-21T10:00:00.000Z', partner_id: null, partner_name: null,
   invoice_no: null, attachments: '[]', item_count: 3, creator_name: 'Rio',
 }];
@@ -53,7 +52,7 @@ describe('進貨明細：統一填寫訂單來源', () => {
   const saved = () => calls.filter((c) => c.query === 'updateOrderSourceByInboundOrder');
 
   const openDetail = async () => {
-    render(<MemoryRouter><InboundList /></MemoryRouter>);
+    renderInboundHistory();
     await userEvent.click(await screen.findByLabelText('查看進貨明細'));
     await screen.findByText('SFOC303000D7');
   };

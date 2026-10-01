@@ -30,18 +30,19 @@ export function validateQtyChange(oldQty, nextRaw) {
  * expectRows 讓改不到的那一步直接讓整批退回 —— 例如明細已被別人刪掉，
  * 若沒有這道把關就會變成「庫存改了、明細沒改」。
  */
-export function buildQtyChangeSteps({ itemId, itemMasterId, nextQty, delta }) {
+export function buildQtyChangeSteps({ itemId, itemMasterId, nextQty, delta, draft = false }) {
   const steps = [
     {
       id: 'item',
-      queryName: 'updateInboundItemQty',
+      // 待確認的單還沒入庫，只改明細；查詢本身限定 DRAFT，單若剛好被確認就改不到、整批退回
+      queryName: draft ? 'updateDraftInboundItemQty' : 'updateInboundItemQty',
       params: [nextQty, itemId],
       expectRows: 1,
       errorMessage: '找不到這筆進貨明細，可能已被刪除',
     },
   ];
   // 沒有對應主檔的明細（資料不全）就只改單據，不要憑空動別人的庫存
-  if (itemMasterId) {
+  if (itemMasterId && !draft) {
     steps.push({
       id: 'stock',
       queryName: 'adjustItemMasterStock',
@@ -125,6 +126,104 @@ export function buildInboundDeleteSteps({ orderId, items = [], assetSns = [] }) 
   });
 
   return steps;
+}
+
+/** 待確認（還沒入庫）的進貨單 */
+export const isDraftOrder = (order) => order?.status === 'DRAFT';
+
+/** 有序號、會建成資產的類別 */
+const ASSET_CATEGORIES = new Set(['設備', '硬體']);
+
+/**
+ * 確認進貨：把待確認的單真正入庫。
+ *
+ * 原本建立進貨單當下就做的事，全部移到這裡，放在同一個交易：
+ *   - 設備／硬體每一個數量建一筆資產（訂單來源從明細帶過去）
+ *   - 加庫存
+ *   - 採購單的已入庫數量與狀態（超收就擋下來）
+ *   - 最後把單改成 COMPLETED；單已經不是待確認（別人先確認了）就整批退回
+ */
+export function buildInboundConfirmSteps({ orderId, items = [] }) {
+  const steps = [];
+
+  for (const it of items) {
+    if (!it.item_id) continue;
+    const qty = parseInt(it.quantity, 10) || 0;
+    if (qty <= 0) continue;
+    const name = [it.brand, it.model].filter(Boolean).join(' ') || '品項';
+
+    if (ASSET_CATEGORIES.has(it.category_name)) {
+      const sn = String(it.sn ?? '').trim() || null;
+      for (let n = 0; n < qty; n += 1) {
+        steps.push({
+          queryName: 'insertInboundAssets',
+          params: [sn, it.item_id, null, it.order_source || null],
+          errorMessage: sn ? `建立資產 [${sn}] 失敗` : `建立 ${name} 的資產失敗`,
+        });
+      }
+    }
+
+    steps.push({
+      queryName: 'updateStockQtyOnInbound',
+      params: [qty, it.item_id],
+      errorMessage: `${name} 加入庫存失敗`,
+    });
+
+    if (it.purchase_record_id) {
+      steps.push({
+        queryName: 'receivePurchaseRecordOnInboundConfirm',
+        params: [qty, it.purchase_record_id],
+        expectRows: 1,
+        errorMessage: `${name} 超過採購單 [${it.po_order_no || ''}] 剩餘可入庫的數量，可能已被其他進貨單入庫`,
+      });
+    }
+  }
+
+  steps.push({
+    queryName: 'confirmInboundOrder',
+    params: [orderId],
+    expectRows: 1,
+    errorMessage: '這張進貨單已經不是待確認狀態（可能已被確認或刪除），請重新整理',
+  });
+
+  return steps;
+}
+
+/**
+ * 確認進貨前先找出入不了庫的序號：資產序號是唯一的，
+ * 已經在系統裡的、或同一張單打了兩次的，交易一定會失敗，
+ * 而資料庫的錯誤訊息不會說是哪一支。
+ *
+ * @param {object[]} items 進貨明細
+ * @param {string[]} existingSns 資產列表裡已經有的序號
+ * @returns {{ existing: string[], repeated: string[] }}
+ */
+export function findSnConflicts(items = [], existingSns = []) {
+  const key = (s) => String(s ?? '').trim().toUpperCase();
+  const seen = new Map();
+  for (const it of items) {
+    const sn = String(it?.sn ?? '').trim();
+    if (!sn || !ASSET_CATEGORIES.has(it.category_name)) continue;
+    // 同一列數量大於 1 也會建出同一支序號好幾次
+    const times = Math.max(parseInt(it.quantity, 10) || 1, 1);
+    const prev = seen.get(key(sn));
+    // 回報時用第一次出現的寫法
+    seen.set(key(sn), { sn: prev?.sn || sn, count: (prev?.count || 0) + times });
+  }
+  const existingKeys = new Set(existingSns.map(key));
+  const list = [...seen.values()];
+  return {
+    existing: list.filter((x) => existingKeys.has(key(x.sn))).map((x) => x.sn),
+    repeated: list.filter((x) => x.count > 1).map((x) => x.sn),
+  };
+}
+
+/** 這張單會建成資產的序號 */
+export function collectAssetSns(items = []) {
+  return [...new Set(items
+    .filter((it) => ASSET_CATEGORIES.has(it?.category_name))
+    .map((it) => String(it.sn ?? '').trim())
+    .filter(Boolean))];
 }
 
 /**
