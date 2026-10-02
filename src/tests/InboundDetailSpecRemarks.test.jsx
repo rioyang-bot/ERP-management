@@ -64,9 +64,9 @@ describe('進貨明細的欄位', () => {
     expect(screen.queryByText(/進貨明細單/)).not.toBeInTheDocument();
   });
 
-  it('來源採購單、類別排最前面，廠牌、類型、型號分開，另有規格與備註', async () => {
+  it('來源採購單、類別排最前面，類型、廠牌、型號分開，另有規格與備註', async () => {
     await openDetail();
-    expect(detailHeaders()).toEqual(['來源採購單', '類別', '廠牌', '類型', '型號', '規格', '硬體序號 (S/N)', '訂單來源', '備註', '數量']);
+    expect(detailHeaders()).toEqual(['來源採購單', '類別', '類型', '廠牌', '型號', '規格', '硬體序號 (S/N)', '訂單來源', '備註', '數量']);
   });
 
   it('表頭與內容的欄位數一致', async () => {
