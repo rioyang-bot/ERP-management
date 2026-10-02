@@ -21,8 +21,8 @@ const order = (id, no, status) => ({
 const DRAFT = order(21, 'IN-20261002-01', 'DRAFT');
 const DONE = order(11, 'IN-20260921-01', 'COMPLETED');
 const ITEMS = [
-  { id: 1, item_id: 7, sn: 'E7ADE593', quantity: 1, brand: 'INTEL', model: 'XEON W7-2595X', specification: '22C 2.8GHz', category_name: '硬體', order_source: null, remarks: '客戶指定' },
-  { id: 2, item_id: 9, sn: null, quantity: 5, brand: 'METECH', model: 'LC-LC', specification: '', category_name: '耗材', order_source: null, remarks: null },
+  { id: 1, item_id: 7, sn: 'E7ADE593', quantity: 1, brand: 'INTEL', type: 'CPU', model: 'XEON W7-2595X', specification: '22C 2.8GHz', category_name: '硬體', order_source: null, remarks: '客戶指定' },
+  { id: 2, item_id: 9, sn: null, quantity: 5, brand: 'METECH', type: '光纖線', model: 'LC-LC', specification: '', category_name: '耗材', order_source: null, remarks: null },
 ];
 
 let calls;
@@ -58,23 +58,37 @@ const openDetail = async (history = false) => {
 const detailHeaders = () => [...screen.getByText('E7ADE593').closest('table').querySelectorAll('thead th')].map((th) => th.textContent.trim());
 
 describe('進貨明細的欄位', () => {
-  it('類別排最前面，另有規格與備註', async () => {
+  it('來源採購單、類別排最前面，廠牌、類型、型號分開，另有規格與備註', async () => {
     await openDetail();
-    expect(detailHeaders()).toEqual(['類別', '入庫品項', '規格', '來源採購單', '硬體序號 (S/N)', '訂單來源', '備註', '數量']);
+    expect(detailHeaders()).toEqual(['來源採購單', '類別', '廠牌', '類型', '型號', '規格', '硬體序號 (S/N)', '訂單來源', '備註', '數量']);
   });
 
   it('表頭與內容的欄位數一致', async () => {
     await openDetail();
     const cells = screen.getByText('E7ADE593').closest('tr').querySelectorAll('td');
     expect(cells).toHaveLength(detailHeaders().length);
-    expect(cells[0]).toHaveTextContent('硬體');
+    expect(cells[1]).toHaveTextContent('硬體');
   });
 
-  it('規格獨立一欄，品項只放廠牌與型號', async () => {
+  /** 合在一起看不出是哪個欄位打錯，分開才好比對 */
+  it('廠牌、類型、型號、規格各自一欄', async () => {
     await openDetail();
+    expect(screen.getByTestId('inbound-item-brand-1')).toHaveTextContent('INTEL');
+    expect(screen.getByTestId('inbound-item-type-1')).toHaveTextContent('CPU');
+    expect(screen.getByTestId('inbound-item-model-1')).toHaveTextContent('XEON W7-2595X');
     expect(screen.getByTestId('inbound-item-spec-1')).toHaveTextContent('22C 2.8GHz');
-    expect(screen.getByText('INTEL XEON W7-2595X')).toBeInTheDocument();
     expect(screen.getByTestId('inbound-item-spec-2')).toHaveTextContent('-');
+    expect(screen.queryByText('INTEL XEON W7-2595X')).not.toBeInTheDocument();
+  });
+
+  it('沒填的欄位顯示 -', async () => {
+    ITEMS[1].type = '';
+    try {
+      await openDetail();
+      expect(screen.getByTestId('inbound-item-type-2')).toHaveTextContent('-');
+    } finally {
+      ITEMS[1].type = '光纖線';
+    }
   });
 
   it('顯示備註，沒有的顯示 -', async () => {
