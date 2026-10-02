@@ -586,7 +586,7 @@ const InboundList = ({ isSplitMode = false }) => {
       if (assetChanged) {
         await logSnChange(
           'DEVICE', oldSn, newSn, selectedOrder?.order_no || '進貨單',
-          `於進貨明細單 [${selectedOrder?.order_no || ''}] 更正`,
+          `於進貨單明細 [${selectedOrder?.order_no || ''}] 更正`,
           { orderNo: selectedOrder?.order_no }
         );
       }
@@ -948,7 +948,7 @@ const InboundList = ({ isSplitMode = false }) => {
               <div>
                 <h2 style={{ margin: '0 0 8px 0', fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <FileText size={24} color="#059669" />
-                  進貨明細單：{selectedOrder.order_no}
+                  進貨單明細：{selectedOrder.order_no}
                   {isEditing && <span style={{fontSize: '0.9rem', color: '#16a34a', backgroundColor: 'rgba(22, 163, 74, 0.15)', padding: '4px 8px', borderRadius: '6px'}}>編輯模式</span>}
                   {isDraftOrder(selectedOrder) && (
                     <span data-testid="inbound-draft-badge" style={{ fontSize: '0.9rem', color: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.12)', padding: '4px 8px', borderRadius: '6px' }}>
