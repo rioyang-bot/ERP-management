@@ -58,6 +58,12 @@ const openDetail = async (history = false) => {
 const detailHeaders = () => [...screen.getByText('E7ADE593').closest('table').querySelectorAll('thead th')].map((th) => th.textContent.trim());
 
 describe('進貨明細的欄位', () => {
+  it('視窗標題是「進貨單明細」', async () => {
+    await openDetail();
+    expect(screen.getByRole('heading', { level: 2, name: /進貨單明細：IN-20261002-01/ })).toBeInTheDocument();
+    expect(screen.queryByText(/進貨明細單/)).not.toBeInTheDocument();
+  });
+
   it('來源採購單、類別排最前面，廠牌、類型、型號分開，另有規格與備註', async () => {
     await openDetail();
     expect(detailHeaders()).toEqual(['來源採購單', '類別', '廠牌', '類型', '型號', '規格', '硬體序號 (S/N)', '訂單來源', '備註', '數量']);

@@ -6,7 +6,7 @@ import { renderInboundHistory } from './helpers/renderInboundList';
 import { queries } from '../../database/queries';
 
 /**
- * 在進貨明細單上統一填寫訂單來源
+ * 在進貨單明細上統一填寫訂單來源
  *
  * 訂單來源存在資產上。進貨入庫先前沒有這一欄，那批貨全都沒有值，
  * 而要補的話得到硬體列表一筆一筆改 —— 八十筆不切實際。

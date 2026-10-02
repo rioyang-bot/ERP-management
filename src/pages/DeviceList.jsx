@@ -512,7 +512,7 @@ const DeviceList = ({ isSplitMode = false }) => {
       }
 
       // 序號變更改用共用寫法：三個能改序號的入口（設備編輯、硬體編輯、
-      // 進貨明細單更正）敘述一致，並帶上 details.snChanged 供品項履歷分類。
+      // 進貨單明細更正）敘述一致，並帶上 details.snChanged 供品項履歷分類。
       const auditName = `${editItem.brand || ''} ${editItem.model || ''}`;
 
       // 搭載硬體的加掛與卸下另外記一筆。先前只把清單塞進 details，
