@@ -171,7 +171,7 @@ describe('DNList 出貨單列表狀態查詢與搜尋測試', () => {
     fireEvent.click(viewButton);
 
     await waitFor(() => {
-      expect(screen.getByText('出貨單明細')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 2, name: /出貨單明細：/ })).toBeInTheDocument();
       expect(screen.getByText(/客戶已簽收單據/)).toBeInTheDocument();
       expect(screen.getByText('凱基簽收單據.pdf')).toBeInTheDocument();
       expect(screen.getByText(/開啟 \/ 下載查驗/)).toBeInTheDocument();

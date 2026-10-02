@@ -1,0 +1,222 @@
+/* ============================================================================
+ * 單據明細視窗（進貨單明細、出貨單明細）的共用樣式
+ * ----------------------------------------------------------------------------
+ * 兩個視窗原本各寫各的，標題、資訊列、表格、按鈕都長得不一樣。
+ * 標題區採進貨單明細的樣式（大標題＋單號＋狀態標籤，下方一列時間資訊），
+ * 其餘採出貨單明細的樣式（左側色條的資訊列、精簡表格、外框區塊、圓角按鈕）。
+ * 改這裡兩個視窗會一起變，不會再各自走樣。
+ * ========================================================================== */
+
+.dm-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: var(--bg-modal-overlay);
+  backdrop-filter: blur(4px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.dm-modal {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  border-radius: 16px;
+  max-width: 95vw;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--modal-shadow);
+  overflow: hidden;
+  animation: dmFadeIn 0.3s ease-out;
+}
+
+@keyframes dmFadeIn {
+  from { opacity: 0; transform: scale(0.95) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* --- 標題區（進貨單明細樣式）--------------------------------------------- */
+.dm-header {
+  padding: 24px 32px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.dm-title {
+  margin: 0 0 8px 0;
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.dm-badge {
+  font-size: 0.9rem;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+.dm-badge-pending { color: #3b82f6; background-color: rgba(59, 130, 246, 0.12); }
+.dm-badge-done { color: #16a34a; background-color: rgba(22, 163, 74, 0.15); }
+.dm-badge-closed { color: var(--text-muted); background-color: var(--bg-surface-subtle); }
+.dm-badge-editing { color: #16a34a; background-color: rgba(22, 163, 74, 0.15); }
+
+.dm-meta {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+.dm-meta > span { display: flex; align-items: center; gap: 4px; }
+
+.dm-close {
+  padding: 8px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* --- 內容（出貨單明細樣式）----------------------------------------------- */
+.dm-body {
+  padding: 12px 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.dm-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border-left: 4px solid var(--primary-color);
+  background: var(--bg-surface-subtle);
+  box-shadow: inset 0 0 0 1px var(--border-color);
+}
+.dm-summary-item { display: flex; align-items: center; gap: 8px; }
+.dm-summary-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+.dm-summary-value { font-weight: 700; color: var(--text-main); font-size: 0.85rem; }
+
+.dm-section { margin-bottom: 12px; }
+.dm-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.dm-section-title { margin: 0; font-size: 0.85rem; color: var(--text-main); font-weight: 800; }
+
+.dm-items-container {
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: var(--bg-surface);
+}
+
+.dm-items-table { width: 100%; border-collapse: collapse; }
+.dm-items-table thead { position: sticky; top: 0; background-color: var(--table-header-bg); z-index: 10; }
+.dm-items-table thead tr { text-align: left; border-bottom: 1px solid var(--border-color); }
+.dm-items-table th {
+  padding: 8px 12px;
+  font-size: 0.75rem;
+  color: var(--table-header-text);
+  white-space: nowrap;
+}
+.dm-items-table td { padding: 6px 12px; font-size: 0.8rem; vertical-align: middle; }
+.dm-items-table tbody tr { border-bottom: 1px solid var(--table-border); }
+.dm-items-table tbody tr:nth-child(even) { background-color: var(--bg-surface-subtle); }
+.dm-items-table tbody tr:hover { background-color: var(--table-row-hover); }
+
+.dm-type-badge {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 800;
+  background-color: var(--bg-surface-subtle);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.dm-sn {
+  font-size: 0.75rem;
+  background-color: var(--bg-surface-subtle);
+  padding: 1px 4px;
+  border-radius: 3px;
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+}
+
+.dm-strong { font-weight: 700; color: var(--text-main); }
+.dm-muted { color: var(--text-muted); }
+.dm-empty { color: var(--text-subtle); }
+
+.dm-block {
+  padding: 14px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-surface-subtle);
+  margin-bottom: 8px;
+}
+.dm-block-title {
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* --- 底部按鈕列 --------------------------------------------------------- */
+.dm-footer {
+  padding: 12px 20px;
+  border-top: 1px solid var(--border-color);
+  background-color: var(--bg-surface-subtle);
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+/* 刪除這類危險動作放在最左邊，離確認鈕遠一點 */
+.dm-footer-start { margin-right: auto; }
+
+.dm-btn {
+  padding: 8px 18px;
+  border-radius: 50px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+}
+.dm-btn:disabled { opacity: 0.7; cursor: not-allowed; }
+.dm-btn-success { background-color: #059669; color: #fff; box-shadow: 0 2px 8px rgba(5, 150, 105, 0.3); }
+.dm-btn-primary { background-color: var(--primary-color); color: #fff; box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3); }
+.dm-btn-outline { background-color: var(--bg-surface); color: var(--text-main); border: 1px solid var(--border-color); }
+.dm-btn-danger { background-color: rgba(239, 68, 68, 0.08); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.4); }

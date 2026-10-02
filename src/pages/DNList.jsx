@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   FileText, Search, Filter, Eye, RefreshCw, AlertCircle, Trash2, Calendar, 
-  Printer, Paperclip, Upload, FileCheck, ExternalLink, X, Pencil, Clock  
+  Printer, Paperclip, Upload, FileCheck, ExternalLink, X, Pencil, Clock, CheckCircle
 } from 'lucide-react';
 import { logStatusChange, logDelete, logUpdate } from '../utils/auditLogger';
 import DeliveryReceiptPrintModal from '../components/DeliveryReceiptPrintModal';
@@ -9,6 +9,7 @@ import OutboundRegistrationModal from '../components/OutboundRegistrationModal';
 import { usePageSize } from '../utils/usePageSize';
 import { isMountedRow, findMountedMismatches, shipMountedSteps } from '../utils/mountedConsumables';
 import PageSizeSelector from '../components/common/PageSizeSelector';
+import DetailModalHeader from '../components/detail/DetailModalHeader';
 
 const DNList = ({ isSplitMode = false }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -689,89 +690,95 @@ const DNList = ({ isSplitMode = false }) => {
       </div>
 
       {/* 明細彈窗 */}
+      {/* 明細視窗：標題區與進貨單明細相同，其餘沿用出貨單明細的樣式（共用 components/detail） */}
       {isModalOpen && selectedDN && (
-        <div className="modal-overlay" onClick={() => setIsModalOpen(false)}>
-          <div className="modal-content dn-modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-header" style={{ padding: '12px 20px', borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <FileText size={18} color="var(--primary-color)" />
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-main)' }}>出貨單明細</h3>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{selectedDN.request_no}</span>
-                </div>
-              </div>
-              <button className="close-btn" onClick={() => setIsModalOpen(false)}>&times;</button>
-            </div>
-            
-            <div className="modal-body" style={{ padding: '8px 20px' }}>
-              <div className="dn-summary" style={{ display: 'flex', justifyContent: 'space-between', gap: '20px', marginBottom: '12px', padding: '10px 16px', borderRadius: '8px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span className="summary-label" style={{ margin: 0 }}>客戶對象:</span>
-                  <span className="summary-value" style={{ fontSize: '0.85rem' }}>
-                    {selectedDN.customer} 
+        <div className="dm-overlay" onClick={() => setIsModalOpen(false)}>
+          <div className="dm-modal" style={{ width: '60vw' }} onClick={e => e.stopPropagation()}>
+            <DetailModalHeader
+              icon={<FileText size={24} color="var(--primary-color)" />}
+              title="出貨單明細"
+              orderNo={selectedDN.request_no}
+              badges={[
+                selectedDN.status === 'PENDING'
+                  ? { label: '待確認・尚未出貨', tone: 'pending', testId: 'dn-status-badge' }
+                  : selectedDN.status === 'SHIPPED'
+                    ? { label: '已出貨', tone: 'done', testId: 'dn-status-badge' }
+                    : { label: '已結案', tone: 'closed', testId: 'dn-status-badge' },
+              ]}
+              meta={[
+                selectedDN.created_at && { icon: <Calendar size={14} />, text: `建立時間：${new Date(selectedDN.created_at).toLocaleString()}` },
+                { text: `建立者：${selectedDN.creator_name || '－'}` },
+              ]}
+              onClose={() => setIsModalOpen(false)}
+            />
+
+            <div className="dm-body">
+              <div className="dm-summary">
+                <div className="dm-summary-item">
+                  <span className="dm-summary-label">客戶對象:</span>
+                  <span className="dm-summary-value">
+                    {selectedDN.customer}
                     {selectedDN.contact_info && <span style={{ color: 'var(--text-muted)', fontWeight: 400, marginLeft: '8px' }}>({selectedDN.contact_info})</span>}
                   </span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span className="summary-label" style={{ margin: 0 }}>出貨日期:</span>
-                  <span className="summary-value" style={{ fontSize: '0.85rem' }}>{new Date(selectedDN.shipping_date).toLocaleDateString()}</span>
+                <div className="dm-summary-item">
+                  <span className="dm-summary-label">出貨日期:</span>
+                  <span className="dm-summary-value">{new Date(selectedDN.shipping_date).toLocaleDateString()}</span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span className="summary-label" style={{ margin: 0 }}>出貨地點:</span>
-                  <span className="summary-value" style={{ fontSize: '0.85rem' }}>{selectedDN.location || '-'}</span>
+                <div className="dm-summary-item">
+                  <span className="dm-summary-label">出貨地點:</span>
+                  <span className="dm-summary-value">{selectedDN.location || '-'}</span>
                 </div>
               </div>
 
               {/* 項目清單 */}
-              <div className="dn-items-list" style={{ marginBottom: '12px' }}>
-                <h4 style={{ marginBottom: '8px', fontSize: '0.85rem', color: 'var(--text-main)', fontWeight: 800 }}>項目清單 ({dnItems.length})</h4>
-                <div className="dn-items-list-container" style={{ maxHeight: '320px', overflowY: 'auto' }}>
-                  <table className="dn-items-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead style={{ position: 'sticky', top: 0, backgroundColor: 'var(--table-header-bg)', zIndex: 10 }}>
-                      <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border-color)' }}>
-                        <th style={{ padding: '8px 12px', fontSize: '0.75rem', color: 'var(--table-header-text)' }}>類型</th>
+              <div className="dm-section">
+                <div className="dm-section-head">
+                  <h4 className="dm-section-title">項目清單 ({dnItems.length})</h4>
+                </div>
+                <div className="dm-items-container">
+                  <table className="dm-items-table">
+                    <thead>
+                      <tr>
+                        <th>類型</th>
                         {/* 廠牌、型號、規格分開三欄，誰打錯一眼就看得出來 */}
-                        <th style={{ padding: '8px 12px', fontSize: '0.75rem', color: 'var(--table-header-text)' }}>廠牌</th>
-                        <th style={{ padding: '8px 12px', fontSize: '0.75rem', color: 'var(--table-header-text)' }}>型號</th>
-                        <th style={{ padding: '8px 12px', fontSize: '0.75rem', color: 'var(--table-header-text)' }}>規格</th>
-                        <th style={{ padding: '8px 12px', fontSize: '0.75rem', color: 'var(--table-header-text)' }}>序號 (S/N)</th>
-                        <th style={{ padding: '8px 12px', fontSize: '0.75rem', color: 'var(--table-header-text)', textAlign: 'center' }}>數量</th>
-                        <th style={{ padding: '8px 12px', fontSize: '0.75rem', color: 'var(--table-header-text)' }}>發送位置</th>
+                        <th>廠牌</th>
+                        <th>型號</th>
+                        <th>規格</th>
+                        <th>序號 (S/N)</th>
+                        <th style={{ textAlign: 'center' }}>數量</th>
+                        <th>發送位置</th>
                       </tr>
                     </thead>
                     <tbody>
                       {isDetailLoading ? (
                         <tr><td colSpan="7" style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)' }}>讀取中...</td></tr>
                       ) : dnItems.map((item, idx) => (
-                        <tr key={idx} style={{ borderBottom: '1px solid var(--table-border)' }}>
-                          <td style={{ padding: '6px 12px' }}>
-                            <span className="type-badge-mini">{item.type}</span>
+                        <tr key={idx}>
+                          <td>
+                            <span className="dm-type-badge">{item.type}</span>
                           </td>
-                          <td style={{ padding: '6px 12px', fontWeight: 700, fontSize: '0.8rem', color: item.brand ? 'var(--text-main)' : 'var(--text-subtle)' }} data-testid={`dn-item-brand-${idx}`}>
+                          <td className={item.brand ? 'dm-strong' : 'dm-empty'} data-testid={`dn-item-brand-${idx}`}>
                             {item.brand || '-'}
                           </td>
-                          <td style={{ padding: '6px 12px' }} data-testid={`dn-item-model-${idx}`}>
-                            <div style={{ fontWeight: 700, fontSize: '0.8rem', color: item.model ? 'var(--text-main)' : 'var(--text-subtle)' }}>{item.model || '-'}</div>
+                          <td data-testid={`dn-item-model-${idx}`}>
+                            <div className={item.model ? 'dm-strong' : 'dm-empty'}>{item.model || '-'}</div>
                             {isMountedRow(item) && (
                               <div style={{ fontSize: '0.68rem', color: '#7c3aed', fontWeight: 700, marginTop: '2px' }}>
                                 掛載於 {item.lab_device_sn || '設備'}，隨設備出貨（從 LAB 扣）
                               </div>
                             )}
                           </td>
-                          <td style={{ padding: '6px 12px', fontSize: '0.75rem', color: item.specification ? 'var(--text-main)' : 'var(--text-subtle)' }} data-testid={`dn-item-spec-${idx}`}>
+                          <td className={item.specification ? '' : 'dm-empty'} style={{ fontSize: '0.75rem' }} data-testid={`dn-item-spec-${idx}`}>
                             {item.specification || '-'}
                           </td>
-                          <td style={{ padding: '6px 12px' }}>
-                            {item.sn && (
-                              <code style={{ fontSize: '0.75rem', backgroundColor: 'var(--bg-surface-subtle)', padding: '1px 4px', borderRadius: '3px', color: 'var(--text-main)', border: '1px solid var(--border-color)' }}>
-                                {item.sn}
-                              </code>
-                            )}
+                          <td>
+                            {item.sn && <code className="dm-sn">{item.sn}</code>}
                           </td>
-                          <td style={{ padding: '6px 12px', textAlign: 'center' }}>
+                          <td style={{ textAlign: 'center' }}>
                             <span style={{ fontWeight: 800, fontSize: '0.85rem', color: 'var(--text-main)' }}>{item.quantity}</span>
                           </td>
-                          <td style={{ padding: '6px 12px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                          <td className="dm-muted">
                             {item.location || '-'}
                           </td>
                         </tr>
@@ -782,9 +789,9 @@ const DNList = ({ isSplitMode = false }) => {
               </div>
 
               {/* 客戶已簽收單據區塊 */}
-              <div style={{ padding: '14px 16px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)', marginBottom: '8px' }}>
+              <div className="dm-block">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span className="dm-block-title">
                     <Paperclip size={15} color="#10b981" /> 客戶已簽收單據 (Signed Document)
                   </span>
                   <div>
@@ -844,21 +851,22 @@ const DNList = ({ isSplitMode = false }) => {
               </div>
             </div>
 
-            <div className="modal-footer" style={{ padding: '12px 20px', borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)', display: 'flex', justifyContent: 'flex-end', gap: '12px', flexWrap: 'wrap' }}>
-              <button 
+            <div className="dm-footer">
+              <button
+                type="button"
+                className="dm-btn dm-btn-success"
                 onClick={() => setDeliveryReceiptModal({ show: true, dn: selectedDN, items: dnItems })}
-                style={{ padding: '8px 18px', borderRadius: '50px', border: 'none', backgroundColor: '#059669', color: 'white', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 2px 8px rgba(5, 150, 105, 0.3)' }}
               >
                 <Printer size={16} /> 🖨️ 產生交貨簽收單 (PDF)
               </button>
               {selectedDN.status === 'PENDING' && (
-                <button 
-                  className="btn-primary" 
+                <button
+                  type="button"
+                  className="dm-btn dm-btn-primary"
                   onClick={handleConfirmDelivery}
                   disabled={isConfirming}
-                  style={{ padding: '8px 24px', opacity: isConfirming ? 0.7 : 1 }}
                 >
-                  {isConfirming ? '處理中...' : '確認出貨'}
+                  <CheckCircle size={16} /> {isConfirming ? '處理中...' : '確認出貨'}
                 </button>
               )}
             </div>
@@ -1039,19 +1047,6 @@ const DNList = ({ isSplitMode = false }) => {
           transition: all 0.3s ease;
         }
 
-        .dn-modal { 
-          width: 60vw; 
-          max-width: 95vw; 
-          background-color: var(--bg-surface);
-          border-radius: 12px;
-          box-shadow: var(--modal-shadow);
-          border: 1px solid var(--border-color);
-          overflow: hidden;
-          position: relative;
-          animation: modalFadeIn 0.3s ease-out;
-          color: var(--text-main);
-        }
-
         .modal-overlay {
           position: fixed;
           top: 0;
@@ -1067,89 +1062,11 @@ const DNList = ({ isSplitMode = false }) => {
           animation: overlayFadeIn 0.2s ease-out;
         }
 
-        @keyframes modalFadeIn {
-          from { opacity: 0; transform: scale(0.95) translateY(10px); }
-          to { opacity: 1; transform: scale(1) translateY(0); }
-        }
-
         @keyframes overlayFadeIn {
           from { opacity: 0; }
           to { opacity: 1; }
         }
 
-        .dn-summary {
-          border-left: 4px solid var(--primary-color);
-          background: var(--bg-surface-subtle);
-          box-shadow: inset 0 0 0 1px var(--border-color);
-        }
-
-        .dn-items-table tr:nth-child(even) {
-          background-color: var(--bg-surface-subtle);
-        }
-
-        .dn-items-table tr:hover {
-          background-color: var(--table-row-hover);
-        }
-        
-        .summary-label { 
-          font-size: 0.7rem; 
-          color: var(--text-muted); 
-          font-weight: 800; 
-          text-transform: uppercase; 
-          letter-spacing: 0.025em;
-          margin-bottom: 2px; 
-        }
-
-        .summary-value { 
-          font-weight: 700; 
-          color: var(--text-main); 
-        }
-        
-        .type-badge-mini {
-          padding: 2px 6px;
-          border-radius: 4px;
-          font-size: 0.65rem;
-          font-weight: 800;
-          background-color: var(--bg-surface-subtle);
-          color: var(--text-main);
-          border: 1px solid var(--border-color);
-          display: inline-block;
-          white-space: nowrap;
-        }
-
-        .dn-items-list-container {
-          border: 1px solid var(--border-color);
-          border-radius: 8px;
-          overflow: hidden;
-          background-color: var(--bg-surface);
-        }
-
-        .close-btn {
-          position: absolute;
-          top: 12px;
-          right: 16px;
-          background: var(--bg-surface-subtle);
-          border: 1px solid var(--border-color);
-          color: var(--text-muted);
-          width: 28px;
-          height: 28px;
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-          font-size: 1.2rem;
-          transition: all 0.2s;
-          padding-bottom: 2px;
-          z-index: 20;
-        }
-
-        .close-btn:hover {
-          background-color: #ef4444;
-          color: white;
-          border-color: #ef4444;
-          transform: rotate(90deg);
-        }
       `}</style>
     </div>
   );
