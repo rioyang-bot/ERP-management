@@ -27,7 +27,7 @@ const DONE = {
   attachments: '[]', item_count: 1, creator_name: 'Rio',
 };
 const DRAFT_ITEMS = [
-  { id: 1, item_id: 7, sn: 'BC0101', quantity: 1, brand: 'BLACKCORE', model: '3122-SM', category_name: '設備', purchase_record_id: 30, po_order_no: 'PO-01', order_source: 'PO-2026-001' },
+  { id: 1, item_id: 7, sn: 'BC0101', quantity: 1, brand: 'BLACKCORE', model: '3122-SM', category_name: '設備', purchase_record_id: 30, po_order_no: 'PO-01', order_source: 'PO-2026-001', remarks: '展示機' },
   { id: 2, item_id: 8, sn: null, quantity: 2, brand: 'Mellanox', model: 'CX5', category_name: '硬體', purchase_record_id: null, order_source: null },
   { id: 3, item_id: 9, sn: null, quantity: 5, brand: 'METECH', model: 'LC-LC', category_name: '耗材', purchase_record_id: null, order_source: null },
 ];
@@ -36,13 +36,14 @@ describe('確認進貨的交易步驟', () => {
   const steps = buildInboundConfirmSteps({ orderId: 21, items: DRAFT_ITEMS });
   const names = steps.map((s) => s.queryName);
 
-  it('設備／硬體每一個數量建一筆資產，訂單來源從明細帶過去', () => {
+  it('設備／硬體每一個數量建一筆資產，訂單來源、備註從明細帶過去', () => {
     const assets = steps.filter((s) => s.queryName === 'insertInboundAssets');
     expect(assets.map((s) => s.params)).toEqual([
-      ['BC0101', 7, null, 'PO-2026-001'],
-      [null, 8, null, null],
-      [null, 8, null, null],
+      ['BC0101', 7, null, 'PO-2026-001', '展示機'],
+      [null, 8, null, null, null],
+      [null, 8, null, null, null],
     ]);
+    expect(queries.insertInboundAssets).toContain('remarks');
   });
 
   it('耗材不建資產，但三項都加庫存', () => {
