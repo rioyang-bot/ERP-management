@@ -198,6 +198,11 @@
       "file": "migration_inbound_two_step.sql",
       "type": "schema",
       "note": "進貨單改為兩段式：建立後待確認，確認進貨才入庫；明細記錄訂單來源"
+    },
+    {
+      "file": "migration_inbound_item_remarks.sql",
+      "type": "schema",
+      "note": "進貨明細新增備註：待確認時記在明細，確認進貨時寫進資產"
     }
   ]
 }

@@ -138,7 +138,7 @@ const ASSET_CATEGORIES = new Set(['設備', '硬體']);
  * 確認進貨：把待確認的單真正入庫。
  *
  * 原本建立進貨單當下就做的事，全部移到這裡，放在同一個交易：
- *   - 設備／硬體每一個數量建一筆資產（訂單來源從明細帶過去）
+ *   - 設備／硬體每一個數量建一筆資產（訂單來源、備註從明細帶過去）
  *   - 加庫存
  *   - 採購單的已入庫數量與狀態（超收就擋下來）
  *   - 最後把單改成 COMPLETED；單已經不是待確認（別人先確認了）就整批退回
@@ -157,7 +157,7 @@ export function buildInboundConfirmSteps({ orderId, items = [] }) {
       for (let n = 0; n < qty; n += 1) {
         steps.push({
           queryName: 'insertInboundAssets',
-          params: [sn, it.item_id, null, it.order_source || null],
+          params: [sn, it.item_id, null, it.order_source || null, it.remarks || null],
           errorMessage: sn ? `建立資產 [${sn}] 失敗` : `建立 ${name} 的資產失敗`,
         });
       }

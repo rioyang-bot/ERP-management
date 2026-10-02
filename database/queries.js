@@ -1057,14 +1057,16 @@ export const queries = {
   // 訂單來源：硬體建檔頁本來就有這一欄，從進貨入庫進來的硬體先前填不了，
   // 同一批貨用不同入口建檔就會少掉這個資訊。空值不寫進 custom_attributes，
   // 免得留下一堆 "order_source": null 的雜訊。
+  // $5 備註：確認進貨時從明細帶過來
   insertInboundAssets: `
-    INSERT INTO assets (sn, item_master_id, status, custom_attributes)
+    INSERT INTO assets (sn, item_master_id, status, custom_attributes, remarks)
     VALUES (
       $1, $2, 'ACTIVE',
       jsonb_strip_nulls(jsonb_build_object(
         'project_name', NULLIF(TRIM(COALESCE($3, '')), ''),
         'order_source', NULLIF(TRIM(COALESCE($4, '')), '')
-      ))
+      )),
+      NULLIF(TRIM(COALESCE($5, '')), '')
     )`,
   // 整張進貨單一次填寫訂單來源。以序號比對資產，忽略大小寫與前後空白。
   // $3 為 true 時連已經填過的一併覆蓋；預設只補空的，重複執行才不會
@@ -1117,6 +1119,12 @@ export const queries = {
       AND ii.sn IS NOT NULL AND TRIM(ii.sn) <> ''
       AND ($3::boolean OR COALESCE(ii.order_source, '') = '')
     RETURNING ii.id, ii.sn`,
+  // 待確認的單才能改備註；確認進貨時寫進資產，之後到硬體／設備列表改
+  updateDraftInboundItemRemarks: `
+    UPDATE inbound_items ii SET remarks = NULLIF(TRIM(COALESCE($2, '')), '')
+    FROM inbound_orders io
+    WHERE ii.id = $1::integer AND io.id = ii.inbound_order_id AND io.status = 'DRAFT'
+    RETURNING ii.id, ii.remarks`,
   updateDraftInboundItemQty: `
     UPDATE inbound_items ii SET quantity = $1::integer
     FROM inbound_orders io
@@ -1196,10 +1204,13 @@ export const queries = {
     LEFT JOIN users u ON io.creator_id = u.id
     ORDER BY io.created_at DESC`,
   fetchInboundItems: `
-      SELECT ii.*, im.specification, im.brand, im.model, c.name as category_name, pr.order_no as po_order_no,
+      SELECT ii.*, im.specification, im.brand, im.model, im.type, c.name as category_name, pr.order_no as po_order_no,
              -- 待確認的單還沒有資產，訂單來源記在明細上
              CASE WHEN io.status = 'DRAFT' THEN ii.order_source
-                  ELSE a.custom_attributes->>'order_source' END AS order_source
+                  ELSE a.custom_attributes->>'order_source' END AS order_source,
+             -- 備註同理：待確認讀明細；已進貨讀資產（之後在硬體／設備列表改的會反映），耗材沒有資產就讀明細
+             CASE WHEN io.status = 'DRAFT' THEN ii.remarks
+                  ELSE COALESCE(NULLIF(TRIM(a.remarks), ''), ii.remarks) END AS remarks
       FROM inbound_items ii 
       JOIN inbound_orders io ON io.id = ii.inbound_order_id
       LEFT JOIN item_master im ON ii.item_id = im.id 

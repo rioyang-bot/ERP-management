@@ -47,6 +47,9 @@ const InboundList = ({ isSplitMode = false }) => {
   // 數量與庫存要一起改，因此走同一個交易。
   const [qtyEdit, setQtyEdit] = useState(null); // { itemId, value }
   const [qtySaving, setQtySaving] = useState(false);
+  // 待確認的單可以改備註（還沒有資產，記在明細上；確認進貨時寫進資產）
+  const [remarksEdit, setRemarksEdit] = useState(null); // { itemId, value }
+  const [remarksSaving, setRemarksSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   // 整張單一次填寫訂單來源。這一欄存在資產上，逐筆到硬體列表改八十次不切實際。
   const [orderSourceInput, setOrderSourceInput] = useState('');
@@ -335,7 +338,7 @@ const InboundList = ({ isSplitMode = false }) => {
   const handleConfirmInbound = async () => {
     const order = selectedOrder;
     if (!order || !isDraftOrder(order)) return;
-    if (snEdit || qtyEdit) { alert('明細還有未儲存的修改，請先儲存或取消。'); return; }
+    if (snEdit || qtyEdit || remarksEdit) { alert('明細還有未儲存的修改，請先儲存或取消。'); return; }
 
     setIsConfirming(true);
     try {
@@ -391,6 +394,35 @@ const InboundList = ({ isSplitMode = false }) => {
       alert('確認進貨失敗：\n' + err.message);
     } finally {
       setIsConfirming(false);
+    }
+  };
+
+  /** 待確認的單修改備註。只改明細；查詢限定 DRAFT，單若剛被確認就改不到 */
+  const handleSaveRemarks = async (item) => {
+    const next = (remarksEdit?.value || '').trim();
+    if (next === (item.remarks || '').trim()) { setRemarksEdit(null); return; }
+    setRemarksSaving(true);
+    try {
+      const res = await window.electronAPI.runTransaction([{
+        queryName: 'updateDraftInboundItemRemarks',
+        params: [item.id, next],
+        expectRows: 1,
+        errorMessage: '這張進貨單已經不是待確認狀態（可能剛被確認進貨），請重新整理後再操作',
+      }]);
+      if (!res.success) throw new Error(res.error || '儲存失敗');
+      const name = [item.brand, item.model].filter(Boolean).join(' ') || '品項';
+      logUpdate(
+        'INBOUND', selectedOrder?.order_no, selectedOrder?.partner_name || '進貨單',
+        `修改待確認進貨單的備註 [${name}${item.sn ? ` ${item.sn}` : ''}]：${item.remarks || '（空白）'} → ${next || '（空白）'}`,
+        { orderNo: selectedOrder?.order_no, itemId: item.id, sn: item.sn || null, from: item.remarks || null, to: next || null, draft: true }
+      );
+      setRemarksEdit(null);
+      const itemsRes = await window.electronAPI.namedQuery('fetchInboundItems', [selectedOrder.id]);
+      if (itemsRes.success) setOrderItems(itemsRes.rows);
+    } catch (e) {
+      alert(`儲存備註失敗：${e.message}`);
+    } finally {
+      setRemarksSaving(false);
     }
   };
 
@@ -911,7 +943,7 @@ const InboundList = ({ isSplitMode = false }) => {
 
       {isModalOpen && selectedOrder && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'var(--bg-modal-overlay)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
-          <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '16px', width: '60vw', maxWidth: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: 'var(--modal-shadow)' }}>
+          <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '16px', width: '76vw', maxWidth: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: 'var(--modal-shadow)' }}>
             <div style={{ padding: '24px 32px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
                 <h2 style={{ margin: '0 0 8px 0', fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -1070,24 +1102,31 @@ const InboundList = ({ isSplitMode = false }) => {
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
                       <tr style={{ backgroundColor: 'var(--table-header-bg)', borderBottom: '2px solid var(--border-color)' }}>
-                        <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--table-header-text)', fontSize: '0.9rem' }}>入庫品項</th>
+                        {/* 類別放最前面，一眼分出設備／硬體／耗材 */}
                         <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--table-header-text)', fontSize: '0.9rem' }}>類別</th>
+                        <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--table-header-text)', fontSize: '0.9rem' }}>入庫品項</th>
+                        <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--table-header-text)', fontSize: '0.9rem' }}>規格</th>
                         <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--table-header-text)', fontSize: '0.9rem' }}>來源採購單</th>
                         <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--table-header-text)', fontSize: '0.9rem' }}>硬體序號 (S/N)</th>
                         <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--table-header-text)', fontSize: '0.9rem' }}>訂單來源</th>
+                        <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--table-header-text)', fontSize: '0.9rem' }}>備註</th>
                         <th style={{ padding: '14px 16px', textAlign: 'center', fontWeight: 700, color: 'var(--table-header-text)', fontSize: '0.9rem' }}>數量</th>
                       </tr>
                     </thead>
                     <tbody>
                       {orderItems.map((item, idx) => (
                         <tr key={item.id} style={{ borderBottom: idx === orderItems.length - 1 ? 'none' : '1px solid var(--table-border)' }}>
-                          <td style={{ padding: '16px', verticalAlign: 'top' }}>
-                            <div style={{ fontWeight: 600, color: 'var(--text-main)', marginBottom: '4px' }}>{[item.brand, item.model, item.specification].filter(Boolean).join(' ') || item.specification || '未知項目'}</div>
-                          </td>
-                          <td style={{ padding: '16px', verticalAlign: 'top' }}>
+                          <td style={{ padding: '16px', verticalAlign: 'top', whiteSpace: 'nowrap' }}>
                             <span style={{ padding: '4px 8px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>
                               {item.category_name || '未分類'}
                             </span>
+                          </td>
+                          <td style={{ padding: '16px', verticalAlign: 'top' }}>
+                            {/* 規格另外一欄，品項只放廠牌與型號 */}
+                            <div style={{ fontWeight: 600, color: 'var(--text-main)', marginBottom: '4px' }}>{[item.brand, item.model].filter(Boolean).join(' ') || item.type || '未知項目'}</div>
+                          </td>
+                          <td style={{ padding: '16px', verticalAlign: 'top', fontSize: '0.85rem', color: item.specification ? 'var(--text-main)' : 'var(--text-subtle)' }} data-testid={`inbound-item-spec-${item.id}`}>
+                            {item.specification || '-'}
                           </td>
                           <td style={{ padding: '16px', verticalAlign: 'top', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
                             {item.po_order_no || '無 (非採購入庫)'}
@@ -1146,6 +1185,57 @@ const InboundList = ({ isSplitMode = false }) => {
                               : item.order_source
                                 ? <span style={{ color: 'var(--text-main)', fontWeight: 600 }}>{item.order_source}</span>
                                 : <span style={{ color: '#d97706' }}>未填</span>}
+                          </td>
+                          {/* 備註：待確認的單可以改，確認進貨時寫進資產；已進貨的到硬體／設備列表改 */}
+                          <td style={{ padding: '16px', verticalAlign: 'top', fontSize: '0.85rem', minWidth: '140px' }} data-testid={`inbound-item-remarks-${item.id}`}>
+                            {remarksEdit?.itemId === item.id ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <input
+                                  type="text"
+                                  value={remarksEdit.value}
+                                  onChange={(e) => setRemarksEdit({ itemId: item.id, value: e.target.value })}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Escape') setRemarksEdit(null);
+                                    if (e.key === 'Enter') { e.preventDefault(); handleSaveRemarks(item); }
+                                  }}
+                                  aria-label={`備註內容 ${[item.brand, item.model].filter(Boolean).join(' ')}`}
+                                  autoFocus
+                                  style={{ padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', outline: 'none', width: '160px', fontSize: '0.85rem' }}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveRemarks(item)}
+                                  disabled={remarksSaving}
+                                  aria-label="儲存備註"
+                                  style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 6px', borderRadius: '6px', border: 'none', cursor: remarksSaving ? 'wait' : 'pointer', backgroundColor: remarksSaving ? 'var(--border-color)' : '#16a34a', color: '#fff' }}
+                                >
+                                  <Save size={13} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setRemarksEdit(null)}
+                                  aria-label="取消修改備註"
+                                  style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 6px', borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-muted)', cursor: 'pointer' }}
+                                >
+                                  <X size={13} />
+                                </button>
+                              </div>
+                            ) : (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ color: item.remarks ? 'var(--text-main)' : 'var(--text-subtle)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{item.remarks || '-'}</span>
+                                {isDraftOrder(selectedOrder) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setRemarksEdit({ itemId: item.id, value: item.remarks || '' })}
+                                    title="修改備註（確認進貨時會寫進資產）"
+                                    aria-label={`修改備註 ${[item.brand, item.model].filter(Boolean).join(' ')}`}
+                                    style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '22px', height: '22px', padding: 0, flexShrink: 0, borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: '#f59e0b', cursor: 'pointer' }}
+                                  >
+                                    <Edit2 size={11} />
+                                  </button>
+                                )}
+                              </div>
+                            )}
                           </td>
                           {/* 數量可就地更正。有序號的（設備／硬體）不給改 ——
                               一支序號就是一台，改數字不會多出或少掉一台資產，
