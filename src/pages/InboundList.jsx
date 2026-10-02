@@ -1105,9 +1105,9 @@ const InboundList = ({ isSplitMode = false }) => {
                         {/* 來源採購單、類別放最前面，一眼分出是哪張採購單、設備／硬體／耗材 */}
                         <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--table-header-text)', fontSize: '0.9rem' }}>來源採購單</th>
                         <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--table-header-text)', fontSize: '0.9rem' }}>類別</th>
-                        {/* 廠牌、類型、型號分開三欄，誰打錯一眼就看得出來 */}
-                        <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--table-header-text)', fontSize: '0.9rem' }}>廠牌</th>
+                        {/* 類型、廠牌、型號分開三欄，誰打錯一眼就看得出來 */}
                         <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--table-header-text)', fontSize: '0.9rem' }}>類型</th>
+                        <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--table-header-text)', fontSize: '0.9rem' }}>廠牌</th>
                         <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--table-header-text)', fontSize: '0.9rem' }}>型號</th>
                         <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--table-header-text)', fontSize: '0.9rem' }}>規格</th>
                         <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--table-header-text)', fontSize: '0.9rem' }}>硬體序號 (S/N)</th>
@@ -1127,7 +1127,7 @@ const InboundList = ({ isSplitMode = false }) => {
                               {item.category_name || '未分類'}
                             </span>
                           </td>
-                          {[['brand', item.brand], ['type', item.type], ['model', item.model]].map(([key, value]) => (
+                          {[['type', item.type], ['brand', item.brand], ['model', item.model]].map(([key, value]) => (
                             <td
                               key={key}
                               data-testid={`inbound-item-${key}-${item.id}`}
