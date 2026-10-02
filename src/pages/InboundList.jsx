@@ -943,7 +943,7 @@ const InboundList = ({ isSplitMode = false }) => {
 
       {isModalOpen && selectedOrder && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'var(--bg-modal-overlay)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
-          <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '16px', width: '76vw', maxWidth: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: 'var(--modal-shadow)' }}>
+          <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '16px', width: '88vw', maxWidth: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: 'var(--modal-shadow)' }}>
             <div style={{ padding: '24px 32px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
                 <h2 style={{ margin: '0 0 8px 0', fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -1102,11 +1102,14 @@ const InboundList = ({ isSplitMode = false }) => {
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
                       <tr style={{ backgroundColor: 'var(--table-header-bg)', borderBottom: '2px solid var(--border-color)' }}>
-                        {/* 類別放最前面，一眼分出設備／硬體／耗材 */}
-                        <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--table-header-text)', fontSize: '0.9rem' }}>類別</th>
-                        <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--table-header-text)', fontSize: '0.9rem' }}>入庫品項</th>
-                        <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--table-header-text)', fontSize: '0.9rem' }}>規格</th>
+                        {/* 來源採購單、類別放最前面，一眼分出是哪張採購單、設備／硬體／耗材 */}
                         <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--table-header-text)', fontSize: '0.9rem' }}>來源採購單</th>
+                        <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--table-header-text)', fontSize: '0.9rem' }}>類別</th>
+                        {/* 廠牌、類型、型號分開三欄，誰打錯一眼就看得出來 */}
+                        <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--table-header-text)', fontSize: '0.9rem' }}>廠牌</th>
+                        <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--table-header-text)', fontSize: '0.9rem' }}>類型</th>
+                        <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--table-header-text)', fontSize: '0.9rem' }}>型號</th>
+                        <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--table-header-text)', fontSize: '0.9rem' }}>規格</th>
                         <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--table-header-text)', fontSize: '0.9rem' }}>硬體序號 (S/N)</th>
                         <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--table-header-text)', fontSize: '0.9rem' }}>訂單來源</th>
                         <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--table-header-text)', fontSize: '0.9rem' }}>備註</th>
@@ -1116,20 +1119,25 @@ const InboundList = ({ isSplitMode = false }) => {
                     <tbody>
                       {orderItems.map((item, idx) => (
                         <tr key={item.id} style={{ borderBottom: idx === orderItems.length - 1 ? 'none' : '1px solid var(--table-border)' }}>
+                          <td style={{ padding: '16px', verticalAlign: 'top', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+                            {item.po_order_no || '無 (非採購入庫)'}
+                          </td>
                           <td style={{ padding: '16px', verticalAlign: 'top', whiteSpace: 'nowrap' }}>
                             <span style={{ padding: '4px 8px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>
                               {item.category_name || '未分類'}
                             </span>
                           </td>
-                          <td style={{ padding: '16px', verticalAlign: 'top' }}>
-                            {/* 規格另外一欄，品項只放廠牌與型號 */}
-                            <div style={{ fontWeight: 600, color: 'var(--text-main)', marginBottom: '4px' }}>{[item.brand, item.model].filter(Boolean).join(' ') || item.type || '未知項目'}</div>
-                          </td>
+                          {[['brand', item.brand], ['type', item.type], ['model', item.model]].map(([key, value]) => (
+                            <td
+                              key={key}
+                              data-testid={`inbound-item-${key}-${item.id}`}
+                              style={{ padding: '16px', verticalAlign: 'top', fontWeight: 600, color: value ? 'var(--text-main)' : 'var(--text-subtle)' }}
+                            >
+                              {value || '-'}
+                            </td>
+                          ))}
                           <td style={{ padding: '16px', verticalAlign: 'top', fontSize: '0.85rem', color: item.specification ? 'var(--text-main)' : 'var(--text-subtle)' }} data-testid={`inbound-item-spec-${item.id}`}>
                             {item.specification || '-'}
-                          </td>
-                          <td style={{ padding: '16px', verticalAlign: 'top', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-                            {item.po_order_no || '無 (非採購入庫)'}
                           </td>
                           <td style={{ padding: '16px', verticalAlign: 'top' }}>
                             {!item.sn ? (

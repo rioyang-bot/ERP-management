@@ -242,7 +242,7 @@ describe('進貨單列表的兩個頁籤', () => {
 
   it('待確認的單修改數量，提示庫存不受影響', async () => {
     await openDraft();
-    const row = screen.getByText('METECH LC-LC').closest('tr');
+    const row = screen.getByLabelText('修改數量 METECH LC-LC').closest('tr');
     await userEvent.click(within(row).getByLabelText('修改數量 METECH LC-LC'));
     const input = within(row).getByRole('spinbutton');
     await userEvent.clear(input);

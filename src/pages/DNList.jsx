@@ -730,7 +730,10 @@ const DNList = ({ isSplitMode = false }) => {
                     <thead style={{ position: 'sticky', top: 0, backgroundColor: 'var(--table-header-bg)', zIndex: 10 }}>
                       <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border-color)' }}>
                         <th style={{ padding: '8px 12px', fontSize: '0.75rem', color: 'var(--table-header-text)' }}>類型</th>
-                        <th style={{ padding: '8px 12px', fontSize: '0.75rem', color: 'var(--table-header-text)' }}>項目詳情</th>
+                        {/* 廠牌、型號、規格分開三欄，誰打錯一眼就看得出來 */}
+                        <th style={{ padding: '8px 12px', fontSize: '0.75rem', color: 'var(--table-header-text)' }}>廠牌</th>
+                        <th style={{ padding: '8px 12px', fontSize: '0.75rem', color: 'var(--table-header-text)' }}>型號</th>
+                        <th style={{ padding: '8px 12px', fontSize: '0.75rem', color: 'var(--table-header-text)' }}>規格</th>
                         <th style={{ padding: '8px 12px', fontSize: '0.75rem', color: 'var(--table-header-text)' }}>序號 (S/N)</th>
                         <th style={{ padding: '8px 12px', fontSize: '0.75rem', color: 'var(--table-header-text)', textAlign: 'center' }}>數量</th>
                         <th style={{ padding: '8px 12px', fontSize: '0.75rem', color: 'var(--table-header-text)' }}>發送位置</th>
@@ -738,20 +741,25 @@ const DNList = ({ isSplitMode = false }) => {
                     </thead>
                     <tbody>
                       {isDetailLoading ? (
-                        <tr><td colSpan="5" style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)' }}>讀取中...</td></tr>
+                        <tr><td colSpan="7" style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)' }}>讀取中...</td></tr>
                       ) : dnItems.map((item, idx) => (
                         <tr key={idx} style={{ borderBottom: '1px solid var(--table-border)' }}>
                           <td style={{ padding: '6px 12px' }}>
                             <span className="type-badge-mini">{item.type}</span>
                           </td>
-                          <td style={{ padding: '6px 12px' }}>
-                            <div style={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--text-main)' }}>{item.brand} {item.model}</div>
-                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{item.specification}</div>
+                          <td style={{ padding: '6px 12px', fontWeight: 700, fontSize: '0.8rem', color: item.brand ? 'var(--text-main)' : 'var(--text-subtle)' }} data-testid={`dn-item-brand-${idx}`}>
+                            {item.brand || '-'}
+                          </td>
+                          <td style={{ padding: '6px 12px' }} data-testid={`dn-item-model-${idx}`}>
+                            <div style={{ fontWeight: 700, fontSize: '0.8rem', color: item.model ? 'var(--text-main)' : 'var(--text-subtle)' }}>{item.model || '-'}</div>
                             {isMountedRow(item) && (
                               <div style={{ fontSize: '0.68rem', color: '#7c3aed', fontWeight: 700, marginTop: '2px' }}>
                                 掛載於 {item.lab_device_sn || '設備'}，隨設備出貨（從 LAB 扣）
                               </div>
                             )}
+                          </td>
+                          <td style={{ padding: '6px 12px', fontSize: '0.75rem', color: item.specification ? 'var(--text-main)' : 'var(--text-subtle)' }} data-testid={`dn-item-spec-${idx}`}>
+                            {item.specification || '-'}
                           </td>
                           <td style={{ padding: '6px 12px' }}>
                             {item.sn && (
