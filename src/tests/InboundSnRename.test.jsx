@@ -62,7 +62,7 @@ describe('進貨單明細：更正序號', () => {
   /** 打開進貨明細，按下那一筆的更正序號 */
   const startEditingSn = async () => {
     renderInboundHistory();
-    await userEvent.click(await screen.findByLabelText('查看進貨明細'));
+    await userEvent.click(await screen.findByLabelText('編輯進貨單'));
     await userEvent.click(await screen.findByRole('button', { name: '更正序號 U5M16V560125' }));
     return screen.findByRole('textbox', { name: '更正序號 U5M16V560125' });
   };
@@ -76,7 +76,7 @@ describe('進貨單明細：更正序號', () => {
 
   it('沒有序號的那一筆不會出現更正入口', async () => {
     renderInboundHistory();
-    await userEvent.click(await screen.findByLabelText('查看進貨明細'));
+    await userEvent.click(await screen.findByLabelText('編輯進貨單'));
     await screen.findByText('U5M16V560125');
 
     expect(screen.getAllByRole('button', { name: /^更正序號/ })).toHaveLength(1);

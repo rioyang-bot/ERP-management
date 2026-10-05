@@ -111,7 +111,7 @@ describe('進貨單明細上更名', () => {
     render(<MemoryRouter><InboundList /></MemoryRouter>);
     // 已進貨的單在「已進貨 (歷史紀錄)」
     await userEvent.click(screen.getByTestId('inbound-tab-history'));
-    await userEvent.click(await screen.findByLabelText('查看進貨明細'));
+    await userEvent.click(await screen.findByLabelText('編輯進貨單'));
     await screen.findByText('2413N29NVMS0090');
   };
   const openDialog = async (buttonLabel, dialogName) => {

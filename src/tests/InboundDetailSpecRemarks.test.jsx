@@ -48,11 +48,11 @@ beforeEach(() => {
   };
 });
 
-const openDetail = async (history = false) => {
+const openDetail = async (history = false, label = '查看進貨明細') => {
   render(<MemoryRouter><InboundList /></MemoryRouter>);
   await screen.findByText(DRAFT.order_no);
   if (history) fireEvent.click(screen.getByTestId('inbound-tab-history'));
-  await userEvent.click(screen.getByLabelText('查看進貨明細'));
+  await userEvent.click(screen.getByLabelText(label));
   await screen.findByText('E7ADE593');
 };
 const detailHeaders = () => [...screen.getByText('E7ADE593').closest('table').querySelectorAll('thead th')].map((th) => th.textContent.trim());
@@ -105,8 +105,16 @@ describe('進貨明細的欄位', () => {
 });
 
 describe('待確認的單可以改備註', () => {
-  it('改好後只更新這一筆明細', async () => {
+  // 「查看」是純唯讀，改備註要按「編輯」
+  const openEdit = () => openDetail(false, '編輯進貨單');
+
+  it('查看時沒有修改備註的按鈕', async () => {
     await openDetail();
+    expect(screen.queryByLabelText(/修改備註/)).not.toBeInTheDocument();
+  });
+
+  it('改好後只更新這一筆明細', async () => {
+    await openEdit();
     await userEvent.click(screen.getByLabelText('修改備註 METECH LC-LC'));
     await userEvent.type(screen.getByLabelText('備註內容 METECH LC-LC'), '放 LAB 架上');
     await userEvent.click(screen.getByRole('button', { name: '儲存備註' }));
@@ -116,18 +124,15 @@ describe('待確認的單可以改備註', () => {
   });
 
   it('沒有改動就不送出', async () => {
-    await openDetail();
+    await openEdit();
     await userEvent.click(screen.getByLabelText('修改備註 INTEL XEON W7-2595X'));
     await userEvent.click(screen.getByRole('button', { name: '儲存備註' }));
     expect(txSteps).toHaveLength(0);
   });
 
-  it('備註還在編輯時不能確認進貨', async () => {
-    await openDetail();
-    await userEvent.click(screen.getByLabelText('修改備註 METECH LC-LC'));
-    await userEvent.click(screen.getByRole('button', { name: /確認進貨/ }));
-    expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('未儲存的修改'));
-    expect(txSteps).toHaveLength(0);
+  it('編輯時沒有確認進貨，先存好再回到查看確認', async () => {
+    await openEdit();
+    expect(screen.queryByRole('button', { name: /確認進貨/ })).not.toBeInTheDocument();
   });
 });
 
