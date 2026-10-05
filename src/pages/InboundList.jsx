@@ -52,7 +52,7 @@ const InboundList = ({ isSplitMode = false }) => {
   // 待確認的單可以改備註（還沒有資產，記在明細上；確認進貨時寫進資產）
   const [remarksEdit, setRemarksEdit] = useState(null); // { itemId, value }
   const [remarksSaving, setRemarksSaving] = useState(false);
-  // 廠牌更名：值為要更名的廠牌，null 表示視窗關閉
+  // 廠牌更正：{ mode: 'brand', brands } 一次改全部品項／{ mode: 'item', item } 只改一個品項；null 表示視窗關閉
   const [brandRename, setBrandRename] = useState(null);
   const [deleting, setDeleting] = useState(false);
   // 整張單一次填寫訂單來源。這一欄存在資產上，逐筆到硬體列表改八十次不切實際。
@@ -956,6 +956,8 @@ const InboundList = ({ isSplitMode = false }) => {
         const saveBtn = (busy) => ({ display: 'inline-flex', alignItems: 'center', padding: '4px 6px', borderRadius: '6px', border: 'none', cursor: busy ? 'wait' : 'pointer', backgroundColor: busy ? 'var(--border-color)' : '#16a34a', color: '#fff' });
         const cancelBtn = { display: 'inline-flex', alignItems: 'center', padding: '4px 6px', borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-muted)', cursor: 'pointer' };
         const itemName = (item) => [item.brand, item.model].filter(Boolean).join(' ');
+        // 這張單上的廠牌（表頭「一次更正廠牌」用）
+        const orderBrands = [...new Set(orderItems.map((it) => (it.brand || '').trim()).filter(Boolean))];
         const attachmentChip = (att, index, onRemove) => (
           <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
             {att.type?.startsWith('image/') ? (
@@ -1084,7 +1086,23 @@ const InboundList = ({ isSplitMode = false }) => {
                           <th>類別</th>
                           {/* 類型、廠牌、型號分開三欄，誰打錯一眼就看得出來 */}
                           <th>類型</th>
-                          <th>廠牌</th>
+                          <th>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              廠牌
+                              {/* 一次改全部品項：用到這個廠牌的品項全部更名 */}
+                              {orderBrands.length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setBrandRename({ mode: 'brand', brands: orderBrands })}
+                                  title="一次更正廠牌：用到這個廠牌的品項全部改正"
+                                  aria-label="一次更正廠牌（全部品項）"
+                                  style={smallEditBtn}
+                                >
+                                  <Edit2 size={11} />
+                                </button>
+                              )}
+                            </div>
+                          </th>
                           <th>型號</th>
                           <th>規格</th>
                           <th>硬體序號 (S/N)</th>
@@ -1108,13 +1126,13 @@ const InboundList = ({ isSplitMode = false }) => {
                             <td className={item.brand ? 'dm-strong' : 'dm-empty'} data-testid={`inbound-item-brand-${item.id}`}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 {item.brand || '-'}
-                                {/* 廠牌打錯：用到它的品項一次全部更名（見 components/BrandRenameModal） */}
-                                {item.brand && (
+                                {/* 只改這一個品項；同廠牌的全部一起改用表頭的按鈕（見 components/BrandRenameModal） */}
+                                {item.brand && item.item_id && (
                                   <button
                                     type="button"
-                                    onClick={() => setBrandRename(item.brand)}
-                                    title="廠牌打錯了？更名後，用到這個廠牌的品項會一起改正"
-                                    aria-label={`更正廠牌 ${item.brand}`}
+                                    onClick={() => setBrandRename({ mode: 'item', item })}
+                                    title="只更正這個品項的廠牌（同廠牌的其他品項不動）"
+                                    aria-label={`更正廠牌 ${item.brand} ${item.model || ''}`.trim()}
                                     style={smallEditBtn}
                                   >
                                     <Edit2 size={11} />
@@ -1340,7 +1358,9 @@ const InboundList = ({ isSplitMode = false }) => {
       })()}
       {brandRename && (
         <BrandRenameModal
-          brand={brandRename}
+          mode={brandRename.mode}
+          brands={brandRename.brands}
+          item={brandRename.item}
           onClose={() => setBrandRename(null)}
           onRenamed={async () => {
             setBrandRename(null);

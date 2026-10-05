@@ -7,7 +7,7 @@ import InboundList from '../pages/InboundList';
 import { queries } from '../../database/queries';
 import { prepareQueryParams } from '../../server/queryParams.js';
 import {
-  normalizeBrand, validateBrandRename, buildBrandRenameSteps, summarizeBrandUsage, auditModuleFor,
+  normalizeBrand, validateBrandRename, buildBrandRenameSteps, buildSingleBrandRenameSteps, summarizeBrandUsage, auditModuleFor,
 } from '../utils/brandRename';
 
 /**
@@ -68,6 +68,8 @@ const ORDER = {
 const ITEMS = [
   { id: 1, item_id: 445, sn: '2413N29NVMS0090', quantity: 1, brand: '光景資訊', type: 'SSD STORAGE CAGE', model: 'N-29NVMS', specification: 'NVME', category_name: '硬體' },
   { id: 2, item_id: 456, sn: null, quantity: 10, brand: '光景資訊', type: 'SLIMSAS CABLE', model: 'C7 CABLE', specification: '', category_name: '耗材' },
+  // 一張單不一定全是同一個廠牌
+  { id: 3, item_id: 470, sn: 'SN-DELL-1', quantity: 1, brand: 'DELL', type: 'NIC', model: 'X710', specification: '', category_name: '硬體' },
 ];
 const USAGE = [
   { id: 445, category_name: '硬體', type: 'SSD STORAGE CAGE', brand: '光景資訊', model: 'N-29NVMS', specification: 'NVME', asset_count: 10, inbound_orders: 'IN-20261001-02' },
@@ -93,6 +95,8 @@ describe('進貨單明細上更名', () => {
         if (query === 'fetchInboundItems') return { success: true, rows: ITEMS };
         if (query === 'fetchBrandUsage') return { success: true, rows: USAGE };
         if (query === 'fetchBrandRenameConflicts') return { success: true, rows: conflicts };
+        if (query === 'fetchItemMasterUsage') return { success: true, rows: USAGE.filter((u) => u.id === params[0]) };
+        if (query === 'fetchItemMasterBrandConflict') return { success: true, rows: conflicts };
         return { success: true, rows: [] };
       }),
       runTransaction: vi.fn(async (steps) => { txSteps.push(steps); return { success: true, results: {} }; }),
@@ -103,53 +107,119 @@ describe('進貨單明細上更名', () => {
     };
   });
 
-  const openRename = async () => {
+  const openDetail = async () => {
     render(<MemoryRouter><InboundList /></MemoryRouter>);
     // 已進貨的單在「已進貨 (歷史紀錄)」
     await userEvent.click(screen.getByTestId('inbound-tab-history'));
     await userEvent.click(await screen.findByLabelText('查看進貨明細'));
     await screen.findByText('2413N29NVMS0090');
-    await userEvent.click(screen.getAllByLabelText('更正廠牌 光景資訊')[0]);
-    const dialog = await screen.findByRole('dialog', { name: '廠牌更名' });
+  };
+  const openDialog = async (buttonLabel, dialogName) => {
+    await openDetail();
+    await userEvent.click(screen.getByLabelText(buttonLabel));
+    const dialog = await screen.findByRole('dialog', { name: dialogName });
     await within(dialog).findByTestId('brand-rename-usage');
     return dialog;
   };
+  const ALL = ['一次更正廠牌（全部品項）', '一次更正廠牌（全部品項）'];
+  const ONE = ['更正廠牌 光景資訊 N-29NVMS', '更正這個品項的廠牌'];
 
-  it('列出所有用到這個廠牌的品項', async () => {
-    const dialog = await openRename();
-    expect(within(dialog).getByTestId('brand-rename-current')).toHaveTextContent('光景資訊');
-    expect(within(dialog).getByTestId('brand-rename-usage')).toHaveTextContent('會一起改到 3 個品項');
-    expect(within(dialog).getByTestId('brand-rename-usage')).toHaveTextContent('11 筆資產');
-    expect(within(dialog).getByText('N-48SSR')).toBeInTheDocument();
+  describe('表頭：一次改全部品項', () => {
+    it('按鈕在「廠牌」表頭上', async () => {
+      await openDetail();
+      const th = screen.getByLabelText(ALL[0]).closest('th');
+      expect(th).toHaveTextContent('廠牌');
+    });
+
+    it('這張單有好幾個廠牌時先選要改哪一個，列出所有用到它的品項', async () => {
+      const dialog = await openDialog(...ALL);
+      const select = within(dialog).getByLabelText('要更正的廠牌');
+      expect([...select.options].map((o) => o.value)).toEqual(['光景資訊', 'DELL']);
+      expect(within(dialog).getByTestId('brand-rename-usage')).toHaveTextContent('會一起改到 3 個品項');
+      expect(within(dialog).getByTestId('brand-rename-usage')).toHaveTextContent('11 筆資產');
+      await userEvent.selectOptions(select, 'DELL');
+      await waitFor(() => expect(calls.filter((c) => c.query === 'fetchBrandUsage').at(-1).params).toEqual(['DELL']));
+    });
+
+    it('確定更正：一個交易改完，每個品項各記一筆事件紀錄', async () => {
+      const dialog = await openDialog(...ALL);
+      await userEvent.type(within(dialog).getByLabelText('正確的廠牌名稱'), '元景資訊');
+      await userEvent.click(within(dialog).getByRole('button', { name: '確定更正' }));
+
+      await waitFor(() => expect(txSteps).toHaveLength(1));
+      expect(txSteps[0]).toEqual(buildBrandRenameSteps('光景資訊', '元景資訊', 3));
+      expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('硬體 2 個、耗材 1 個'));
+      const logs = calls.filter((c) => c.query === 'insertAuditLog');
+      expect(logs).toHaveLength(3);
+      expect(JSON.stringify(logs)).toContain('廠牌更正 [光景資訊] → [元景資訊]');
+      await waitFor(() => expect(calls.filter((c) => c.query === 'fetchInboundItems').length).toBeGreaterThan(1));
+      expect(screen.queryByRole('dialog', { name: ALL[1] })).not.toBeInTheDocument();
+    });
+
+    it('改名後會跟既有品項重複就擋下來', async () => {
+      conflicts = [{ id: 445, category_name: '硬體', type: 'SSD STORAGE CAGE', model: 'N-29NVMS', specification: 'NVME', existing_id: 900 }];
+      const dialog = await openDialog(...ALL);
+      await userEvent.type(within(dialog).getByLabelText('正確的廠牌名稱'), '元景資訊');
+      await userEvent.click(within(dialog).getByRole('button', { name: '確定更正' }));
+      await waitFor(() => expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('無法更正')));
+      expect(txSteps).toHaveLength(0);
+    });
+
+    it('沒有輸入新名稱時不能按', async () => {
+      const dialog = await openDialog(...ALL);
+      expect(within(dialog).getByRole('button', { name: '確定更正' })).toBeDisabled();
+    });
   });
 
-  it('確定更名：一個交易改完，每個品項各記一筆事件紀錄', async () => {
-    const dialog = await openRename();
-    await userEvent.type(within(dialog).getByLabelText('正確的廠牌名稱'), '元景資訊');
-    await userEvent.click(within(dialog).getByRole('button', { name: '確定更名' }));
+  describe('每一列：只改這個品項', () => {
+    it('按鈕在每一列的廠牌旁', async () => {
+      await openDetail();
+      expect(screen.getByLabelText(ONE[0]).closest('td')).toHaveAttribute('data-testid', 'inbound-item-brand-1');
+      expect(screen.getByLabelText('更正廠牌 DELL X710')).toBeInTheDocument();
+    });
 
-    await waitFor(() => expect(txSteps).toHaveLength(1));
-    expect(txSteps[0]).toEqual(buildBrandRenameSteps('光景資訊', '元景資訊', 3));
-    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('硬體 2 個、耗材 1 個'));
-    const logs = calls.filter((c) => c.query === 'insertAuditLog');
-    expect(logs).toHaveLength(3);
-    expect(JSON.stringify(logs)).toContain('廠牌更名 [光景資訊] → [元景資訊]');
-    // 改完重新讀明細
-    await waitFor(() => expect(calls.filter((c) => c.query === 'fetchInboundItems').length).toBeGreaterThan(1));
-    expect(screen.queryByRole('dialog', { name: '廠牌更名' })).not.toBeInTheDocument();
+    it('只列出這一個品項', async () => {
+      const dialog = await openDialog(...ONE);
+      expect(within(dialog).getByTestId('brand-rename-current')).toHaveTextContent('光景資訊');
+      expect(within(dialog).getByTestId('brand-rename-usage')).toHaveTextContent('要更正的品項');
+      expect(within(dialog).getByText('N-29NVMS')).toBeInTheDocument();
+      expect(within(dialog).queryByText('N-48SSR')).not.toBeInTheDocument();
+      expect(calls.find((c) => c.query === 'fetchItemMasterUsage').params).toEqual([445]);
+    });
+
+    it('確定更正：只改這張品項主檔，同廠牌的其他品項不動', async () => {
+      const dialog = await openDialog(...ONE);
+      await userEvent.type(within(dialog).getByLabelText('正確的廠牌名稱'), '元景資訊');
+      await userEvent.click(within(dialog).getByRole('button', { name: '確定更正' }));
+
+      await waitFor(() => expect(txSteps).toHaveLength(1));
+      expect(txSteps[0]).toEqual(buildSingleBrandRenameSteps(445, '光景資訊', '元景資訊'));
+      expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('只改這一個品項'));
+      const logs = calls.filter((c) => c.query === 'insertAuditLog');
+      expect(logs).toHaveLength(1);
+      expect(calls.some((c) => c.query === 'fetchBrandRenameConflicts')).toBe(false);
+      expect(calls.find((c) => c.query === 'fetchItemMasterBrandConflict').params).toEqual([445, '元景資訊']);
+    });
+
+    it('改了會跟既有品項重複就擋下來', async () => {
+      conflicts = [{ existing_id: 900, category_name: '硬體', type: 'SSD STORAGE CAGE', model: 'N-29NVMS', specification: 'NVME' }];
+      const dialog = await openDialog(...ONE);
+      await userEvent.type(within(dialog).getByLabelText('正確的廠牌名稱'), '元景資訊');
+      await userEvent.click(within(dialog).getByRole('button', { name: '確定更正' }));
+      await waitFor(() => expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('無法更正')));
+      expect(txSteps).toHaveLength(0);
+    });
   });
+});
 
-  it('改名後會跟既有品項重複就擋下來', async () => {
-    conflicts = [{ id: 445, category_name: '硬體', type: 'SSD STORAGE CAGE', model: 'N-29NVMS', specification: 'NVME', existing_id: 900 }];
-    const dialog = await openRename();
-    await userEvent.type(within(dialog).getByLabelText('正確的廠牌名稱'), '元景資訊');
-    await userEvent.click(within(dialog).getByRole('button', { name: '確定更名' }));
-    await waitFor(() => expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('無法更名')));
-    expect(txSteps).toHaveLength(0);
-  });
-
-  it('沒有輸入新名稱時不能按', async () => {
-    const dialog = await openRename();
-    expect(within(dialog).getByRole('button', { name: '確定更名' })).toBeDisabled();
+describe('單一品項的查詢', () => {
+  it('帶上舊名稱當條件，並把新廠牌加進清單', () => {
+    const steps = buildSingleBrandRenameSteps(445, '光景資訊', '元景資訊');
+    expect(steps).toEqual([
+      expect.objectContaining({ queryName: 'renameSingleItemMasterBrand', params: [445, '元景資訊', '光景資訊'], expectRows: 1 }),
+      { queryName: 'ensureItemBrandForMaster', params: [445, '元景資訊'] },
+    ]);
+    expect(queries.renameSingleItemMasterBrand).toContain('WHERE id = $1::integer AND UPPER(TRIM(brand)) = UPPER(TRIM($3))');
+    expect(queries.ensureItemBrandForMaster).toContain('ON CONFLICT (category_id, name) DO NOTHING');
   });
 });
