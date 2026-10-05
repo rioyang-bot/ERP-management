@@ -118,7 +118,7 @@ describe('進貨單明細上更名', () => {
     await openDetail();
     await userEvent.click(screen.getByLabelText(buttonLabel));
     const dialog = await screen.findByRole('dialog', { name: dialogName });
-    await within(dialog).findByTestId('brand-rename-usage');
+    await within(dialog).findByTestId('field-fix-usage');
     return dialog;
   };
   const ALL = ['一次更正廠牌（全部品項）', '一次更正廠牌（全部品項）'];
@@ -135,8 +135,8 @@ describe('進貨單明細上更名', () => {
       const dialog = await openDialog(...ALL);
       const select = within(dialog).getByLabelText('要更正的廠牌');
       expect([...select.options].map((o) => o.value)).toEqual(['光景資訊', 'DELL']);
-      expect(within(dialog).getByTestId('brand-rename-usage')).toHaveTextContent('會一起改到 3 個品項');
-      expect(within(dialog).getByTestId('brand-rename-usage')).toHaveTextContent('11 筆資產');
+      expect(within(dialog).getByTestId('field-fix-usage')).toHaveTextContent('會一起改到 3 個品項');
+      expect(within(dialog).getByTestId('field-fix-usage')).toHaveTextContent('11 筆資產');
       await userEvent.selectOptions(select, 'DELL');
       await waitFor(() => expect(calls.filter((c) => c.query === 'fetchBrandUsage').at(-1).params).toEqual(['DELL']));
     });
@@ -180,8 +180,8 @@ describe('進貨單明細上更名', () => {
 
     it('只列出這一個品項', async () => {
       const dialog = await openDialog(...ONE);
-      expect(within(dialog).getByTestId('brand-rename-current')).toHaveTextContent('光景資訊');
-      expect(within(dialog).getByTestId('brand-rename-usage')).toHaveTextContent('要更正的品項');
+      expect(within(dialog).getByTestId('field-fix-current')).toHaveTextContent('光景資訊');
+      expect(within(dialog).getByTestId('field-fix-usage')).toHaveTextContent('要更正的品項');
       expect(within(dialog).getByText('N-29NVMS')).toBeInTheDocument();
       expect(within(dialog).queryByText('N-48SSR')).not.toBeInTheDocument();
       expect(calls.find((c) => c.query === 'fetchItemMasterUsage').params).toEqual([445]);

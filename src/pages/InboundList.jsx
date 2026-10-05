@@ -12,7 +12,8 @@ import {
 } from '../utils/inboundEdit';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 import DetailModalHeader from '../components/detail/DetailModalHeader';
-import BrandRenameModal from '../components/BrandRenameModal';
+import ItemFieldFixModal from '../components/ItemFieldFixModal';
+import { distinctFieldValues } from '../utils/itemFieldFix';
 
 const InboundList = ({ isSplitMode = false }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -52,8 +53,8 @@ const InboundList = ({ isSplitMode = false }) => {
   // 待確認的單可以改備註（還沒有資產，記在明細上；確認進貨時寫進資產）
   const [remarksEdit, setRemarksEdit] = useState(null); // { itemId, value }
   const [remarksSaving, setRemarksSaving] = useState(false);
-  // 廠牌更正：{ mode: 'brand', brands } 一次改全部品項／{ mode: 'item', item } 只改一個品項；null 表示視窗關閉
-  const [brandRename, setBrandRename] = useState(null);
+  // 品項欄位更正：{ field, mode: 'all', values } 一次改全部品項／{ field, mode: 'item', item } 只改一個品項；null 表示視窗關閉
+  const [fieldFix, setFieldFix] = useState(null);
   const [deleting, setDeleting] = useState(false);
   // 整張單一次填寫訂單來源。這一欄存在資產上，逐筆到硬體列表改八十次不切實際。
   const [orderSourceInput, setOrderSourceInput] = useState('');
@@ -959,8 +960,12 @@ const InboundList = ({ isSplitMode = false }) => {
         // 「查看」是純唯讀，所有修改（單頭、明細更正、廠牌、訂單來源、刪除）都在「編輯」裡。
         // 先前查看時明細上的鉛筆一樣按得到，兩顆按鈕打開幾乎一樣，分不清楚差在哪。
         const canEdit = isEditing;
-        // 這張單上的廠牌（表頭「一次更正廠牌」用）
-        const orderBrands = [...new Set(orderItems.map((it) => (it.brand || '').trim()).filter(Boolean))];
+        // 可以更正的品項欄位：表頭一次改全部、每一列只改那一個品項（見 components/ItemFieldFixModal）
+        const FIX_COLUMNS = [
+          { field: 'brand', label: '廠牌', testId: 'brand', strong: true },
+          { field: 'model', label: '型號', testId: 'model', strong: true },
+          { field: 'specification', label: '規格', testId: 'spec', strong: false },
+        ];
         const attachmentChip = (att, index, onRemove) => (
           <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
             {att.type?.startsWith('image/') ? (
@@ -1091,25 +1096,25 @@ const InboundList = ({ isSplitMode = false }) => {
                           <th>類別</th>
                           {/* 類型、廠牌、型號分開三欄，誰打錯一眼就看得出來 */}
                           <th>類型</th>
-                          <th>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              廠牌
-                              {/* 一次改全部品項：用到這個廠牌的品項全部更名 */}
-                              {canEdit && orderBrands.length > 0 && (
-                                <button
-                                  type="button"
-                                  onClick={() => setBrandRename({ mode: 'brand', brands: orderBrands })}
-                                  title="一次更正廠牌：用到這個廠牌的品項全部改正"
-                                  aria-label="一次更正廠牌（全部品項）"
-                                  style={smallEditBtn}
-                                >
-                                  <Edit2 size={11} />
-                                </button>
-                              )}
-                            </div>
-                          </th>
-                          <th>型號</th>
-                          <th>規格</th>
+                          {/* 廠牌、型號、規格：表頭的鉛筆一次改全部品項，每一列的鉛筆只改那一個品項 */}
+                          {FIX_COLUMNS.map(({ field, label }) => (
+                            <th key={field}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                {label}
+                                {canEdit && distinctFieldValues(orderItems, field).length > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setFieldFix({ field, mode: 'all', values: distinctFieldValues(orderItems, field) })}
+                                    title={`一次更正${label}：用到這個${label}的品項全部改正`}
+                                    aria-label={`一次更正${label}（全部品項）`}
+                                    style={smallEditBtn}
+                                  >
+                                    <Edit2 size={11} />
+                                  </button>
+                                )}
+                              </div>
+                            </th>
+                          ))}
                           <th>硬體序號 (S/N)</th>
                           <th>訂單來源</th>
                           <th>備註</th>
@@ -1128,29 +1133,31 @@ const InboundList = ({ isSplitMode = false }) => {
                             <td data-testid={`inbound-item-type-${item.id}`}>
                               {item.type ? <span className="dm-type-badge">{item.type}</span> : <span className="dm-empty">-</span>}
                             </td>
-                            <td className={item.brand ? 'dm-strong' : 'dm-empty'} data-testid={`inbound-item-brand-${item.id}`}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                {item.brand || '-'}
-                                {/* 只改這一個品項；同廠牌的全部一起改用表頭的按鈕（見 components/BrandRenameModal） */}
-                                {canEdit && item.brand && item.item_id && (
-                                  <button
-                                    type="button"
-                                    onClick={() => setBrandRename({ mode: 'item', item })}
-                                    title="只更正這個品項的廠牌（同廠牌的其他品項不動）"
-                                    aria-label={`更正廠牌 ${item.brand} ${item.model || ''}`.trim()}
-                                    style={smallEditBtn}
-                                  >
-                                    <Edit2 size={11} />
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-                            <td className={item.model ? 'dm-strong' : 'dm-empty'} data-testid={`inbound-item-model-${item.id}`}>
-                              {item.model || '-'}
-                            </td>
-                            <td className={item.specification ? '' : 'dm-empty'} style={{ fontSize: '0.75rem' }} data-testid={`inbound-item-spec-${item.id}`}>
-                              {item.specification || '-'}
-                            </td>
+                            {FIX_COLUMNS.map(({ field, label, testId, strong }) => (
+                              <td
+                                key={field}
+                                className={item[field] ? (strong ? 'dm-strong' : '') : 'dm-empty'}
+                                style={strong ? undefined : { fontSize: '0.75rem' }}
+                                data-testid={`inbound-item-${testId}-${item.id}`}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  {item[field] || '-'}
+                                  {/* 只改這一個品項；同值的全部一起改用表頭的按鈕。
+                                      規格是選填，空的也能補上；廠牌、型號沒有值就沒有可更正的 */}
+                                  {canEdit && item.item_id && (item[field] || field === 'specification') && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setFieldFix({ field, mode: 'item', item })}
+                                      title={`只更正這個品項的${label}（同${label}的其他品項不動）`}
+                                      aria-label={`更正${label} ${itemName(item)}`.trim()}
+                                      style={smallEditBtn}
+                                    >
+                                      <Edit2 size={11} />
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            ))}
                             <td>
                               {!item.sn ? (
                                 <span className="dm-empty">-</span>
@@ -1365,14 +1372,15 @@ const InboundList = ({ isSplitMode = false }) => {
         </div>
         );
       })()}
-      {brandRename && (
-        <BrandRenameModal
-          mode={brandRename.mode}
-          brands={brandRename.brands}
-          item={brandRename.item}
-          onClose={() => setBrandRename(null)}
+      {fieldFix && (
+        <ItemFieldFixModal
+          field={fieldFix.field}
+          mode={fieldFix.mode}
+          values={fieldFix.values}
+          item={fieldFix.item}
+          onClose={() => setFieldFix(null)}
           onRenamed={async () => {
-            setBrandRename(null);
+            setFieldFix(null);
             if (selectedOrder) {
               const itemsRes = await window.electronAPI.namedQuery('fetchInboundItems', [selectedOrder.id]);
               if (itemsRes.success) setOrderItems(itemsRes.rows);

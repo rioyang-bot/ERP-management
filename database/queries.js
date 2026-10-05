@@ -36,7 +36,88 @@ const MOUNTED_CONSUMABLES_SQL = `(SELECT json_agg(json_build_object(
            WHERE asset_id = a.id GROUP BY item_master_id HAVING SUM(quantity) > 0) m
      JOIN item_master im ON im.id = m.item_master_id) as mounted_consumables`;
 
+// ----------------------------------------------------------------------------
+// 品項欄位更正（型號、規格）的查詢，與廠牌更正同一套做法（見 src/utils/itemFieldFix.js）
+// ----------------------------------------------------------------------------
+// 打錯時有兩種改法：
+//   - 一次改全部：用到這個值的品項主檔全部改
+//   - 只改一個品項：只改那一張品項主檔，帶上舊值當條件，有人剛改過就改不到
+// 改完若會和既有的品項重複（同類別、類型、廠牌、型號；硬體／設備另比規格）就擋下來。
+//
+// 欄位名稱寫死在這裡，不從前端傳入。
+const NORM_UPPER = (x) => `UPPER(TRIM(REGEXP_REPLACE(COALESCE(${x}, ''), '[[:space:]]+', ' ', 'g')))`;
+const ITEM_FIX_FIELDS = {
+  // 型號與新增品項時相同：去頭尾與重複空白、英文轉大寫
+  Model: {
+    col: 'model',
+    set: (x) => NORM_UPPER(x),
+    match: (col, x) => `UPPER(TRIM(${col})) = UPPER(TRIM(${x}))`,
+  },
+  // 規格是說明文字，不轉大寫；空白存成 NULL
+  Spec: {
+    col: 'specification',
+    set: (x) => `NULLIF(TRIM(COALESCE(${x}, '')), '')`,
+    match: (col, x) => `COALESCE(TRIM(${col}), '') = TRIM(COALESCE(${x}, ''))`,
+  },
+};
+/** 品項的識別欄位比對；改的那一欄用新值比 */
+const itemIdentityMatch = (field, newParam) => {
+  const cmp = {
+    type: (a) => `UPPER(TRIM(COALESCE(${a}.type, '')))`,
+    brand: (a) => `UPPER(TRIM(COALESCE(${a}.brand, '')))`,
+    model: (a) => `UPPER(TRIM(COALESCE(${a}.model, '')))`,
+    specification: (a) => `COALESCE(TRIM(${a}.specification), '')`,
+  };
+  const newValue = {
+    model: NORM_UPPER(newParam),
+    specification: `TRIM(COALESCE(${newParam}, ''))`,
+  };
+  const rhs = (col) => (col === field ? newValue[col] : cmp[col]('o'));
+  return [
+    `${cmp.type('t')} = ${rhs('type')}`,
+    `${cmp.brand('t')} = ${rhs('brand')}`,
+    `${cmp.model('t')} = ${rhs('model')}`,
+    `(c.name = '耗材' OR ${cmp.specification('t')} = ${rhs('specification')})`,
+  ].join('\n      AND ');
+};
+const itemFieldFixQueries = () => Object.fromEntries(Object.entries(ITEM_FIX_FIELDS).flatMap(([S, f]) => [
+  [`fetch${S}Usage`, `
+    SELECT i.id, c.name AS category_name, i.type, i.brand, i.model, i.specification,
+      (SELECT COUNT(*) FROM assets a WHERE a.item_master_id = i.id)::int AS asset_count,
+      (SELECT string_agg(DISTINCT io.order_no, ', ' ORDER BY io.order_no)
+         FROM inbound_items ii JOIN inbound_orders io ON io.id = ii.inbound_order_id
+        WHERE ii.item_id = i.id) AS inbound_orders
+    FROM item_master i
+    LEFT JOIN categories c ON c.id = i.category_id
+    WHERE ${f.match(`i.${f.col}`, '$1')}
+    ORDER BY c.name, i.type, i.brand, i.model, i.id`],
+  [`fetch${S}RenameConflicts`, `
+    SELECT o.id, c.name AS category_name, o.type, o.brand, o.model, o.specification, t.id AS existing_id
+    FROM item_master o
+    JOIN categories c ON c.id = o.category_id
+    JOIN item_master t ON t.id <> o.id AND t.category_id = o.category_id
+      AND ${itemIdentityMatch(f.col, '$2')}
+    WHERE ${f.match(`o.${f.col}`, '$1')}
+    ORDER BY o.id`],
+  [`renameItemMaster${S}`, `
+    UPDATE item_master SET ${f.col} = ${f.set('$2')}
+    WHERE ${f.match(f.col, '$1')}
+    RETURNING id`],
+  [`fetchItemMaster${S}Conflict`, `
+    SELECT t.id AS existing_id, c.name AS category_name, o.type, o.brand, o.model, o.specification
+    FROM item_master o
+    JOIN categories c ON c.id = o.category_id
+    JOIN item_master t ON t.id <> o.id AND t.category_id = o.category_id
+      AND ${itemIdentityMatch(f.col, '$2')}
+    WHERE o.id = $1::integer`],
+  [`renameSingleItemMaster${S}`, `
+    UPDATE item_master SET ${f.col} = ${f.set('$2')}
+    WHERE id = $1::integer AND ${f.match(f.col, '$3')}
+    RETURNING id`],
+]));
+
 export const queries = {
+  ...itemFieldFixQueries(),
   // AssetList.jsx
   fetchAssetsList: `SELECT a.*, a.id as id, i.id as item_master_id, i.specification, i.type, i.brand, i.model, i.unit, c.name as category_name,
       -- 目前借出中的借用單號，供列表在狀態底下顯示（已歸還的單不列入）
