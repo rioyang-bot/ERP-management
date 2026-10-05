@@ -180,7 +180,6 @@ const BrandRenameModal = ({ mode = 'brand', brands = [], item, onClose, onRename
           onChange={(e) => setNewBrand(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleRename(); } }}
           autoFocus
-          placeholder="例如：元景資訊"
           style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', outline: 'none', boxSizing: 'border-box' }}
         />
 
