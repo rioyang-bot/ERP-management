@@ -256,6 +256,72 @@ export const queries = {
       model = UPPER(TRIM(REGEXP_REPLACE(COALESCE($4, ''), '[[:space:]]+', ' ', 'g')))
     WHERE id = $5 RETURNING id`,
   updateItemMasterSpecs: `UPDATE item_master SET specification = $1, model = UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g'))) WHERE id = $3`,
+
+  // --- 廠牌更名 --------------------------------------------------------------
+  // 廠牌打錯（例如「元景資訊」打成「光景資訊」）時，用到它的品項主檔可能有好幾張、
+  // 跨硬體與耗材。逐筆到各列表改不切實際，硬體編輯還會把共用主檔的資產拆成新卡片。
+  // 這裡一次把所有用到舊名稱的主檔與廠牌清單改掉（見 utils/brandRename.js）。
+  // 比對舊名稱忽略大小寫與前後空白；新名稱的正規化方式與新增品項時一致。
+
+  // 用到這個廠牌的品項主檔，以及各自有幾筆資產、出現在哪些進貨單
+  fetchBrandUsage: `
+    SELECT i.id, c.name AS category_name, i.type, i.brand, i.model, i.specification,
+      (SELECT COUNT(*) FROM assets a WHERE a.item_master_id = i.id)::int AS asset_count,
+      (SELECT string_agg(DISTINCT io.order_no, ', ' ORDER BY io.order_no)
+         FROM inbound_items ii JOIN inbound_orders io ON io.id = ii.inbound_order_id
+        WHERE ii.item_id = i.id) AS inbound_orders
+    FROM item_master i
+    LEFT JOIN categories c ON c.id = i.category_id
+    WHERE UPPER(TRIM(i.brand)) = UPPER(TRIM($1))
+    ORDER BY c.name, i.type, i.model, i.id`,
+
+  // 改名後會不會和既有的主檔撞在一起：同類別、類型、型號（硬體／設備另比規格）
+  // 已經有一張是新廠牌的。撞到的要先處理，這裡不做合併。
+  fetchBrandRenameConflicts: `
+    SELECT o.id, c.name AS category_name, o.type, o.model, o.specification, t.id AS existing_id
+    FROM item_master o
+    JOIN categories c ON c.id = o.category_id
+    JOIN item_master t ON t.id <> o.id AND t.category_id = o.category_id
+      AND UPPER(TRIM(t.brand)) = UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g')))
+      AND UPPER(TRIM(COALESCE(t.type, ''))) = UPPER(TRIM(COALESCE(o.type, '')))
+      AND UPPER(TRIM(COALESCE(t.model, ''))) = UPPER(TRIM(COALESCE(o.model, '')))
+      AND (c.name = '耗材' OR COALESCE(TRIM(t.specification), '') = COALESCE(TRIM(o.specification), ''))
+    WHERE UPPER(TRIM(o.brand)) = UPPER(TRIM($1))
+    ORDER BY o.id`,
+
+  renameItemMasterBrand: `
+    UPDATE item_master SET brand = UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g')))
+    WHERE UPPER(TRIM(brand)) = UPPER(TRIM($1))
+    RETURNING id`,
+
+  // 廠牌清單（item_brands）同一類別名稱唯一。新名稱在該類別已經存在時，
+  // 把舊廠牌底下的型號、類型併過去再刪掉舊的；不存在就直接改名。
+  // 下面四步依序執行，都在同一個交易裡。
+  mergeBrandModelsDropDuplicates: `
+    DELETE FROM item_models m
+    USING item_brands o, item_brands t
+    WHERE m.brand_id = o.id AND UPPER(TRIM(o.name)) = UPPER(TRIM($1))
+      AND t.category_id = o.category_id AND t.id <> o.id
+      AND t.name = UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g')))
+      AND EXISTS (SELECT 1 FROM item_models m2 WHERE m2.brand_id = t.id AND m2.name = m.name)`,
+  mergeBrandModelsAndTypes: `
+    WITH pairs AS (
+      SELECT o.id AS old_id, t.id AS new_id
+      FROM item_brands o JOIN item_brands t ON t.category_id = o.category_id AND t.id <> o.id
+      WHERE UPPER(TRIM(o.name)) = UPPER(TRIM($1))
+        AND t.name = UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g')))
+    ), moved_models AS (
+      UPDATE item_models m SET brand_id = p.new_id FROM pairs p WHERE m.brand_id = p.old_id RETURNING m.id
+    )
+    UPDATE item_types ty SET brand_id = p.new_id FROM pairs p WHERE ty.brand_id = p.old_id`,
+  deleteMergedBrands: `
+    DELETE FROM item_brands o
+    WHERE UPPER(TRIM(o.name)) = UPPER(TRIM($1))
+      AND EXISTS (SELECT 1 FROM item_brands t WHERE t.category_id = o.category_id AND t.id <> o.id
+        AND t.name = UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g'))))`,
+  renameItemBrands: `
+    UPDATE item_brands SET name = UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g')))
+    WHERE UPPER(TRIM(name)) = UPPER(TRIM($1))`,
   countAssetsByMasterId: `SELECT COUNT(*) as count FROM assets WHERE item_master_id = $1`,
   updateAssetMasterId: `UPDATE assets SET item_master_id = $1 WHERE id = $2`,
   // asset_no 只有公司資產才有意義；改為一般銷售時一併清掉，
