@@ -12,6 +12,7 @@ import {
 } from '../utils/inboundEdit';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 import DetailModalHeader from '../components/detail/DetailModalHeader';
+import BrandRenameModal from '../components/BrandRenameModal';
 
 const InboundList = ({ isSplitMode = false }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -51,6 +52,8 @@ const InboundList = ({ isSplitMode = false }) => {
   // 待確認的單可以改備註（還沒有資產，記在明細上；確認進貨時寫進資產）
   const [remarksEdit, setRemarksEdit] = useState(null); // { itemId, value }
   const [remarksSaving, setRemarksSaving] = useState(false);
+  // 廠牌更名：值為要更名的廠牌，null 表示視窗關閉
+  const [brandRename, setBrandRename] = useState(null);
   const [deleting, setDeleting] = useState(false);
   // 整張單一次填寫訂單來源。這一欄存在資產上，逐筆到硬體列表改八十次不切實際。
   const [orderSourceInput, setOrderSourceInput] = useState('');
@@ -1103,7 +1106,21 @@ const InboundList = ({ isSplitMode = false }) => {
                               {item.type ? <span className="dm-type-badge">{item.type}</span> : <span className="dm-empty">-</span>}
                             </td>
                             <td className={item.brand ? 'dm-strong' : 'dm-empty'} data-testid={`inbound-item-brand-${item.id}`}>
-                              {item.brand || '-'}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                {item.brand || '-'}
+                                {/* 廠牌打錯：用到它的品項一次全部更名（見 components/BrandRenameModal） */}
+                                {item.brand && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setBrandRename(item.brand)}
+                                    title="廠牌打錯了？更名後，用到這個廠牌的品項會一起改正"
+                                    aria-label={`更正廠牌 ${item.brand}`}
+                                    style={smallEditBtn}
+                                  >
+                                    <Edit2 size={11} />
+                                  </button>
+                                )}
+                              </div>
                             </td>
                             <td className={item.model ? 'dm-strong' : 'dm-empty'} data-testid={`inbound-item-model-${item.id}`}>
                               {item.model || '-'}
@@ -1321,6 +1338,20 @@ const InboundList = ({ isSplitMode = false }) => {
         </div>
         );
       })()}
+      {brandRename && (
+        <BrandRenameModal
+          brand={brandRename}
+          onClose={() => setBrandRename(null)}
+          onRenamed={async () => {
+            setBrandRename(null);
+            if (selectedOrder) {
+              const itemsRes = await window.electronAPI.namedQuery('fetchInboundItems', [selectedOrder.id]);
+              if (itemsRes.success) setOrderItems(itemsRes.rows);
+            }
+          }}
+        />
+      )}
+
       {previewFile && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'var(--bg-modal-overlay)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1100, backdropFilter: 'blur(4px)' }} onClick={() => setPreviewFile(null)}>
           <div style={{ backgroundColor: 'var(--bg-surface)', color: 'var(--text-main)', border: '1px solid var(--border-color)', boxShadow: 'var(--modal-shadow)', padding: '16px', borderRadius: '12px', maxWidth: '90vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
