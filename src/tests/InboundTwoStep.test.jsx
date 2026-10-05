@@ -169,12 +169,14 @@ describe('進貨單列表的兩個頁籤', () => {
   });
 
   const renderList = () => render(<MemoryRouter><InboundList /></MemoryRouter>);
-  const openDraft = async () => {
+  const openDraft = async (label = '查看進貨明細') => {
     renderList();
     await screen.findByText(DRAFT.order_no);
-    await userEvent.click(screen.getByLabelText('查看進貨明細'));
+    await userEvent.click(screen.getByLabelText(label));
     await screen.findByText('BC0101');
   };
+  // 「查看」是純唯讀；刪除、更正序號／數量、訂單來源都在「編輯」
+  const openDraftEdit = () => openDraft('編輯進貨單');
 
   it('預設是待確認，只列待確認的單；頁籤上有數量', async () => {
     renderList();
@@ -221,7 +223,7 @@ describe('進貨單列表的兩個頁籤', () => {
   });
 
   it('刪除待確認的單只刪單據，不扣庫存、不刪資產', async () => {
-    await openDraft();
+    await openDraftEdit();
     await userEvent.click(screen.getByRole('button', { name: /刪除進貨單/ }));
     await waitFor(() => expect(txSteps).toHaveLength(1));
     expect(txSteps[0].map((s) => s.queryName)).toEqual(['deleteDraftInboundOrder']);
@@ -230,7 +232,7 @@ describe('進貨單列表的兩個頁籤', () => {
   });
 
   it('待確認的單更正序號只改這一筆明細', async () => {
-    await openDraft();
+    await openDraftEdit();
     await userEvent.click(screen.getByLabelText('更正序號 BC0101'));
     const input = screen.getByRole('textbox', { name: '更正序號 BC0101' });
     await userEvent.clear(input);
@@ -241,7 +243,7 @@ describe('進貨單列表的兩個頁籤', () => {
   });
 
   it('待確認的單修改數量，提示庫存不受影響', async () => {
-    await openDraft();
+    await openDraftEdit();
     const row = screen.getByLabelText('修改數量 METECH LC-LC').closest('tr');
     await userEvent.click(within(row).getByLabelText('修改數量 METECH LC-LC'));
     const input = within(row).getByRole('spinbutton');
@@ -254,7 +256,7 @@ describe('進貨單列表的兩個頁籤', () => {
   });
 
   it('待確認的單統一填寫訂單來源，寫在明細上', async () => {
-    await openDraft();
+    await openDraftEdit();
     await userEvent.type(screen.getByLabelText('統一填寫訂單來源'), 'PO-9');
     await userEvent.click(screen.getByRole('button', { name: '統一填寫' }));
     await waitFor(() => expect(calls.some((c) => c.query === 'updateDraftInboundOrderSource')).toBe(true));

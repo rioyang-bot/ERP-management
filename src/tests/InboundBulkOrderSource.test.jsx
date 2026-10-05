@@ -53,7 +53,7 @@ describe('進貨明細：統一填寫訂單來源', () => {
 
   const openDetail = async () => {
     renderInboundHistory();
-    await userEvent.click(await screen.findByLabelText('查看進貨明細'));
+    await userEvent.click(await screen.findByLabelText('編輯進貨單'));
     await screen.findByText('SFOC303000D7');
   };
 

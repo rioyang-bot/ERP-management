@@ -956,6 +956,9 @@ const InboundList = ({ isSplitMode = false }) => {
         const saveBtn = (busy) => ({ display: 'inline-flex', alignItems: 'center', padding: '4px 6px', borderRadius: '6px', border: 'none', cursor: busy ? 'wait' : 'pointer', backgroundColor: busy ? 'var(--border-color)' : '#16a34a', color: '#fff' });
         const cancelBtn = { display: 'inline-flex', alignItems: 'center', padding: '4px 6px', borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-muted)', cursor: 'pointer' };
         const itemName = (item) => [item.brand, item.model].filter(Boolean).join(' ');
+        // 「查看」是純唯讀，所有修改（單頭、明細更正、廠牌、訂單來源、刪除）都在「編輯」裡。
+        // 先前查看時明細上的鉛筆一樣按得到，兩顆按鈕打開幾乎一樣，分不清楚差在哪。
+        const canEdit = isEditing;
         // 這張單上的廠牌（表頭「一次更正廠牌」用）
         const orderBrands = [...new Set(orderItems.map((it) => (it.brand || '').trim()).filter(Boolean))];
         const attachmentChip = (att, index, onRemove) => (
@@ -1048,6 +1051,7 @@ const InboundList = ({ isSplitMode = false }) => {
                       <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
                         訂單來源 已填 {orderSourceStats.filled} / {orderSourceStats.withSn}
                       </span>
+                      {canEdit && (<>
                       <input
                         type="text"
                         value={orderSourceInput}
@@ -1071,6 +1075,7 @@ const InboundList = ({ isSplitMode = false }) => {
                       >
                         {orderSourceSaving ? '填寫中…' : '統一填寫'}
                       </button>
+                      </>)}
                     </div>
                   )}
                 </div>
@@ -1090,7 +1095,7 @@ const InboundList = ({ isSplitMode = false }) => {
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                               廠牌
                               {/* 一次改全部品項：用到這個廠牌的品項全部更名 */}
-                              {orderBrands.length > 0 && (
+                              {canEdit && orderBrands.length > 0 && (
                                 <button
                                   type="button"
                                   onClick={() => setBrandRename({ mode: 'brand', brands: orderBrands })}
@@ -1127,7 +1132,7 @@ const InboundList = ({ isSplitMode = false }) => {
                               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 {item.brand || '-'}
                                 {/* 只改這一個品項；同廠牌的全部一起改用表頭的按鈕（見 components/BrandRenameModal） */}
-                                {item.brand && item.item_id && (
+                                {canEdit && item.brand && item.item_id && (
                                   <button
                                     type="button"
                                     onClick={() => setBrandRename({ mode: 'item', item })}
@@ -1181,6 +1186,7 @@ const InboundList = ({ isSplitMode = false }) => {
                               ) : (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                   <code className="dm-sn">{item.sn}</code>
+                                  {canEdit && (
                                   <button
                                     type="button"
                                     onClick={() => setSnEdit({ itemId: item.id, value: item.sn })}
@@ -1190,6 +1196,7 @@ const InboundList = ({ isSplitMode = false }) => {
                                   >
                                     <Edit2 size={11} />
                                   </button>
+                                  )}
                                 </div>
                               )}
                             </td>
@@ -1227,7 +1234,7 @@ const InboundList = ({ isSplitMode = false }) => {
                               ) : (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                   <span className={item.remarks ? '' : 'dm-empty'} style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{item.remarks || '-'}</span>
-                                  {isDraftOrder(selectedOrder) && (
+                                  {canEdit && isDraftOrder(selectedOrder) && (
                                     <button
                                       type="button"
                                       onClick={() => setRemarksEdit({ itemId: item.id, value: item.remarks || '' })}
@@ -1270,7 +1277,7 @@ const InboundList = ({ isSplitMode = false }) => {
                               ) : (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
                                   <span style={{ fontWeight: 800, fontSize: '0.85rem', color: 'var(--text-main)' }}>{item.quantity}</span>
-                                  {isQtyEditable(item) && (
+                                  {canEdit && isQtyEditable(item) && (
                                     <button
                                       type="button"
                                       onClick={() => setQtyEdit({ itemId: item.id, value: String(item.quantity ?? '') })}
@@ -1324,6 +1331,7 @@ const InboundList = ({ isSplitMode = false }) => {
             <div className="dm-footer">
               {/* 刪除整張進貨單。規則與 scripts/delete-inbound-order.mjs 相同，
                   但不必登入伺服器。已動用過的貨會被擋下來。 */}
+              {canEdit && (
               <button
                 type="button"
                 className="dm-btn dm-btn-danger dm-footer-start"
@@ -1333,6 +1341,7 @@ const InboundList = ({ isSplitMode = false }) => {
               >
                 <Trash2 size={16} /> {deleting ? '刪除中...' : '刪除進貨單'}
               </button>
+              )}
               <button type="button" className="dm-btn dm-btn-outline" onClick={() => setIsModalOpen(false)}>
                 關閉視窗
               </button>
