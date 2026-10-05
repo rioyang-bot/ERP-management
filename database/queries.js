@@ -289,6 +289,39 @@ export const queries = {
     WHERE UPPER(TRIM(o.brand)) = UPPER(TRIM($1))
     ORDER BY o.id`,
 
+  // --- 只改單一品項的廠牌 ---------------------------------------------------
+  // 一張進貨單不一定全是同一個廠牌：只有某個品項打錯時，只改那一張品項主檔，
+  // 同廠牌的其他品項不動。
+  fetchItemMasterUsage: `
+    SELECT i.id, c.name AS category_name, i.type, i.brand, i.model, i.specification,
+      (SELECT COUNT(*) FROM assets a WHERE a.item_master_id = i.id)::int AS asset_count,
+      (SELECT string_agg(DISTINCT io.order_no, ', ' ORDER BY io.order_no)
+         FROM inbound_items ii JOIN inbound_orders io ON io.id = ii.inbound_order_id
+        WHERE ii.item_id = i.id) AS inbound_orders
+    FROM item_master i
+    LEFT JOIN categories c ON c.id = i.category_id
+    WHERE i.id = $1::integer`,
+  fetchItemMasterBrandConflict: `
+    SELECT t.id AS existing_id, c.name AS category_name, o.type, o.model, o.specification
+    FROM item_master o
+    JOIN categories c ON c.id = o.category_id
+    JOIN item_master t ON t.id <> o.id AND t.category_id = o.category_id
+      AND UPPER(TRIM(t.brand)) = UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g')))
+      AND UPPER(TRIM(COALESCE(t.type, ''))) = UPPER(TRIM(COALESCE(o.type, '')))
+      AND UPPER(TRIM(COALESCE(t.model, ''))) = UPPER(TRIM(COALESCE(o.model, '')))
+      AND (c.name = '耗材' OR COALESCE(TRIM(t.specification), '') = COALESCE(TRIM(o.specification), ''))
+    WHERE o.id = $1::integer`,
+  renameSingleItemMasterBrand: `
+    UPDATE item_master SET brand = UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g')))
+    WHERE id = $1::integer AND UPPER(TRIM(brand)) = UPPER(TRIM($3))
+    RETURNING id`,
+  // 新廠牌加進該類別的廠牌清單（已經有就不動）；舊的可能還有別的品項在用，保留
+  ensureItemBrandForMaster: `
+    INSERT INTO item_brands (category_id, name)
+    SELECT category_id, UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g')))
+    FROM item_master WHERE id = $1::integer AND category_id IS NOT NULL
+    ON CONFLICT (category_id, name) DO NOTHING`,
+
   renameItemMasterBrand: `
     UPDATE item_master SET brand = UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g')))
     WHERE UPPER(TRIM(brand)) = UPPER(TRIM($1))

@@ -43,6 +43,23 @@ export function buildBrandRenameSteps(oldBrand, newBrand, expectedMasters) {
   ];
 }
 
+/**
+ * 只改單一品項的廠牌。一張進貨單不一定全是同一個廠牌，
+ * 只有某個品項打錯時不該連帶改到同廠牌的其他品項。
+ * 帶上舊名稱當條件：有人剛改過就改不到，整批退回。
+ */
+export function buildSingleBrandRenameSteps(itemMasterId, oldBrand, newBrand) {
+  return [
+    {
+      queryName: 'renameSingleItemMasterBrand',
+      params: [itemMasterId, newBrand, oldBrand],
+      expectRows: 1,
+      errorMessage: '這個品項的廠牌已經被修改過，請重新開啟後再試',
+    },
+    { queryName: 'ensureItemBrandForMaster', params: [itemMasterId, newBrand] },
+  ];
+}
+
 /** 用到這個廠牌的品項，依類別統計 */
 export function summarizeBrandUsage(rows = []) {
   const byCategory = {};
