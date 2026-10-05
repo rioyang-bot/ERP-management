@@ -583,8 +583,9 @@ export const queries = {
   // 重新匯入補齊空白欄位：先取出檔案裡這些序號在系統中目前的內容，
   // 才知道哪些欄位是空的、哪些已經有值不能動。
   //
-  // 序號以逗號分隔的「字串」傳入，不用陣列：具名查詢的參數前處理會把物件
-  // （陣列也是物件）轉成 JSON 字串，$1::text[] 收到 ["A","B"] 會轉型失敗。
+  // 序號以逗號分隔的「字串」傳入。當初參數前處理會把陣列轉成 JSON 字串，
+  // $1::text[] 收不到；現在寫明 ::text[] 轉型的參數會原樣傳陣列（server/queryParams.js），
+  // 這支沿用字串寫法即可，不必改。
   // 分隔符號用逗號而不是換行，是因為參數過濾會把 CR/LF 濾掉。
   fetchAssetsBySnListForFill: `
     SELECT a.id, a.sn, a.client, a.hostname, a.location, a.remarks,
