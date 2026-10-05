@@ -1531,6 +1531,12 @@ export const queries = {
   updateAssetShippingDateBySn: `UPDATE assets SET shipping_date = $1 WHERE sn = $2`,
   updateOutboundRequestStatus: `UPDATE outbound_requests SET status = $1 WHERE id = $2`,
   updateOutboundRequestReturned: `UPDATE outbound_requests SET status = 'RETURNED', actual_return_date = $2 WHERE id = $1`,
+  // 延長借用單的預計歸還日。只限借出中的借用單 —— 待借出的走編輯，已歸還的沒有意義。
+  // 交易以 expectRows 把關：單若剛被歸還就改不到，整批退回。
+  extendLentExpectedReturnDate: `
+    UPDATE outbound_requests SET expected_return_date = $1::date
+    WHERE id = $2::integer AND request_type = 'LEND' AND status = 'SHIPPED'
+    RETURNING id, expected_return_date`,
   // 編輯借用單：只有「待借出」的單據可以改，已出庫的內容改了會與實際庫存不符。
   // 狀態條件寫在 SQL 裡，就算畫面漏擋也不會改到已出庫的單。
   updateOutboundRequestHeader: `

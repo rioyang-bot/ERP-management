@@ -2,8 +2,9 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   FileText, Search, Eye, CornerDownLeft, RotateCcw, Pencil, AlertCircle, History, Clock, 
   CheckCircle, Printer, PackageCheck, Send, Paperclip, Upload, Trash2, 
-  Download, ExternalLink, FileCheck, Image as ImageIcon, X, Plus 
+  Download, ExternalLink, FileCheck, Image as ImageIcon, X, Plus, CalendarPlus
 } from 'lucide-react';
+import { toLocalYmd, addDays, daysBetween, extensionBase, minExtensionDate, validateExtension } from '../utils/lentReturnDate';
 import { logStatusChange, logUpdate, logDelete } from '../utils/auditLogger';
 import LentOrderPrintModal from '../components/LentOrderPrintModal';
 import LendOrderRegistrationModal from '../components/LendOrderRegistrationModal';
@@ -29,6 +30,9 @@ const LentList = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [returnModal, setReturnModal] = useState({ show: false, dn: null, date: new Date().toISOString().split('T')[0] });
   const [showOverdue, setShowOverdue] = useState(false);
+  // 借出中的單延長預計歸還日（見 utils/lentReturnDate.js）
+  const [extendModal, setExtendModal] = useState({ show: false, dn: null, date: '', reason: '' });
+  const [isExtending, setIsExtending] = useState(false);
   const [printModal, setPrintModal] = useState({ show: false, dn: null, items: [] });
   
   // 簽收單據管理 Modal 狀態
@@ -480,12 +484,64 @@ const LentList = () => {
     }
   };
 
+  /** 打開延長視窗，預設往後延 7 天（已逾期的從今天起算） */
+  const openExtendModal = (dn) => {
+    const today = toLocalYmd(new Date());
+    const base = extensionBase(toLocalYmd(dn.expected_return_date), today);
+    setExtendModal({ show: true, dn, date: addDays(base, 7), reason: '' });
+  };
+
+  /**
+   * 延長借出中借用單的預計歸還日。
+   * 只動單頭的日期，庫存與資產狀態都不受影響；原因記在事件紀錄裡。
+   */
+  const handleExtendReturnDate = async () => {
+    const { dn, date, reason } = extendModal;
+    if (!dn) return;
+    const today = toLocalYmd(new Date());
+    const current = toLocalYmd(dn.expected_return_date);
+    const invalid = validateExtension(current, date, today);
+    if (invalid) { alert(invalid); return; }
+
+    setIsExtending(true);
+    try {
+      const res = await window.electronAPI.runTransaction([{
+        queryName: 'extendLentExpectedReturnDate',
+        params: [date, dn.id],
+        expectRows: 1,
+        errorMessage: '這張借用單已經不是借出中（可能剛被歸還），請重新整理後再操作',
+      }]);
+      if (!res.success) throw new Error(res.error || '延長失敗');
+
+      const why = reason.trim();
+      await logUpdate(
+        'LENT',
+        dn.id,
+        dn.request_no,
+        `延長借用單 [${dn.request_no}] 預計歸還日 ${current || '未設定'} → ${date}${why ? `（原因：${why}）` : ''}`,
+        { dnId: dn.id, dnNumber: dn.request_no, customer: dn.customer, from: current, to: date, reason: why || null }
+      );
+
+      alert(`借用單 [${dn.request_no}] 的預計歸還日已延長至 ${date}。`);
+      setExtendModal({ show: false, dn: null, date: '', reason: '' });
+      if (selectedDN && selectedDN.id === dn.id) {
+        setSelectedDN((prev) => ({ ...prev, expected_return_date: date }));
+      }
+      fetchRecords();
+    } catch (err) {
+      alert('延長預計歸還日失敗：' + err.message);
+    } finally {
+      setIsExtending(false);
+    }
+  };
+
   const filteredRecords = dnRecords.filter(dn => {
     if (dn.status !== activeTab) return false;
     
     if (showOverdue && activeTab === 'SHIPPED') {
-      const today = new Date().toISOString().split('T')[0];
-      const returnDate = dn.expected_return_date ? new Date(dn.expected_return_date).toISOString().split('T')[0] : null;
+      // 用本地日期比較：toISOString() 在台灣會把日期往前算一天
+      const today = toLocalYmd(new Date());
+      const returnDate = toLocalYmd(dn.expected_return_date);
       if (!returnDate || returnDate >= today) return false;
     }
     
@@ -712,7 +768,21 @@ const LentList = () => {
                     </div>
                   </td>
                   <td style={{ padding: '12px', color: dn.status === 'SHIPPED' ? '#f59e0b' : 'var(--text-muted)', fontWeight: dn.status === 'SHIPPED' ? 700 : 400 }}>
-                    {dn.expected_return_date ? new Date(dn.expected_return_date).toLocaleDateString() : '-'}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
+                      {dn.expected_return_date ? new Date(dn.expected_return_date).toLocaleDateString() : '-'}
+                      {/* 借出中才能延長；待借出的直接編輯整張單 */}
+                      {dn.status === 'SHIPPED' && (
+                        <button
+                          type="button"
+                          onClick={() => openExtendModal(dn)}
+                          title="延長預計歸還日"
+                          aria-label={`延長預計歸還日 ${dn.request_no}`}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', padding: '2px 8px', borderRadius: '12px', border: '1px solid rgba(245, 158, 11, 0.4)', backgroundColor: 'rgba(245, 158, 11, 0.1)', color: '#d97706', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer' }}
+                        >
+                          <CalendarPlus size={12} /> 延長
+                        </button>
+                      )}
+                    </div>
                   </td>
                   {activeTab === 'RETURNED' && (
                     <td style={{ padding: '12px', color: '#10b981', fontWeight: 600 }}>
@@ -1236,6 +1306,90 @@ const LentList = () => {
           </div>
         </div>
       )}
+
+      {/* 延長預計歸還日：只限借出中的單 */}
+      {extendModal.show && extendModal.dn && (() => {
+        const today = toLocalYmd(new Date());
+        const current = toLocalYmd(extendModal.dn.expected_return_date);
+        const overdueDays = current && current < today ? daysBetween(current, today) : 0;
+        const base = extensionBase(current, today);
+        const close = () => setExtendModal({ show: false, dn: null, date: '', reason: '' });
+        return (
+          <div className="modal-overlay" style={{ zIndex: 9999 }}>
+            <div className="modal-content" role="dialog" aria-label="延長預計歸還日" style={{ width: '420px', padding: '24px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-main)' }}>
+              <h3 style={{ marginTop: 0, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <CalendarPlus size={20} color="#d97706" /> 延長預計歸還日
+              </h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '16px' }}>
+                借用單 <strong style={{ color: 'var(--primary-color)' }}>{extendModal.dn.request_no}</strong>
+                {extendModal.dn.customer ? `（${extendModal.dn.customer}）` : ''}。只改預計歸還日，設備仍維持借出中。
+              </p>
+              <div style={{ marginBottom: '14px', fontSize: '0.9rem' }} data-testid="extend-current">
+                目前預計歸還日：<strong>{current || '未設定'}</strong>
+                {overdueDays > 0 && <span style={{ marginLeft: '8px', color: '#ef4444', fontWeight: 700 }}>已逾期 {overdueDays} 天</span>}
+              </div>
+              <div style={{ marginBottom: '14px' }}>
+                <label htmlFor="extend-return-date" style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '8px', color: 'var(--text-main)' }}>
+                  新的預計歸還日
+                </label>
+                <input
+                  id="extend-return-date"
+                  type="date"
+                  value={extendModal.date}
+                  min={minExtensionDate(current, today)}
+                  onChange={e => setExtendModal({ ...extendModal, date: e.target.value })}
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', outline: 'none' }}
+                />
+                <div style={{ display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
+                  {[7, 14, 30].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => setExtendModal({ ...extendModal, date: addDays(base, n) })}
+                      style={{ padding: '4px 12px', borderRadius: '14px', border: '1px solid var(--border-color)', backgroundColor: extendModal.date === addDays(base, n) ? 'rgba(245, 158, 11, 0.15)' : 'var(--bg-surface-subtle)', color: 'var(--text-main)', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}
+                    >
+                      +{n} 天
+                    </button>
+                  ))}
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', alignSelf: 'center' }}>
+                    {overdueDays > 0 ? '已逾期，從今天起算' : '從目前的預計歸還日起算'}
+                  </span>
+                </div>
+              </div>
+              <div style={{ marginBottom: '24px' }}>
+                <label htmlFor="extend-reason" style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '8px', color: 'var(--text-main)' }}>
+                  延長原因 <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>(選填，會記在事件紀錄)</span>
+                </label>
+                <input
+                  id="extend-reason"
+                  type="text"
+                  value={extendModal.reason}
+                  onChange={e => setExtendModal({ ...extendModal, reason: e.target.value })}
+                  placeholder="例如：客戶測試延長"
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', outline: 'none' }}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={close}
+                  style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-main)', fontWeight: 600, cursor: 'pointer' }}
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExtendReturnDate}
+                  disabled={isExtending}
+                  style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', backgroundColor: '#f59e0b', color: 'white', fontWeight: 700, cursor: isExtending ? 'wait' : 'pointer', opacity: isExtending ? 0.7 : 1 }}
+                >
+                  {isExtending ? '處理中...' : '確定延長'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* 編輯既有借用單：沿用同一個視窗，傳入 editingDn 即為編輯模式。
           只有「待借出」的單會出現編輯按鈕，資料庫的 UPDATE 條件也擋了一層。 */}
