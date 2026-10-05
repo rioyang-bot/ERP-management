@@ -3,7 +3,7 @@ import { NavLink, Outlet } from 'react-router-dom';
 import { RoleContext } from '../../context/RoleContext';
 import { useTheme } from '../../context/ThemeContext';
 import logo from '../../assets/logo.png';
-import { ChevronRight, Key, X, Sun, Moon, LogOut, Plus } from 'lucide-react';
+import { Key, X, Sun, Moon, LogOut, Plus } from 'lucide-react';
 import { validatePassword } from '../../utils/auth';
 import { logUpdate } from '../../utils/auditLogger';
 import LiveEventDrawer from './LiveEventDrawer';
@@ -127,13 +127,13 @@ const MainLayout = () => {
     { id: 'dnList', path: '/dn-list', label: '出貨單列表 (D/N List)' },
     { id: 'lentList', path: '/lent-list', label: '借用列表 (Lent List)' },
     { id: 'repairList', path: '/repair-list', label: '維修單列表 (Repair List)' },
-    { id: 'assetList', path: '/device-list', label: '設備列表 (Device List)', hasSub: true },
-    { id: 'nic-list', path: '/hw-list', label: '硬體列表 (HW List)', hasSub: true },
-    { id: 'consumable-list', path: '/consumable-list', label: '耗材列表 (CSM List)', hasSub: true },
+    { id: 'assetList', path: '/device-list', label: '設備列表 (Device List)' },
+    { id: 'nic-list', path: '/hw-list', label: '硬體列表 (HW List)' },
+    { id: 'consumable-list', path: '/consumable-list', label: '耗材列表 (CSM List)' },
     { id: 'procurementList', path: '/procurement-list', label: '採購單列表 (P/O List)' },
     { id: 'partners', path: '/partners', label: '客戶/廠商管理 (Partners)' },
     { id: 'projects', path: '/projects', label: '專案列表 (Project List)' },
-    { id: 'reports', path: '/reports', label: '報表中心 (Reports)', hasSub: true },
+    { id: 'reports', path: '/reports', label: '報表中心 (Reports)' },
     { id: 'settings', path: '/settings', label: '系統管理 (Accounts)' },
   ];
 
@@ -265,7 +265,6 @@ const MainLayout = () => {
               <NavLink to={item.path} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span>{item.label}</span>
-                  {item.hasSub && <ChevronRight size={16} opacity={0.5} />}
                 </div>
               </NavLink>
             </li>
