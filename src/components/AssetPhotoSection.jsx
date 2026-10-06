@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Camera, Upload, Trash2, Download, Loader2, CheckCircle2, Circle } from 'lucide-react';
+import { Camera, Upload, Trash2, Download, Loader2, CheckCircle2, Circle, ClipboardPaste } from 'lucide-react';
 import { logUpdate, getCurrentUser } from '../utils/auditLogger';
 import { resolveMediaUrl, downloadMedia } from '../utils/media';
 import { screenPhotoFiles, formatFileSize } from '../utils/assetPhotos';
+import { namePastedImage, imagesFromPasteEvent, readClipboardImages } from '../utils/clipboardImages';
 
 /**
  * 設備主機照片
@@ -14,6 +15,8 @@ import { screenPhotoFiles, formatFileSize } from '../utils/assetPhotos';
  * 每一項各自上傳，人員才知道該拍哪些、拍漏了哪些。有照片就算完成。
  * 範本寫了拍攝說明的，直接顯示在該項底下，照著拍就不會拍錯角度。
  * 不屬於任何拍照項目的照片（包含先前上傳的）列在「其他照片」。
+ *
+ * 也可以用貼上的：點選拍照項目那一列後按 Ctrl+V，或按「貼上」鈕（見 utils/clipboardImages.js）。
  *
  * 縮圖走 blob 網址而不是 <img src="/uploads/...">：/uploads 擋在 requireAuth
  * 後面，而驗證看的是 Authorization 標頭，瀏覽器的 img 不會帶標頭。
@@ -35,6 +38,8 @@ const AssetPhotoSection = ({ device, card, photoItems = [], onChanged, canRemove
   const targetItemRef = useRef(null);
   // 已經產生的 blob 網址，元件收掉時要一併回收
   const objectUrlsRef = useRef([]);
+  // 點選了哪一列：Ctrl+V 貼上的圖片掛到這一項。'OTHER' 是沒有拍照項目時的「照片」區
+  const [pasteTarget, setPasteTarget] = useState(null);
 
   const assetId = device?.id;
   const deviceSn = (device?.sn || '').trim();
@@ -143,6 +148,49 @@ const AssetPhotoSection = ({ device, card, photoItems = [], onChanged, canRemove
       if (itemFileInputRef.current) itemFileInputRef.current.value = '';
     }
   };
+
+  /** 貼上的圖片依設備序號、拍照項目與時間命名，再走一般的上傳流程 */
+  const uploadPasted = (blobs, item = null) => {
+    if (!blobs || blobs.length === 0) {
+      alert('剪貼簿裡沒有圖片。請先複製一張圖片（例如截圖或在照片上按「複製」）再貼上。');
+      return;
+    }
+    const files = blobs.map((b, index) => namePastedImage(b, { sn: deviceSn, itemName: item ? item.item_name : '其他照片', index }));
+    handleFiles(files, item);
+  };
+
+  /** 「貼上」鈕：讀剪貼簿（瀏覽器第一次會詢問權限） */
+  const handlePasteButton = async (item = null) => {
+    try {
+      uploadPasted(await readClipboardImages(), item);
+    } catch (e) {
+      alert(e.message);
+    }
+  };
+
+  // 點選了某一列之後按 Ctrl+V。掛在 document 上：一般的 div 不一定收得到 paste 事件。
+  // 游標在輸入框裡（例如細項內容）時不攔截，照常貼上文字。
+  useEffect(() => {
+    if (!pasteTarget || busy) return undefined;
+    const onPaste = (e) => {
+      const el = e.target;
+      if (el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName))) return;
+      const blobs = imagesFromPasteEvent(e);
+      if (blobs.length === 0) return;
+      e.preventDefault();
+      const item = pasteTarget === 'OTHER' ? null : photoItems.find((i) => i.id === pasteTarget) || null;
+      uploadPasted(blobs, item);
+    };
+    document.addEventListener('paste', onPaste);
+    return () => document.removeEventListener('paste', onPaste);
+    // uploadPasted 每次重繪都是新的函式，列進相依會一直重掛；它用到的值都在下面
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pasteTarget, busy, photoItems, deviceSn, assetId]);
+
+  // 選取的那一項已經不在了（被移除）就取消選取
+  useEffect(() => {
+    if (pasteTarget && pasteTarget !== 'OTHER' && !photoItems.some((i) => i.id === pasteTarget)) setPasteTarget(null);
+  }, [photoItems, pasteTarget]);
 
   const handleDownload = async (photo) => {
     const res = await downloadMedia(photo.file_name, photo.original_name);
@@ -274,6 +322,16 @@ const AssetPhotoSection = ({ device, card, photoItems = [], onChanged, canRemove
         >
           {busy ? <Loader2 size={14} /> : <Upload size={14} />} {busy ? '處理中…' : (hasItems ? '上傳其他照片' : '上傳照片')}
         </button>
+        <button
+          type="button"
+          onClick={() => handlePasteButton(null)}
+          disabled={busy || !assetId}
+          style={{ ...uploadBtnStyle('#0e7490'), marginLeft: '-4px' }}
+          title="把剪貼簿裡的圖片貼上（截圖、複製的照片）"
+          aria-label={hasItems ? '貼上其他照片' : '貼上照片'}
+        >
+          <ClipboardPaste size={14} /> 貼上
+        </button>
         <input
           ref={fileInputRef}
           type="file"
@@ -296,8 +354,8 @@ const AssetPhotoSection = ({ device, card, photoItems = [], onChanged, canRemove
 
       <p style={{ margin: '6px 0 0 0', fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.7 }}>
         {hasItems
-          ? '請依下方的拍照項目逐項上傳，每一項至少一張。點縮圖可以把原檔存下來。單張上限 10 MB。'
-          : '拍下這台機器的外觀與機況，點縮圖可以把原檔存下來。單張上限 10 MB。'}
+          ? '請依下方的拍照項目逐項上傳，每一項至少一張。也可以點選某一項後按 Ctrl+V 貼上截圖或複製的照片。點縮圖可以把原檔存下來。單張上限 10 MB。'
+          : '拍下這台機器的外觀與機況，也可以點選下方區塊後按 Ctrl+V 貼上。點縮圖可以把原檔存下來。單張上限 10 MB。'}
       </p>
 
       {error && (
@@ -316,14 +374,22 @@ const AssetPhotoSection = ({ device, card, photoItems = [], onChanged, canRemove
               {photoItems.map((item, idx) => {
                 const list = photosOf(item.id);
                 const done = list.length > 0;
+                const selected = pasteTarget === item.id;
                 return (
                   <div
                     key={item.id}
+                    // 點選這一列後按 Ctrl+V，貼上的圖片就掛到這一項；再點一次取消
+                    onClick={(e) => { if (!e.target.closest('button, a, input')) setPasteTarget(selected ? null : item.id); }}
+                    aria-selected={selected}
+                    title={selected ? '已選取：按 Ctrl+V 貼上照片' : '點選後可按 Ctrl+V 貼上照片'}
                     style={{
                       padding: '6px 10px',
                       borderTop: idx === 0 ? 'none' : '1px solid var(--border-color)',
                       borderLeft: `3px solid ${done ? '#10b981' : '#f59e0b'}`,
-                      backgroundColor: done ? 'rgba(16, 185, 129, 0.05)' : 'transparent',
+                      backgroundColor: selected ? 'rgba(8, 145, 178, 0.10)' : (done ? 'rgba(16, 185, 129, 0.05)' : 'transparent'),
+                      outline: selected ? '2px solid #0891b2' : 'none',
+                      outlineOffset: '-2px',
+                      cursor: 'pointer',
                     }}
                     data-testid={`photo-item-${item.id}`}
                   >
@@ -343,9 +409,15 @@ const AssetPhotoSection = ({ device, card, photoItems = [], onChanged, canRemove
                           </span>
                         )}
                       </div>
-                      <span style={{ fontSize: '11px', fontWeight: 800, color: done ? '#10b981' : '#f59e0b', whiteSpace: 'nowrap' }}>
-                        {done ? `已上傳 ${list.length} 張` : '尚未上傳'}
-                      </span>
+                      {selected ? (
+                        <span style={{ fontSize: '11px', fontWeight: 800, color: '#0891b2', whiteSpace: 'nowrap' }} data-testid={`photo-item-paste-hint-${item.id}`}>
+                          按 Ctrl+V 貼上
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '11px', fontWeight: 800, color: done ? '#10b981' : '#f59e0b', whiteSpace: 'nowrap' }}>
+                          {done ? `已上傳 ${list.length} 張` : '尚未上傳'}
+                        </span>
+                      )}
                       <button
                         type="button"
                         onClick={() => handlePickForItem(item)}
@@ -354,6 +426,16 @@ const AssetPhotoSection = ({ device, card, photoItems = [], onChanged, canRemove
                         aria-label={`上傳 ${item.item_name} 的照片`}
                       >
                         <Upload size={12} /> 上傳
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handlePasteButton(item)}
+                        disabled={busy || !assetId}
+                        style={{ ...uploadBtnStyle('#0e7490'), padding: '4px 10px', gap: '4px', borderRadius: '6px' }}
+                        title="把剪貼簿裡的圖片貼到這一項"
+                        aria-label={`貼上 ${item.item_name} 的照片`}
+                      >
+                        <ClipboardPaste size={12} /> 貼上
                       </button>
                       {canRemove && onRemoveItem && canRemove(item) && (
                         <button
@@ -390,12 +472,17 @@ const AssetPhotoSection = ({ device, card, photoItems = [], onChanged, canRemove
             </div>
           ) : (
             !hasItems && !error && (
-              <div style={{
-                marginTop: '12px', padding: '18px', borderRadius: '8px',
-                border: '1.5px dashed var(--border-color)', textAlign: 'center',
-                fontSize: '12px', color: 'var(--text-muted)',
-              }}>
-                還沒有照片
+              <div
+                onClick={() => setPasteTarget(pasteTarget === 'OTHER' ? null : 'OTHER')}
+                aria-selected={pasteTarget === 'OTHER'}
+                data-testid="photo-paste-zone"
+                style={{
+                  marginTop: '12px', padding: '18px', borderRadius: '8px',
+                  border: `1.5px dashed ${pasteTarget === 'OTHER' ? '#0891b2' : 'var(--border-color)'}`, textAlign: 'center',
+                  fontSize: '12px', color: pasteTarget === 'OTHER' ? '#0891b2' : 'var(--text-muted)', cursor: 'pointer',
+                }}
+              >
+                {pasteTarget === 'OTHER' ? '已選取：按 Ctrl+V 貼上照片' : '還沒有照片（點這裡後可按 Ctrl+V 貼上）'}
               </div>
             )
           )}
