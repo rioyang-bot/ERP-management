@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
-  ClipboardCheck, Plus, Trash2, Pencil, Check, X, Layers, ListChecks, Info, Tag, RefreshCw, GripVertical, Camera, BookmarkPlus,
+  ClipboardCheck, Plus, Trash2, Pencil, Check, X, Layers, ListChecks, Info, Tag, RefreshCw, GripVertical, Camera, BookmarkPlus, Copy,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { logCreate, logDelete, logUpdate } from '../utils/auditLogger';
 import { moveItem, buildOrderParam } from '../utils/reorderList';
 import { groupScopeLabel } from '../utils/checklistGroupScope';
+import { sameScope, validateGroupCopy, buildGroupCopySteps } from '../utils/checklistGroupCopy';
 import PhotoExampleLibrary from '../components/PhotoExampleLibrary';
 
 /**
@@ -61,6 +62,9 @@ const ChecklistTemplates = () => {
   // 新增主項目
   const [newGroup, setNewGroup] = useState({ name: '', brand: '', model: '' });
   const [editingGroup, setEditingGroup] = useState(null); // { id, name, brand, model }
+  // 複製主項目：{ sourceId, name, brand, model }，null 表示視窗關閉（見 utils/checklistGroupCopy.js）
+  const [copyDraft, setCopyDraft] = useState(null);
+  const [copying, setCopying] = useState(false);
   // 各廠牌底下的設備型號，選了廠牌才去讀：{ [brand]: ['NEOTAP', ...] }
   const [modelsByBrand, setModelsByBrand] = useState({});
 
@@ -125,6 +129,7 @@ const ChecklistTemplates = () => {
   // 編輯既有主項目時，它的廠牌底下的型號也要先讀好
   useEffect(() => { if (editingGroup?.brand) loadModels(editingGroup.brand); }, [editingGroup?.brand, loadModels]);
   useEffect(() => { if (newGroup.brand) loadModels(newGroup.brand); }, [newGroup.brand, loadModels]);
+  useEffect(() => { if (copyDraft?.brand) loadModels(copyDraft.brand); }, [copyDraft?.brand, loadModels]);
 
   /**
    * 型號下拉。沒選廠牌時不給選 —— 不同廠牌可能有同名型號，型號一定要搭配廠牌。
@@ -211,6 +216,46 @@ const ChecklistTemplates = () => {
       await fetchAll();
     } catch (err) {
       alert(`修改主項目失敗：${err.message}`);
+    }
+  };
+
+  // --- 複製主項目 ---
+  /** 預設沿用來源的適用範圍，名稱留給使用者輸入 */
+  const openCopy = (group) => setCopyDraft({ sourceId: group.id, name: '', brand: group.brand || '', model: group.model || '' });
+
+  const handleCopyGroup = async () => {
+    const source = groups.find((g) => g.id === copyDraft.sourceId);
+    if (!source) return alert('請選擇要複製的主項目');
+    const invalid = validateGroupCopy(copyDraft, groups);
+    if (invalid) return alert(invalid);
+    const name = copyDraft.name.trim();
+    const total = Number(source.main_count || 0) + Number(source.detail_count || 0) + Number(source.photo_count || 0);
+    // 範圍和來源一樣：符合的設備會同時套用兩份，項目重複出現
+    if (sameScope(copyDraft, source) && !window.confirm(
+      `新的主項目「${name}」和「${source.name}」適用的範圍相同（${groupScopeLabel(source)}）。\n\n`
+      + '符合的設備會兩份都套用，同樣的項目會出現兩次。\n'
+      + '通常應該改成另一個廠牌或型號。確定仍要用相同的範圍嗎？'
+    )) return;
+
+    setCopying(true);
+    try {
+      const res = await window.electronAPI.runTransaction(buildGroupCopySteps(source.id, copyDraft, groups.length));
+      if (!res.success) throw new Error(res.error || '複製失敗');
+      const created = res.results?.group?.rows?.[0];
+      const model = copyDraft.brand ? (copyDraft.model || null) : null;
+      logCreate('SETTING', created?.id, name,
+        `複製出機檢查表主項目 [${source.name}] → [${name}]（${groupScopeLabel({ brand: copyDraft.brand, model })}），共 ${total} 個項目`,
+        { sourceId: source.id, sourceName: source.name, name, brand: copyDraft.brand || null, model, items: total });
+      setCopyDraft(null);
+      // 新主項目一建好就套用到符合的設備，與新增主項目相同
+      const applied = await syncToDevices();
+      await fetchAll();
+      if (created?.id) setSelectedGroupId(created.id);
+      setSyncNotice(`已複製「${source.name}」為「${name}」${applied > 0 ? `，並套用到設備 ${applied} 項` : ''}`);
+    } catch (err) {
+      alert(`複製主項目失敗：${err.message}\n（同一廠牌底下不可有同名的主項目）`);
+    } finally {
+      setCopying(false);
     }
   };
 
@@ -783,6 +828,15 @@ const ChecklistTemplates = () => {
                         </button>
                         <button
                           type="button"
+                          onClick={(e) => { e.stopPropagation(); openCopy(g); }}
+                          style={iconBtn('#0891b2')}
+                          title="複製主項目（連同底下所有檢查項目）"
+                          aria-label={`複製主項目 ${g.name}`}
+                        >
+                          <Copy size={13} />
+                        </button>
+                        <button
+                          type="button"
                           onClick={(e) => { e.stopPropagation(); handleDeleteGroup(g); }}
                           style={iconBtn('#ef4444')}
                           title="刪除主項目"
@@ -822,6 +876,90 @@ const ChecklistTemplates = () => {
           </div>
         </div>
       )}
+
+      {copyDraft && (() => {
+        const source = groups.find((g) => g.id === copyDraft.sourceId);
+        const same = source && sameScope(copyDraft, source);
+        const label = { display: 'block', fontSize: '12px', fontWeight: 800, color: 'var(--text-muted)', margin: '12px 0 6px' };
+        return (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--bg-modal-overlay)', backdropFilter: 'blur(4px)' }}>
+            <div role="dialog" aria-label="複製主項目" style={{ ...card, width: '460px', maxWidth: '95vw', padding: '22px' }}>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px', fontSize: '16px', fontWeight: 900, color: 'var(--text-main)' }}>
+                <Copy size={18} color="#0891b2" /> 複製主項目
+              </h3>
+              <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '6px 0 0 0' }}>
+                連同底下所有的主要檢查功能、細項與拍照項目（含拍攝說明、順序）複製一份。
+              </p>
+
+              <label style={label} htmlFor="copy-group-source">要複製的主項目</label>
+              <select
+                id="copy-group-source"
+                value={copyDraft.sourceId}
+                onChange={(e) => {
+                  const g = groups.find((x) => String(x.id) === e.target.value);
+                  setCopyDraft({ ...copyDraft, sourceId: g.id, brand: g.brand || '', model: g.model || '' });
+                }}
+                style={inputStyle}
+              >
+                {groups.map((g) => <option key={g.id} value={g.id}>{g.name}（{groupScopeLabel(g)}）</option>)}
+              </select>
+              {source && (
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '6px' }} data-testid="copy-group-counts">
+                  主要 {source.main_count} · 細項 {source.detail_count}{Number(source.photo_count) > 0 ? ` · 拍照 ${source.photo_count}` : ''}
+                </div>
+              )}
+
+              <label style={label} htmlFor="copy-group-name">新的名稱</label>
+              <input
+                id="copy-group-name"
+                type="text"
+                value={copyDraft.name}
+                onChange={(e) => setCopyDraft({ ...copyDraft, name: e.target.value })}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleCopyGroup(); } }}
+                autoFocus
+                style={inputStyle}
+              />
+
+              <label style={label}>適用範圍</label>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <select
+                  value={copyDraft.brand}
+                  onChange={(e) => setCopyDraft({ ...copyDraft, brand: e.target.value, model: '' })}
+                  aria-label="複製後適用廠牌"
+                  style={inputStyle}
+                >
+                  <option value="">不指定廠牌（通用）</option>
+                  {brands.map((b) => <option key={b.id || b.name} value={b.name}>{b.name}</option>)}
+                </select>
+                {renderModelSelect(copyDraft.brand, copyDraft.model, (model) => setCopyDraft({ ...copyDraft, model }), '複製後適用型號')}
+              </div>
+              {same && (
+                <div style={{ fontSize: '12px', color: '#d97706', fontWeight: 700, marginTop: '8px' }} data-testid="copy-group-same-scope">
+                  和原本的主項目適用範圍相同，符合的設備會兩份都套用。通常應改成另一個廠牌或型號。
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '20px' }}>
+                <button
+                  type="button"
+                  onClick={() => setCopyDraft(null)}
+                  style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-main)', fontWeight: 700, cursor: 'pointer' }}
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCopyGroup}
+                  disabled={copying || !copyDraft.name.trim()}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: '8px', border: 'none', backgroundColor: '#0891b2', color: '#fff', fontWeight: 800, cursor: copying ? 'wait' : 'pointer', opacity: (copying || !copyDraft.name.trim()) ? 0.6 : 1 }}
+                >
+                  <Copy size={14} /> {copying ? '複製中…' : '複製'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };
