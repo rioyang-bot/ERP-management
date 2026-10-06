@@ -514,6 +514,16 @@ export const queries = {
         updated_at = CURRENT_TIMESTAMP
     WHERE id = $3
     RETURNING id`,
+  // 複製主項目：把來源主項目底下的所有項目（主要檢查功能、細項、拍照項目，
+  // 含拍攝說明與順序）照搬到新的主項目。在資料庫裡直接搬，內容一字不差，
+  // 不經過前端也不會被參數過濾改到。新主項目由同一個交易的前一步建立。
+  copyChecklistItems: `
+    INSERT INTO checklist_items (group_id, kind, name, sort_order, description, auto_apply)
+    SELECT $1::integer, kind, name, sort_order, description, auto_apply
+    FROM checklist_items
+    WHERE group_id = $2::integer
+    ORDER BY kind, sort_order, id
+    RETURNING id`,
   // 主項目刪除會連帶刪掉底下的項目（外鍵 CASCADE），
   // 但設備已經套用出去的內容是快照，不受影響。
   deleteChecklistGroup: `DELETE FROM checklist_groups WHERE id = $1 RETURNING id`,
