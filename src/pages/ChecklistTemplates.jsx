@@ -37,16 +37,22 @@ const KIND_META = {
     title: '主要檢查功能', label: '主要功能', Icon: ListChecks, accent: 'var(--primary-color)',
     desc: '新增後立即套用到所有符合廠牌的設備，勾選表示檢查完成。',
     placeholder: '例如：BIOS 設定、韌體版本確認',
+    descName: '說明',
+    descPlaceholder: '說明（選填），例如：\nBoot Mode 設為 UEFI、關閉 Secure Boot',
   },
   [KIND_DETAIL]: {
     title: '細項', label: '細項', Icon: Tag, accent: '#7c3aed',
     desc: '這裡定義的是欄位名稱（例如「OS」）。新增後立即套用到所有符合的設備，由每台設備填寫內容（例如「RH9.6」）。',
     placeholder: '欄位名稱，例如：OS、BMC IP、開機順序',
+    descName: '說明',
+    descPlaceholder: '說明（選填），例如：\n填作業系統與版本，例如 RH9.6',
   },
   [KIND_PHOTO]: {
     title: '拍照項目', label: '拍照項目', Icon: Camera, accent: '#ea580c',
     desc: '每台設備要拍的照片。新增後立即套用到所有符合的設備，人員在設備的「主機照片」區逐項上傳，有照片就算完成。',
     placeholder: '例如：正面、背面、機櫃內配線',
+    descName: '拍攝說明',
+    descPlaceholder: '拍攝說明（選填），例如：\n關機狀態、正面平視，前面板與序號貼紙都要清楚入鏡',
   },
 };
 
@@ -71,8 +77,8 @@ const ChecklistTemplates = () => {
   // 新增項目（兩組各自一個輸入框）
   const [newItemText, setNewItemText] = useState({ [KIND_MAIN]: '', [KIND_DETAIL]: '', [KIND_PHOTO]: '' });
   const [editingItem, setEditingItem] = useState(null); // { id, name, kind, description }
-  // 拍照項目的拍攝說明（新增時）與範例
-  const [newPhotoDesc, setNewPhotoDesc] = useState('');
+  // 新增項目時的說明（三種各自一個），拍照項目另有範例
+  const [newDesc, setNewDesc] = useState({ [KIND_MAIN]: '', [KIND_DETAIL]: '', [KIND_PHOTO]: '' });
   const [photoExamples, setPhotoExamples] = useState([]);
   // 「已套用到 N 台設備」的提示，讓使用者看得到自動套用真的發生了
   const [syncNotice, setSyncNotice] = useState('');
@@ -293,8 +299,8 @@ const ChecklistTemplates = () => {
     if (sameKind.some((i) => (i.name || '').trim().toUpperCase() === name.toUpperCase())) {
       return alert(`「${name}」已經在這個主項目的${KIND_META[kind].title}裡了。`);
     }
-    // 只有拍照項目有說明
-    const description = kind === KIND_PHOTO ? (preset ? preset.description || '' : newPhotoDesc).trim() : '';
+    // 三種項目都可以附說明，設備上顯示在項目底下
+    const description = (preset ? preset.description || '' : newDesc[kind] || '').trim();
     try {
       const res = await window.electronAPI.namedQuery('insertChecklistItem', [selectedGroup.id, kind, name, sameKind.length, description || null]);
       if (!res.success) throw new Error(res.error || '新增失敗');
@@ -303,7 +309,7 @@ const ChecklistTemplates = () => {
         { group: selectedGroup.name, kind, name, description: description || null, fromExample: !!preset });
       if (!preset) {
         setNewItemText((prev) => ({ ...prev, [kind]: '' }));
-        if (kind === KIND_PHOTO) setNewPhotoDesc('');
+        setNewDesc((prev) => ({ ...prev, [kind]: '' }));
       }
 
       // 三種項目一建立就要出現在所有符合廠牌／型號的設備上
@@ -381,9 +387,8 @@ const ChecklistTemplates = () => {
   const handleSaveItem = async () => {
     const name = (editingItem.name || '').trim();
     if (!name) return;
-    const isPhoto = editingItem.kind === KIND_PHOTO;
     const description = (editingItem.description || '').trim();
-    const descChanged = isPhoto && description !== (editingItem._origDescription || '').trim();
+    const descChanged = description !== (editingItem._origDescription || '').trim();
     try {
       const res = await window.electronAPI.namedQuery('updateChecklistItemName', [name, editingItem.id]);
       if (!res.success) throw new Error(res.error || '修改失敗');
@@ -392,11 +397,11 @@ const ChecklistTemplates = () => {
       if (descChanged) {
         const dRes = await window.electronAPI.namedQuery('updateChecklistItemDescription', [description || null, editingItem.id]);
         if (!dRes.success) throw new Error(dRes.error || '修改說明失敗');
-        // 已套用到設備上的拍照項目，說明跟著更新
+        // 已套用到設備上的同一項，說明跟著更新
         await window.electronAPI.namedQuery('syncAssetChecklistDescriptionBySource', [description || null, editingItem.id]);
       }
       logUpdate('SETTING', editingItem.id, name,
-        `修改出機檢查項目${editingItem._origName !== name ? `名稱 [${editingItem._origName || ''}] → [${name}]` : ` [${name}]`}${descChanged ? '，並更新拍攝說明' : ''}`,
+        `修改出機檢查項目${editingItem._origName !== name ? `名稱 [${editingItem._origName || ''}] → [${name}]` : ` [${name}]`}${descChanged ? `，並更新${KIND_META[editingItem.kind]?.descName || '說明'}` : ''}`,
         { before: editingItem._origName || '', after: name, ...(descChanged ? { description: description || null } : {}) });
       setEditingItem(null);
       await fetchAll();
@@ -510,7 +515,7 @@ const ChecklistTemplates = () => {
             })}
           </select>
         )}
-        <div style={{ display: 'flex', gap: '6px', marginBottom: isPhoto ? '6px' : '12px' }}>
+        <div style={{ display: 'flex', gap: '6px', marginBottom: '6px' }}>
           <input
             type="text"
             value={newItemText[kind]}
@@ -537,16 +542,15 @@ const ChecklistTemplates = () => {
             <Plus size={15} /> 新增
           </button>
         </div>
-        {isPhoto && (
-          <textarea
-            value={newPhotoDesc}
-            onChange={(e) => setNewPhotoDesc(e.target.value)}
-            placeholder={'拍攝說明（選填），例如：\n關機狀態、正面平視，前面板與序號貼紙都要清楚入鏡'}
-            aria-label="拍照項目說明"
-            disabled={!selectedGroup}
-            style={{ ...textareaStyle, marginBottom: '12px' }}
-          />
-        )}
+        {/* 說明欄三種都有，與拍照項目的拍攝說明相同：設備上顯示在項目底下 */}
+        <textarea
+          value={newDesc[kind]}
+          onChange={(e) => setNewDesc((prev) => ({ ...prev, [kind]: e.target.value }))}
+          placeholder={meta.descPlaceholder}
+          aria-label={`${meta.title}說明`}
+          disabled={!selectedGroup}
+          style={{ ...textareaStyle, marginBottom: '12px' }}
+        />
 
         <div style={{ flex: 1, overflowY: 'auto', minHeight: '120px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
           {list.length === 0 ? (
@@ -562,7 +566,7 @@ const ChecklistTemplates = () => {
               onDrop={(e) => handleItemDrop(e, item)}
               onDragEnd={handleItemDragEnd}
               style={{
-                display: 'flex', alignItems: isPhoto ? 'flex-start' : 'center', gap: '8px', padding: '8px 10px',
+                display: 'flex', alignItems: (isPhoto || item.description) ? 'flex-start' : 'center', gap: '8px', padding: '8px 10px',
                 borderRadius: '8px',
                 border: dragOverId === item.id && draggingItem?.id !== item.id
                   ? `2px solid ${accent}`
@@ -593,15 +597,13 @@ const ChecklistTemplates = () => {
                       aria-label="修改項目名稱"
                       autoFocus
                     />
-                    {isPhoto && (
-                      <textarea
-                        value={editingItem.description || ''}
-                        onChange={(e) => setEditingItem({ ...editingItem, description: e.target.value })}
-                        placeholder="拍攝說明（選填）"
-                        aria-label="修改拍照項目說明"
-                        style={textareaStyle}
-                      />
-                    )}
+                    <textarea
+                      value={editingItem.description || ''}
+                      onChange={(e) => setEditingItem({ ...editingItem, description: e.target.value })}
+                      placeholder={`${meta.descName}（選填）`}
+                      aria-label={`修改${meta.title}說明`}
+                      style={textareaStyle}
+                    />
                   </div>
                   <button type="button" onClick={handleSaveItem} style={iconBtn('#10b981')} title="儲存" aria-label="儲存項目"><Check size={14} /></button>
                   <button type="button" onClick={() => setEditingItem(null)} style={iconBtn('var(--text-muted)')} title="取消" aria-label="取消編輯"><X size={14} /></button>
@@ -610,7 +612,7 @@ const ChecklistTemplates = () => {
                 <>
                   <span style={{ flex: 1, minWidth: 0, fontSize: '13px', color: 'var(--text-main)', fontWeight: 600, wordBreak: 'break-word' }}>
                     {item.name}
-                    {isPhoto && item.description && (
+                    {item.description && (
                       <span style={{ display: 'block', marginTop: '4px', fontSize: '12px', fontWeight: 500, color: 'var(--text-muted)', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
                         {item.description}
                       </span>
@@ -623,7 +625,7 @@ const ChecklistTemplates = () => {
                     type="button"
                     onClick={() => setEditingItem({ id: item.id, kind: item.kind, name: item.name, _origName: item.name, description: item.description || '', _origDescription: item.description || '' })}
                     style={iconBtn('#f59e0b')}
-                    title={isPhoto ? '修改名稱與說明' : '修改名稱'}
+                    title="修改名稱與說明"
                     aria-label={`修改 ${item.name}`}
                   >
                     <Pencil size={13} />

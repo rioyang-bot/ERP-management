@@ -454,7 +454,7 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
                           return (
                           <div
                             key={row.id}
-                            style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 8px', borderRadius: '8px', backgroundColor: row.is_checked ? 'rgba(16, 185, 129, 0.07)' : 'transparent' }}
+                            style={{ display: 'flex', alignItems: row.description ? 'flex-start' : 'center', gap: '10px', padding: '7px 8px', borderRadius: '8px', backgroundColor: row.is_checked ? 'rgba(16, 185, 129, 0.07)' : 'transparent' }}
                           >
                             <input
                               type="checkbox"
@@ -463,8 +463,16 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
                               aria-label={`${row.item_name} 檢查完成`}
                               style={{ width: '17px', height: '17px', cursor: 'pointer', flexShrink: 0 }}
                             />
-                            <span style={{ flex: 1, fontSize: '13px', color: 'var(--text-main)', fontWeight: 600, wordBreak: 'break-word', textDecoration: row.is_checked ? 'line-through' : 'none', opacity: row.is_checked ? 0.7 : 1 }}>
-                              {row.item_name}
+                            <span style={{ flex: 1, fontSize: '13px', color: 'var(--text-main)', fontWeight: 600, wordBreak: 'break-word' }}>
+                              <span style={{ textDecoration: row.is_checked ? 'line-through' : 'none', opacity: row.is_checked ? 0.7 : 1 }}>
+                                {row.item_name}
+                              </span>
+                              {/* 範本上的說明（與拍照項目的拍攝說明相同），讓檢查的人知道要看什麼 */}
+                              {row.description && (
+                                <span data-testid={`checklist-desc-${row.id}`} style={{ display: 'block', marginTop: '3px', fontSize: '12px', fontWeight: 500, color: 'var(--text-muted)', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+                                  {row.description}
+                                </span>
+                              )}
                             </span>
                             {canRemove(row) ? (
                               <button
@@ -517,9 +525,14 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
                         </div>
                       )}
                       {appliedDetails.map((row) => (
-                        <div key={row.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 8px' }}>
+                        <div key={row.id} style={{ display: 'flex', alignItems: row.description ? 'flex-start' : 'center', gap: '10px', padding: '7px 8px' }}>
                           <span style={{ flex: '0 0 160px', fontSize: '13px', color: 'var(--text-main)', fontWeight: 700, wordBreak: 'break-word' }}>
                             {row.item_name}
+                            {row.description && (
+                              <span data-testid={`checklist-desc-${row.id}`} style={{ display: 'block', marginTop: '3px', fontSize: '12px', fontWeight: 500, color: 'var(--text-muted)', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+                                {row.description}
+                              </span>
+                            )}
                           </span>
                           <input
                             type="text"
