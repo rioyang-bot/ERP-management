@@ -1125,8 +1125,11 @@ const DeviceList = ({ isSplitMode = false }) => {
                                             <b style={{ flexShrink: 0, color: type === UNREGISTERED ? '#ef4444' : 'var(--text-main)' }}>
                                               {type} ×{items.length}
                                             </b>
-                                            <span style={{ color: 'var(--text-main)', fontWeight: 'normal' }}>
-                                              {items.map(({ sn, hw }) => (hw ? `${[hw.brand, hw.model].filter(Boolean).join(' ')} (${sn})` : sn)).join('、')}
+                                            {/* 同類型有好幾個時一個一行、對齊在第一個底下，欄位才不會被撐得很寬 */}
+                                            <span style={{ display: 'flex', flexDirection: 'column', gap: '1px', color: 'var(--text-main)', fontWeight: 'normal' }}>
+                                              {items.map(({ sn, hw }) => (
+                                                <span key={sn}>{hw ? `${[hw.brand, hw.model].filter(Boolean).join(' ')} (${sn})` : sn}</span>
+                                              ))}
                                             </span>
                                           </div>
                                         ))}

@@ -167,9 +167,13 @@ describe('設備列表的搭載硬體欄', () => {
     const rows = [...box.children].map((r) => r.textContent);
     expect(rows).toEqual([
       'CPU ×1INTEL 285K (CPU-1)',
-      'NIC ×2AMD X2522 (NIC-1)、AMD X2522 (NIC-2)',
+      'NIC ×2AMD X2522 (NIC-1)AMD X2522 (NIC-2)',
       'RAM ×1V-COLOR PC5 (RAM-1)',
       `${UNREGISTERED} ×1ODD-1`,
     ]);
+    // 同類型的第二個放在第一個底下，不接在同一行，欄位才不會被撐得很寬
+    const list = screen.getByTestId('device-components-1-NIC').lastElementChild;
+    expect(list.style.flexDirection).toBe('column');
+    expect([...list.children].map((c) => c.textContent)).toEqual(['AMD X2522 (NIC-1)', 'AMD X2522 (NIC-2)']);
   });
 });
