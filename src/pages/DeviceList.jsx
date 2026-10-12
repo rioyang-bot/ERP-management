@@ -21,6 +21,7 @@ import CardAggregationSelect from '../components/common/CardAggregationSelect';
 import { useCardLayoutByMode } from '../hooks/useCardLayout';
 import DeviceChecklistModal from '../components/DeviceChecklistModal';
 import MountedConsumablesSection from '../components/MountedConsumablesSection';
+import { groupMountedHwByType, UNREGISTERED } from '../utils/mountedHwGroups';
 
 // 設備列表的欄位清單：id 對應表格的每一欄，always 代表不可隱藏
 const DEVICE_COLUMNS = [
@@ -1726,13 +1727,23 @@ const DeviceList = ({ isSplitMode = false }) => {
                   const uniqueSns = Array.from(new Set(parsedSns));
                   if (uniqueSns.length === 0) return null;
 
+                  const findHw = (sn) => (availableHardwares || []).find(h => (h.sn || '').toLowerCase() === sn.toLowerCase()) ||
+                    (editItem._origComponents || []).find(c => (c.sn || '').toLowerCase() === sn.toLowerCase()) ||
+                    (editItem._origMountedHwSns || []).find(s => s.toLowerCase() === sn.toLowerCase());
+                  // 一個類型一行，類型寫在最前面（見 utils/mountedHwGroups.js）
+                  const groups = groupMountedHwByType(uniqueSns, findHw);
+
                   return (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px', alignItems: 'center' }}>
-                      <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 'bold' }}>已設定 ({uniqueSns.length}):</span>
-                      {uniqueSns.map(sn => {
-                        const matchedHw = (availableHardwares || []).find(h => (h.sn || '').toLowerCase() === sn.toLowerCase()) || 
-                          (editItem._origComponents || []).find(c => (c.sn || '').toLowerCase() === sn.toLowerCase()) ||
-                          (editItem._origMountedHwSns || []).find(s => s.toLowerCase() === sn.toLowerCase());
+                    <div style={{ marginTop: '8px' }} data-testid="mounted-hw-groups">
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 'bold', marginBottom: '4px' }}>已設定 ({uniqueSns.length}):</div>
+                      {groups.map(({ type, items }) => (
+                      <div key={type} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '3px 0' }} data-testid={`mounted-hw-group-${type}`}>
+                        <span style={{ flex: '0 0 130px', fontSize: '11px', fontWeight: 800, color: type === UNREGISTERED ? '#ef4444' : 'var(--text-main)', paddingTop: '3px', wordBreak: 'break-word' }}>
+                          {type} <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>×{items.length}</span>
+                        </span>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', flex: 1, minWidth: 0 }}>
+                      {items.map(({ sn }) => {
+                        const matchedHw = findHw(sn);
                         return (
                           <span
                             key={sn}
@@ -1771,6 +1782,9 @@ const DeviceList = ({ isSplitMode = false }) => {
                           </span>
                         );
                       })}
+                        </div>
+                      </div>
+                      ))}
                     </div>
                   );
                 })()}
