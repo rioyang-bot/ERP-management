@@ -1110,11 +1110,24 @@ const DeviceList = ({ isSplitMode = false }) => {
                                       <Cpu size={10} /> 搭載硬體 ({item.components.length})
                                     </button>
                                     
+                                    {/* 一個類型一行，類型（與數量）寫在最前面，與編輯視窗的「已設定」相同 */}
                                     {expandedItems[item.id] && (
-                                      <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '3px', paddingLeft: '4px', borderLeft: '2px solid var(--primary-color)' }}>
-                                        {item.components.map((comp, idx) => (
-                                          <div key={idx} style={{ fontSize: '10px', color: 'var(--text-main)', fontWeight: 'normal' }}>
-                                            • {comp.brand} {comp.model} ({comp.sn})
+                                      <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '3px', paddingLeft: '4px', borderLeft: '2px solid var(--primary-color)' }} data-testid={`device-components-${item.id}`}>
+                                        {groupMountedHwByType(
+                                          item.components.map((c) => c.sn).filter(Boolean),
+                                          // 只有序號、沒有任何建檔資料（廠牌、型號、類型都空）的算未建檔
+                                          (sn) => {
+                                            const comp = item.components.find((c) => c.sn === sn);
+                                            return comp && (comp.brand || comp.model || comp.type) ? comp : null;
+                                          }
+                                        ).map(({ type, items }) => (
+                                          <div key={type} style={{ display: 'flex', alignItems: 'baseline', gap: '6px', fontSize: '10px' }} data-testid={`device-components-${item.id}-${type}`}>
+                                            <b style={{ flexShrink: 0, color: type === UNREGISTERED ? '#ef4444' : 'var(--text-main)' }}>
+                                              {type} ×{items.length}
+                                            </b>
+                                            <span style={{ color: 'var(--text-main)', fontWeight: 'normal' }}>
+                                              {items.map(({ sn, hw }) => (hw ? `${[hw.brand, hw.model].filter(Boolean).join(' ')} (${sn})` : sn)).join('、')}
+                                            </span>
                                           </div>
                                         ))}
                                       </div>

@@ -121,3 +121,55 @@ describe('設備編輯視窗', () => {
     expect(input).toHaveValue('RAM-2');
   });
 });
+
+describe('設備列表的搭載硬體欄', () => {
+  const DEVICE = {
+    id: 1, sn: 'DEV-1', status: 'ACTIVE', ownership: 'FOR_SALE', item_master_id: 5,
+    brand: 'BLACKCORE', type: 'SERVER', model: '3122-SM', specification: '26C', unit: '台', custom_attributes: {},
+    components: [
+      { sn: 'NIC-1', brand: 'AMD', model: 'X2522', type: 'NIC' },
+      { sn: 'RAM-1', brand: 'V-COLOR', model: 'PC5', type: 'RAM' },
+      { sn: 'NIC-2', brand: 'AMD', model: 'X2522', type: 'NIC' },
+      { sn: 'CPU-1', brand: 'INTEL', model: '285K', type: 'CPU' },
+      { sn: 'ODD-1', brand: '', model: '', type: '' },
+    ],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.alert = vi.fn();
+    const namedQuery = vi.fn(async (query) => {
+      if (query === 'fetchAssetsList' || query === 'fetchAssetsListByBrand') return { success: true, rows: [{ ...DEVICE }] };
+      return { success: true, rows: [], rowCount: 1 };
+    });
+    window.electronAPI = {
+      namedQuery, runTransaction: createRunTransactionMock(namedQuery), getDashboardStats: vi.fn(), saveFile: vi.fn(),
+      getUserPreference: vi.fn().mockResolvedValue({ success: true, value: null }),
+      setUserPreference: vi.fn().mockResolvedValue({ success: true }),
+    };
+  });
+
+  it('展開後一個類型一行，類型與數量在最前面', async () => {
+    render(
+      <ThemeProvider>
+        <MemoryRouter>
+          <RoleContext.Provider value={{ role: 'ADMIN', authUser: { id: 1, role: 'ADMIN' }, setAuthUser: vi.fn() }}>
+            <DeviceList />
+          </RoleContext.Provider>
+        </MemoryRouter>
+      </ThemeProvider>
+    );
+    // 列表要先搜尋才會列出這台
+    await userEvent.type(await screen.findByPlaceholderText(/快速搜尋/), 'DEV-1');
+    await waitFor(() => expect(within(document.querySelector('table')).getByText('DEV-1')).toBeInTheDocument());
+    await userEvent.click(await screen.findByRole('button', { name: /搭載硬體 \(5\)/ }));
+    const box = await screen.findByTestId('device-components-1');
+    const rows = [...box.children].map((r) => r.textContent);
+    expect(rows).toEqual([
+      'CPU ×1INTEL 285K (CPU-1)',
+      'NIC ×2AMD X2522 (NIC-1)、AMD X2522 (NIC-2)',
+      'RAM ×1V-COLOR PC5 (RAM-1)',
+      `${UNREGISTERED} ×1ODD-1`,
+    ]);
+  });
+});
