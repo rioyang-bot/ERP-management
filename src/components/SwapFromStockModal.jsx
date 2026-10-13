@@ -9,6 +9,9 @@ import './detail/DetailModal.css';
  *
  * 每一台故障設備選一台在庫的設備換給客戶。按下確認後同一個交易完成：
  * 新設備出貨給客戶、換回來的設備回到在庫、維修單結案、產生已出貨的出貨單。
+ *
+ * 搭載硬體逐件選擇：舊機的「跟舊機取回／留在客戶端、移到新設備」，
+ * 新設備的「一起出貨／拆下留在公司」（例如 NIC 不帶回，其餘帶回）。
  */
 const today = () => {
   const d = new Date();
@@ -20,6 +23,11 @@ const SwapFromStockModal = ({ isOpen, onClose, repairOrder, onSuccess }) => {
   const [brokenAssets, setBrokenAssets] = useState({}); // 明細 id → 故障設備的資產資料
   const [picks, setPicks] = useState({}); // 明細 id → 選到的庫存設備
   const [filters, setFilters] = useState({}); // 明細 id → 搜尋字
+  // 搭載硬體：兩台各自掛了什麼、使用者怎麼選
+  const [oldHw, setOldHw] = useState({}); // 明細 id → 舊機的搭載硬體
+  const [newHw, setNewHw] = useState({}); // 明細 id → 選到的新設備的搭載硬體
+  const [moveSel, setMoveSel] = useState({}); // 明細 id → Set(舊機上要移到新設備的硬體 id)
+  const [detachSel, setDetachSel] = useState({}); // 明細 id → Set(新設備上要拆下的硬體 id)
   const [date, setDate] = useState(today());
   const [reason, setReason] = useState('');
   const [remarks, setRemarks] = useState('');
@@ -34,6 +42,10 @@ const SwapFromStockModal = ({ isOpen, onClose, repairOrder, onSuccess }) => {
     let alive = true;
     setPicks({});
     setFilters({});
+    setOldHw({});
+    setNewHw({});
+    setMoveSel({});
+    setDetachSel({});
     setDate(today());
     setReason(repairOrder.on_site_status || '');
     setRemarks('');
@@ -41,16 +53,22 @@ const SwapFromStockModal = ({ isOpen, onClose, repairOrder, onSuccess }) => {
     setLoading(true);
     (async () => {
       try {
-        const [candRes, ...assetRes] = await Promise.all([
+        const [candRes, ...rest] = await Promise.all([
           window.electronAPI.namedQuery('fetchSwapCandidates'),
           ...items.map((it) => window.electronAPI.namedQuery('fetchAssetBySn', [it.sn.trim()])),
+          ...items.map((it) => window.electronAPI.namedQuery('fetchMountedHardwareBySn', [it.sn.trim()])),
         ]);
+        const assetRes = rest.slice(0, items.length);
+        const hwRes = rest.slice(items.length);
         if (!alive) return;
         if (!candRes.success) throw new Error(candRes.error || '讀取在庫設備失敗');
         setCandidates(candRes.rows || []);
         const map = {};
         items.forEach((it, i) => { map[it.id] = assetRes[i]?.success ? assetRes[i].rows?.[0] || null : null; });
         setBrokenAssets(map);
+        const hwMap = {};
+        items.forEach((it, i) => { hwMap[it.id] = hwRes[i]?.success ? hwRes[i].rows || [] : []; });
+        setOldHw(hwMap);
       } catch (e) {
         if (alive) setError(e.message);
       } finally {
@@ -63,6 +81,36 @@ const SwapFromStockModal = ({ isOpen, onClose, repairOrder, onSuccess }) => {
   if (!isOpen || !repairOrder) return null;
 
   const pickedSns = new Set(Object.values(picks).map((c) => c.sn));
+
+  /** 選了新設備就讀它身上掛的硬體；換一台就重新選 */
+  const pickReplacement = async (itemId, cand) => {
+    setPicks((prev) => {
+      const next = { ...prev };
+      if (cand) next[itemId] = cand; else delete next[itemId];
+      return next;
+    });
+    setDetachSel((prev) => ({ ...prev, [itemId]: new Set() }));
+    if (!cand) { setNewHw((prev) => ({ ...prev, [itemId]: [] })); return; }
+    const res = await window.electronAPI.namedQuery('fetchMountedHardwareBySn', [cand.sn]);
+    setNewHw((prev) => ({ ...prev, [itemId]: res.success ? res.rows || [] : [] }));
+  };
+
+  const toggleIn = (setter, itemId, hwId, on) => setter((prev) => {
+    const next = new Set(prev[itemId] || []);
+    if (on) next.add(hwId); else next.delete(hwId);
+    return { ...prev, [itemId]: next };
+  });
+
+  /** 某一類型的舊機硬體一次全部移到新設備（已經全移就全部改回取回） */
+  const toggleTypeMove = (itemId, type) => {
+    const ofType = (oldHw[itemId] || []).filter((h) => (h.type || '') === type).map((h) => h.id);
+    setMoveSel((prev) => {
+      const cur = new Set(prev[itemId] || []);
+      const allMoved = ofType.every((id) => cur.has(id));
+      ofType.forEach((id) => (allMoved ? cur.delete(id) : cur.add(id)));
+      return { ...prev, [itemId]: cur };
+    });
+  };
   const attrs = (a) => (a?.custom_attributes && typeof a.custom_attributes === 'object' ? a.custom_attributes : {});
 
   const handleSubmit = async () => {
@@ -87,13 +135,20 @@ const SwapFromStockModal = ({ isOpen, onClose, repairOrder, onSuccess }) => {
       newAssetId: picks[it.id].id,
       newSn: picks[it.id].sn,
       newItemMasterId: picks[it.id].item_master_id,
+      moveHw: (oldHw[it.id] || []).filter((h) => moveSel[it.id]?.has(h.id)),
+      detachHw: (newHw[it.id] || []).filter((h) => detachSel[it.id]?.has(h.id)),
     }));
+    const hwLines = pairs.flatMap((p) => [
+      ...p.moveHw.map((h) => `　· ${h.type || '硬體'} ${h.sn}：留在客戶端，由 ${p.oldSn} 移到 ${p.newSn}`),
+      ...p.detachHw.map((h) => `　· ${h.type || '硬體'} ${h.sn}：自 ${p.newSn} 拆下留在公司`),
+    ]);
 
     if (!window.confirm(
       `確定以庫存設備換貨嗎？\n\n`
       + pairs.map((p) => `　· 故障 ${p.oldSn} → 換給客戶 ${p.newSn}`).join('\n')
       + `\n\n新設備出貨給「${dn.customer}」（${dn.location || '地點未填'}），換回來的設備回到「在庫」，`
       + '維修單結案，並產生一張已出貨的出貨單。'
+      + (hwLines.length > 0 ? `\n\n搭載硬體：\n${hwLines.join('\n')}` : '')
     )) return;
 
     setSaving(true);
@@ -117,6 +172,19 @@ const SwapFromStockModal = ({ isOpen, onClose, repairOrder, onSuccess }) => {
           `維修單 [${repairOrder.repair_no}] 以庫存設備換貨，自 [${dn.customer}] 換回（由 [${p.newSn}] 替換），回到在庫`,
           { repairNo: repairOrder.repair_no, oldSn: p.oldSn, newSn: p.newSn, dnNo, swap: true });
       }
+      // 搭載硬體的移動各記一筆，硬體自己的履歷才看得到
+      for (const p of pairs) {
+        for (const h of p.moveHw) {
+          await logUpdate('HARDWARE', h.sn, h.sn,
+            `搭載硬體 [${h.sn}] 由 [${p.oldSn}] 移到 [${p.newSn}]（維修單 [${repairOrder.repair_no}] 換貨，留在客戶端）`,
+            { repairNo: repairOrder.repair_no, sn: h.sn, from: p.oldSn, to: p.newSn, itemMasterId: h.item_master_id, swap: true });
+        }
+        for (const h of p.detachHw) {
+          await logUpdate('HARDWARE', h.sn, h.sn,
+            `搭載硬體 [${h.sn}] 自 [${p.newSn}] 拆下留在公司，回到在庫（維修單 [${repairOrder.repair_no}] 換貨）`,
+            { repairNo: repairOrder.repair_no, sn: h.sn, from: p.newSn, itemMasterId: h.item_master_id, swap: true });
+        }
+      }
       await logCreate('OUTBOUND', dnNo, dn.customer,
         `維修單 [${repairOrder.repair_no}] 以庫存設備換貨，自動建立出貨單 [${dnNo}]（已出貨）`,
         { repairNo: repairOrder.repair_no, dnNo, sns: pairs.map((p) => p.newSn) });
@@ -133,6 +201,72 @@ const SwapFromStockModal = ({ isOpen, onClose, repairOrder, onSuccess }) => {
     } finally {
       setSaving(false);
     }
+  };
+
+  /** 兩台設備各自的搭載硬體，逐件選擇怎麼處理 */
+  const renderHwChoices = (it, pick) => {
+    const olds = oldHw[it.id] || [];
+    const news = pick ? newHw[it.id] || [] : [];
+    if (olds.length === 0 && news.length === 0) return null;
+    const types = [...new Set(olds.map((h) => h.type || ''))];
+    const rowStyle = { display: 'flex', alignItems: 'center', gap: '10px', padding: '4px 0', fontSize: '0.8rem', flexWrap: 'wrap' };
+    const radio = (name, checked, onChange, label) => (
+      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+        <input type="radio" name={name} checked={checked} onChange={onChange} /> {label}
+      </label>
+    );
+    const hwLabel = (h) => (
+      <span style={{ flex: '1 1 260px', minWidth: 0 }}>
+        <b style={{ display: 'inline-block', minWidth: '90px' }}>{h.type || '硬體'}</b>
+        {[h.brand, h.model].filter(Boolean).join(' ')} <code className="dm-sn">{h.sn}</code>
+      </span>
+    );
+    return (
+      <div style={{ marginTop: '10px', borderTop: '1px dashed var(--border-color)', paddingTop: '8px' }} data-testid={`swap-hw-${it.id}`}>
+        {olds.length > 0 && (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-muted)' }}>
+              {it.sn} 的搭載硬體
+              {pick && types.filter(Boolean).map((t) => (
+                <button key={t} type="button" onClick={() => toggleTypeMove(it.id, t)}
+                  style={{ padding: '1px 8px', borderRadius: '10px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-main)', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer' }}>
+                  {t} 全部移到新設備
+                </button>
+              ))}
+            </div>
+            {olds.map((h) => {
+              const moving = !!moveSel[it.id]?.has(h.id);
+              return (
+                <div key={h.id} style={rowStyle} data-testid={`swap-old-hw-${h.sn}`}>
+                  {hwLabel(h)}
+                  {radio(`old-${it.id}-${h.id}`, !moving, () => toggleIn(setMoveSel, it.id, h.id, false), '跟舊機取回')}
+                  {pick
+                    ? radio(`old-${it.id}-${h.id}`, moving, () => toggleIn(setMoveSel, it.id, h.id, true), '移到新設備（留在客戶端）')
+                    : <span style={{ color: 'var(--text-subtle)' }}>（先選新設備才能移過去）</span>}
+                </div>
+              );
+            })}
+          </>
+        )}
+        {news.length > 0 && (
+          <>
+            <div style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-muted)', marginTop: olds.length > 0 ? '8px' : 0 }}>
+              新設備 {pick.sn} 原本的搭載硬體
+            </div>
+            {news.map((h) => {
+              const detaching = !!detachSel[it.id]?.has(h.id);
+              return (
+                <div key={h.id} style={rowStyle} data-testid={`swap-new-hw-${h.sn}`}>
+                  {hwLabel(h)}
+                  {radio(`new-${it.id}-${h.id}`, !detaching, () => toggleIn(setDetachSel, it.id, h.id, false), '一起出貨')}
+                  {radio(`new-${it.id}-${h.id}`, detaching, () => toggleIn(setDetachSel, it.id, h.id, true), '拆下留在公司')}
+                </div>
+              );
+            })}
+          </>
+        )}
+      </div>
+    );
   };
 
   const inputStyle = { width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', outline: 'none', boxSizing: 'border-box', fontSize: '0.85rem' };
@@ -194,14 +328,7 @@ const SwapFromStockModal = ({ isOpen, onClose, repairOrder, onSuccess }) => {
                   />
                   <select
                     value={pick ? String(pick.id) : ''}
-                    onChange={(e) => {
-                      const c = candidates.find((x) => String(x.id) === e.target.value);
-                      setPicks((prev) => {
-                        const next = { ...prev };
-                        if (c) next[it.id] = c; else delete next[it.id];
-                        return next;
-                      });
-                    }}
+                    onChange={(e) => pickReplacement(it.id, candidates.find((x) => String(x.id) === e.target.value) || null)}
                     aria-label={`換給客戶的設備 ${it.sn}`}
                     style={inputStyle}
                   >
@@ -217,6 +344,7 @@ const SwapFromStockModal = ({ isOpen, onClose, repairOrder, onSuccess }) => {
                     })}
                   </select>
                 </div>
+                {renderHwChoices(it, pick)}
               </div>
             );
           })}
