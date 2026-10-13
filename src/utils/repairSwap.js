@@ -10,9 +10,9 @@
  *     客戶、地點、出貨日期清空；搭載硬體跟著取回
  *   - 自動產生一張已出貨的出貨單，可列印交貨簽收單、上傳客戶簽收
  *
- * 搭載硬體可以逐件選擇（例如 NIC 不帶回，其餘帶回）：
- *   - 舊機的硬體：跟舊機取回（預設），或留在客戶端、移到新設備（不列出貨單 —— 本來就在客戶端）
- *   - 新設備的硬體：一起出貨（預設），或拆下留在公司（解除掛載、回到在庫）
+ * 舊機的搭載硬體可以逐件選擇（例如 NIC 不帶回，其餘帶回）：
+ * 跟舊機取回（預設），或留在客戶端、移到新設備（不列出貨單 —— 本來就在客戶端）。
+ * 新設備出貨時就已經配好，它身上的硬體一律一起出貨。
  *
  * 取回之後要送原廠修，另開一張「內部維修」單即可。
  */
@@ -70,7 +70,7 @@ const hwSummary = (list) => {
 };
 
 /**
- * 維修結果的文字：原因加上換貨對照與出貨單號；有搭載硬體留在客戶端或拆下的一併寫上。
+ * 維修結果的文字：原因加上換貨對照與出貨單號；有搭載硬體留在客戶端的一併寫上。
  * 用全形分號分隔而不是換行：伺服器的參數過濾會刪掉換行，幾段會黏在一起。
  */
 export function swapResultsText(reason, pairs, dnNo) {
@@ -78,7 +78,6 @@ export function swapResultsText(reason, pairs, dnNo) {
   const parts = [`${String(reason).trim()}；【以庫存設備換貨】${map}（出貨單 ${dnNo}）`];
   for (const p of pairs) {
     if (p.moveHw?.length) parts.push(`${p.oldSn} 的搭載硬體留在客戶端、移到 ${p.newSn}：${hwSummary(p.moveHw)}`);
-    if (p.detachHw?.length) parts.push(`${p.newSn} 原本的搭載硬體拆下留在公司：${hwSummary(p.detachHw)}`);
   }
   return parts.join('；');
 }
@@ -86,15 +85,14 @@ export function swapResultsText(reason, pairs, dnNo) {
 /**
  * 交易步驟。順序有講究：
  *   - 新設備要先出貨、再處理換回來的那台 —— 新設備的客戶、地點是從舊機讀的，先清掉就讀不到
- *   - 新設備「拆下留在公司」的硬體先拆，出貨單才不會列到它
  *   - 出貨單明細在「舊機硬體移過來」之前寫入：那些硬體本來就在客戶端，這次沒有出貨，不列在出貨單上
  *   - 舊機硬體移過來之後，再取回舊機（剩下的硬體才跟著舊機回到在庫）
  *
  * @param {object} p
  * @param {object} p.order 維修單（id, repair_no）
  * @param {{ repairItemId, oldAssetId, oldSn, newAssetId, newSn, newItemMasterId,
- *           moveHw?: {id, sn}[], detachHw?: {id, sn}[] }[]} p.pairs
- *        moveHw：舊機上留在客戶端、移到新設備的硬體；detachHw：新設備上拆下留在公司的硬體
+ *           moveHw?: {id, sn}[] }[]} p.pairs
+ *        moveHw：舊機上留在客戶端、移到新設備的硬體
  * @param {{ customer, location, contact, project }} p.dn 出貨單單頭
  */
 export function buildSwapSteps({ order, pairs, date, results, remarks, dnNo, userId, dn }) {
@@ -122,18 +120,6 @@ export function buildSwapSteps({ order, pairs, date, results, remarks, dnNo, use
       expectRows: 1,
       errorMessage: `[${p.newSn}] 已經不在庫（可能剛被別人出貨或借出），請重新選擇。`,
     });
-    // 新設備上拆下留在公司的硬體
-    for (const h of p.detachHw || []) {
-      steps.push(
-        {
-          queryName: 'swapDetachHardwareFromDevice',
-          params: [h.id, p.newSn],
-          expectRows: 1,
-          errorMessage: `硬體 [${h.sn}] 已經不在 [${p.newSn}] 上，請重新開啟換貨視窗。`,
-        },
-        { queryName: 'removeSnFromMountedHwList', params: [p.newSn, h.sn] },
-      );
-    }
     steps.push(
       { queryName: 'swapShipMountedOnReplacement', params: [p.newSn, p.oldAssetId, date] },
       // 搭載硬體的狀態跟著設備：新設備上的變已出貨

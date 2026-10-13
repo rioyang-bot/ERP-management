@@ -75,26 +75,21 @@ describe('規則', () => {
     expect(steps.at(-1)).toMatchObject({ params: ['SHIPPED', { $ref: 'dn.rows.0.id' }], expectRows: 1 });
   });
 
-  /** 例如 NIC 不帶回、裝到新設備上；新設備原本的 NIC 拆下留在公司 */
-  it('搭載硬體：新設備的先拆、出貨單寫完才把舊機的移過去（移過去的不列出貨單）', () => {
+  /** 例如 NIC 不帶回、裝到新設備上（新設備出貨時就配好了，它身上的硬體一律一起出貨） */
+  it('搭載硬體：出貨單寫完才把舊機的移過去（移過去的不列出貨單）', () => {
     const steps = buildSwapSteps({
       order: ORDER, date: '2026-10-13', results: 'R', remarks: '', dnNo: 'DN-1', userId: 3,
       pairs: [{
         repairItemId: 31, oldAssetId: 1689, oldSn: 'X0341997', newAssetId: 1767, newSn: 'X0346994', newItemMasterId: 401,
         moveHw: [{ id: 51, sn: 'NIC-OLD-1' }, { id: 52, sn: 'NIC-OLD-2' }],
-        detachHw: [{ id: 61, sn: 'NIC-NEW-1' }],
       }],
       dn: { customer: '凱基', location: 'COLO', contact: '', project: null },
     });
     const names = steps.map((s) => s.queryName);
     const at = (name, params) => steps.findIndex((s) => s.queryName === name && JSON.stringify(s.params) === JSON.stringify(params));
 
-    // 拆下新設備的 NIC：在出貨單明細之前，所以出貨單不會列到它
-    const detach = at('swapDetachHardwareFromDevice', [61, 'X0346994']);
-    expect(detach).toBeGreaterThan(names.indexOf('swapShipReplacementAsset'));
-    expect(detach).toBeLessThan(names.indexOf('insertSwapMountedOutboundItems'));
-    expect(steps[detach].expectRows).toBe(1);
-    expect(at('removeSnFromMountedHwList', ['X0346994', 'NIC-NEW-1'])).toBe(detach + 1);
+    // 新設備的硬體不做任何拆裝
+    expect(names).not.toContain('swapDetachHardwareFromDevice');
 
     // 舊機的 NIC 移到新設備：在出貨單明細之後（本來就在客戶端，不列出貨單）、在取回舊機之前
     const move1 = at('swapMoveHardwareToDevice', [51, 'X0341997', 'X0346994']);
@@ -108,13 +103,12 @@ describe('規則', () => {
     expect(steps[move2 + 3].params).toEqual(['X0346994']);
   });
 
-  it('維修結果寫上哪些硬體留在客戶端、哪些拆下', () => {
+  it('維修結果寫上哪些硬體留在客戶端', () => {
     const text = swapResultsText('無法開機', [{
       oldSn: 'A', newSn: 'B',
       moveHw: [{ sn: 'N1', type: 'NIC' }, { sn: 'N2', type: 'NIC' }],
-      detachHw: [{ sn: 'N9', type: 'NIC' }],
     }], 'DN-1');
-    expect(text).toBe('無法開機；【以庫存設備換貨】A → B（出貨單 DN-1）；A 的搭載硬體留在客戶端、移到 B：NIC ×2（N1、N2）；B 原本的搭載硬體拆下留在公司：NIC ×1（N9）');
+    expect(text).toBe('無法開機；【以庫存設備換貨】A → B（出貨單 DN-1）；A 的搭載硬體留在客戶端、移到 B：NIC ×2（N1、N2）');
   });
 });
 
@@ -237,40 +231,37 @@ describe('換貨視窗', () => {
       expect(within(row).queryByLabelText(/移到新設備/)).not.toBeInTheDocument();
       await userEvent.selectOptions(within(dialog).getByLabelText('換給客戶的設備 X0341997'), '1767');
       expect(await within(row).findByLabelText(/移到新設備/)).not.toBeChecked();
-      // 新設備原本的硬體，預設一起出貨
-      const newRow = await within(dialog).findByTestId('swap-new-hw-NIC-NEW-1');
-      expect(within(newRow).getByLabelText('一起出貨')).toBeChecked();
     });
 
-    it('NIC 不帶回、裝到新設備；新設備原本的 NIC 拆下：送出的交易與事件紀錄', async () => {
+    it('新設備原本的搭載硬體不列出來選（出貨時就配好了）', async () => {
       const dialog = await openModal();
       await userEvent.selectOptions(within(dialog).getByLabelText('換給客戶的設備 X0341997'), '1767');
-      await within(dialog).findByTestId('swap-new-hw-NIC-NEW-1');
-      await userEvent.click(within(dialog).getByRole('button', { name: 'NIC 全部移到新設備' }));
+      await within(within(dialog).getByTestId('swap-old-hw-NIC-OLD-1')).findByLabelText(/移到新設備/);
+      expect(within(dialog).queryByText(/原本的搭載硬體/)).not.toBeInTheDocument();
+      expect(within(dialog).queryByText('NIC-NEW-1')).not.toBeInTheDocument();
+      expect(within(dialog).queryByLabelText('拆下留在公司')).not.toBeInTheDocument();
+      // 只讀舊機的搭載硬體
+      expect(calls.filter((c) => c.query === 'fetchMountedHardwareBySn').map((c) => c.params[0])).toEqual(['X0341997']);
+    });
+
+    it('NIC 不帶回、裝到新設備：送出的交易與事件紀錄', async () => {
+      const dialog = await openModal();
+      await userEvent.selectOptions(within(dialog).getByLabelText('換給客戶的設備 X0341997'), '1767');
+      await userEvent.click(await within(dialog).findByRole('button', { name: 'NIC 全部移到新設備' }));
       expect(within(within(dialog).getByTestId('swap-old-hw-NIC-OLD-2')).getByLabelText(/移到新設備/)).toBeChecked();
       expect(within(within(dialog).getByTestId('swap-old-hw-RAM-OLD-1')).getByLabelText('跟舊機取回')).toBeChecked();
-      await userEvent.click(within(within(dialog).getByTestId('swap-new-hw-NIC-NEW-1')).getByLabelText('拆下留在公司'));
       await userEvent.click(within(dialog).getByRole('button', { name: /確認換貨/ }));
 
       await waitFor(() => expect(txSteps).toHaveLength(1));
       const names = txSteps[0].map((s) => s.queryName);
       expect(names.filter((n) => n === 'swapMoveHardwareToDevice')).toHaveLength(2);
-      expect(txSteps[0].find((s) => s.queryName === 'swapDetachHardwareFromDevice').params).toEqual([61, 'X0346994']);
       expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('NIC NIC-OLD-1：留在客戶端，由 X0341997 移到 X0346994'));
-      expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('NIC NIC-NEW-1：自 X0346994 拆下留在公司'));
       const results = txSteps[0][0].params[1];
       expect(results).toContain('X0341997 的搭載硬體留在客戶端、移到 X0346994：NIC ×2（NIC-OLD-1、NIC-OLD-2）');
       const logs = JSON.stringify(calls.filter((c) => c.query === 'insertAuditLog'));
       expect(logs).toContain('搭載硬體 [NIC-OLD-1] 由 [X0341997] 移到 [X0346994]');
-      expect(logs).toContain('搭載硬體 [NIC-NEW-1] 自 [X0346994] 拆下留在公司');
-    });
-
-    it('換了一台新設備，拆下的選擇重新來過', async () => {
-      const dialog = await openModal();
-      await userEvent.selectOptions(within(dialog).getByLabelText('換給客戶的設備 X0341997'), '1767');
-      await userEvent.click(within(await within(dialog).findByTestId('swap-new-hw-NIC-NEW-1')).getByLabelText('拆下留在公司'));
-      await userEvent.selectOptions(within(dialog).getByLabelText('換給客戶的設備 X0341997'), '1702');
-      await waitFor(() => expect(within(dialog).queryByTestId('swap-new-hw-NIC-NEW-1')).not.toBeInTheDocument());
+      // RAM 沒選，跟舊機取回，不在移動清單
+      expect(results).not.toContain('RAM-OLD-1');
     });
   });
 
