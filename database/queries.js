@@ -204,7 +204,12 @@ export const queries = {
       )
       WHERE c.name = '設備' AND i.brand = $1 ORDER BY a.id DESC`,
   deleteAsset: `DELETE FROM assets WHERE id = $1`,
-  updateAssetStatus: `UPDATE assets SET status = $1 WHERE id = $2`,
+  // 回傳改之前的狀態：設備／硬體列表手動改狀態時，事件紀錄先前寫的是字面上的「舊狀態」
+  updateAssetStatus: `
+    UPDATE assets a SET status = $1
+    FROM assets prev
+    WHERE prev.id = a.id AND a.id = $2
+    RETURNING a.id, a.sn, prev.status AS old_status`,
   updateAssetOwnership: `UPDATE assets SET ownership = $1 WHERE id = $2`,
   updateMountedHardwareStatus: `UPDATE assets SET status = $1 WHERE custom_attributes->>'server_sn' = $2`,
   // 搭載硬體的狀態跟著設備走：設備出貨、借出、維修、回到在庫時，掛在上面的硬體一起變。
@@ -226,14 +231,15 @@ export const queries = {
   // 同上，從硬體這一端：在硬體列表把這張硬體掛到某台設備上時，狀態跟著那台設備
   syncHardwareToItsDevice: `
     UPDATE assets h SET status = d.status, updated_at = CURRENT_TIMESTAMP
-    FROM assets d
-    WHERE h.sn IS NOT NULL AND TRIM(LOWER(h.sn)) = TRIM(LOWER($1))
+    FROM assets d, assets prev
+    WHERE prev.id = h.id
+      AND h.sn IS NOT NULL AND TRIM(LOWER(h.sn)) = TRIM(LOWER($1))
       AND d.sn IS NOT NULL AND TRIM(d.sn) <> ''
       AND TRIM(LOWER(d.sn)) = TRIM(LOWER(h.custom_attributes->>'server_sn'))
       AND d.status IN ('ACTIVE', 'SHIPPED', 'LENT', 'REPAIRING')
       AND COALESCE(h.status, '') NOT IN ('SCRAPPED', 'PENDING_SCRAP')
       AND h.status IS DISTINCT FROM d.status
-    RETURNING h.id, h.sn, h.status`,
+    RETURNING h.id, h.sn, h.status, prev.status AS old_status, d.sn AS device_sn`,
   checkAssetSnExistsExcludeSelf: `SELECT id, sn FROM assets WHERE TRIM(sn) = TRIM($1) AND id != $2 LIMIT 1`,
   checkAssetSnExists: `SELECT id, sn FROM assets WHERE TRIM(sn) = TRIM($1) LIMIT 1`,
   // 新序號還沒被任何資產用走時回一筆，被占用時回 0 筆。
@@ -1740,7 +1746,12 @@ export const queries = {
   // 借用單登記歸還：數量回到庫存。lent_qty 以 GREATEST 夾住下限，
   // 避免歷史資料（本功能上線前就已借出、未回填到的單據）把借出中減成負數。
   updateStockQtyOnLendReturn: `UPDATE item_master SET stock_qty = stock_qty + $1, lent_qty = GREATEST(COALESCE(lent_qty, 0) - $1, 0) WHERE id = $2 RETURNING id`,
-  updateAssetStatusAndLocationBySn: `UPDATE assets SET status = $1, location = $2 WHERE sn = $3`,
+  // 回傳改之前的狀態：歸還、撤銷借出要把設備自己的「借出 ➔ 在庫」記進歷程
+  updateAssetStatusAndLocationBySn: `
+    UPDATE assets a SET status = $1, location = $2
+    FROM assets prev
+    WHERE prev.id = a.id AND a.sn = $3
+    RETURNING a.id, a.sn, prev.status AS old_status`,
   updateAssetStatusLocationAndShippingDateBySn: `UPDATE assets SET status = $1, location = $2, shipping_date = $3 WHERE sn = $4`,
   updateAssetStatusLocationAndInstalledDateBySn: `UPDATE assets SET status = $1, location = $2, installed_date = $3, shipping_date = $3 WHERE sn = $4`,
   updateMountedHardwareShippingDate: `UPDATE assets SET shipping_date = $1 WHERE custom_attributes->>'server_sn' = $2`,

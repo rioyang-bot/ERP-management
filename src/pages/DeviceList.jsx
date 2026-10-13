@@ -4,7 +4,7 @@ import { Search, Columns3, Edit2, X, Save, MoreHorizontal, MoreVertical, MapPin,
 import ItemLedgerModal from '../components/ItemLedgerModal';
 import DeviceRegistrationModal from '../components/DeviceRegistrationModal';
 import RmaReplacementModal from '../components/RmaReplacementModal';
-import { logUpdate, logDelete, logStatusChange, logSnChange, logMountChange } from '../utils/auditLogger';
+import { logUpdate, logDelete, logStatusChange, logSnChange, logMountChange, logMountedHwStatusSync } from '../utils/auditLogger';
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 import FilterResultSummary from '../components/common/FilterResultSummary';
@@ -307,10 +307,15 @@ const DeviceList = ({ isSplitMode = false }) => {
     if (!window.confirm(`確定要變更為「${label}」嗎？`)) return;
     const res = await window.electronAPI.namedQuery('updateAssetStatus', [newStatus, id]);
     if (res.success) {
-      logStatusChange('DEVICE', sn || id, '設備', '舊狀態', newStatus, `變更設備 [${sn || id}] 狀態為「${label}」`, { id, sn, newStatus, label });
-      // 掛在設備上的硬體狀態跟著設備（在庫／已出貨／借出／維修中；報廢不連動，見 syncMountedHardwareToDevice）
+      // 原狀態以資料庫改之前的為準（先前寫的是字面上的「舊狀態」）
+      const oldStatus = res.rows?.[0]?.old_status || 'UNKNOWN';
+      const summary = `變更設備 [${sn || id}] 狀態為「${label}」`;
+      await logStatusChange('DEVICE', sn || id, '設備', oldStatus, newStatus, summary, { id, sn, newStatus, label });
+      // 掛在設備上的硬體狀態跟著設備（在庫／已出貨／借出／維修中；報廢不連動，見 syncMountedHardwareToDevice），
+      // 狀態有變的硬體各記一筆
       if (sn) {
-        await window.electronAPI.namedQuery('syncMountedHardwareToDevice', [sn]);
+        const hw = await window.electronAPI.namedQuery('syncMountedHardwareToDevice', [sn]);
+        await logMountedHwStatusSync(sn, hw?.success ? hw.rows : [], summary);
       }
       window.dispatchEvent(new CustomEvent('db-update'));
       setActiveMenuId(null);
@@ -502,9 +507,10 @@ const DeviceList = ({ isSplitMode = false }) => {
         }
       }
 
-      // 新掛上去的硬體狀態跟著設備：設備已出貨時才掛上的，也要變成已出貨
+      // 新掛上去的硬體狀態跟著設備：設備已出貨時才掛上的，也要變成已出貨；狀態有變的各記一筆
       if (newSn) {
-        await window.electronAPI.namedQuery('syncMountedHardwareToDevice', [newSn]);
+        const hw = await window.electronAPI.namedQuery('syncMountedHardwareToDevice', [newSn]);
+        await logMountedHwStatusSync(newSn, hw?.success ? hw.rows : [], '編輯設備時掛上');
       }
 
       if (notFoundHwSns.length > 0) {

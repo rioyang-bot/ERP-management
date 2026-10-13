@@ -4,6 +4,7 @@ import {
   Printer, Paperclip, Upload, FileCheck, ExternalLink, X, Pencil, Clock, CheckCircle
 } from 'lucide-react';
 import { logStatusChange, logDelete, logUpdate } from '../utils/auditLogger';
+import { createHwSyncTracker } from '../utils/mountedHwSync';
 import DeliveryReceiptPrintModal from '../components/DeliveryReceiptPrintModal';
 import OutboundRegistrationModal from '../components/OutboundRegistrationModal';
 import { usePageSize } from '../utils/usePageSize';
@@ -251,6 +252,8 @@ const DNList = ({ isSplitMode = false }) => {
       // 先前是逐筆送出，第 3 個品項失敗時前 2 個已經扣掉、單據狀態卻還是待出貨，
       // 使用者再按一次確認就會把前 2 個再扣一次。
       const steps = [];
+      // 搭載硬體跟著設備的那幾步具名，交易完成後才記得到是哪些硬體（見 utils/mountedHwSync.js）
+      const hwSync = createHwSyncTracker();
       const shipDate = selectedDN.shipping_date || new Date().toISOString().split('T')[0];
       for (const item of dnItems) {
         if (isMountedRow(item)) {
@@ -282,7 +285,7 @@ const DNList = ({ isSplitMode = false }) => {
            });
            // 掛在設備上的硬體狀態跟著設備變成已出貨。出貨單通常也列了這些硬體，
            // 但設備出貨後才掛上去的、或單據上漏列的，只能靠這一步跟上
-           steps.push({ queryName: 'syncMountedHardwareToDevice', params: [item.sn] });
+           steps.push(hwSync.step(item.sn));
 
            // 若出貨單有專案，確保資產與搭載零組件之專案屬性完整寫入
            if (selectedDN.project_name && item.sn) {
@@ -310,6 +313,10 @@ const DNList = ({ isSplitMode = false }) => {
       if (!txRes.success) {
         throw new Error((txRes.error || '確認出貨失敗。') + '\n\n所有變更已全部退回，庫存與單據狀態維持原樣。');
       }
+
+      // 跟著設備變成已出貨的搭載硬體各記一筆；出貨單上自己列了的，履歷上已經有出貨那一筆
+      await hwSync.log(txRes.results, `出貨單 [${selectedDN.request_no}] 確認出貨`,
+        { dnNumber: selectedDN.request_no }, { skipSns: dnItems.map((i) => i.sn) });
 
       logStatusChange(
         'OUTBOUND',

@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { toLocalYmd, addDays, daysBetween, extensionBase, minExtensionDate, validateExtension } from '../utils/lentReturnDate';
 import { logStatusChange, logUpdate, logDelete } from '../utils/auditLogger';
+import { createHwSyncTracker, createBackToStockTracker } from '../utils/mountedHwSync';
 import LentOrderPrintModal from '../components/LentOrderPrintModal';
 import LendOrderRegistrationModal from '../components/LendOrderRegistrationModal';
 import { usePageSize } from '../utils/usePageSize';
@@ -280,6 +281,8 @@ const LentList = () => {
       // 先前是逐筆送出，中途失敗會留下「部分品項已扣庫存、單據狀態卻沒改」的狀態，
       // 再按一次確認就會重複扣一次。
       const steps = [];
+      // 搭載硬體跟著設備的那幾步具名，交易完成後才記得到是哪些硬體（見 utils/mountedHwSync.js）
+      const hwSync = createHwSyncTracker();
       for (const item of items) {
         if (isMountedRow(item)) {
           // 隨設備借出的掛載耗材：從 LAB 扣、記為借出中，並從那台設備上扣掉
@@ -301,7 +304,7 @@ const LentList = () => {
             errorMessage: `序號 [${item.sn}] 找不到對應資產，無法變更為借出。`,
           });
           // 掛在設備上的硬體狀態跟著設備（見 syncMountedHardwareToDevice）
-          steps.push({ queryName: 'syncMountedHardwareToDevice', params: [item.sn] });
+          steps.push(hwSync.step(item.sn));
         }
       }
 
@@ -317,6 +320,10 @@ const LentList = () => {
       if (!txRes.success) {
         throw new Error((txRes.error || '確認借出失敗。') + '\n\n所有變更已全部退回，庫存與單據狀態維持原樣。');
       }
+
+      // 跟著設備借出的搭載硬體各記一筆；借用單上自己列了的，履歷上已經有借出那一筆
+      await hwSync.log(txRes.results, `借用單 [${dn.request_no}] 確認借出`,
+        { dnNumber: dn.request_no }, { skipSns: items.map((i) => i.sn) });
 
       logStatusChange(
         'LENT',
@@ -362,6 +369,7 @@ const LentList = () => {
       const items = res.rows;
 
       const steps = [];
+      const back = createBackToStockTracker();
       for (const item of items) {
         if (isMountedRow(item)) {
           // 掛載耗材回到 LAB，重新掛回原來那台設備
@@ -374,13 +382,8 @@ const LentList = () => {
             errorMessage: `回補耗材 [${item.brand} ${item.model}] 庫存失敗，查無此品項。`,
           });
         } else if ((item.category_name === '硬體' || item.category_name === '設備') && item.sn) {
-          steps.push({
-            queryName: 'updateAssetStatusAndLocationBySn',
-            params: ['ACTIVE', '', item.sn],
-            expectRows: 1,
-            errorMessage: `序號 [${item.sn}] 找不到對應資產，無法恢復為在庫。`,
-          });
-          steps.push({ queryName: 'syncMountedHardwareToDevice', params: [item.sn] });
+          // 改回在庫，掛在設備上的硬體跟著；交易完成後各記一筆（見 utils/mountedHwSync.js）
+          steps.push(...back.steps(item));
         }
       }
 
@@ -395,6 +398,9 @@ const LentList = () => {
       if (!txRes.success) {
         throw new Error((txRes.error || '撤銷借出失敗。') + '\n\n所有變更已全部退回，庫存與單據狀態維持原樣。');
       }
+
+      await back.log(txRes.results, `撤銷借出：借用單 [${dn.request_no}] 退回待借出，回到在庫`,
+        { dnNumber: dn.request_no, revert: true });
 
       logStatusChange(
         'LENT',
@@ -432,6 +438,7 @@ const LentList = () => {
       
       // 與確認借出相同：整張單放在同一個交易裡，避免只回補一半的庫存
       const steps = [];
+      const back = createBackToStockTracker();
       for (const item of items) {
         if (isMountedRow(item)) {
           // 隨設備借出的掛載耗材：回到 LAB，重新掛回原來那台設備
@@ -446,13 +453,8 @@ const LentList = () => {
             errorMessage: `回補耗材 [${item.brand} ${item.model}] 庫存失敗，查無此品項。`,
           });
         } else if ((item.category_name === '硬體' || item.category_name === '設備') && item.sn) {
-          steps.push({
-            queryName: 'updateAssetStatusAndLocationBySn',
-            params: ['ACTIVE', '', item.sn],
-            expectRows: 1,
-            errorMessage: `序號 [${item.sn}] 找不到對應資產，無法恢復為在庫。`,
-          });
-          steps.push({ queryName: 'syncMountedHardwareToDevice', params: [item.sn] });
+          // 改回在庫，掛在設備上的硬體跟著；交易完成後各記一筆（見 utils/mountedHwSync.js）
+          steps.push(...back.steps(item));
         }
       }
 
@@ -467,6 +469,9 @@ const LentList = () => {
       if (!txRes.success) {
         throw new Error((txRes.error || '登記歸還失敗。') + '\n\n所有變更已全部退回，庫存與單據狀態維持原樣。');
       }
+
+      await back.log(txRes.results, `借用單 [${dn.request_no}] 歸還入庫（歸還日 ${date}）`,
+        { dnNumber: dn.request_no, returnDate: date });
 
       logStatusChange(
         'LENT',
