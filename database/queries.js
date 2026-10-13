@@ -2472,8 +2472,8 @@ export const queries = {
     RETURNING h.id`,
 
   // --- 換貨時的搭載硬體 ---------------------------------------------------
-  // 有些硬體不做換貨：例如客戶那台的 NIC 不帶回，直接裝到新設備上；
-  // 新設備原本的 NIC 就拆下留在公司。換貨視窗逐件選擇，下面幾支依選擇執行。
+  // 有些硬體不做換貨：例如客戶那台的 NIC 不帶回，直接裝到新設備上。
+  // 換貨視窗逐件選擇舊機的硬體，下面幾支依選擇執行（新設備出貨時就配好了，不在這裡動）。
 
   // 某台設備目前掛著的硬體（換貨視窗列出來讓使用者選）
   fetchMountedHardwareBySn: `
@@ -2497,17 +2497,6 @@ export const queries = {
     WHERE h.id = $1::integer AND TRIM(LOWER(h.custom_attributes->>'server_sn')) = TRIM(LOWER($2))
       AND d.sn IS NOT NULL AND TRIM(LOWER(d.sn)) = TRIM(LOWER($3))
     RETURNING h.id, h.sn`,
-
-  // 新設備上「拆下留在公司」的硬體：解除掛載、回到在庫，客戶、地點、專案清空（報廢的狀態不動）
-  swapDetachHardwareFromDevice: `
-    UPDATE assets SET
-      custom_attributes = COALESCE(custom_attributes, '{}'::jsonb) - 'server_sn' - 'project_name',
-      status = CASE WHEN status IN ('SCRAPPED', 'PENDING_SCRAP') THEN status ELSE 'ACTIVE' END,
-      client = NULL,
-      location = NULL,
-      updated_at = CURRENT_TIMESTAMP
-    WHERE id = $1::integer AND TRIM(LOWER(custom_attributes->>'server_sn')) = TRIM(LOWER($2))
-    RETURNING id, sn`,
 
   // 設備自己記的搭載硬體清單（custom_attributes.mounted_hw_sns）也要跟著改，
   // 否則舊機的清單還留著移走的序號，列表上會變成一筆「未建檔硬體」
