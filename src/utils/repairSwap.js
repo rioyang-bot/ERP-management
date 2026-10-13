@@ -99,6 +99,8 @@ export function buildSwapSteps({ order, pairs, date, results, remarks, dnNo, use
         errorMessage: `[${p.newSn}] 已經不在庫（可能剛被別人出貨或借出），請重新選擇。`,
       },
       { queryName: 'swapShipMountedOnReplacement', params: [p.newSn, p.oldAssetId, date] },
+      // 搭載硬體的狀態跟著設備：新設備上的變已出貨
+      { queryName: 'syncMountedHardwareToDevice', params: [p.newSn] },
       {
         queryName: 'swapReturnBrokenAsset',
         params: [p.oldAssetId, p.newSn, date, order.repair_no],
@@ -106,6 +108,8 @@ export function buildSwapSteps({ order, pairs, date, results, remarks, dnNo, use
         errorMessage: `故障設備 [${p.oldSn}] 不是維修中或已出貨的狀態，無法取回。`,
       },
       { queryName: 'swapClearMountedOnBroken', params: [p.oldSn] },
+      // 故障機上的跟著取回，變維修中
+      { queryName: 'syncMountedHardwareToDevice', params: [p.oldSn] },
       {
         queryName: 'updateRepairItemReplacement',
         params: [p.repairItemId, p.newSn, p.newAssetId],

@@ -61,12 +61,16 @@ describe('規則', () => {
     });
     expect(steps.map((s) => s.queryName)).toEqual([
       'updateRepairSwapCompleted', 'insertOutboundRequestWithProject',
-      'swapShipReplacementAsset', 'swapShipMountedOnReplacement', 'swapReturnBrokenAsset', 'swapClearMountedOnBroken',
+      'swapShipReplacementAsset', 'swapShipMountedOnReplacement', 'syncMountedHardwareToDevice',
+      'swapReturnBrokenAsset', 'swapClearMountedOnBroken', 'syncMountedHardwareToDevice',
       'updateRepairItemReplacement', 'insertOutboundItem', 'insertSwapMountedOutboundItems', 'updateOutboundRequestStatus',
     ]);
     expect(steps[1].params).toEqual(['DN-1', '凱基', 'COLO', '2026-10-13', 3, '吳先生 0900', 'SALE', null, '凱基 HFT']);
     expect(steps[2]).toMatchObject({ params: [1767, 1689, '2026-10-13', 'RMA-20261013-01'], expectRows: 1 });
-    expect(steps[4]).toMatchObject({ params: [1689, 'X0346994', '2026-10-13', 'RMA-20261013-01'], expectRows: 1 });
+    expect(steps[5]).toMatchObject({ params: [1689, 'X0346994', '2026-10-13', 'RMA-20261013-01'], expectRows: 1 });
+    // 搭載硬體跟著各自的設備：新設備上的變已出貨，故障機上的變維修中
+    expect(steps[4].params).toEqual(['X0346994']);
+    expect(steps[7].params).toEqual(['X0341997']);
     expect(steps.at(-1)).toMatchObject({ params: ['SHIPPED', { $ref: 'dn.rows.0.id' }], expectRows: 1 });
   });
 });

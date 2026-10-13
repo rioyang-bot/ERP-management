@@ -280,6 +280,9 @@ const DNList = ({ isSplitMode = false }) => {
              queryName: 'updateMountedHardwareInstalledAndShippingDate',
              params: [shipDate, item.sn],
            });
+           // 掛在設備上的硬體狀態跟著設備變成已出貨。出貨單通常也列了這些硬體，
+           // 但設備出貨後才掛上去的、或單據上漏列的，只能靠這一步跟上
+           steps.push({ queryName: 'syncMountedHardwareToDevice', params: [item.sn] });
 
            // 若出貨單有專案，確保資產與搭載零組件之專案屬性完整寫入
            if (selectedDN.project_name && item.sn) {

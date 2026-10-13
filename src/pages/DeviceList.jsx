@@ -308,15 +308,9 @@ const DeviceList = ({ isSplitMode = false }) => {
     const res = await window.electronAPI.namedQuery('updateAssetStatus', [newStatus, id]);
     if (res.success) {
       logStatusChange('DEVICE', sn || id, '設備', '舊狀態', newStatus, `變更設備 [${sn || id}] 狀態為「${label}」`, { id, sn, newStatus, label });
-      if (sn && (newStatus === 'ACTIVE' || newStatus === 'SHIPPED')) {
-        const hwStatusMap = {
-          'ACTIVE': 'ACTIVE',
-          'SHIPPED': 'SHIPPED'
-        };
-        const targetHwStatus = hwStatusMap[newStatus];
-        if (targetHwStatus) {
-          await window.electronAPI.namedQuery('updateMountedHardwareStatus', [targetHwStatus, sn]);
-        }
+      // 掛在設備上的硬體狀態跟著設備（在庫／已出貨／借出／維修中；報廢不連動，見 syncMountedHardwareToDevice）
+      if (sn) {
+        await window.electronAPI.namedQuery('syncMountedHardwareToDevice', [sn]);
       }
       window.dispatchEvent(new CustomEvent('db-update'));
       setActiveMenuId(null);
@@ -506,6 +500,11 @@ const DeviceList = ({ isSplitMode = false }) => {
             notFoundHwSns.push(hwSn);
           }
         }
+      }
+
+      // 新掛上去的硬體狀態跟著設備：設備已出貨時才掛上的，也要變成已出貨
+      if (newSn) {
+        await window.electronAPI.namedQuery('syncMountedHardwareToDevice', [newSn]);
       }
 
       if (notFoundHwSns.length > 0) {

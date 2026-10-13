@@ -300,6 +300,8 @@ const LentList = () => {
             expectRows: 1,
             errorMessage: `序號 [${item.sn}] 找不到對應資產，無法變更為借出。`,
           });
+          // 掛在設備上的硬體狀態跟著設備（見 syncMountedHardwareToDevice）
+          steps.push({ queryName: 'syncMountedHardwareToDevice', params: [item.sn] });
         }
       }
 
@@ -378,6 +380,7 @@ const LentList = () => {
             expectRows: 1,
             errorMessage: `序號 [${item.sn}] 找不到對應資產，無法恢復為在庫。`,
           });
+          steps.push({ queryName: 'syncMountedHardwareToDevice', params: [item.sn] });
         }
       }
 
@@ -449,6 +452,7 @@ const LentList = () => {
             expectRows: 1,
             errorMessage: `序號 [${item.sn}] 找不到對應資產，無法恢復為在庫。`,
           });
+          steps.push({ queryName: 'syncMountedHardwareToDevice', params: [item.sn] });
         }
       }
 

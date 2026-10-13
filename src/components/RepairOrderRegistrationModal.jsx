@@ -321,6 +321,8 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
         // 連動更新設備/硬體資產狀態為 REPAIRING (維修中)
         if (item.sn) {
           await window.electronAPI.namedQuery('updateAssetStatusBySn', ['REPAIRING', item.sn.trim()]);
+          // 掛在設備上的硬體跟著（見 syncMountedHardwareToDevice）
+          await window.electronAPI.namedQuery('syncMountedHardwareToDevice', [item.sn.trim()]);
           
           // 寫入資產狀態變更日誌
           await logStatusChange('DEVICE', item.sn.trim(), item.sn.trim(), item.original_status || 'UNKNOWN', 'REPAIRING', `建立維修單 [${repairNo}]，自客戶端取回進入維修流程`);

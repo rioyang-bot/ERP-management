@@ -97,12 +97,14 @@ describe('設備更新狀態同步至掛載硬體之整合測試', () => {
     expect(shipBtn).toBeInTheDocument();
     await user.click(shipBtn);
 
-    // 驗證 updateMountedHardwareStatus 已經被以正確的參數呼叫
+    // 搭載硬體的狀態跟著設備：設備狀態改完後，以設備序號同步（狀態由 SQL 讀設備本身）
     await waitFor(() => {
       const calls = querySpy.mock.calls;
-      const syncCall = calls.find(call => call[0] === 'updateMountedHardwareStatus');
+      const order = calls.map((c) => c[0]);
+      const syncCall = calls.find(call => call[0] === 'syncMountedHardwareToDevice');
       expect(syncCall).toBeDefined();
-      expect(syncCall[1]).toEqual(['SHIPPED', 'STG100385Y25']);
+      expect(syncCall[1]).toEqual(['STG100385Y25']);
+      expect(order.indexOf('updateAssetStatus')).toBeLessThan(order.indexOf('syncMountedHardwareToDevice'));
     });
   });
 
@@ -135,16 +137,17 @@ describe('設備更新狀態同步至掛載硬體之整合測試', () => {
     expect(activeBtn).toBeInTheDocument();
     await user.click(activeBtn);
 
-    // 驗證 updateMountedHardwareStatus 已經被以正確的參數呼叫
     await waitFor(() => {
       const calls = querySpy.mock.calls;
-      const syncCall = calls.find(call => call[0] === 'updateMountedHardwareStatus' && call[1][0] === 'ACTIVE');
+      const syncCall = calls.find(call => call[0] === 'syncMountedHardwareToDevice');
       expect(syncCall).toBeDefined();
-      expect(syncCall[1]).toEqual(['ACTIVE', 'STG100385Y25']);
+      expect(syncCall[1]).toEqual(['STG100385Y25']);
     });
   });
 
-  it('當設備狀態變更為維修或報廢時，不應同步更新其搭載的硬體狀態', async () => {
+  // 先前只有在庫、出貨會連動。現在在庫／已出貨／借出／維修中都跟著設備，
+  // 只有報廢、待報廢不連動 —— 這個條件寫在 SQL 裡（d.status IN (...)），見最後一個測試
+  it('當設備狀態變更為維修時，搭載硬體也跟著設備', async () => {
     const user = userEvent.setup();
     render(
       <MemoryRouter>
@@ -173,12 +176,19 @@ describe('設備更新狀態同步至掛載硬體之整合測試', () => {
     expect(repairBtn).toBeInTheDocument();
     await user.click(repairBtn);
 
-    // 驗證 updateMountedHardwareStatus 沒有被呼叫
     await waitFor(() => {
       const calls = querySpy.mock.calls;
-      const syncCall = calls.find(call => call[0] === 'updateMountedHardwareStatus');
-      expect(syncCall).toBeUndefined();
+      expect(calls.find(call => call[0] === 'syncMountedHardwareToDevice')?.[1]).toEqual(['STG100385Y25']);
+      // 舊的寫法不再使用
+      expect(calls.find(call => call[0] === 'updateMountedHardwareStatus')).toBeUndefined();
     });
+  });
+
+  it('報廢、待報廢的設備不連動；已報廢的硬體也不被改回來', () => {
+    const q = queries.syncMountedHardwareToDevice;
+    expect(q).toContain("d.status IN ('ACTIVE', 'SHIPPED', 'LENT', 'REPAIRING')");
+    expect(q).toContain("COALESCE(h.status, '') NOT IN ('SCRAPPED', 'PENDING_SCRAP')");
+    expect(q).toContain("TRIM(LOWER(h.custom_attributes->>'server_sn')) = TRIM(LOWER(d.sn))");
   });
 
   it('當在設備編輯彈窗中變更設備序號時，應連同掛載硬體的設備序號一併同步變更', async () => {
