@@ -301,7 +301,14 @@ const HwList = ({ isSplitMode = false }) => {
       // 掛到某台設備上時，狀態跟著那台設備（設備已出貨，硬體就是已出貨）
       if ((newSn || origSn) && (editItem.temp_server_sn || '').trim()) {
         try {
-          await window.electronAPI.namedQuery('syncHardwareToItsDevice', [newSn || origSn]);
+          const synced = await window.electronAPI.namedQuery('syncHardwareToItsDevice', [newSn || origSn]);
+          // 狀態有變就記一筆，硬體的履歷才看得到它跟著設備變成已出貨／借出
+          const h = synced?.success ? synced.rows?.[0] : null;
+          if (h) {
+            await logStatusChange('HARDWARE', h.sn || newSn || origSn, h.sn || newSn || origSn, h.old_status || 'UNKNOWN', h.status,
+              `搭載硬體跟著設備 [${h.device_sn}] 變更狀態：掛到這台設備上`,
+              { serverSn: h.device_sn, mountedSync: true });
+          }
         } catch (e) {
           console.error('[syncHardwareToItsDevice] 狀態同步失敗:', e);
         }
@@ -372,8 +379,10 @@ const HwList = ({ isSplitMode = false }) => {
 
   const handleUpdateStatus = async (id, sn, newStatus, label) => {
     if (!confirm(`確定變更狀態為 [${label}] 嗎？`)) return;
-    await window.electronAPI.namedQuery('updateAssetStatus', [newStatus, id]);
-    logStatusChange('HARDWARE', sn || id, '硬體零組件', '舊狀態', newStatus, `變更硬體 [${sn || id}] 狀態為「${label}」`, { id, sn, newStatus, label });
+    const res = await window.electronAPI.namedQuery('updateAssetStatus', [newStatus, id]);
+    // 原狀態以資料庫改之前的為準（先前寫的是字面上的「舊狀態」）
+    const oldStatus = res?.rows?.[0]?.old_status || 'UNKNOWN';
+    await logStatusChange('HARDWARE', sn || id, '硬體零組件', oldStatus, newStatus, `變更硬體 [${sn || id}] 狀態為「${label}」`, { id, sn, newStatus, label });
     window.dispatchEvent(new CustomEvent('db-update'));
     setActiveMenuId(null);
   };
