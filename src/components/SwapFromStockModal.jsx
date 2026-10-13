@@ -8,7 +8,7 @@ import './detail/DetailModal.css';
  * 維修單：以庫存設備換貨（見 utils/repairSwap.js）
  *
  * 每一台故障設備選一台在庫的設備換給客戶。按下確認後同一個交易完成：
- * 新設備出貨給客戶、故障設備取回（維修中）、維修單結案、產生已出貨的出貨單。
+ * 新設備出貨給客戶、換回來的設備回到在庫、維修單結案、產生已出貨的出貨單。
  */
 const today = () => {
   const d = new Date();
@@ -92,7 +92,7 @@ const SwapFromStockModal = ({ isOpen, onClose, repairOrder, onSuccess }) => {
     if (!window.confirm(
       `確定以庫存設備換貨嗎？\n\n`
       + pairs.map((p) => `　· 故障 ${p.oldSn} → 換給客戶 ${p.newSn}`).join('\n')
-      + `\n\n新設備出貨給「${dn.customer}」（${dn.location || '地點未填'}），故障設備取回並設為「維修中」，`
+      + `\n\n新設備出貨給「${dn.customer}」（${dn.location || '地點未填'}），換回來的設備回到「在庫」，`
       + '維修單結案，並產生一張已出貨的出貨單。'
     )) return;
 
@@ -113,8 +113,8 @@ const SwapFromStockModal = ({ isOpen, onClose, repairOrder, onSuccess }) => {
         await logStatusChange('DEVICE', p.newSn, p.newSn, 'ACTIVE', 'SHIPPED',
           `維修單 [${repairOrder.repair_no}] 以庫存設備換貨，出貨給 [${dn.customer}]，取代故障的 [${p.oldSn}]（出貨單 ${dnNo}）`,
           { repairNo: repairOrder.repair_no, oldSn: p.oldSn, newSn: p.newSn, dnNo, swap: true });
-        await logStatusChange('DEVICE', p.oldSn, p.oldSn, p.oldStatus || 'SHIPPED', 'REPAIRING',
-          `維修單 [${repairOrder.repair_no}] 以庫存設備換貨，故障設備自 [${dn.customer}] 取回（由 [${p.newSn}] 替換），設為維修中`,
+        await logStatusChange('DEVICE', p.oldSn, p.oldSn, p.oldStatus || 'SHIPPED', 'ACTIVE',
+          `維修單 [${repairOrder.repair_no}] 以庫存設備換貨，自 [${dn.customer}] 換回（由 [${p.newSn}] 替換），回到在庫`,
           { repairNo: repairOrder.repair_no, oldSn: p.oldSn, newSn: p.newSn, dnNo, swap: true });
       }
       await logCreate('OUTBOUND', dnNo, dn.customer,
@@ -125,7 +125,7 @@ const SwapFromStockModal = ({ isOpen, onClose, repairOrder, onSuccess }) => {
         { repairNo: repairOrder.repair_no, dnNo, pairs: pairs.map(({ oldSn, newSn }) => ({ oldSn, newSn })) });
 
       alert(`✅ 換貨完成！\n\n維修單 [${repairOrder.repair_no}] 已結案，出貨單 [${dnNo}] 已建立（已出貨），`
-        + '可到出貨單列表列印交貨簽收單。\n故障設備已取回並設為「維修中」，要送原廠請另開一張內部維修單。');
+        + '可到出貨單列表列印交貨簽收單。\n換回來的設備已回到「在庫」，要送原廠請另開一張內部維修單。');
       if (onSuccess) onSuccess(dnNo);
       onClose();
     } catch (e) {
@@ -157,7 +157,7 @@ const SwapFromStockModal = ({ isOpen, onClose, repairOrder, onSuccess }) => {
             <div>
               從庫存拿一台換給客戶，故障的那台取回。確認後會一次完成：
               新設備<b style={{ color: 'var(--text-main)' }}>出貨給客戶</b>（客戶、地點、專案、客戶保固沿用故障的那台，搭載硬體一起出貨）、
-              故障設備<b style={{ color: 'var(--text-main)' }}>取回並設為維修中</b>（客戶、地點清空，搭載硬體跟著取回）、
+              換回來的設備<b style={{ color: 'var(--text-main)' }}>回到在庫</b>（客戶、地點清空，搭載硬體跟著取回）、
               維修單結案，並<b style={{ color: 'var(--text-main)' }}>產生一張已出貨的出貨單</b>可列印簽收單。
             </div>
           </div>
