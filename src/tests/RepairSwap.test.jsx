@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen, waitFor, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import RepairList from '../pages/RepairList';
 import SwapFromStockModal from '../components/SwapFromStockModal';
@@ -62,16 +62,59 @@ describe('規則', () => {
     expect(steps.map((s) => s.queryName)).toEqual([
       'updateRepairSwapCompleted', 'insertOutboundRequestWithProject',
       'swapShipReplacementAsset', 'swapShipMountedOnReplacement', 'syncMountedHardwareToDevice',
+      'insertOutboundItem', 'insertSwapMountedOutboundItems',
       'swapReturnBrokenAsset', 'swapClearMountedOnBroken', 'syncMountedHardwareToDevice',
-      'updateRepairItemReplacement', 'insertOutboundItem', 'insertSwapMountedOutboundItems', 'updateOutboundRequestStatus',
+      'updateRepairItemReplacement', 'updateOutboundRequestStatus',
     ]);
     expect(steps[1].params).toEqual(['DN-1', '凱基', 'COLO', '2026-10-13', 3, '吳先生 0900', 'SALE', null, '凱基 HFT']);
     expect(steps[2]).toMatchObject({ params: [1767, 1689, '2026-10-13', 'RMA-20261013-01'], expectRows: 1 });
-    expect(steps[5]).toMatchObject({ params: [1689, 'X0346994', '2026-10-13', 'RMA-20261013-01'], expectRows: 1 });
+    expect(steps[7]).toMatchObject({ params: [1689, 'X0346994', '2026-10-13', 'RMA-20261013-01'], expectRows: 1 });
     // 搭載硬體跟著各自的設備：新設備上的變已出貨，換回來的設備上的變在庫
     expect(steps[4].params).toEqual(['X0346994']);
-    expect(steps[7].params).toEqual(['X0341997']);
+    expect(steps[9].params).toEqual(['X0341997']);
     expect(steps.at(-1)).toMatchObject({ params: ['SHIPPED', { $ref: 'dn.rows.0.id' }], expectRows: 1 });
+  });
+
+  /** 例如 NIC 不帶回、裝到新設備上；新設備原本的 NIC 拆下留在公司 */
+  it('搭載硬體：新設備的先拆、出貨單寫完才把舊機的移過去（移過去的不列出貨單）', () => {
+    const steps = buildSwapSteps({
+      order: ORDER, date: '2026-10-13', results: 'R', remarks: '', dnNo: 'DN-1', userId: 3,
+      pairs: [{
+        repairItemId: 31, oldAssetId: 1689, oldSn: 'X0341997', newAssetId: 1767, newSn: 'X0346994', newItemMasterId: 401,
+        moveHw: [{ id: 51, sn: 'NIC-OLD-1' }, { id: 52, sn: 'NIC-OLD-2' }],
+        detachHw: [{ id: 61, sn: 'NIC-NEW-1' }],
+      }],
+      dn: { customer: '凱基', location: 'COLO', contact: '', project: null },
+    });
+    const names = steps.map((s) => s.queryName);
+    const at = (name, params) => steps.findIndex((s) => s.queryName === name && JSON.stringify(s.params) === JSON.stringify(params));
+
+    // 拆下新設備的 NIC：在出貨單明細之前，所以出貨單不會列到它
+    const detach = at('swapDetachHardwareFromDevice', [61, 'X0346994']);
+    expect(detach).toBeGreaterThan(names.indexOf('swapShipReplacementAsset'));
+    expect(detach).toBeLessThan(names.indexOf('insertSwapMountedOutboundItems'));
+    expect(steps[detach].expectRows).toBe(1);
+    expect(at('removeSnFromMountedHwList', ['X0346994', 'NIC-NEW-1'])).toBe(detach + 1);
+
+    // 舊機的 NIC 移到新設備：在出貨單明細之後（本來就在客戶端，不列出貨單）、在取回舊機之前
+    const move1 = at('swapMoveHardwareToDevice', [51, 'X0341997', 'X0346994']);
+    const move2 = at('swapMoveHardwareToDevice', [52, 'X0341997', 'X0346994']);
+    expect(move1).toBeGreaterThan(names.indexOf('insertSwapMountedOutboundItems'));
+    expect(move2).toBeLessThan(names.indexOf('swapReturnBrokenAsset'));
+    expect(at('removeSnFromMountedHwList', ['X0341997', 'NIC-OLD-1'])).toBe(move1 + 1);
+    expect(at('addSnToMountedHwList', ['X0346994', 'NIC-OLD-1'])).toBe(move1 + 2);
+    // 移過去之後再同步一次狀態，跟上新設備
+    expect(names[move2 + 3]).toBe('syncMountedHardwareToDevice');
+    expect(steps[move2 + 3].params).toEqual(['X0346994']);
+  });
+
+  it('維修結果寫上哪些硬體留在客戶端、哪些拆下', () => {
+    const text = swapResultsText('無法開機', [{
+      oldSn: 'A', newSn: 'B',
+      moveHw: [{ sn: 'N1', type: 'NIC' }, { sn: 'N2', type: 'NIC' }],
+      detachHw: [{ sn: 'N9', type: 'NIC' }],
+    }], 'DN-1');
+    expect(text).toBe('無法開機；【以庫存設備換貨】A → B（出貨單 DN-1）；A 的搭載硬體留在客戶端、移到 B：NIC ×2（N1、N2）；B 原本的搭載硬體拆下留在公司：NIC ×1（N9）');
   });
 });
 
@@ -97,6 +140,9 @@ describe('查詢', () => {
   });
 });
 
+// 各設備目前掛著的硬體（fetchMountedHardwareBySn），依測試設定
+let MOUNTED = {};
+
 describe('換貨視窗', () => {
   let calls;
   let txSteps;
@@ -112,6 +158,7 @@ describe('換貨視窗', () => {
         if (query === 'fetchSwapCandidates') return { success: true, rows: CANDIDATES };
         if (query === 'fetchAssetBySn') return { success: true, rows: params[0] === 'X0341997' ? [BROKEN_ASSET] : [] };
         if (query === 'countOutboundRequests') return { success: true, rows: [{ count: 3 }] };
+        if (query === 'fetchMountedHardwareBySn') return { success: true, rows: MOUNTED[params[0]] || [] };
         return { success: true, rows: [] };
       }),
       runTransaction: vi.fn(async (steps) => { txSteps.push(steps); return { success: true, results: {} }; }),
@@ -168,6 +215,63 @@ describe('換貨視窗', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: /確認換貨/ }));
     expect(within(dialog).getByRole('alert')).toHaveTextContent('請為每一台故障設備選擇');
     expect(txSteps).toHaveLength(0);
+  });
+
+  describe('搭載硬體逐件選擇', () => {
+    beforeEach(() => {
+      MOUNTED = {
+        X0341997: [
+          { id: 51, sn: 'NIC-OLD-1', type: 'NIC', brand: 'AMD', model: 'X2522', item_master_id: 70 },
+          { id: 52, sn: 'NIC-OLD-2', type: 'NIC', brand: 'AMD', model: 'X2522', item_master_id: 70 },
+          { id: 53, sn: 'RAM-OLD-1', type: 'RAM', brand: 'V-COLOR', model: 'PC5', item_master_id: 71 },
+        ],
+        X0346994: [{ id: 61, sn: 'NIC-NEW-1', type: 'NIC', brand: 'MELLANOX', model: 'CX5', item_master_id: 72 }],
+      };
+    });
+    afterEach(() => { MOUNTED = {}; });
+
+    it('列出舊機的搭載硬體，預設跟舊機取回；選了新設備才能移過去', async () => {
+      const dialog = await openModal();
+      const row = within(dialog).getByTestId('swap-old-hw-NIC-OLD-1');
+      expect(within(row).getByLabelText('跟舊機取回')).toBeChecked();
+      expect(within(row).queryByLabelText(/移到新設備/)).not.toBeInTheDocument();
+      await userEvent.selectOptions(within(dialog).getByLabelText('換給客戶的設備 X0341997'), '1767');
+      expect(await within(row).findByLabelText(/移到新設備/)).not.toBeChecked();
+      // 新設備原本的硬體，預設一起出貨
+      const newRow = await within(dialog).findByTestId('swap-new-hw-NIC-NEW-1');
+      expect(within(newRow).getByLabelText('一起出貨')).toBeChecked();
+    });
+
+    it('NIC 不帶回、裝到新設備；新設備原本的 NIC 拆下：送出的交易與事件紀錄', async () => {
+      const dialog = await openModal();
+      await userEvent.selectOptions(within(dialog).getByLabelText('換給客戶的設備 X0341997'), '1767');
+      await within(dialog).findByTestId('swap-new-hw-NIC-NEW-1');
+      await userEvent.click(within(dialog).getByRole('button', { name: 'NIC 全部移到新設備' }));
+      expect(within(within(dialog).getByTestId('swap-old-hw-NIC-OLD-2')).getByLabelText(/移到新設備/)).toBeChecked();
+      expect(within(within(dialog).getByTestId('swap-old-hw-RAM-OLD-1')).getByLabelText('跟舊機取回')).toBeChecked();
+      await userEvent.click(within(within(dialog).getByTestId('swap-new-hw-NIC-NEW-1')).getByLabelText('拆下留在公司'));
+      await userEvent.click(within(dialog).getByRole('button', { name: /確認換貨/ }));
+
+      await waitFor(() => expect(txSteps).toHaveLength(1));
+      const names = txSteps[0].map((s) => s.queryName);
+      expect(names.filter((n) => n === 'swapMoveHardwareToDevice')).toHaveLength(2);
+      expect(txSteps[0].find((s) => s.queryName === 'swapDetachHardwareFromDevice').params).toEqual([61, 'X0346994']);
+      expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('NIC NIC-OLD-1：留在客戶端，由 X0341997 移到 X0346994'));
+      expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('NIC NIC-NEW-1：自 X0346994 拆下留在公司'));
+      const results = txSteps[0][0].params[1];
+      expect(results).toContain('X0341997 的搭載硬體留在客戶端、移到 X0346994：NIC ×2（NIC-OLD-1、NIC-OLD-2）');
+      const logs = JSON.stringify(calls.filter((c) => c.query === 'insertAuditLog'));
+      expect(logs).toContain('搭載硬體 [NIC-OLD-1] 由 [X0341997] 移到 [X0346994]');
+      expect(logs).toContain('搭載硬體 [NIC-NEW-1] 自 [X0346994] 拆下留在公司');
+    });
+
+    it('換了一台新設備，拆下的選擇重新來過', async () => {
+      const dialog = await openModal();
+      await userEvent.selectOptions(within(dialog).getByLabelText('換給客戶的設備 X0341997'), '1767');
+      await userEvent.click(within(await within(dialog).findByTestId('swap-new-hw-NIC-NEW-1')).getByLabelText('拆下留在公司'));
+      await userEvent.selectOptions(within(dialog).getByLabelText('換給客戶的設備 X0341997'), '1702');
+      await waitFor(() => expect(within(dialog).queryByTestId('swap-new-hw-NIC-NEW-1')).not.toBeInTheDocument());
+    });
   });
 
   it('交易失敗時說明已退回', async () => {

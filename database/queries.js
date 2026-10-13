@@ -2471,6 +2471,72 @@ export const queries = {
     WHERE o.id = $2::integer AND TRIM(LOWER(h.custom_attributes->>'server_sn')) = TRIM(LOWER($1))
     RETURNING h.id`,
 
+  // --- 換貨時的搭載硬體 ---------------------------------------------------
+  // 有些硬體不做換貨：例如客戶那台的 NIC 不帶回，直接裝到新設備上；
+  // 新設備原本的 NIC 就拆下留在公司。換貨視窗逐件選擇，下面幾支依選擇執行。
+
+  // 某台設備目前掛著的硬體（換貨視窗列出來讓使用者選）
+  fetchMountedHardwareBySn: `
+    SELECT a.id, a.sn, a.status, a.item_master_id, i.brand, i.model, i.type, i.specification
+    FROM assets a
+    JOIN item_master i ON i.id = a.item_master_id
+    WHERE TRIM(LOWER(a.custom_attributes->>'server_sn')) = TRIM(LOWER($1))
+    ORDER BY i.type, i.brand, i.model, a.sn`,
+
+  // 舊機上「移到新設備（留在客戶端）」的硬體：改掛到新設備，客戶與專案與新設備一致
+  // （新設備此時已經出貨、帶入了客戶）；狀態之後由 syncMountedHardwareToDevice 跟上新設備。
+  // 條件帶上原本掛的設備，有人剛動過就改不到、整批退回
+  swapMoveHardwareToDevice: `
+    UPDATE assets h SET
+      custom_attributes = COALESCE(h.custom_attributes, '{}'::jsonb)
+        || jsonb_build_object('server_sn', TRIM($3))
+        || jsonb_strip_nulls(jsonb_build_object('project_name', d.custom_attributes->>'project_name')),
+      client = COALESCE(d.client, h.client),
+      updated_at = CURRENT_TIMESTAMP
+    FROM assets d
+    WHERE h.id = $1::integer AND TRIM(LOWER(h.custom_attributes->>'server_sn')) = TRIM(LOWER($2))
+      AND d.sn IS NOT NULL AND TRIM(LOWER(d.sn)) = TRIM(LOWER($3))
+    RETURNING h.id, h.sn`,
+
+  // 新設備上「拆下留在公司」的硬體：解除掛載、回到在庫，客戶、地點、專案清空（報廢的狀態不動）
+  swapDetachHardwareFromDevice: `
+    UPDATE assets SET
+      custom_attributes = COALESCE(custom_attributes, '{}'::jsonb) - 'server_sn' - 'project_name',
+      status = CASE WHEN status IN ('SCRAPPED', 'PENDING_SCRAP') THEN status ELSE 'ACTIVE' END,
+      client = NULL,
+      location = NULL,
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = $1::integer AND TRIM(LOWER(custom_attributes->>'server_sn')) = TRIM(LOWER($2))
+    RETURNING id, sn`,
+
+  // 設備自己記的搭載硬體清單（custom_attributes.mounted_hw_sns）也要跟著改，
+  // 否則舊機的清單還留著移走的序號，列表上會變成一筆「未建檔硬體」
+  removeSnFromMountedHwList: `
+    UPDATE assets d
+    SET custom_attributes = COALESCE(d.custom_attributes, '{}'::jsonb) || jsonb_build_object(
+          'mounted_hw_sns',
+          COALESCE((SELECT string_agg(TRIM(p), ', ')
+                    FROM regexp_split_to_table(d.custom_attributes->>'mounted_hw_sns', '[,，\\s\\n]+') AS p
+                    WHERE TRIM(p) <> '' AND UPPER(TRIM(p)) <> UPPER(TRIM($2))), '')
+        ),
+        updated_at = CURRENT_TIMESTAMP
+    WHERE TRIM(LOWER(d.sn)) = TRIM(LOWER($1)) AND d.custom_attributes->>'mounted_hw_sns' IS NOT NULL
+    RETURNING d.id`,
+  addSnToMountedHwList: `
+    UPDATE assets d
+    SET custom_attributes = COALESCE(d.custom_attributes, '{}'::jsonb) || jsonb_build_object(
+          'mounted_hw_sns',
+          CASE WHEN COALESCE(TRIM(d.custom_attributes->>'mounted_hw_sns'), '') = '' THEN TRIM($2)
+               ELSE TRIM(d.custom_attributes->>'mounted_hw_sns') || ', ' || TRIM($2) END
+        ),
+        updated_at = CURRENT_TIMESTAMP
+    WHERE TRIM(LOWER(d.sn)) = TRIM(LOWER($1))
+      AND NOT EXISTS (
+        SELECT 1 FROM regexp_split_to_table(COALESCE(d.custom_attributes->>'mounted_hw_sns', ''), '[,，\\s\\n]+') AS p
+        WHERE UPPER(TRIM(p)) = UPPER(TRIM($2))
+      )
+    RETURNING d.id`,
+
   // 5. 維修單明細記下換給客戶的是哪一台
   updateRepairItemReplacement: `
     UPDATE repair_items SET replacement_sn = $2, replacement_asset_id = $3::integer
