@@ -212,15 +212,17 @@ export const queries = {
   // 事後才掛上去的硬體都不會，硬體列表就出現「設備已出貨、硬體還在庫」，在庫數量也跟著灌水。
   // 只跟著在庫／已出貨／借出／維修中這四種；報廢、待報廢的硬體不動（可能拆下來另外處理）。
   // 序號比對忽略大小寫與前後空白，與其他搭載硬體的查詢一致。
+  // 回傳改之前的狀態（prev 是同一筆的改前快照），硬體各自的事件紀錄要寫「從什麼變成什麼」。
   syncMountedHardwareToDevice: `
     UPDATE assets h SET status = d.status, updated_at = CURRENT_TIMESTAMP
-    FROM assets d
-    WHERE d.sn IS NOT NULL AND TRIM(d.sn) <> '' AND TRIM(LOWER(d.sn)) = TRIM(LOWER($1))
+    FROM assets d, assets prev
+    WHERE prev.id = h.id
+      AND d.sn IS NOT NULL AND TRIM(d.sn) <> '' AND TRIM(LOWER(d.sn)) = TRIM(LOWER($1))
       AND TRIM(LOWER(h.custom_attributes->>'server_sn')) = TRIM(LOWER(d.sn))
       AND d.status IN ('ACTIVE', 'SHIPPED', 'LENT', 'REPAIRING')
       AND COALESCE(h.status, '') NOT IN ('SCRAPPED', 'PENDING_SCRAP')
       AND h.status IS DISTINCT FROM d.status
-    RETURNING h.id, h.sn, h.status`,
+    RETURNING h.id, h.sn, h.status, prev.status AS old_status`,
   // 同上，從硬體這一端：在硬體列表把這張硬體掛到某台設備上時，狀態跟著那台設備
   syncHardwareToItsDevice: `
     UPDATE assets h SET status = d.status, updated_at = CURRENT_TIMESTAMP
@@ -2013,6 +2015,25 @@ export const queries = {
     ORDER BY transaction_date DESC, created_at DESC
   `,
   fetchItemFlowHistory: `
+    -- 每台資產用過的序號。稽核紀錄是以序號接回資產的，換過序號（原廠就地換號、
+    -- 手動改序號）之後，舊序號底下的紀錄就接不回來 —— 送修、建單那幾筆從履歷上消失，
+    -- 「直接換號，承接歷史」實際上沒有承接。順著換號紀錄（newSn ← oldSn）往回找，
+    -- 舊序號只認換號之前的紀錄：之後若有別的資產沿用這支序號，不會把它的紀錄算進來。
+    WITH RECURSIVE sn_alias AS (
+      SELECT a.id AS asset_id, UPPER(TRIM(a.sn)) AS sn_key, NULL::timestamptz AS until, 0 AS depth
+      FROM assets a
+      WHERE a.item_master_id = $1::integer AND a.sn IS NOT NULL AND TRIM(a.sn) <> ''
+      UNION ALL
+      SELECT s.asset_id, UPPER(TRIM(c.details->>'oldSn')), c.timestamp, s.depth + 1
+      FROM sn_alias s
+      JOIN system_audit_logs c
+        ON UPPER(TRIM(c.details->>'newSn')) = s.sn_key
+       AND (c.details->>'snChanged' = 'true' OR c.details->>'mode' = 'IN_PLACE')
+       AND (s.until IS NULL OR c.timestamp <= s.until)
+      WHERE s.depth < 10
+        AND COALESCE(TRIM(c.details->>'oldSn'), '') NOT IN ('', '無序號')
+        AND UPPER(TRIM(c.details->>'oldSn')) <> s.sn_key
+    )
     SELECT 
       'INBOUND' as transaction_type,
       COALESCE(io.order_date, io.created_at::date) as transaction_date,
@@ -2142,10 +2163,10 @@ export const queries = {
       l.timestamp as created_at,
       l.summary
     FROM system_audit_logs l
-    JOIN assets a ON UPPER(TRIM(a.sn)) = UPPER(TRIM(l.target_id))
+    JOIN sn_alias s ON s.sn_key = UPPER(TRIM(l.target_id)) AND (s.until IS NULL OR l.timestamp < s.until)
+    JOIN assets a ON a.id = s.asset_id
     JOIN item_master im ON a.item_master_id = im.id
-    WHERE a.item_master_id = $1::integer
-      AND l.module IN ('DEVICE', 'HARDWARE', 'ASSET')
+    WHERE l.module IN ('DEVICE', 'HARDWARE', 'ASSET')
 
     UNION ALL
 
@@ -2723,11 +2744,15 @@ export const queries = {
     ORDER BY a.client ASC, i.brand ASC, a.sn ASC
     LIMIT 2000
   `,
+  // 回傳改之前的狀態：維修流程的事件紀錄要寫實際的「從什麼變成什麼」，
+  // 沒有回傳任何一筆就是系統裡沒有這支序號（建單時手打的），不寫設備歷程
   updateAssetStatusBySn: `
-    UPDATE assets 
-    SET status = $1, 
-        updated_at = CURRENT_TIMESTAMP 
-    WHERE TRIM(UPPER(sn)) = TRIM(UPPER($2))
+    UPDATE assets a
+    SET status = $1,
+        updated_at = CURRENT_TIMESTAMP
+    FROM assets prev
+    WHERE prev.id = a.id AND TRIM(UPPER(a.sn)) = TRIM(UPPER($2))
+    RETURNING a.id, a.sn, prev.status AS old_status
   `
 };
 

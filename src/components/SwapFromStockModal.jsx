@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Repeat, AlertCircle, Info, ArrowRight } from 'lucide-react';
-import { logStatusChange, logCreate, logUpdate, getCurrentUser } from '../utils/auditLogger';
-import { rankSwapCandidates, MATCH_LABEL, validateSwap, swapResultsText, buildSwapSteps } from '../utils/repairSwap';
+import { logStatusChange, logCreate, logUpdate, logMountedHwStatusSync, getCurrentUser } from '../utils/auditLogger';
+import { rankSwapCandidates, MATCH_LABEL, validateSwap, swapResultsText, buildSwapSteps, swapHwSyncLogs } from '../utils/repairSwap';
 import './detail/DetailModal.css';
 
 /**
@@ -166,6 +166,11 @@ const SwapFromStockModal = ({ isOpen, onClose, repairOrder, onSuccess }) => {
             `搭載硬體 [${h.sn}] 由 [${p.oldSn}] 移到 [${p.newSn}]（維修單 [${repairOrder.repair_no}] 換貨，留在客戶端）`,
             { repairNo: repairOrder.repair_no, sn: h.sn, from: p.oldSn, to: p.newSn, itemMasterId: h.item_master_id, swap: true });
         }
+      }
+      // 搭載硬體的狀態跟著設備改了（新設備上的變已出貨、舊機上剩下的回到在庫），每張各記一筆
+      for (const { deviceSn, rows } of swapHwSyncLogs(pairs, res.results)) {
+        await logMountedHwStatusSync(deviceSn, rows, `維修單 [${repairOrder.repair_no}] 以庫存設備換貨`,
+          { repairNo: repairOrder.repair_no, dnNo, swap: true });
       }
       await logCreate('OUTBOUND', dnNo, dn.customer,
         `維修單 [${repairOrder.repair_no}] 以庫存設備換貨，自動建立出貨單 [${dnNo}]（已出貨）`,
