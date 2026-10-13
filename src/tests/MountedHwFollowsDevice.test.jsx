@@ -93,6 +93,8 @@ describe('維修單完工出貨', () => {
     window.electronAPI = {
       namedQuery: vi.fn(async (query, params) => {
         if (query === 'updateRepairCompleted') return { success: true, rows: [{ id: params[2] }] };
+        // 系統裡有這台設備（沒有回傳任何一筆就是手打的序號，不會去同步硬體）
+        if (query === 'updateAssetStatusBySn') return { success: true, rows: [{ id: 9, sn: params[1], old_status: 'REPAIRING' }] };
         return { success: true, rows: [] };
       }),
     };

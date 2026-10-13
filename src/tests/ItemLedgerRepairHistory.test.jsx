@@ -113,13 +113,31 @@ describe('履歷查詢的事件分類', () => {
   });
 
   it('靠序號把稽核紀錄接回資產，再用主檔過濾', () => {
-    expect(sql).toContain('JOIN assets a ON UPPER(TRIM(a.sn)) = UPPER(TRIM(l.target_id))');
+    expect(sql).toContain('JOIN sn_alias s ON s.sn_key = UPPER(TRIM(l.target_id))');
+    expect(sql).toContain('JOIN assets a ON a.id = s.asset_id');
     expect(sql).toContain('WHERE a.item_master_id = $1::integer');
+  });
+
+  /**
+   * 原廠就地換號、手動改序號之後，舊序號底下的紀錄（建維修單、送修）也要接回來。
+   * 先前只認目前的序號，「直接換號，承接歷史」實際上把換號前的歷程都弄丟了。
+   */
+  it('換過序號的資產，舊序號底下的紀錄也接得回來', () => {
+    expect(sql).toContain('WITH RECURSIVE sn_alias AS');
+    expect(sql).toContain("UPPER(TRIM(c.details->>'newSn')) = s.sn_key");
+    expect(sql).toContain("c.details->>'snChanged' = 'true' OR c.details->>'mode' = 'IN_PLACE'");
+    // 一換一是另一台新資產，不承接舊機的紀錄
+    expect(sql).not.toContain("'ONE_TO_ONE'");
+  });
+
+  it('舊序號只認換號之前的紀錄，別的資產沿用這支序號時不會混進來', () => {
+    expect(sql).toContain('(s.until IS NULL OR l.timestamp < s.until)');
   });
 
   it('每一段的欄位數一致，UNION 才成立', () => {
     // 六段：進貨、批次匯入、耗材初始庫存、出貨、稽核紀錄（靠序號）、稽核紀錄（靠品項 id）
-    const selects = sql.split(/UNION ALL/).length;
+    // 開頭找舊序號的遞迴 CTE 也有一個 UNION ALL，從主查詢算起
+    const selects = sql.slice(sql.indexOf("'INBOUND' as transaction_type")).split(/UNION ALL/).length;
     expect(selects).toBe(6);
     // 前四段沒有說明文字，補 NULL 佔位
     expect((sql.match(/NULL::text as summary/g) || []).length).toBe(4);

@@ -3,8 +3,9 @@ import {
   X, Send, PackageCheck, CheckCircle2, AlertCircle, Calendar, 
   FileText, Truck, Wrench, ShieldCheck, RefreshCw, ArrowRight, Info
 } from 'lucide-react';
-import { logStatusChange, logUpdate } from '../utils/auditLogger';
+import { logUpdate } from '../utils/auditLogger';
 import { performInPlaceReplacement, performOneToOneReplacement } from '../utils/rmaService';
+import { setRepairAssetStatus } from '../utils/repairAssetStatus';
 
 // 自行維修的常用結果跟原廠是兩回事，混在一起只會讓人挑到不對的敘述
 const IN_HOUSE_RESULTS = [
@@ -162,6 +163,8 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
       setIsSubmitting(true);
 
       const items = repairOrder.items || [];
+      // 設備歷程每一筆都帶單號，之後查得回是哪張維修單
+      const logDetails = { repairNo: repairOrder.repair_no, action: actionType };
 
       if (actionType === 'SEND_OEM') {
         // 1. 寫入 Send OEM Date，更新為 SENT_OEM
@@ -173,16 +176,17 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
         if (!res.success) throw new Error(res.error || '更新送修狀態失敗');
 
         // 2. 將該維修單下的設備序號全部改為 REPAIRING (維修)
+        //    掛在設備上的硬體跟著，設備與硬體各記一筆（見 utils/repairAssetStatus.js）
         for (const item of items) {
-          if (item.sn) {
-            await window.electronAPI.namedQuery('updateAssetStatusBySn', ['REPAIRING', item.sn.trim()]);
-            // 掛在設備上的硬體狀態跟著設備（見 syncMountedHardwareToDevice）
-            await window.electronAPI.namedQuery('syncMountedHardwareToDevice', [item.sn.trim()]);
-            await logStatusChange('DEVICE', item.sn.trim(), item.sn.trim(), 'ACTIVE', 'REPAIRING', `維修單 [${repairOrder.repair_no}] 寄出送修原廠`);
-          }
+          await setRepairAssetStatus(item.sn, 'REPAIRING', {
+            note: `維修單 [${repairOrder.repair_no}] 寄出送修原廠`,
+            details: logDetails,
+          });
         }
       } else if (actionType === 'OEM_RETURN') {
         let rmaSummaryNotes = [];
+        // 原廠換號的設備，換號時已經被改成在庫；紀錄要寫換號之前的狀態
+        const statusBeforeRma = {};
 
         // 若有勾選原廠新品/良品更換 (序號變更 RMA)
         if (isRmaReplacement) {
@@ -206,6 +210,7 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
               throw new Error(`找不到原資產資料 (序號: ${oldSn})，無法執行 RMA 更換`);
             }
             const assetObj = assetRes.rows[0];
+            statusBeforeRma[newSn] = assetObj.status;
 
             if (rmaMode === 'IN_PLACE') {
               await performInPlaceReplacement(assetObj, newSn, {
@@ -257,11 +262,11 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
           const effectiveSn = (isRmaReplacement && replacementSns[item.sn]?.trim())
             ? replacementSns[item.sn].trim()
             : item.sn;
-          if (effectiveSn) {
-            await window.electronAPI.namedQuery('updateAssetStatusBySn', [returnStatus, effectiveSn.trim()]);
-            await window.electronAPI.namedQuery('syncMountedHardwareToDevice', [effectiveSn.trim()]);
-            await logStatusChange('DEVICE', effectiveSn.trim(), effectiveSn.trim(), 'REPAIRING', returnStatus, returnNote);
-          }
+          await setRepairAssetStatus(effectiveSn, returnStatus, {
+            prevStatus: statusBeforeRma[effectiveSn?.trim()],
+            note: returnNote,
+            details: { ...logDetails, results: finalResults },
+          });
         }
       } else if (actionType === 'IN_HOUSE_COMPLETE') {
         // 1. 一步結案：寫入維修結果與完工日期。
@@ -280,11 +285,10 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
 
         // 2. 將該維修單下的設備序號全部改為 SHIPPED (出庫)
         for (const item of items) {
-          if (item.sn) {
-            await window.electronAPI.namedQuery('updateAssetStatusBySn', ['SHIPPED', item.sn.trim()]);
-            await window.electronAPI.namedQuery('syncMountedHardwareToDevice', [item.sn.trim()]);
-            await logStatusChange('DEVICE', item.sn.trim(), item.sn.trim(), 'ACTIVE', 'SHIPPED', `維修單 [${repairOrder.repair_no}] IT 自行維修完工出貨返還客戶 [${repairOrder.customer_name}]`);
-          }
+          await setRepairAssetStatus(item.sn, 'SHIPPED', {
+            note: `維修單 [${repairOrder.repair_no}] IT 自行維修完工出貨返還客戶 [${repairOrder.customer_name}]`,
+            details: { ...logDetails, results: results.trim() },
+          });
         }
       } else if (actionType === 'COMPLETE') {
         // 1. 寫入 Completion Date，更新為 COMPLETED
@@ -297,16 +301,23 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
 
         // 2. 將該維修單下的設備序號全部改為 SHIPPED (出庫)
         for (const item of items) {
-          if (item.sn) {
-            await window.electronAPI.namedQuery('updateAssetStatusBySn', ['SHIPPED', item.sn.trim()]);
-            await window.electronAPI.namedQuery('syncMountedHardwareToDevice', [item.sn.trim()]);
-            await logStatusChange('DEVICE', item.sn.trim(), item.sn.trim(), 'ACTIVE', 'SHIPPED', `維修單 [${repairOrder.repair_no}] 維修完畢出貨返還客戶 [${repairOrder.customer_name}]`);
-          }
+          await setRepairAssetStatus(item.sn, 'SHIPPED', {
+            note: `維修單 [${repairOrder.repair_no}] 維修完畢出貨返還客戶 [${repairOrder.customer_name}]`,
+            details: logDetails,
+          });
         }
       }
 
-      // 寫入一般異動日誌
-      await logUpdate('REPAIR', repairOrder.repair_no, repairOrder.customer_name, `執行操作 [${config.title}]，單號: ${repairOrder.repair_no}`);
+      // 寫入一般異動日誌：先前只有一句「執行操作」，日期、結果、備註都沒留下
+      await logUpdate('REPAIR', repairOrder.repair_no, repairOrder.customer_name,
+        `執行操作 [${config.title}]，單號: ${repairOrder.repair_no}`,
+        {
+          ...logDetails,
+          date,
+          results: results.trim() || null,
+          remarks: remarks.trim() || null,
+          sns: items.map((it) => it.sn).filter(Boolean),
+        });
 
       alert(`✅ 操作成功！維修單 [${repairOrder.repair_no}] 狀態已更新。`);
       if (onSuccess) onSuccess();

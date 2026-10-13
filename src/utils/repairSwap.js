@@ -122,8 +122,9 @@ export function buildSwapSteps({ order, pairs, date, results, remarks, dnNo, use
     });
     steps.push(
       { queryName: 'swapShipMountedOnReplacement', params: [p.newSn, p.oldAssetId, date] },
-      // 搭載硬體的狀態跟著設備：新設備上的變已出貨
-      { queryName: 'syncMountedHardwareToDevice', params: [p.newSn] },
+      // 搭載硬體的狀態跟著設備：新設備上的變已出貨。
+      // 具名步驟會帶回狀態有變的硬體，換貨完成後逐件記進事件紀錄（見 swapHwSyncLogs）
+      { id: `hwNew-${p.repairItemId}`, queryName: 'syncMountedHardwareToDevice', params: [p.newSn] },
       // 出貨單只列這次真的出貨的：新設備與它身上留著的硬體
       { queryName: 'insertOutboundItem', params: [dnRef, p.newItemMasterId, p.newSn, 1, dn.location || ''] },
       { queryName: 'insertSwapMountedOutboundItems', params: [dnRef, p.newSn, dn.location || ''] },
@@ -142,7 +143,7 @@ export function buildSwapSteps({ order, pairs, date, results, remarks, dnNo, use
       );
     }
     if ((p.moveHw || []).length > 0) {
-      steps.push({ queryName: 'syncMountedHardwareToDevice', params: [p.newSn] });
+      steps.push({ id: `hwMoved-${p.repairItemId}`, queryName: 'syncMountedHardwareToDevice', params: [p.newSn] });
     }
     steps.push(
       {
@@ -153,7 +154,7 @@ export function buildSwapSteps({ order, pairs, date, results, remarks, dnNo, use
       },
       { queryName: 'swapClearMountedOnBroken', params: [p.oldSn] },
       // 換回來的設備上剩下的硬體跟著取回，變在庫
-      { queryName: 'syncMountedHardwareToDevice', params: [p.oldSn] },
+      { id: `hwOld-${p.repairItemId}`, queryName: 'syncMountedHardwareToDevice', params: [p.oldSn] },
       {
         queryName: 'updateRepairItemReplacement',
         params: [p.repairItemId, p.newSn, p.newAssetId],
@@ -170,4 +171,17 @@ export function buildSwapSteps({ order, pairs, date, results, remarks, dnNo, use
     errorMessage: '換貨出貨單狀態更新失敗',
   });
   return steps;
+}
+
+/**
+ * 換貨交易裡狀態跟著設備改了的搭載硬體，整理成要記的事件紀錄。
+ * @param {object} results runTransaction 回傳的 results（以步驟 id 為 key）
+ * @returns {{ deviceSn: string, rows: object[] }[]}
+ */
+export function swapHwSyncLogs(pairs, results = {}) {
+  return pairs.flatMap((p) => [
+    { deviceSn: p.newSn, rows: results[`hwNew-${p.repairItemId}`]?.rows || [] },
+    { deviceSn: p.newSn, rows: results[`hwMoved-${p.repairItemId}`]?.rows || [] },
+    { deviceSn: p.oldSn, rows: results[`hwOld-${p.repairItemId}`]?.rows || [] },
+  ]).filter((x) => x.rows.length > 0);
 }

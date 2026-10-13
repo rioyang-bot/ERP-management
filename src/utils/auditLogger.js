@@ -223,6 +223,24 @@ export async function logMountChange(deviceSn, deviceName, { added = [], removed
 }
 
 /**
+ * 搭載硬體的狀態跟著設備改了 (STATUS_CHANGE)
+ *
+ * rows 是 syncMountedHardwareToDevice 回傳的那幾筆（只含狀態真的有變的）。
+ * 先前狀態跟著改了卻一筆紀錄也沒有 —— 打開硬體自己的履歷，
+ * 看不出它跟著設備送修、出貨、回到在庫過。
+ */
+export async function logMountedHwStatusSync(deviceSn, rows = [], note = '', details = {}) {
+  const device = String(deviceSn ?? '').trim() || '無序號';
+  for (const h of rows || []) {
+    const target = String(h.sn ?? '').trim() || String(h.id ?? '');
+    if (!target) continue;
+    await logStatusChange('HARDWARE', target, target, h.old_status || 'UNKNOWN', h.status,
+      `搭載硬體跟著設備 [${device}] 變更狀態${note ? `：${note}` : ''}`,
+      { ...details, serverSn: device, mountedSync: true });
+  }
+}
+
+/**
  * 移除動作便捷函式 (DELETE)
  */
 export async function logDelete(module, targetId, targetName, summary, details = {}) {
@@ -260,6 +278,7 @@ export default {
   logDelete,
   logSnChange,
   logMountChange,
+  logMountedHwStatusSync,
   logStatusChange,
   getCurrentUser
 };

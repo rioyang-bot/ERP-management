@@ -3,7 +3,8 @@ import {
   X, Wrench, Search, Plus, Trash2, CheckCircle, AlertCircle, 
   Cpu, Monitor, Server, Calendar, Building2, FileText, User
 } from 'lucide-react';
-import { logStatusChange, logCreate } from '../utils/auditLogger';
+import { logCreate } from '../utils/auditLogger';
+import { setRepairAssetStatus } from '../utils/repairAssetStatus';
 import { getCustomerNames, getContactsForCustomer, findContactPhone } from '../utils/partnerContacts';
 
 const QUICK_STATUS_TAGS = [
@@ -318,15 +319,14 @@ const RepairOrderRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
           item.sn.trim()
         ]);
 
-        // 連動更新設備/硬體資產狀態為 REPAIRING (維修中)
-        if (item.sn) {
-          await window.electronAPI.namedQuery('updateAssetStatusBySn', ['REPAIRING', item.sn.trim()]);
-          // 掛在設備上的硬體跟著（見 syncMountedHardwareToDevice）
-          await window.electronAPI.namedQuery('syncMountedHardwareToDevice', [item.sn.trim()]);
-          
-          // 寫入資產狀態變更日誌
-          await logStatusChange('DEVICE', item.sn.trim(), item.sn.trim(), item.original_status || 'UNKNOWN', 'REPAIRING', `建立維修單 [${repairNo}]，自客戶端取回進入維修流程`);
-        }
+        // 連動更新設備/硬體資產狀態為 REPAIRING (維修中)；掛在設備上的硬體跟著，
+        // 設備與硬體各記一筆（原狀態以資料庫改之前的為準，見 utils/repairAssetStatus.js）
+        await setRepairAssetStatus(item.sn, 'REPAIRING', {
+          note: isInternal
+            ? `建立內部維修單 [${repairNo}]，進入維修流程`
+            : `建立維修單 [${repairNo}]，自客戶端取回進入維修流程`,
+          details: { repairNo, action: 'CREATE' },
+        });
       }
 
       // 3. 記錄維修單主檔建檔日誌

@@ -10,6 +10,7 @@ import RepairOrderPrintModal from '../components/RepairOrderPrintModal';
 import RepairOrderDetailModal from '../components/RepairOrderDetailModal';
 import SwapFromStockModal from '../components/SwapFromStockModal';
 import { logDelete, logUpdate } from '../utils/auditLogger';
+import { logRepairAssetStatus } from '../utils/repairAssetStatus';
 import { getRepairScopeLabel, getRepairSubLabel, INTERNAL_LABEL } from '../utils/repairScope';
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
@@ -125,11 +126,20 @@ const RepairList = () => {
       // 先把還在維修中的設備放回在庫。明細會隨單據 CASCADE 刪除，
       // 順序反過來就找不到要還原哪些設備了。
       const restored = await window.electronAPI.namedQuery('restoreAssetsFromRepair', [order.id]);
-      const restoredCount = restored.success ? (restored.rows?.length || 0) : 0;
+      const restoredRows = restored.success ? (restored.rows || []) : [];
+      const restoredCount = restoredRows.length;
+      // 改回在庫的設備：搭載硬體跟著，設備與硬體各記一筆。
+      // 先前只改了設備本身，硬體還留在維修中，設備歷程上也看不到它回到在庫。
+      for (const row of restoredRows) {
+        await logRepairAssetStatus(row.sn, 'REPAIRING', 'ACTIVE',
+          `刪除維修單 [${order.repair_no}]，設備改回在庫`,
+          { repairNo: order.repair_no, action: 'DELETE' });
+      }
 
       const res = await window.electronAPI.namedQuery('deleteRepairOrder', [order.id]);
       if (res.success) {
-        await logDelete('REPAIR', order.repair_no, order.customer_name, `刪除維修單 [${order.repair_no}]`);
+        await logDelete('REPAIR', order.repair_no, order.customer_name, `刪除維修單 [${order.repair_no}]`,
+          { repairNo: order.repair_no, restoredSns: restoredRows.map((r) => r.sn) });
         alert(restoredCount > 0
           ? `維修單 [${order.repair_no}] 已刪除，${restoredCount} 台設備已改回「在庫」。`
           : `維修單 [${order.repair_no}] 已刪除。`);
