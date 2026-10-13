@@ -6,7 +6,7 @@
  *   - 維修單結案，維修結果記下「哪一台換成哪一台」與出貨單號
  *   - 新設備出貨：客戶、End-user、地點、專案、客戶保固沿用故障的那一台；
  *     它身上的搭載硬體一起出貨
- *   - 故障設備取回：維修中（要先檢查或送修，不能直接當好的再出貨），
+ *   - 換回來的設備：先回到在庫（不標維修中；確定要送修再另開內部維修單），
  *     客戶、地點、出貨日期清空；搭載硬體跟著取回
  *   - 自動產生一張已出貨的出貨單，可列印交貨簽收單、上傳客戶簽收
  *
@@ -105,10 +105,10 @@ export function buildSwapSteps({ order, pairs, date, results, remarks, dnNo, use
         queryName: 'swapReturnBrokenAsset',
         params: [p.oldAssetId, p.newSn, date, order.repair_no],
         expectRows: 1,
-        errorMessage: `故障設備 [${p.oldSn}] 不是維修中或已出貨的狀態，無法取回。`,
+        errorMessage: `換回來的設備 [${p.oldSn}] 不是維修中或已出貨的狀態，無法取回。`,
       },
       { queryName: 'swapClearMountedOnBroken', params: [p.oldSn] },
-      // 故障機上的跟著取回，變維修中
+      // 換回來的設備上的跟著取回，變在庫
       { queryName: 'syncMountedHardwareToDevice', params: [p.oldSn] },
       {
         queryName: 'updateRepairItemReplacement',

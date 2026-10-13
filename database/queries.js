@@ -2437,10 +2437,11 @@ export const queries = {
     WHERE n.id = $1::integer AND n.status = 'ACTIVE' AND o.id = $2::integer
     RETURNING n.id, n.sn`,
 
-  // 3. 故障的那台取回：維修中，客戶、End-user、地點、出貨日期與專案清空，記下換成了哪一台
+  // 3. 換回來的那台：先回到在庫（使用者要求，不標維修中；要送修再另開內部維修單），
+  //    客戶、End-user、地點、出貨日期與專案清空，記下換成了哪一台
   swapReturnBrokenAsset: `
     UPDATE assets SET
-      status = 'REPAIRING',
+      status = 'ACTIVE',
       client = NULL,
       end_user = NULL,
       location = NULL,

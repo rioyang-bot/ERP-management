@@ -13,7 +13,7 @@ import { rankSwapCandidates, validateSwap, swapResultsText, buildSwapSteps } fro
  *
  * 客戶的設備故障，直接從庫存拿一台換給客戶，故障的那台取回。
  * 同一個交易：維修單結案、新設備出貨（沿用客戶、地點、專案、客戶保固）、
- * 故障設備取回並設為維修中（客戶、地點清空）、產生已出貨的出貨單。
+ * 換回來的設備回到在庫（客戶、地點清空，不標維修中）、產生已出貨的出貨單。
  */
 beforeAll(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-13T10:00:00')); });
 afterAll(() => { vi.useRealTimers(); });
@@ -68,7 +68,7 @@ describe('規則', () => {
     expect(steps[1].params).toEqual(['DN-1', '凱基', 'COLO', '2026-10-13', 3, '吳先生 0900', 'SALE', null, '凱基 HFT']);
     expect(steps[2]).toMatchObject({ params: [1767, 1689, '2026-10-13', 'RMA-20261013-01'], expectRows: 1 });
     expect(steps[5]).toMatchObject({ params: [1689, 'X0346994', '2026-10-13', 'RMA-20261013-01'], expectRows: 1 });
-    // 搭載硬體跟著各自的設備：新設備上的變已出貨，故障機上的變維修中
+    // 搭載硬體跟著各自的設備：新設備上的變已出貨，換回來的設備上的變在庫
     expect(steps[4].params).toEqual(['X0346994']);
     expect(steps[7].params).toEqual(['X0341997']);
     expect(steps.at(-1)).toMatchObject({ params: ['SHIPPED', { $ref: 'dn.rows.0.id' }], expectRows: 1 });
@@ -86,9 +86,10 @@ describe('查詢', () => {
       expect(q).toContain(s);
     }
   });
-  it('故障機取回：維修中，客戶、地點、出貨日期、專案清空', () => {
+  it('換回來的設備：回到在庫（不標維修中），客戶、地點、出貨日期、專案清空', () => {
     const q = queries.swapReturnBrokenAsset;
-    for (const s of ["status = 'REPAIRING'", 'client = NULL', 'location = NULL', 'shipping_date = NULL', "- 'project_name'"]) expect(q).toContain(s);
+    expect(q).not.toContain("status = 'REPAIRING'");
+    for (const s of ["status = 'ACTIVE'", 'client = NULL', 'location = NULL', 'shipping_date = NULL', "- 'project_name'"]) expect(q).toContain(s);
   });
   it('候選只有在庫、有序號、沒掛在別台上的設備與硬體', () => {
     expect(queries.fetchSwapCandidates).toContain("a.status = 'ACTIVE'");
@@ -157,7 +158,7 @@ describe('換貨視窗', () => {
     }));
     const logs = JSON.stringify(calls.filter((c) => c.query === 'insertAuditLog'));
     expect(logs).toContain('出貨給 [凱基]，取代故障的 [X0341997]');
-    expect(logs).toContain('故障設備自 [凱基] 取回（由 [X0346994] 替換），設為維修中');
+    expect(logs).toContain('自 [凱基] 換回（由 [X0346994] 替換），回到在庫');
     expect(logs).toContain('自動建立出貨單 [DN-20261013-03]');
     await waitFor(() => expect(onSuccess).toHaveBeenCalledWith('DN-20261013-03'));
   });
