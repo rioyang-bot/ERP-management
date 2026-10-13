@@ -2352,7 +2352,8 @@ export const queries = {
               'specification', ri.specification,
               'sn', ri.sn,
               'asset_id', ri.asset_id,
-              'item_master_id', ri.item_master_id
+              'item_master_id', ri.item_master_id,
+              'replacement_sn', ri.replacement_sn
            )) FROM repair_items ri WHERE ri.repair_id = ro.id) as items
     FROM repair_orders ro
     LEFT JOIN users u ON ro.creator_id = u.id
@@ -2360,6 +2361,104 @@ export const queries = {
     -- 布林值排序時 false 在前，因此 ASC 就是「未結案先、結案後」。
     ORDER BY (ro.status = 'COMPLETED') ASC, ro.created_at DESC, ro.id DESC
   `,
+  // --- 以庫存設備換貨（見 src/utils/repairSwap.js）--------------------------
+  // 客戶的設備故障，直接從庫存拿一台換給客戶，故障的那台取回。
+  // 下面幾支在同一個交易裡依序執行，任何一步失敗整批退回。
+
+  // 可以拿來換貨的：在庫、有序號的設備與硬體；掛在別台設備上的硬體不算
+  fetchSwapCandidates: `
+    SELECT a.id, a.sn, a.item_master_id, a.location, i.brand, i.type, i.model, i.specification,
+           c.name AS category_name,
+           (SELECT COUNT(*) FROM assets h
+             WHERE TRIM(LOWER(h.custom_attributes->>'server_sn')) = TRIM(LOWER(a.sn)))::int AS mounted_count
+    FROM assets a
+    JOIN item_master i ON i.id = a.item_master_id
+    JOIN categories c ON c.id = i.category_id
+    WHERE a.status = 'ACTIVE' AND a.sn IS NOT NULL AND TRIM(a.sn) <> ''
+      AND c.name IN ('設備', '硬體')
+      AND COALESCE(TRIM(a.custom_attributes->>'server_sn'), '') = ''
+    ORDER BY c.name, i.brand, i.model, a.sn`,
+
+  // 1. 維修單結案並記下換貨出貨單號。只有客戶送修、還在現場處理的單可以換貨
+  updateRepairSwapCompleted: `
+    UPDATE repair_orders
+    SET status = 'COMPLETED',
+        completion_date = $1,
+        results = $2,
+        completion_remarks = NULLIF(TRIM(COALESCE($3, '')), ''),
+        swap_dn_no = $5,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = $4::integer AND status = 'ON_SITE_HANDLING' AND COALESCE(is_internal, FALSE) = FALSE
+    RETURNING id`,
+
+  // 2. 新設備出貨給客戶：客戶、End-user、地點、專案與客戶保固沿用故障的那一台。
+  //    條件要求新設備還在庫，被別人先拿走就改不到、整批退回
+  swapShipReplacementAsset: `
+    UPDATE assets n SET
+      status = 'SHIPPED',
+      client = o.client,
+      end_user = o.end_user,
+      location = o.location,
+      installed_date = $3::date,
+      shipping_date = $3::date,
+      customer_warranty_expire = COALESCE(o.customer_warranty_expire, n.customer_warranty_expire),
+      custom_attributes = COALESCE(n.custom_attributes, '{}'::jsonb)
+        || jsonb_strip_nulls(jsonb_build_object(
+             'project_name', o.custom_attributes->>'project_name',
+             'end_user', o.custom_attributes->>'end_user'))
+        || jsonb_build_object('swapped_from_sn', o.sn, 'swap_repair_no', $4::text, 'swap_date', $3::text),
+      updated_at = CURRENT_TIMESTAMP
+    FROM assets o
+    WHERE n.id = $1::integer AND n.status = 'ACTIVE' AND o.id = $2::integer
+    RETURNING n.id, n.sn`,
+
+  // 3. 故障的那台取回：維修中，客戶、End-user、地點、出貨日期與專案清空，記下換成了哪一台
+  swapReturnBrokenAsset: `
+    UPDATE assets SET
+      status = 'REPAIRING',
+      client = NULL,
+      end_user = NULL,
+      location = NULL,
+      shipping_date = NULL,
+      custom_attributes = (COALESCE(custom_attributes, '{}'::jsonb) - 'project_name' - 'end_user')
+        || jsonb_build_object('swapped_to_sn', $2::text, 'swap_repair_no', $4::text, 'swap_date', $3::text),
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = $1::integer AND status IN ('REPAIRING', 'SHIPPED')
+    RETURNING id, sn`,
+
+  // 4. 搭載硬體：故障機上的跟著取回（清掉客戶與專案），新設備上的跟著出貨（帶入客戶與專案）
+  swapClearMountedOnBroken: `
+    UPDATE assets SET client = NULL,
+      custom_attributes = COALESCE(custom_attributes, '{}'::jsonb) - 'project_name',
+      updated_at = CURRENT_TIMESTAMP
+    WHERE TRIM(LOWER(custom_attributes->>'server_sn')) = TRIM(LOWER($1))
+    RETURNING id`,
+  swapShipMountedOnReplacement: `
+    UPDATE assets h SET
+      client = o.client,
+      installed_date = $3::date,
+      shipping_date = $3::date,
+      custom_attributes = COALESCE(h.custom_attributes, '{}'::jsonb)
+        || jsonb_strip_nulls(jsonb_build_object('project_name', o.custom_attributes->>'project_name')),
+      updated_at = CURRENT_TIMESTAMP
+    FROM assets o
+    WHERE o.id = $2::integer AND TRIM(LOWER(h.custom_attributes->>'server_sn')) = TRIM(LOWER($1))
+    RETURNING h.id`,
+
+  // 5. 維修單明細記下換給客戶的是哪一台
+  updateRepairItemReplacement: `
+    UPDATE repair_items SET replacement_sn = $2, replacement_asset_id = $3::integer
+    WHERE id = $1::integer
+    RETURNING id`,
+
+  // 6. 換貨出貨單的明細：新設備上的搭載硬體一併列入（與一般出貨單相同）
+  insertSwapMountedOutboundItems: `
+    INSERT INTO outbound_items (request_id, item_id, sn, quantity, location)
+    SELECT $1::integer, h.item_master_id, h.sn, 1, $3
+    FROM assets h
+    WHERE TRIM(LOWER(h.custom_attributes->>'server_sn')) = TRIM(LOWER($2))
+    RETURNING id`,
+
   fetchRepairOrderItems: `
     SELECT ri.*, a.status as asset_status, a.client, a.hostname, a.location
     FROM repair_items ri
