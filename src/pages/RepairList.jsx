@@ -31,6 +31,28 @@ const STATUS_CONFIG = {
   COMPLETED: { label: '完工結案', color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.12)' }
 };
 
+// 現場處理的三顆（免送原廠、送修原廠、以庫存換貨）同一個樣式：外框＋淡底色，只有顏色不同
+const ONSITE_BTN_COLORS = {
+  noOem: { color: '#0d9488', bg: 'rgba(13, 148, 136, 0.12)' }, // 青綠
+  sendOem: { color: '#d97706', bg: 'rgba(217, 119, 6, 0.12)' }, // 橘
+  swap: { color: '#6366f1', bg: 'rgba(99, 102, 241, 0.12)' } // 靛藍
+};
+const onSiteBtnStyle = ({ color, bg }) => ({
+  padding: '6px 10px',
+  whiteSpace: 'nowrap',
+  borderRadius: '8px',
+  border: `1px solid ${color}`,
+  backgroundColor: bg,
+  color,
+  fontWeight: 700,
+  fontSize: '12px',
+  cursor: 'pointer',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: '4px'
+});
+
 // 頁籤的圖示與選取時的顏色。樣式比照借用列表／出貨單列表的頁籤：
 // 整排貼在卡片頂端，選取的那一個底線加粗、背景變亮，未結案的帶數量徽章
 const TAB_ICONS = {
@@ -610,21 +632,10 @@ const RepairList = () => {
                             {order.status === 'ON_SITE_HANDLING' && (
                               <button
                                 onClick={() => handleToggleNoOem(order)}
-                                style={{
-                                  padding: '6px 10px',
-                                  whiteSpace: 'nowrap',
-                                  borderRadius: '8px',
-                                  border: order.no_oem_required ? 'none' : '1px solid #0d9488',
-                                  backgroundColor: order.no_oem_required ? 'var(--bg-surface)' : 'rgba(13, 148, 136, 0.12)',
-                                  color: order.no_oem_required ? 'var(--text-muted)' : '#0d9488',
-                                  fontWeight: 700,
-                                  fontSize: '12px',
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  gap: '4px'
-                                }}
+                                // 已標記免送原廠時變成灰色的「恢復送原廠」
+                                style={onSiteBtnStyle(order.no_oem_required
+                                  ? { color: 'var(--text-muted)', bg: 'var(--bg-surface)' }
+                                  : ONSITE_BTN_COLORS.noOem)}
                                 title={order.no_oem_required ? '取消標記，恢復送修原廠流程' : '這張單不需送回原廠，由 IT 人員自行處理'}
                               >
                                 <Home size={13} /> {order.no_oem_required ? '恢復送原廠' : '免送原廠'}
@@ -660,21 +671,7 @@ const RepairList = () => {
                             {order.status === 'ON_SITE_HANDLING' && !order.no_oem_required && (
                               <button
                                 onClick={() => setActionModal({ isOpen: true, order, type: 'SEND_OEM' })}
-                                style={{
-                                  padding: '6px 10px',
-                                  whiteSpace: 'nowrap',
-                                  borderRadius: '8px',
-                                  border: 'none',
-                                  backgroundColor: '#d97706',
-                                  color: '#fff',
-                                  fontWeight: 700,
-                                  fontSize: '12px',
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  gap: '4px'
-                                }}
+                                style={onSiteBtnStyle(ONSITE_BTN_COLORS.sendOem)}
                                 title="送修原廠 (將設備設為維修中)"
                               >
                                 <Truck size={13} /> 送修原廠
@@ -685,22 +682,8 @@ const RepairList = () => {
                             {order.status === 'ON_SITE_HANDLING' && !order.is_internal && (
                               <button
                                 onClick={() => setSwapOrder(order)}
-                                style={{
-                                  padding: '6px 10px',
-                                  whiteSpace: 'nowrap',
-                                  borderRadius: '8px',
-                                  border: '1px solid #0891b2',
-                                  backgroundColor: 'rgba(8, 145, 178, 0.12)',
-                                  color: '#0891b2',
-                                  fontWeight: 700,
-                                  fontSize: '12px',
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  gap: '4px'
-                                }}
-                                title="從庫存拿一台換給客戶，故障的取回（維修中）並結案"
+                                style={onSiteBtnStyle(ONSITE_BTN_COLORS.swap)}
+                                title="從庫存拿一台換給客戶，故障的取回（回到在庫）並結案"
                               >
                                 <Repeat size={13} /> 以庫存換貨
                               </button>
