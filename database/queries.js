@@ -207,6 +207,31 @@ export const queries = {
   updateAssetStatus: `UPDATE assets SET status = $1 WHERE id = $2`,
   updateAssetOwnership: `UPDATE assets SET ownership = $1 WHERE id = $2`,
   updateMountedHardwareStatus: `UPDATE assets SET status = $1 WHERE custom_attributes->>'server_sn' = $2`,
+  // 搭載硬體的狀態跟著設備走：設備出貨、借出、維修、回到在庫時，掛在上面的硬體一起變。
+  // 先前只有設備列表手動改狀態會連動，確認出貨、借出歸還、維修、換貨、
+  // 事後才掛上去的硬體都不會，硬體列表就出現「設備已出貨、硬體還在庫」，在庫數量也跟著灌水。
+  // 只跟著在庫／已出貨／借出／維修中這四種；報廢、待報廢的硬體不動（可能拆下來另外處理）。
+  // 序號比對忽略大小寫與前後空白，與其他搭載硬體的查詢一致。
+  syncMountedHardwareToDevice: `
+    UPDATE assets h SET status = d.status, updated_at = CURRENT_TIMESTAMP
+    FROM assets d
+    WHERE d.sn IS NOT NULL AND TRIM(d.sn) <> '' AND TRIM(LOWER(d.sn)) = TRIM(LOWER($1))
+      AND TRIM(LOWER(h.custom_attributes->>'server_sn')) = TRIM(LOWER(d.sn))
+      AND d.status IN ('ACTIVE', 'SHIPPED', 'LENT', 'REPAIRING')
+      AND COALESCE(h.status, '') NOT IN ('SCRAPPED', 'PENDING_SCRAP')
+      AND h.status IS DISTINCT FROM d.status
+    RETURNING h.id, h.sn, h.status`,
+  // 同上，從硬體這一端：在硬體列表把這張硬體掛到某台設備上時，狀態跟著那台設備
+  syncHardwareToItsDevice: `
+    UPDATE assets h SET status = d.status, updated_at = CURRENT_TIMESTAMP
+    FROM assets d
+    WHERE h.sn IS NOT NULL AND TRIM(LOWER(h.sn)) = TRIM(LOWER($1))
+      AND d.sn IS NOT NULL AND TRIM(d.sn) <> ''
+      AND TRIM(LOWER(d.sn)) = TRIM(LOWER(h.custom_attributes->>'server_sn'))
+      AND d.status IN ('ACTIVE', 'SHIPPED', 'LENT', 'REPAIRING')
+      AND COALESCE(h.status, '') NOT IN ('SCRAPPED', 'PENDING_SCRAP')
+      AND h.status IS DISTINCT FROM d.status
+    RETURNING h.id, h.sn, h.status`,
   checkAssetSnExistsExcludeSelf: `SELECT id, sn FROM assets WHERE TRIM(sn) = TRIM($1) AND id != $2 LIMIT 1`,
   checkAssetSnExists: `SELECT id, sn FROM assets WHERE TRIM(sn) = TRIM($1) LIMIT 1`,
   // 新序號還沒被任何資產用走時回一筆，被占用時回 0 筆。

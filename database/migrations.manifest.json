@@ -208,6 +208,11 @@
       "file": "migration_repair_swap.sql",
       "type": "schema",
       "note": "維修單以庫存設備換貨：明細記錄換給客戶的序號，單頭記錄換貨出貨單號"
+    },
+    {
+      "file": "migration_mounted_hw_status_sync.sql",
+      "type": "data",
+      "note": "搭載硬體的狀態對齊所掛的設備（設備已出貨、硬體還在庫等不一致）"
     }
   ]
 }

@@ -298,6 +298,14 @@ const HwList = ({ isSplitMode = false }) => {
           }
         }
       }
+      // 掛到某台設備上時，狀態跟著那台設備（設備已出貨，硬體就是已出貨）
+      if ((newSn || origSn) && (editItem.temp_server_sn || '').trim()) {
+        try {
+          await window.electronAPI.namedQuery('syncHardwareToItsDevice', [newSn || origSn]);
+        } catch (e) {
+          console.error('[syncHardwareToItsDevice] 狀態同步失敗:', e);
+        }
+      }
 
       // 雙向連動設備端的 mounted_hw_sns
       const origServerSn = (editItem.server_sn || '').trim();

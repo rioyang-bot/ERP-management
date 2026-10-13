@@ -176,6 +176,8 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
         for (const item of items) {
           if (item.sn) {
             await window.electronAPI.namedQuery('updateAssetStatusBySn', ['REPAIRING', item.sn.trim()]);
+            // 掛在設備上的硬體狀態跟著設備（見 syncMountedHardwareToDevice）
+            await window.electronAPI.namedQuery('syncMountedHardwareToDevice', [item.sn.trim()]);
             await logStatusChange('DEVICE', item.sn.trim(), item.sn.trim(), 'ACTIVE', 'REPAIRING', `維修單 [${repairOrder.repair_no}] 寄出送修原廠`);
           }
         }
@@ -257,6 +259,7 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
             : item.sn;
           if (effectiveSn) {
             await window.electronAPI.namedQuery('updateAssetStatusBySn', [returnStatus, effectiveSn.trim()]);
+            await window.electronAPI.namedQuery('syncMountedHardwareToDevice', [effectiveSn.trim()]);
             await logStatusChange('DEVICE', effectiveSn.trim(), effectiveSn.trim(), 'REPAIRING', returnStatus, returnNote);
           }
         }
@@ -279,6 +282,7 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
         for (const item of items) {
           if (item.sn) {
             await window.electronAPI.namedQuery('updateAssetStatusBySn', ['SHIPPED', item.sn.trim()]);
+            await window.electronAPI.namedQuery('syncMountedHardwareToDevice', [item.sn.trim()]);
             await logStatusChange('DEVICE', item.sn.trim(), item.sn.trim(), 'ACTIVE', 'SHIPPED', `維修單 [${repairOrder.repair_no}] IT 自行維修完工出貨返還客戶 [${repairOrder.customer_name}]`);
           }
         }
@@ -295,6 +299,7 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
         for (const item of items) {
           if (item.sn) {
             await window.electronAPI.namedQuery('updateAssetStatusBySn', ['SHIPPED', item.sn.trim()]);
+            await window.electronAPI.namedQuery('syncMountedHardwareToDevice', [item.sn.trim()]);
             await logStatusChange('DEVICE', item.sn.trim(), item.sn.trim(), 'ACTIVE', 'SHIPPED', `維修單 [${repairOrder.repair_no}] 維修完畢出貨返還客戶 [${repairOrder.customer_name}]`);
           }
         }
