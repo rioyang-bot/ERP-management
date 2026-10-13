@@ -203,6 +203,11 @@
       "file": "migration_inbound_item_remarks.sql",
       "type": "schema",
       "note": "進貨明細新增備註：待確認時記在明細，確認進貨時寫進資產"
+    },
+    {
+      "file": "migration_repair_swap.sql",
+      "type": "schema",
+      "note": "維修單以庫存設備換貨：明細記錄換給客戶的序號，單頭記錄換貨出貨單號"
     }
   ]
 }

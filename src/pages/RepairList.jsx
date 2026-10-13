@@ -2,12 +2,13 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Wrench, Search, Plus, Trash2, CheckCircle, AlertCircle, 
   Truck, PackageCheck, RotateCcw, ExternalLink, RefreshCw, FileText,
-  Calendar, Building2, Cpu, Server, ChevronRight, Eye, Home
+  Calendar, Building2, Cpu, Server, ChevronRight, Eye, Home, Repeat
 } from 'lucide-react';
 import RepairOrderRegistrationModal from '../components/RepairOrderRegistrationModal';
 import RepairActionModal from '../components/RepairActionModal';
 import RepairOrderPrintModal from '../components/RepairOrderPrintModal';
 import RepairOrderDetailModal from '../components/RepairOrderDetailModal';
+import SwapFromStockModal from '../components/SwapFromStockModal';
 import { logDelete, logUpdate } from '../utils/auditLogger';
 import { getRepairScopeLabel, getRepairSubLabel, INTERNAL_LABEL } from '../utils/repairScope';
 import { usePageSize } from '../utils/usePageSize';
@@ -50,6 +51,8 @@ const RepairList = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [detailModal, setDetailModal] = useState({ isOpen: false, order: null });
   const [actionModal, setActionModal] = useState({ isOpen: false, order: null, type: 'SEND_OEM' });
+  // 以庫存設備換貨（見 utils/repairSwap.js）
+  const [swapOrder, setSwapOrder] = useState(null);
   const [printModal, setPrintModal] = useState({ isOpen: false, order: null });
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = usePageSize('repair_list', 10);
@@ -490,6 +493,11 @@ const RepairList = () => {
                               }}>
                                 SN: {it.sn}
                               </span>
+                              {it.replacement_sn && (
+                                <span style={{ fontSize: '11px', fontWeight: 800, color: '#0891b2', whiteSpace: 'nowrap' }} title="以庫存設備換貨">
+                                  → 換為 {it.replacement_sn}
+                                </span>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -670,6 +678,31 @@ const RepairList = () => {
                                 title="送修原廠 (將設備設為維修中)"
                               >
                                 <Truck size={13} /> 送修原廠
+                              </button>
+                            )}
+
+                            {/* 客戶的設備直接用庫存換一台給客戶，故障的取回（見 utils/repairSwap.js） */}
+                            {order.status === 'ON_SITE_HANDLING' && !order.is_internal && (
+                              <button
+                                onClick={() => setSwapOrder(order)}
+                                style={{
+                                  padding: '6px 10px',
+                                  whiteSpace: 'nowrap',
+                                  borderRadius: '8px',
+                                  border: '1px solid #0891b2',
+                                  backgroundColor: 'rgba(8, 145, 178, 0.12)',
+                                  color: '#0891b2',
+                                  fontWeight: 700,
+                                  fontSize: '12px',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '4px'
+                                }}
+                                title="從庫存拿一台換給客戶，故障的取回（維修中）並結案"
+                              >
+                                <Repeat size={13} /> 以庫存換貨
                               </button>
                             )}
 
@@ -882,7 +915,7 @@ const RepairList = () => {
           setDetailModal((m) => (m.order ? { ...m, order: { ...m.order, ...patch } } : m));
           fetchRecords();
         }}
-        onOpenAction={(order, type) => setActionModal({ isOpen: true, order, type })}
+        onOpenAction={(order, type) => (type === 'SWAP' ? setSwapOrder(order) : setActionModal({ isOpen: true, order, type }))}
         onOpenPrint={(order) => setPrintModal({ isOpen: true, order })}
       />
 
@@ -891,6 +924,13 @@ const RepairList = () => {
         onClose={() => setActionModal({ isOpen: false, order: null, type: 'SEND_OEM' })}
         repairOrder={actionModal.order}
         actionType={actionModal.type}
+        onSuccess={fetchRecords}
+      />
+
+      <SwapFromStockModal
+        isOpen={!!swapOrder}
+        onClose={() => setSwapOrder(null)}
+        repairOrder={swapOrder}
         onSuccess={fetchRecords}
       />
 

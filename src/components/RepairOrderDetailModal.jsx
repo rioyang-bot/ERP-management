@@ -3,7 +3,7 @@ import { getRepairScopeLabel } from '../utils/repairScope';
 import { logUpdate } from '../utils/auditLogger';
 import {
   X, FileText, Building2, Calendar, CheckCircle2, Clock,
-  Truck, Wrench, PackageCheck, Printer, ShieldAlert, Cpu, Edit2, Save
+  Truck, Wrench, PackageCheck, Printer, ShieldAlert, Cpu, Edit2, Save, Repeat
 } from 'lucide-react';
 
 // 四個階段的說明各有自己的欄位與更新查詢。
@@ -599,6 +599,11 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
                         }}>
                           {it.sn}
                         </span>
+                        {it.replacement_sn && (
+                          <div style={{ marginTop: '4px', fontSize: '11px', fontWeight: 800, color: '#0891b2' }} data-testid={`repair-detail-replacement-${it.id}`}>
+                            → 以庫存換為 {it.replacement_sn}
+                          </div>
+                        )}
                       </td>
                       <td style={{ padding: '10px 12px', color: 'var(--text-muted)', fontSize: '12px' }}>
                         {it.specification || '--'}
@@ -644,6 +649,30 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
                 }}
               >
                 <Wrench size={15} /> 自行維修完工
+              </button>
+            )}
+
+            {/* 以庫存設備換貨：客戶送修、現場處理階段（見 utils/repairSwap.js） */}
+            {repairOrder.status === 'ON_SITE_HANDLING' && !repairOrder.is_internal && onOpenAction && (
+              <button
+                onClick={() => {
+                  onClose();
+                  onOpenAction(repairOrder, 'SWAP');
+                }}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  border: '1px solid #0891b2',
+                  backgroundColor: 'rgba(8, 145, 178, 0.12)',
+                  color: '#0891b2',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <Repeat size={15} /> 以庫存設備換貨
               </button>
             )}
 

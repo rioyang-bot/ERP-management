@@ -186,12 +186,13 @@ describe('操作欄的階段按鈕', () => {
     return [...row.querySelectorAll('td')][heads.indexOf('操作流程')];
   };
 
-  it('免送原廠與送修原廠放在同一個直排容器裡', async () => {
+  // 客戶送修在現場處理階段多一顆「以庫存換貨」（見 RepairSwap.test.jsx）
+  it('免送原廠、送修原廠與以庫存換貨放在同一個直排容器裡', async () => {
     const cell = await openOnSite();
     const column = [...cell.firstElementChild.children].find((c) => c.tagName === 'DIV');
     expect(column.style.flexDirection).toBe('column');
     const labels = [...column.querySelectorAll('button')].map((b) => b.textContent.trim());
-    expect(labels).toEqual(['免送原廠', '送修原廠']);
+    expect(labels).toEqual(['免送原廠', '送修原廠', '以庫存換貨']);
   });
 
   it('檢視、刪除不在直排裡，仍排在同一列', async () => {
