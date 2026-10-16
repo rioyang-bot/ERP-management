@@ -772,6 +772,12 @@ const DNList = ({ isSplitMode = false }) => {
                   <span className="dm-summary-label">出貨地點:</span>
                   <span className="dm-summary-value">{selectedDN.location || '-'}</span>
                 </div>
+                {selectedDN.end_user && (
+                  <div className="dm-summary-item">
+                    <span className="dm-summary-label">End-user:</span>
+                    <span className="dm-summary-value">{selectedDN.end_user}</span>
+                  </div>
+                )}
               </div>
 
               {/* 項目清單 */}

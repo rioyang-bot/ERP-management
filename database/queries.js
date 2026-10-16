@@ -1642,6 +1642,32 @@ export const queries = {
   migrateOutboundProjectName: `ALTER TABLE outbound_requests ADD COLUMN IF NOT EXISTS project_name VARCHAR(100);`,
   updateAssetProjectAndClientBySn: `UPDATE assets SET custom_attributes = jsonb_set(COALESCE(custom_attributes, '{}'::jsonb), '{project_name}', to_jsonb($1::text)), client = COALESCE($2, client) WHERE sn IS NOT NULL AND TRIM(sn) = TRIM($3)`,
   updateMountedHardwareProjectAndClient: `UPDATE assets SET custom_attributes = jsonb_set(COALESCE(custom_attributes, '{}'::jsonb), '{project_name}', to_jsonb($1::text)), client = COALESCE($2, client) WHERE custom_attributes->>'server_sn' IS NOT NULL AND TRIM(custom_attributes->>'server_sn') = TRIM($3)`,
+  // 出貨單的 End-user：單頭記一份，單上的設備／硬體（含搭載的硬體）寫入資產的 End-user。
+  // 資產的 End-user 有欄位與 custom_attributes 兩處（設備列表先讀欄位），兩處一起寫才不會顯示舊值。
+  updateOutboundRequestEndUser: `UPDATE outbound_requests SET end_user = NULLIF(TRIM($1), '') WHERE id = $2::integer RETURNING id`,
+  updateAssetEndUserBySn: `
+    UPDATE assets SET end_user = $1::text,
+      custom_attributes = COALESCE(custom_attributes, '{}'::jsonb) || jsonb_build_object('end_user', $1::text),
+      updated_at = CURRENT_TIMESTAMP
+    WHERE sn IS NOT NULL AND TRIM(sn) = TRIM($2)
+    RETURNING id, sn`,
+  updateMountedHardwareEndUser: `
+    UPDATE assets SET end_user = $1::text,
+      custom_attributes = COALESCE(custom_attributes, '{}'::jsonb) || jsonb_build_object('end_user', $1::text),
+      updated_at = CURRENT_TIMESTAMP
+    WHERE custom_attributes->>'server_sn' IS NOT NULL AND TRIM(custom_attributes->>'server_sn') = TRIM($2)
+    RETURNING id, sn`,
+  // 這位客戶用過的 End-user（資產上的與出貨單上的），新增出貨單時給建議
+  fetchCustomerEndUsers: `
+    SELECT DISTINCT eu AS end_user FROM (
+      SELECT COALESCE(NULLIF(TRIM(a.end_user), ''), NULLIF(TRIM(a.custom_attributes->>'end_user'), '')) AS eu
+      FROM assets a WHERE TRIM(LOWER(COALESCE(a.client, ''))) = TRIM(LOWER($1))
+      UNION
+      SELECT NULLIF(TRIM(r.end_user), '') FROM outbound_requests r WHERE TRIM(LOWER(COALESCE(r.customer, ''))) = TRIM(LOWER($1))
+    ) x
+    WHERE eu IS NOT NULL
+    ORDER BY eu
+    LIMIT 200`,
   checkProjectExistsByName: `SELECT id, project_no, name FROM projects WHERE TRIM(LOWER(name)) = TRIM(LOWER($1)) LIMIT 1`,
   insertOutboundItem: `INSERT INTO outbound_items (request_id, item_id, sn, quantity, location) VALUES ($1, $2, $3, $4, $5)`,
   // 掛在設備上、隨設備一起出的耗材（lab_asset_id = 那台設備）
