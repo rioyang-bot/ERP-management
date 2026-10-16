@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { BrowserRouter } from 'react-router-dom';
@@ -204,30 +204,55 @@ describe('出貨單列表的「換貨」頁籤', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('npm run migrate');
   });
 
-  it('10G-LR ×2 換 10G-SR ×2：送出交易並寫事件紀錄', async () => {
+  /** 打開新增換貨單、選好客戶 */
+  const openModal = async () => {
     await openTab();
     await userEvent.click(await screen.findByRole('button', { name: /新增換貨單/ }));
     const dialog = await screen.findByRole('dialog', { name: '新增換貨單' });
-    const customerSelect = within(dialog).getByLabelText('客戶 *');
+    const customerSelect = within(dialog).getByLabelText('換貨對象 (客戶) *');
     await waitFor(() => expect(within(customerSelect).getByRole('option', { name: /台灣大戶/ })).toBeInTheDocument());
     await userEvent.selectOptions(customerSelect, '7');
+    return dialog;
+  };
 
-    const inBox = within(dialog).getByTestId('exchange-in');
-    await userEvent.selectOptions(within(inBox).getByLabelText('換回耗材'), '245');
-    await userEvent.clear(within(inBox).getByLabelText('換回數量'));
-    await userEvent.type(within(inBox).getByLabelText('換回數量'), '2');
-    await userEvent.click(within(inBox).getByLabelText('加入換回耗材'));
+  /** 用耗材搜尋找到卡片後點選加入（加到目前選的那一邊） */
+  const addCsm = async (dialog, term, label) => {
+    const search = within(dialog).getByLabelText('搜尋耗材');
+    await userEvent.clear(search);
+    await userEvent.type(search, term);
+    await userEvent.click(within(dialog).getByRole('button', { name: label }));
+  };
 
-    const outBox = within(dialog).getByTestId('exchange-out');
-    // 換出列出在庫數量
-    expect(within(outBox).getByRole('option', { name: /10G-SR（在庫 133）/ })).toBeInTheDocument();
-    await userEvent.selectOptions(within(outBox).getByLabelText('換出耗材'), '237');
-    await userEvent.clear(within(outBox).getByLabelText('換出數量'));
-    await userEvent.type(within(outBox).getByLabelText('換出數量'), '2');
-    await userEvent.click(within(outBox).getByLabelText('加入換出耗材'));
+  it('版面比照新增出貨單：標題帶換貨單號，左邊單據資訊與挑選、右邊品項與送出', async () => {
+    const dialog = await openModal();
+    const ymd = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    expect(await within(dialog).findByText(`單號: EX-${ymd}-02`)).toBeInTheDocument();
+    expect(dialog.querySelector('.dn-content-layout')).not.toBeNull();
+    expect(within(dialog).getByText('單據基本資訊')).toBeInTheDocument();
+    expect(within(dialog).getByText('資產序號匯入 (S/N Scan)')).toBeInTheDocument();
+    expect(within(dialog).getByText('耗材庫存快選 (Consumables)')).toBeInTheDocument();
+    expect(within(dialog).getByText(/換貨品項 \(0\)/)).toBeInTheDocument();
+    // 聯絡資訊跟著客戶帶出、地點帶入客戶地址
+    expect(within(dialog).getByDisplayValue('王先生 0912')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('出貨地點')).toHaveValue('台北');
+  });
+
+  it('10G-LR ×2 換 10G-SR ×2：送出交易並寫事件紀錄', async () => {
+    const dialog = await openModal();
+
+    // 預設加入「換回」
+    expect(within(dialog).getByRole('button', { name: /加入換回/, pressed: true })).toBeInTheDocument();
+    await addCsm(dialog, '10G-LR', '加入換回 CISCO 10G-LR');
+    await userEvent.click(within(dialog).getByRole('button', { name: '增加 CISCO 10G-LR ×1' }));
+    expect(within(within(dialog).getByTestId('exchange-in-list')).getByLabelText('換回數量 CISCO 10G-LR')).toHaveValue(2);
+
+    await userEvent.click(within(dialog).getByRole('button', { name: /加入換出/, pressed: false }));
+    await addCsm(dialog, '10G-SR', '加入換出 METECH 10G-SR');
+    await userEvent.click(within(dialog).getByRole('button', { name: '加入換出 METECH 10G-SR' }));
+    expect(within(within(dialog).getByTestId('exchange-out-list')).getByLabelText('換出數量 METECH 10G-SR')).toHaveValue(2);
 
     await userEvent.type(within(dialog).getByLabelText('換貨原因 *'), '客戶下錯單');
-    await userEvent.click(within(dialog).getByRole('button', { name: /確認換貨/ }));
+    await userEvent.click(within(dialog).getByRole('button', { name: /確認換貨並建立出貨單/ }));
     await waitFor(() => expect(window.alert).toHaveBeenCalled());
 
     expect(txSteps).not.toBeNull();
@@ -243,31 +268,70 @@ describe('出貨單列表的「換貨」頁籤', () => {
     expect(window.alert.mock.calls[0][0]).toContain(exNo);
   });
 
-  it('沒加換出的品項：擋下來，不送交易', async () => {
-    await openTab();
-    await userEvent.click(await screen.findByRole('button', { name: /新增換貨單/ }));
-    const dialog = await screen.findByRole('dialog', { name: '新增換貨單' });
-    const customerSelect = within(dialog).getByLabelText('客戶 *');
-    await waitFor(() => expect(within(customerSelect).getByRole('option', { name: /台灣大戶/ })).toBeInTheDocument());
-    await userEvent.selectOptions(customerSelect, '7');
-    const inBox = within(dialog).getByTestId('exchange-in');
-    await userEvent.selectOptions(within(inBox).getByLabelText('換回耗材'), '245');
-    await userEvent.click(within(inBox).getByLabelText('加入換回耗材'));
-    await userEvent.click(within(dialog).getByRole('button', { name: /確認換貨/ }));
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent('請加入換給客戶的品項。');
+  it('換回、換出兩邊都有品項才能送出', async () => {
+    const dialog = await openModal();
+    const submit = within(dialog).getByRole('button', { name: /確認換貨並建立出貨單/ });
+    expect(submit).toBeDisabled();
+    await addCsm(dialog, '10G-LR', '加入換回 CISCO 10G-LR');
+    expect(submit).toBeDisabled();
+    await userEvent.click(within(dialog).getByRole('button', { name: /加入換出/ }));
+    await addCsm(dialog, '10G-SR', '加入換出 METECH 10G-SR');
+    expect(submit).not.toBeDisabled();
+  });
+
+  it('沒填原因：擋下來，不送交易', async () => {
+    const dialog = await openModal();
+    await addCsm(dialog, '10G-LR', '加入換回 CISCO 10G-LR');
+    await userEvent.click(within(dialog).getByRole('button', { name: /加入換出/ }));
+    await addCsm(dialog, '10G-SR', '加入換出 METECH 10G-SR');
+    await userEvent.click(within(dialog).getByRole('button', { name: /確認換貨並建立出貨單/ }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('請填寫換貨原因。');
     expect(window.electronAPI.runTransaction).not.toHaveBeenCalled();
   });
 
-  it('明細可以移除', async () => {
-    await openTab();
-    await userEvent.click(await screen.findByRole('button', { name: /新增換貨單/ }));
-    const dialog = await screen.findByRole('dialog', { name: '新增換貨單' });
-    const inBox = within(dialog).getByTestId('exchange-in');
-    await waitFor(() => expect(within(inBox).getByRole('option', { name: /10G-LR/ })).toBeInTheDocument());
-    await userEvent.selectOptions(within(inBox).getByLabelText('換回耗材'), '245');
-    await userEvent.click(within(inBox).getByLabelText('加入換回耗材'));
-    const label = lineLabel({ ...LR, qty: 1 });
-    await userEvent.click(within(inBox).getByLabelText(`移除 ${label}`));
-    expect(within(inBox).queryByRole('table')).not.toBeInTheDocument();
+  it('品項可以移除', async () => {
+    const dialog = await openModal();
+    await addCsm(dialog, '10G-LR', '加入換回 CISCO 10G-LR');
+    const inList = within(dialog).getByTestId('exchange-in-list');
+    await userEvent.click(within(inList).getByRole('button', { name: `移除 ${lineLabel({ ...LR, qty: 1 })}` }));
+    expect(within(inList).getByText('尚未加入換回的品項')).toBeInTheDocument();
+  });
+
+  it('換回的序號品項只列這位客戶手上的；換出的列在庫的', async () => {
+    const base = window.electronAPI.namedQuery.getMockImplementation();
+    window.electronAPI.namedQuery.mockImplementation(async (q, p) => {
+      if (q === 'fetchCustomerShippedAssets') return { success: true, rows: [{ id: 2466, sn: 'CUST-DEV-1', item_master_id: 357, category_name: '設備', brand: 'SMC', model: 'SRV', mounted_count: 3 }] };
+      if (q === 'fetchExchangeStockAssets') return { success: true, rows: [{ id: 2463, sn: 'STOCK-DEV-1', item_master_id: 357, category_name: '設備', brand: 'SMC', model: 'SRV', mounted_count: 0, mounted_consumables: 0 }] };
+      return base(q, p);
+    });
+    const dialog = await openModal();
+    expect(window.electronAPI.namedQuery.mock.calls.find(([q]) => q === 'fetchCustomerShippedAssets')[1]).toEqual(['台灣大戶']);
+
+    const sn = within(dialog).getByLabelText('搜尋序號品項');
+    await userEvent.click(sn);
+    expect(within(dialog).queryByLabelText('加入 STOCK-DEV-1')).not.toBeInTheDocument();
+    fireEvent.mouseDown(await within(dialog).findByLabelText('加入 CUST-DEV-1'));
+    const inList = within(dialog).getByTestId('exchange-in-list');
+    expect(within(inList).getByText('CUST-DEV-1')).toBeInTheDocument();
+    expect(within(inList).getByText('搭載的 3 件硬體一起換回')).toBeInTheDocument();
+
+    await userEvent.click(within(dialog).getByRole('button', { name: /加入換出/ }));
+    await userEvent.click(sn);
+    expect(within(dialog).queryByLabelText('加入 CUST-DEV-1')).not.toBeInTheDocument();
+    fireEvent.mouseDown(await within(dialog).findByLabelText('加入 STOCK-DEV-1'));
+    expect(within(within(dialog).getByTestId('exchange-out-list')).getByText('STOCK-DEV-1')).toBeInTheDocument();
+  });
+
+  it('換出時掛有耗材的設備不能加入', async () => {
+    const base = window.electronAPI.namedQuery.getMockImplementation();
+    window.electronAPI.namedQuery.mockImplementation(async (q, p) => (q === 'fetchExchangeStockAssets'
+      ? { success: true, rows: [{ id: 9, sn: 'LAB-DEV', item_master_id: 357, category_name: '設備', brand: 'SMC', model: 'SRV', mounted_count: 0, mounted_consumables: 4 }] }
+      : base(q, p)));
+    const dialog = await openModal();
+    await userEvent.click(within(dialog).getByRole('button', { name: /加入換出/ }));
+    await userEvent.click(within(dialog).getByLabelText('搜尋序號品項'));
+    fireEvent.mouseDown(await within(dialog).findByLabelText('加入 LAB-DEV'));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('掛有耗材，請改用一般出貨單');
+    expect(within(within(dialog).getByTestId('exchange-out-list')).queryByText('LAB-DEV')).not.toBeInTheDocument();
   });
 });
