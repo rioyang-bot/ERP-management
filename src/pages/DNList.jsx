@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   FileText, Search, Filter, Eye, RefreshCw, AlertCircle, Trash2, Calendar, 
-  Printer, Paperclip, Upload, FileCheck, ExternalLink, X, Pencil, Clock, CheckCircle
+  Printer, Paperclip, Upload, FileCheck, ExternalLink, X, Pencil, Clock, CheckCircle, Repeat
 } from 'lucide-react';
+import ExchangeOrderList from '../components/ExchangeOrderList';
 import { logStatusChange, logDelete, logUpdate } from '../utils/auditLogger';
 import { createHwSyncTracker } from '../utils/mountedHwSync';
 import DeliveryReceiptPrintModal from '../components/DeliveryReceiptPrintModal';
@@ -488,8 +489,32 @@ const DNList = ({ isSplitMode = false }) => {
               </span>
             )}
           </button>
+          <button
+            onClick={() => setActiveTab('EXCHANGE')}
+            data-testid="dn-tab-exchange"
+            style={{
+              padding: '10px 18px',
+              border: 'none',
+              backgroundColor: activeTab === 'EXCHANGE' ? 'var(--bg-surface)' : 'transparent',
+              borderBottom: activeTab === 'EXCHANGE' ? '3px solid #6366f1' : '3px solid transparent',
+              color: activeTab === 'EXCHANGE' ? '#6366f1' : 'var(--text-muted)',
+              fontWeight: activeTab === 'EXCHANGE' ? 800 : 600,
+              fontSize: '0.9rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            <Repeat size={16} /> 換貨
+          </button>
         </div>
 
+        {/* 換貨頁籤：客戶換貨單（見 components/ExchangeOrderList.jsx），其餘兩個頁籤是出貨單 */}
+        {activeTab === 'EXCHANGE' ? (
+          <ExchangeOrderList onCreated={fetchRecords} />
+        ) : (
+        <>
         <div style={{ padding: '12px 18px', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '12px', alignItems: 'center', backgroundColor: 'var(--bg-surface-subtle)', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flex: 1, flexWrap: 'wrap' }}>
             <select 
@@ -562,6 +587,12 @@ const DNList = ({ isSplitMode = false }) => {
                 <tr key={dn.id} className="row-hover" style={{ borderBottom: '1px solid var(--table-border)', color: 'var(--text-main)' }}>
                   <td style={{ padding: '12px', fontWeight: 700, color: 'var(--text-main)' }}>
                     {dn.request_no}
+                    {/* 換貨單自動產生的出貨單，標出是哪一張換貨單 */}
+                    {dn.exchange_no && (
+                      <span title={`換貨單 ${dn.exchange_no} 自動產生`} style={{ marginLeft: '6px', fontSize: '0.72rem', fontWeight: 800, color: '#6366f1', backgroundColor: 'rgba(99, 102, 241, 0.12)', padding: '1px 6px', borderRadius: '6px', whiteSpace: 'nowrap' }}>
+                        換貨 {dn.exchange_no}
+                      </span>
+                    )}
                   </td>
                   <td style={{ padding: '12px', color: 'var(--text-muted)' }}>{new Date(dn.shipping_date).toLocaleDateString()}</td>
                   <td style={{ padding: '12px' }}>
@@ -697,6 +728,8 @@ const DNList = ({ isSplitMode = false }) => {
           </div>
         </div>
         </div>
+        </>
+        )}
       </div>
 
       {/* 明細彈窗 */}
