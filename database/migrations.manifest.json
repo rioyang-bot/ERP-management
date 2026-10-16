@@ -218,6 +218,11 @@
       "file": "migration_customer_exchange.sql",
       "type": "schema",
       "note": "客戶換貨單：換回的良品回在庫，換出的產生一張已出貨的出貨單"
+    },
+    {
+      "file": "migration_outbound_end_user.sql",
+      "type": "schema",
+      "note": "出貨單新增 End-user 欄位，建單時寫入單上設備／硬體的 End-user"
     }
   ]
 }

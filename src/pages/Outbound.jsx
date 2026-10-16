@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { ClipboardList, Search, Plus, Trash2, Send, Calendar, MapPin, User, Package, Cpu, ChevronRight, AlertCircle, Loader2, Truck, FolderGit2, Sparkles, ListChecks } from 'lucide-react';
+import { ClipboardList, Search, Plus, Trash2, Send, Calendar, MapPin, User, UserCheck, Package, Cpu, ChevronRight, AlertCircle, Loader2, Truck, FolderGit2, Sparkles, ListChecks } from 'lucide-react';
 import { RoleContext } from '../context/RoleContext';
 import { useNavigate } from 'react-router-dom';
 import { logCreate, logUpdate } from '../utils/auditLogger';
@@ -28,7 +28,8 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null, ed
         contact_info: editingDn.contact_info || '',
         location: editingDn.location || '',
         date: editingDn.shipping_date ? String(editingDn.shipping_date).split('T')[0] : new Date().toISOString().split('T')[0],
-        project_name: editingDn.project_name || ''
+        project_name: editingDn.project_name || '',
+        end_user: editingDn.end_user || ''
       };
     }
     const saved = localStorage.getItem('dn_draft_header');
@@ -37,7 +38,8 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null, ed
       contact_info: '',
       location: '',
       date: new Date().toISOString().split('T')[0],
-      project_name: ''
+      project_name: '',
+      end_user: ''
     };
   });
 
@@ -59,6 +61,8 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null, ed
   const [consumables, setConsumables] = useState([]);
   const [projects, setProjects] = useState([]);
   const [activeAssets, setActiveAssets] = useState([]);
+  // 這位客戶用過的 End-user，輸入時給建議
+  const [endUserOptions, setEndUserOptions] = useState([]);
 
   // 快顯與列印
   const [showDeviceDropdown, setShowDeviceDropdown] = useState(false);
@@ -106,6 +110,17 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null, ed
     if (isEditing) return;
     localStorage.setItem('dn_draft_items', JSON.stringify(outboundItems));
   }, [outboundItems, isEditing]);
+
+  // 選了客戶就讀它用過的 End-user
+  useEffect(() => {
+    const customer = (header.customer || '').trim();
+    if (!customer) return;
+    let cancelled = false;
+    window.electronAPI.namedQuery('fetchCustomerEndUsers', [customer]).then((res) => {
+      if (!cancelled) setEndUserOptions(res?.success ? (res.rows || []).map((r) => r.end_user) : []);
+    }).catch(() => { /* 只是建議清單，讀不到就不顯示 */ });
+    return () => { cancelled = true; };
+  }, [header.customer]);
 
   // --- 初始化資料 ---
   useEffect(() => {
@@ -472,11 +487,22 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null, ed
       // 明細的單頭 id：編輯用既有的，新建則取用上一步產生的
       const requestIdRef = isEditing ? editingDn.id : { $ref: 'request.rows.0.id' };
 
+      // End-user：單頭記一份；有填才寫進單上的設備／硬體（含搭載的硬體），沒填不動資產上原本的
+      const endUser = (header.end_user || '').trim();
+      steps.push({ queryName: 'updateOutboundRequestEndUser', params: [endUser, requestIdRef] });
+      const endUserSns = [];
+
       for (const item of outboundItems) {
         steps.push({
           queryName: 'insertOutboundItem',
           params: [requestIdRef, item.item_id || item.item_master_id, item.sn, item.qty, item.location || header.location],
         });
+
+        if (endUser && item.sn) {
+          steps.push({ queryName: 'updateAssetEndUserBySn', params: [endUser, item.sn] });
+          steps.push({ queryName: 'updateMountedHardwareEndUser', params: [endUser, item.sn] });
+          endUserSns.push(item.sn, ...(item.components || []).map((c) => c.sn).filter(Boolean));
+        }
 
         // 自動回寫主資產的專案屬性與客戶
         if (cleanProject && item.sn) {
@@ -511,13 +537,13 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null, ed
       if (txRes.success) {
         const requestId = isEditing ? editingDn.id : txRes.results.request.rows[0].id;
 
-        const logMeta = { dnNumber, customer: header.customer, project_name: cleanProject, location: header.location, request_type: 'SALE', itemsCount: outboundItems.length, items: outboundItems.map(i => ({ model: i.model, brand: i.brand, sn: i.sn, qty: i.qty })) };
+        const logMeta = { dnNumber, customer: header.customer, project_name: cleanProject, end_user: endUser || null, endUserSns: [...new Set(endUserSns)], location: header.location, request_type: 'SALE', itemsCount: outboundItems.length, items: outboundItems.map(i => ({ model: i.model, brand: i.brand, sn: i.sn, qty: i.qty })) };
         if (isEditing) {
           logUpdate(
             'OUTBOUND',
             requestId,
             dnNumber,
-            `修改待出貨單據 [${dnNumber}] 對象: ${header.customer}${cleanProject ? ` (專案: ${cleanProject})` : ''} 共 ${outboundItems.length} 個品項`,
+            `修改待出貨單據 [${dnNumber}] 對象: ${header.customer}${endUser ? ` (End-user: ${endUser})` : ''}${cleanProject ? ` (專案: ${cleanProject})` : ''} 共 ${outboundItems.length} 個品項`,
             logMeta
           );
         } else {
@@ -525,7 +551,7 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null, ed
             'OUTBOUND',
             dnNumber,
             header.customer || '出貨單',
-            `建立出貨申請單 [${dnNumber}] 對象: ${header.customer}${cleanProject ? ` (專案: ${cleanProject})` : ''} 共 ${outboundItems.length} 個品項 (一般銷貨)`,
+            `建立出貨申請單 [${dnNumber}] 對象: ${header.customer}${endUser ? ` (End-user: ${endUser})` : ''}${cleanProject ? ` (專案: ${cleanProject})` : ''} 共 ${outboundItems.length} 個品項 (一般銷貨)`,
             logMeta
           );
         }
@@ -538,6 +564,7 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null, ed
           location: header.location,
           shipping_date: header.date,
           project_name: cleanProject,
+          end_user: endUser || null,
           creator_name: authUser?.full_name
         };
         // 畫面上的清單數量欄是 qty，簽收單讀的是 quantity。
@@ -552,7 +579,8 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null, ed
             contact_info: '',
             location: '',
             date: new Date().toISOString().split('T')[0],
-            project_name: ''
+            project_name: '',
+            end_user: ''
           });
           localStorage.removeItem('dn_draft_items');
           localStorage.removeItem('dn_draft_header');
@@ -808,6 +836,25 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null, ed
                     value={header.location}
                     onChange={e => setHeader({...header, location: e.target.value})}
                   />
+                </div>
+              </div>
+
+              {/* End-user：有加入設備／硬體時，建單會一併寫入那些資產的 End-user */}
+              <div className="dn-field full-width">
+                <label htmlFor="outbound-end-user">End-user <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>（寫入單上設備／硬體的 End-user）</span></label>
+                <div className="input-with-icon">
+                  <UserCheck size={16} />
+                  <input
+                    id="outbound-end-user"
+                    type="text"
+                    list="outbound-end-user-list"
+                    placeholder="最終使用者（可與客戶不同）..."
+                    value={header.end_user || ''}
+                    onChange={e => setHeader({ ...header, end_user: e.target.value })}
+                  />
+                  <datalist id="outbound-end-user-list">
+                    {endUserOptions.map((eu) => <option key={eu} value={eu} />)}
+                  </datalist>
                 </div>
               </div>
             </div>
