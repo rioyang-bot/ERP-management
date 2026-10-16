@@ -213,6 +213,11 @@
       "file": "migration_mounted_hw_status_sync.sql",
       "type": "data",
       "note": "搭載硬體的狀態對齊所掛的設備（設備已出貨、硬體還在庫等不一致）"
+    },
+    {
+      "file": "migration_customer_exchange.sql",
+      "type": "schema",
+      "note": "客戶換貨單：換回的良品回在庫，換出的產生一張已出貨的出貨單"
     }
   ]
 }

@@ -1696,7 +1696,9 @@ export const queries = {
               JOIN assets a ON oi.sn = a.sn 
               WHERE oi.request_id = r.id AND a.custom_attributes->>'project_name' IS NOT NULL 
               LIMIT 1)
-           ) as project_name
+           ) as project_name,
+           -- 換貨單自動產生的出貨單，列表上標出來源
+           (SELECT e.exchange_no FROM exchange_orders e WHERE e.outbound_request_id = r.id LIMIT 1) as exchange_no
     FROM outbound_requests r
     LEFT JOIN users u ON r.creator_id = u.id
     WHERE COALESCE(r.request_type, 'SALE') <> 'LEND'
@@ -2148,6 +2150,8 @@ export const queries = {
       -- 不能直接用 summary LIKE '%RMA%'：維修單號本身就叫 RMA-20260918-01，
       -- 「建立維修單 [RMA-...]」會被誤判成原廠換機。
       CASE
+        -- 客戶換貨換回的（見 utils/customerExchange.js）
+        WHEN l.details->>'exchange' = 'IN' THEN 'EXCHANGE_RETURN'
         -- 序號變更由 details.snChanged 判定，不靠敘述比對。
         -- 舊資料沒有這個旗標，補一段文字比對涵蓋既有紀錄。
         WHEN l.details->>'snChanged' = 'true' THEN 'SN_CHANGE'
@@ -2191,6 +2195,7 @@ export const queries = {
     -- 裡面可能是任何東西，轉型會讓整張履歷查詢在遇到一筆爛資料時直接失敗。
     SELECT
       CASE
+        WHEN l.details->>'exchange' = 'IN' THEN 'EXCHANGE_RETURN'
         WHEN l.details->>'direction' IN ('TO_LAB', 'TO_STOCK') THEN 'LAB_TRANSFER'
         ELSE 'ADJUST'
       END as transaction_type,
@@ -2571,6 +2576,84 @@ export const queries = {
     FROM assets h
     WHERE TRIM(LOWER(h.custom_attributes->>'server_sn')) = TRIM(LOWER($2))
     RETURNING id`,
+
+  // --- 客戶換貨單（見 utils/customerExchange.js） -------------------------------
+  // 換回的良品回在庫、換出的產生一張已出貨的出貨單；換回的不開進貨單。
+
+  countExchangeOrders: `WITH seqs AS (SELECT CAST(SUBSTRING(exchange_no FROM '-([0-9]+)$') AS INTEGER) as sq FROM exchange_orders WHERE exchange_no LIKE $1 || '%') SELECT s.val as count FROM generate_series(1, 1000) as s(val) WHERE NOT EXISTS (SELECT 1 FROM seqs WHERE seqs.sq = s.val) ORDER BY s.val ASC LIMIT 1`,
+  insertExchangeOrder: `
+    INSERT INTO exchange_orders (exchange_no, customer, exchange_date, reason, remarks, creator_id, outbound_request_id, dn_no)
+    VALUES ($1, $2, $3::date, $4, $5, $6, $7::integer, $8)
+    RETURNING id`,
+  insertExchangeItem: `
+    INSERT INTO exchange_items (exchange_id, direction, item_id, asset_id, sn, quantity)
+    VALUES ($1::integer, $2, $3::integer, $4::integer, $5, $6::integer)
+    RETURNING id`,
+  fetchExchangeOrders: `
+    SELECT e.*, u.full_name AS creator_name,
+      COALESCE((
+        SELECT json_agg(json_build_object(
+          'direction', x.direction, 'sn', x.sn, 'quantity', x.quantity, 'item_id', x.item_id,
+          'brand', im.brand, 'type', im.type, 'model', im.model, 'specification', im.specification,
+          'category_name', c.name) ORDER BY x.direction DESC, x.id)
+        FROM exchange_items x
+        LEFT JOIN item_master im ON im.id = x.item_id
+        LEFT JOIN categories c ON c.id = im.category_id
+        WHERE x.exchange_id = e.id
+      ), '[]'::json) AS items
+    FROM exchange_orders e
+    LEFT JOIN users u ON u.id = e.creator_id
+    ORDER BY e.exchange_date DESC, e.id DESC`,
+  // 換出：在庫、沒有掛在別台設備上的資產。掛了耗材的設備要走一般出貨單（掛載耗材要一起出、從 LAB 扣）
+  fetchExchangeStockAssets: `
+    SELECT a.id, a.sn, a.item_master_id, a.location, COALESCE(c.name, '硬體') AS category_name,
+           i.brand, i.type, i.model, i.specification,
+           (SELECT COUNT(*) FROM assets h WHERE TRIM(LOWER(h.custom_attributes->>'server_sn')) = TRIM(LOWER(a.sn)))::int AS mounted_count,
+           (SELECT COALESCE(SUM(la.quantity), 0) FROM item_lab_assignments la WHERE la.asset_id = a.id)::int AS mounted_consumables
+    FROM assets a
+    JOIN item_master i ON i.id = a.item_master_id
+    LEFT JOIN categories c ON c.id = i.category_id
+    WHERE a.status = 'ACTIVE' AND a.sn IS NOT NULL AND TRIM(a.sn) <> ''
+      AND COALESCE(TRIM(a.custom_attributes->>'server_sn'), '') = ''
+    ORDER BY c.name, i.brand, i.model, a.sn`,
+  // 換回：這位客戶手上（已出貨）的資產。掛在設備上的硬體不單獨列，要先從設備卸下
+  fetchCustomerShippedAssets: `
+    SELECT a.id, a.sn, a.item_master_id, a.location, COALESCE(c.name, '硬體') AS category_name,
+           i.brand, i.type, i.model, i.specification,
+           (SELECT COUNT(*) FROM assets h WHERE TRIM(LOWER(h.custom_attributes->>'server_sn')) = TRIM(LOWER(a.sn)))::int AS mounted_count
+    FROM assets a
+    JOIN item_master i ON i.id = a.item_master_id
+    LEFT JOIN categories c ON c.id = i.category_id
+    WHERE a.status = 'SHIPPED' AND TRIM(LOWER(COALESCE(a.client, ''))) = TRIM(LOWER($1))
+      AND a.sn IS NOT NULL AND TRIM(a.sn) <> ''
+      AND COALESCE(TRIM(a.custom_attributes->>'server_sn'), '') = ''
+    ORDER BY c.name, i.brand, i.model, a.sn`,
+  // 換出的資產：在庫才能出（被別人搶先出貨就 0 筆，整筆交易回滾）
+  exchangeShipAsset: `
+    UPDATE assets a SET status = 'SHIPPED', client = $2, location = $3,
+      installed_date = $4::date, shipping_date = $4::date,
+      custom_attributes = COALESCE(a.custom_attributes, '{}'::jsonb) || jsonb_build_object('exchange_no', $5::text),
+      updated_at = CURRENT_TIMESTAMP
+    FROM assets prev
+    WHERE prev.id = a.id AND a.id = $1::integer AND a.status = 'ACTIVE'
+    RETURNING a.id, a.sn, prev.status AS old_status`,
+  // 換出設備上的搭載硬體一起帶入客戶、地點與日期（狀態由 syncMountedHardwareToDevice 跟上）
+  exchangeShipMounted: `
+    UPDATE assets h SET client = $2, location = $3, installed_date = $4::date, shipping_date = $4::date,
+      updated_at = CURRENT_TIMESTAMP
+    WHERE TRIM(LOWER(h.custom_attributes->>'server_sn')) = TRIM(LOWER($1))
+    RETURNING h.id`,
+  // 換回的資產：已出貨才能收回，回到在庫，客戶、地點、出貨日期與專案清空
+  exchangeReturnAsset: `
+    UPDATE assets a SET status = 'ACTIVE', client = NULL, end_user = NULL, location = NULL, shipping_date = NULL,
+      custom_attributes = (COALESCE(a.custom_attributes, '{}'::jsonb) - 'project_name' - 'end_user')
+        || jsonb_build_object('exchange_no', $2::text, 'exchange_date', $3::text),
+      updated_at = CURRENT_TIMESTAMP
+    FROM assets prev
+    WHERE prev.id = a.id AND a.id = $1::integer AND a.status = 'SHIPPED'
+    RETURNING a.id, a.sn, prev.status AS old_status`,
+  // 換回的耗材：良品直接加回在庫
+  exchangeReturnConsumable: `UPDATE item_master SET stock_qty = COALESCE(stock_qty, 0) + $1 WHERE id = $2 RETURNING id`,
 
   fetchRepairOrderItems: `
     SELECT ri.*, a.status as asset_status, a.client, a.hostname, a.location

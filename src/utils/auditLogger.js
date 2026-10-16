@@ -18,6 +18,8 @@ export const MODULE_MAP = {
   // 維修的紀錄一直都是用 'REPAIR' 寫進去的，但這張表裡沒有它，
   // 事件紀錄上就顯示英文的 REPAIR，模組下拉選單也篩不出來。
   REPAIR: { key: 'REPAIR', label: '維修管理' },
+  // 客戶換貨單（換回的良品回在庫、換出的產生出貨單）
+  EXCHANGE: { key: 'EXCHANGE', label: '客戶換貨' },
   // 主檔整併這類資料維護工具用的模組，理由同上
   SYSTEM_SETTINGS: { key: 'SYSTEM_SETTINGS', label: '系統維護' }
 };

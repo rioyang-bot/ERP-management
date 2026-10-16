@@ -67,6 +67,8 @@ const ItemLedgerModal = ({ isOpen, onClose, item }) => {
         return { label: '原廠換機', icon: <Repeat size={14} />, color: '#0ea5e9', bg: 'rgba(14, 165, 233, 0.15)' };
       case 'SCRAP':
         return { label: '報廢', icon: <Trash2 size={14} />, color: '#ef4444', bg: 'rgba(239, 68, 68, 0.15)' };
+      case 'EXCHANGE_RETURN':
+        return { label: '客戶換貨退回', icon: <Repeat size={14} />, color: '#6366f1', bg: 'rgba(99, 102, 241, 0.15)' };
       case 'RETURN_STOCK':
         return { label: '回到在庫', icon: <PackageCheck size={14} />, color: '#10b981', bg: 'rgba(16, 185, 129, 0.15)' };
       case 'LAB_TRANSFER':
