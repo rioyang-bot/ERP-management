@@ -223,6 +223,11 @@
       "file": "migration_outbound_end_user.sql",
       "type": "schema",
       "note": "出貨單新增 End-user 欄位，建單時寫入單上設備／硬體的 End-user"
+    },
+    {
+      "file": "migration_lent_print_draft.sql",
+      "type": "schema",
+      "note": "借貨申請單預覽修改後可儲存，關閉再打開仍保留"
     }
   ]
 }

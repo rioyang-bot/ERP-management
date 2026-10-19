@@ -1642,6 +1642,11 @@ export const queries = {
   migrateOutboundProjectName: `ALTER TABLE outbound_requests ADD COLUMN IF NOT EXISTS project_name VARCHAR(100);`,
   updateAssetProjectAndClientBySn: `UPDATE assets SET custom_attributes = jsonb_set(COALESCE(custom_attributes, '{}'::jsonb), '{project_name}', to_jsonb($1::text)), client = COALESCE($2, client) WHERE sn IS NOT NULL AND TRIM(sn) = TRIM($3)`,
   updateMountedHardwareProjectAndClient: `UPDATE assets SET custom_attributes = jsonb_set(COALESCE(custom_attributes, '{}'::jsonb), '{project_name}', to_jsonb($1::text)), client = COALESCE($2, client) WHERE custom_attributes->>'server_sn' IS NOT NULL AND TRIM(custom_attributes->>'server_sn') = TRIM($3)`,
+  // 借貨申請單預覽裡修改並儲存的內容（見 utils/lentPrintDraft.js）。
+  // 以物件傳入：伺服器的參數過濾只處理字串，物件原樣轉成 JSON，注意事項裡的 ( ) ! 等字元才不會被刪掉
+  fetchLentPrintDraft: `SELECT print_draft FROM outbound_requests WHERE id = $1::integer`,
+  saveLentPrintDraft: `UPDATE outbound_requests SET print_draft = $1::jsonb WHERE id = $2::integer RETURNING id`,
+  clearLentPrintDraft: `UPDATE outbound_requests SET print_draft = NULL WHERE id = $1::integer RETURNING id`,
   // 出貨單的 End-user：單頭記一份，單上的設備／硬體（含搭載的硬體）寫入資產的 End-user。
   // 資產的 End-user 有欄位與 custom_attributes 兩處（設備列表先讀欄位），兩處一起寫才不會顯示舊值。
   updateOutboundRequestEndUser: `UPDATE outbound_requests SET end_user = NULLIF(TRIM($1), '') WHERE id = $2::integer RETURNING id`,
