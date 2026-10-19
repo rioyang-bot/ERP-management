@@ -8,10 +8,13 @@
  * 因此在表格上方補一行總數與狀態分佈。拆狀態是因為「這位客戶有幾台」
  * 通常問的是已經出給客戶的，跟還在自家庫房的混在一起意義不同。
  */
+import { isInLab } from './cardAggregation';
 
 /** 狀態的顯示順序與樣式。與列表內既有的狀態標籤一致。 */
 export const STATUS_SUMMARY_GROUPS = [
   { key: 'ACTIVE', label: '在庫', color: '#047857' },
+  // 已掛在設備上、設備還沒出貨的硬體：狀態也是在庫，但不是可動用的，跟卡片一樣另列 LAB
+  { key: 'LAB', label: 'LAB', color: '#8b5cf6' },
   { key: 'SHIPPED', label: '已出貨', color: '#1d4ed8' },
   { key: 'LENT', label: '借出', color: '#b45309' },
   // 硬體那邊的舊資料有用 REPAIR 的，兩種都算同一組
@@ -40,7 +43,8 @@ export function summariseByStatus(items) {
     const group = STATUS_SUMMARY_GROUPS.find(
       (g) => g.key === status || (g.aliases || []).includes(status)
     );
-    const key = group ? group.key : OTHER.key;
+    // 在庫但已掛載（見 cardAggregation 的 isInLab）算 LAB，在庫只剩真正可動用的
+    const key = group?.key === 'ACTIVE' && isInLab(item) ? 'LAB' : group ? group.key : OTHER.key;
     counts.set(key, (counts.get(key) || 0) + 1);
   }
 

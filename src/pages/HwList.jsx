@@ -9,7 +9,7 @@ import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 import FilterResultSummary from '../components/common/FilterResultSummary';
 import { parseSearchQuery, matchesSearchQuery, SEARCH_PLACEHOLDER } from '../utils/searchQuery';
-import { isItemRetired, getItemAggregationKey, aggregateCards, computeNewRetiredKeys, getCardTitle, showsModelSubtitle, getCardSearchText, ASSET_AGGREGATION_MODES } from '../utils/cardAggregation';
+import { isItemRetired, getItemAggregationKey, aggregateCards, computeNewRetiredKeys, getCardTitle, showsModelSubtitle, ASSET_AGGREGATION_MODES } from '../utils/cardAggregation';
 import ColumnVisibilityModal from '../components/ColumnVisibilityModal';
 import CardAggregationLegend from '../components/CardAggregationLegend';
 import { isFullyOutOfWarranty } from '../utils/warranty';
@@ -490,6 +490,21 @@ const HwList = ({ isSplitMode = false }) => {
   // 排序用的基準日：整次排序共用同一個，避免跨午夜時前後比較不一致
   const sortToday = new Date();
 
+  // 搜尋條件比對單筆硬體。表格與上方卡片共用：搜尋時卡片只統計符合的那幾筆，
+  // 數字才會跟下面的清單對得上（先前卡片比對的是整張卡的類型／型號，數的卻是全部）
+  const searchGroups = parseSearchQuery(searchTerm);
+  const matchesSearch = (n) => searchGroups.length === 0 || matchesSearchQuery(searchGroups, term =>
+    (n.sn || '').toLowerCase().includes(term) ||
+    (n.brand || '').toLowerCase().includes(term) ||
+    (n.type || '').toLowerCase().includes(term) ||
+    (n.model || '').toLowerCase().includes(term) ||
+    (n.specification || '').toLowerCase().includes(term) ||
+    (n.client || n.server_client || '').toLowerCase().includes(term) ||
+    (n.end_user || n.custom_attributes?.end_user || n.server_end_user || '').toLowerCase().includes(term) ||
+    (n.custom_attributes?.order_source || '').toLowerCase().includes(term) ||
+    (n.server_sn || n.custom_attributes?.server_sn || '').toLowerCase().includes(term)
+  );
+
   const filteredNics = nics
     .filter(n => {
       if (selectedCardKey) {
@@ -499,18 +514,7 @@ const HwList = ({ isSplitMode = false }) => {
         const itemRetired = isItemRetired(n, retiredKeys);
         if (itemKey !== targetKey || itemRetired !== isTargetRetired) return false;
       }
-      const searchGroups = parseSearchQuery(searchTerm);
-      if (searchGroups.length === 0) return true;
-      return matchesSearchQuery(searchGroups, term => 
-        (n.sn || '').toLowerCase().includes(term) ||
-        (n.brand || '').toLowerCase().includes(term) ||
-        (n.model || '').toLowerCase().includes(term) ||
-        (n.specification || '').toLowerCase().includes(term) ||
-        (n.client || n.server_client || '').toLowerCase().includes(term) ||
-        (n.end_user || n.custom_attributes?.end_user || n.server_end_user || '').toLowerCase().includes(term) ||
-        (n.custom_attributes?.order_source || '').toLowerCase().includes(term) ||
-        (n.server_sn || n.custom_attributes?.server_sn || '').toLowerCase().includes(term)
-      );
+      return matchesSearch(n);
     })
     .sort((a, b) => {
       // 第一排序：狀態
@@ -664,7 +668,9 @@ const HwList = ({ isSplitMode = false }) => {
   );
 
   const renderStats = () => {
-    const { activeStatsMap, retiredStatsMap } = aggregateCards(nics, aggregationMode, retiredKeys);
+    // 有搜尋時，卡片只統計符合搜尋的硬體（例如搜 Z890，MOTHERBOARD 卡片只數 Z890 的那幾片）
+    const isSearching = searchGroups.length > 0;
+    const { activeStatsMap, retiredStatsMap } = aggregateCards(isSearching ? nics.filter(matchesSearch) : nics, aggregationMode, retiredKeys);
     const activeKeys = Object.keys(activeStatsMap);
     const retiredList = Object.values(retiredStatsMap);
 
@@ -723,16 +729,14 @@ const HwList = ({ isSplitMode = false }) => {
 
     // --- 過濾模式：卡片置頂靠左 ---
     if (filterType || searchTerm || selectedCardKey) {
-      const searchGroups = parseSearchQuery(searchTerm);
+      // 搜尋已經在統計前套到每一筆硬體上，留下來的卡片就是有符合的
       const filterCard = (st) => {
         if (selectedCardKey) {
           const cardId = st.isRetired ? `${st.key}:::RETIRED` : st.key;
           if (cardId !== selectedCardKey) return false;
         }
         if (filterType && st.type !== filterType) return false;
-        if (searchGroups.length === 0) return true;
-        const target = getCardSearchText(st);
-        return matchesSearchQuery(searchGroups, t => target.includes(t));
+        return true;
       };
 
       const activeMatches = Object.values(activeStatsMap).filter(filterCard);
@@ -742,6 +746,11 @@ const HwList = ({ isSplitMode = false }) => {
         <div style={{ position: 'relative' }}>
           {activeMatches.length > 0 && (
             <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '24px', padding: '16px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '16px', border: '1px solid var(--border-color)' }}>
+              {isSearching && (
+                <div data-testid="hw-cards-search-hint" style={{ width: '100%', fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)' }}>
+                  卡片數量依搜尋「{searchTerm.trim()}」統計，只算符合的硬體
+                </div>
+              )}
               {activeMatches.map(st => {
                 const isSelected = selectedCardKey === st.key;
                 return (
