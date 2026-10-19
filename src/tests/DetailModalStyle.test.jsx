@@ -78,7 +78,8 @@ const skeleton = (modal) => ({
   badge: !!modal.querySelector('.dm-title .dm-badge'),
   meta: modal.querySelector('.dm-meta')?.textContent.includes('建立時間'),
   close: modal.querySelector('.dm-header .dm-close')?.textContent,
-  summary: modal.querySelectorAll('.dm-body > .dm-summary .dm-summary-item').length,
+  // 欄位數各自不同（出貨單多了 End-user），這裡只看是不是用同一套資訊列
+  summary: modal.querySelectorAll('.dm-body > .dm-summary .dm-summary-item').length >= 3,
   table: !!modal.querySelector('.dm-section .dm-items-container table.dm-items-table'),
   sectionTitle: !!modal.querySelector('.dm-section-title'),
   block: !!modal.querySelector('.dm-body > .dm-block .dm-block-title'),
@@ -92,9 +93,12 @@ describe('進貨單明細與出貨單明細的風格', () => {
     const dn = skeleton(await openDN());
     expect(inbound).toEqual(dn);
     expect(dn).toEqual({
-      header: true, badge: true, meta: true, close: '✕ 關閉', summary: 3,
+      header: true, badge: true, meta: true, close: '✕ 關閉', summary: true,
       table: true, sectionTitle: true, block: true, footerButtons: true,
     });
+    // 出貨單：客戶、出貨日期、出貨地點、End-user
+    expect([...document.querySelectorAll('.dm-body > .dm-summary .dm-summary-label')].map((el) => el.textContent))
+      .toEqual(['客戶對象:', '出貨日期:', '出貨地點:', 'End-user:']);
   });
 
   it('進貨單明細：標題、狀態、資訊列', async () => {
