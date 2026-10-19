@@ -4,6 +4,7 @@ import {
   Printer, Paperclip, Upload, FileCheck, ExternalLink, X, Pencil, Clock, CheckCircle, Repeat, FileSpreadsheet
 } from 'lucide-react';
 import { buildDnSheet, downloadSheet } from '../utils/detailExcel';
+import { fixDnLocation } from '../utils/dnLocationFix';
 import ExchangeOrderList from '../components/ExchangeOrderList';
 import { logStatusChange, logDelete, logUpdate } from '../utils/auditLogger';
 import { createHwSyncTracker } from '../utils/mountedHwSync';
@@ -166,8 +167,36 @@ const DNList = ({ isSplitMode = false }) => {
     }
   };
 
+  // 更正出貨地點：null 代表沒在改
+  const [locationEdit, setLocationEdit] = useState(null);
+  const [locationSaving, setLocationSaving] = useState(false);
+
+  const handleFixLocation = async () => {
+    const next = (locationEdit ?? '').trim();
+    const before = (selectedDN.location || '').trim();
+    if (next === before) { setLocationEdit(null); return; }
+    if (!window.confirm(
+      `確定把出貨單 [${selectedDN.request_no}] 的出貨地點改成「${next || '（空白）'}」嗎？\n\n`
+      + `品項的發送位置（原本是「${before || '（空白）'}」的）與單上已出貨資產的地點會一起更正。`
+    )) return;
+    setLocationSaving(true);
+    try {
+      const { itemsUpdated, assetSns } = await fixDnLocation(selectedDN, next);
+      setSelectedDN((prev) => ({ ...prev, location: next }));
+      setDnItems((prev) => prev.map((it) => ((it.location || '').trim() === before ? { ...it, location: next } : it)));
+      setLocationEdit(null);
+      fetchRecords();
+      alert(`已更正出貨地點。\n品項發送位置 ${itemsUpdated} 筆${assetSns.length ? `、資產 ${assetSns.length} 件` : ''}一起更新。`);
+    } catch (err) {
+      alert('更正失敗：' + err.message);
+    } finally {
+      setLocationSaving(false);
+    }
+  };
+
   const handleViewDetails = async (dn) => {
     setSelectedDN(dn);
+    setLocationEdit(null);
     setIsModalOpen(true);
     setIsDetailLoading(true);
     try {
@@ -771,7 +800,37 @@ const DNList = ({ isSplitMode = false }) => {
                 </div>
                 <div className="dm-summary-item">
                   <span className="dm-summary-label">出貨地點:</span>
-                  <span className="dm-summary-value">{selectedDN.location || '-'}</span>
+                  {/* 已出貨也能更正地點（只改地點，不動品項與庫存；見 utils/dnLocationFix.js） */}
+                  {locationEdit !== null ? (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                      <input
+                        type="text"
+                        value={locationEdit}
+                        onChange={(e) => setLocationEdit(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') handleFixLocation(); if (e.key === 'Escape') setLocationEdit(null); }}
+                        aria-label="更正出貨地點"
+                        autoFocus
+                        style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', fontSize: '0.85rem', width: '220px' }}
+                      />
+                      <button type="button" onClick={handleFixLocation} disabled={locationSaving} aria-label="儲存出貨地點"
+                        style={{ padding: '3px 10px', borderRadius: '6px', border: 'none', backgroundColor: '#10b981', color: '#fff', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}>
+                        {locationSaving ? '儲存中...' : '儲存'}
+                      </button>
+                      <button type="button" onClick={() => setLocationEdit(null)} disabled={locationSaving} aria-label="取消更正出貨地點"
+                        style={{ padding: '3px 8px', borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-muted)', fontSize: '0.75rem', cursor: 'pointer' }}>
+                        取消
+                      </button>
+                    </span>
+                  ) : (
+                    <span className="dm-summary-value" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                      {selectedDN.location || '-'}
+                      <button type="button" onClick={() => setLocationEdit(selectedDN.location || '')}
+                        title="更正出貨地點（已出貨也能改，品項的發送位置與單上資產的地點一起更正）" aria-label="更正出貨地點"
+                        style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '20px', height: '20px', padding: 0, borderRadius: '5px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: '#f59e0b', cursor: 'pointer' }}>
+                        <Pencil size={11} />
+                      </button>
+                    </span>
+                  )}
                 </div>
                 {selectedDN.end_user && (
                   <div className="dm-summary-item">
