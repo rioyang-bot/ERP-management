@@ -58,13 +58,33 @@ describe('依狀態統計', () => {
     expect(summariseByStatus(null)).toEqual({ total: 0, groups: [] });
   });
 
-  it('顯示順序固定：在庫、已出貨、借出、維修中、待報廢、報廢', () => {
-    const { groups } = summariseByStatus(
-      items('SCRAPPED', 'REPAIRING', 'SHIPPED', 'PENDING_SCRAP', 'LENT', 'ACTIVE')
-    );
+  it('顯示順序固定：在庫、LAB、已出貨、借出、維修中、待報廢、報廢', () => {
+    const { groups } = summariseByStatus([
+      ...items('SCRAPPED', 'REPAIRING', 'SHIPPED', 'PENDING_SCRAP', 'LENT', 'ACTIVE'),
+      { status: 'ACTIVE', server_sn: 'SRV-1' },
+    ]);
     expect(groups.map((g) => g.label)).toEqual(
       STATUS_SUMMARY_GROUPS.map((g) => g.label)
     );
+  });
+
+  /** 已掛在設備上、設備還沒出貨的硬體：跟卡片一樣另列 LAB，在庫只剩可動用的 */
+  it('在庫但已掛載的算 LAB；總數不變', () => {
+    const { total, groups } = summariseByStatus([
+      { status: 'ACTIVE' },
+      { status: 'ACTIVE', server_sn: 'SRV-1' },
+      { status: 'ACTIVE', custom_attributes: { server_sn: 'SRV-2' } },
+      { status: 'ACTIVE', custom_attributes: '{"server_sn":"SRV-3"}' },
+      // 掛著但設備已出貨：算已出貨，不是 LAB
+      { status: 'SHIPPED', server_sn: 'SRV-4' },
+    ]);
+    expect(total).toBe(5);
+    expect(groups.map((g) => [g.label, g.count])).toEqual([['在庫', 1], ['LAB', 3], ['已出貨', 1]]);
+  });
+
+  it('server_sn 是空白的不算掛載（設備列表的資料沒有掛載，照舊算在庫）', () => {
+    const { groups } = summariseByStatus([{ status: 'ACTIVE', server_sn: '  ' }, { status: 'ACTIVE', custom_attributes: {} }]);
+    expect(groups.map((g) => [g.label, g.count])).toEqual([['在庫', 2]]);
   });
 });
 
