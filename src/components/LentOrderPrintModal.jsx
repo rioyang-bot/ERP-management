@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Printer, Download, X, Check, RefreshCw, Building, Image as ImageIcon, FileText, Loader2, Settings, Handshake } from 'lucide-react';
+import { Printer, Download, X, Check, RefreshCw, Building, Image as ImageIcon, FileText, Loader2, Settings, Handshake, Save, RotateCcw } from 'lucide-react';
+import { logUpdate } from '../utils/auditLogger';
+import { toDraft, fromDraft, sameForm, changedFields, FIELD_LABELS } from '../utils/lentPrintDraft';
 import html2canvas from 'html2canvas';
 import { getCompanyPresets, loadCompanyPresets, DEFAULT_BUILTIN_PRESETS } from '../utils/companyPresets';
 import CompanyPresetModal from './CompanyPresetModal';
@@ -26,6 +28,61 @@ const formatDateDot = (dateStr) => {
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${year}.${month}.${day}`;
+};
+
+/**
+ * 依借用單產生的預設內容（沒有儲存過、或還原預設時用這份）。
+ * 客戶聯絡資訊之後再由客戶主檔補足。
+ */
+const buildDefaultForm = (dnData, items) => {
+  const companyName = dnData.customer || '';
+
+  // 聯絡人、電話剖析：支援 "David (0918-xxx)" 或 "David 0918-xxx" 格式
+  let parsedContact = '';
+  let parsedPhone = '';
+  if (dnData.contact_info) {
+    const parts = dnData.contact_info.split(/[()/\-–]/).map(s => s.trim()).filter(Boolean);
+    if (parts.length >= 2) {
+      parsedContact = parts[0];
+      parsedPhone = parts.slice(1).join('-');
+    } else {
+      parsedContact = dnData.contact_info;
+    }
+  }
+
+  const shippingDateStr = formatDateDot(dnData.shipping_date);
+  const returnDateStr = formatDateDot(dnData.expected_return_date);
+  const rows = (items || []).map(item => ({
+    model: [item.brand, item.model].filter(Boolean).join(' ') || item.model || '',
+    sn: item.sn || '--',
+    purpose: item.purpose || '運作測試',
+    loanDate: shippingDateStr,
+    returnDate: returnDateStr,
+    remarks: item.specification || ''
+  }));
+  // 至少補足至 5 列以維持 A4 排版標準
+  while (rows.length < 5) {
+    rows.push({ model: '', sn: '', purpose: '', loanDate: '', returnDate: '', remarks: '' });
+  }
+
+  return {
+    selectedPreset: 'PRESET_A',
+    headerLayout: 'STANDARD',
+    // 頁首公司資訊照公司範本帶入（undefined 才會用範本的）
+    headerRightText: undefined,
+    customLogo: null,
+    // 經銷商區不屬於公司範本：沒選經銷商之前一律留空
+    selectedDealerId: '', dealerName: '', dealerSales: '', dealerPhone: '', dealerAddress: '',
+    applyCompany: companyName,
+    applyDate: shippingDateStr || formatDateDot(new Date()),
+    custCompany: companyName,
+    custPerson: parsedContact,
+    custPhone: parsedPhone,
+    custAddress: dnData.location || '',
+    tableRows: rows,
+    termsList: DEFAULT_TERMS,
+    footerWarnings: DEFAULT_FOOTER_WARNINGS,
+  };
 };
 
 const LentOrderPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
@@ -73,85 +130,137 @@ const LentOrderPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
 
   const fileInputRef = useRef(null);
 
-  // 初始化與資料載入
+  // 存過的內容：最後一次儲存（或打開時讀到）的那一份，用來判斷有沒有未儲存的修改
+  const [savedForm, setSavedForm] = useState(null);
+  const [hasSavedDraft, setHasSavedDraft] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  // 換過 LOGO 才把它存進去；照範本帶入的不用存
+  const [logoCustom, setLogoCustom] = useState(false);
+
+  /** 畫面上目前的內容（要存的那些欄位） */
+  const currentForm = {
+    selectedPreset, headerLayout, headerRightText, customLogo: logoCustom ? currentLogo : null,
+    selectedDealerId, dealerName, dealerSales, dealerPhone, dealerAddress,
+    applyCompany, applyDate, custCompany, custPerson, custPhone, custAddress,
+    tableRows, termsList, footerWarnings,
+  };
+  const isDirty = !!savedForm && !sameForm(currentForm, savedForm);
+
+  /** 把一份內容套到畫面上 */
+  const applyForm = (f, presets) => {
+    const presetKey = presets?.[f.selectedPreset] ? f.selectedPreset : 'PRESET_A';
+    setSelectedPreset(presetKey);
+    setHeaderLayout(f.headerLayout || 'STANDARD');
+    setHeaderRightText(f.headerRightText ?? presets?.[presetKey]?.headerRight ?? '');
+    setLogoCustom(!!f.customLogo);
+    setCurrentLogo(f.customLogo || presets?.[presetKey]?.logo || logoImg);
+    setSelectedDealerId(f.selectedDealerId || '');
+    setDealerName(f.dealerName || '');
+    setDealerSales(f.dealerSales || '');
+    setDealerPhone(f.dealerPhone || '');
+    setDealerAddress(f.dealerAddress || '');
+    setApplyCompany(f.applyCompany || '');
+    setApplyDate(f.applyDate || '');
+    setCustCompany(f.custCompany || '');
+    setCustPerson(f.custPerson || '');
+    setCustPhone(f.custPhone || '');
+    setCustAddress(f.custAddress || '');
+    setTableRows(f.tableRows || []);
+    setTermsList(f.termsList || DEFAULT_TERMS);
+    setFooterWarnings(f.footerWarnings || DEFAULT_FOOTER_WARNINGS);
+  };
+
+  // 初始化與資料載入：預設內容 → 公司範本 → 客戶主檔補聯絡資訊 → 存過的內容（最後套用，以它為準）
   useEffect(() => {
     if (!isOpen || !dnData) return;
+    let cancelled = false;
+    // 讀取完成前先放預設內容，畫面不會空白
+    const base = buildDefaultForm(dnData, items);
+    applyForm(base, getCompanyPresets());
+    setSavedForm(null);
+    setHasSavedDraft(false);
 
-    // 1. 設定申請公司；經銷商區留空，等使用者挑選經銷商
-    const companyName = dnData.customer || '';
-    setApplyCompany(companyName);
-    setCustCompany(companyName);
-    setApplyDate(formatDateDot(dnData.shipping_date) || formatDateDot(new Date()));
-    setDealerName('');
-    setDealerSales('');
-    setDealerPhone('');
-    setDealerAddress('');
+    (async () => {
+      const api = window.electronAPI;
+      const [presets, customers, draftRes] = await Promise.all([
+        loadCompanyPresets(),
+        api?.namedQuery ? api.namedQuery('fetchCustomers').catch((err) => { console.error('Load customer details error:', err); return null; }) : null,
+        api?.namedQuery && dnData.id ? api.namedQuery('fetchLentPrintDraft', [dnData.id]).catch(() => null) : null,
+      ]);
+      if (cancelled) return;
+      setPresetsMap(presets);
 
-    // 2. 聯絡人、電話、地址剖析
-    let parsedContact = '';
-    let parsedPhone = '';
-    if (dnData.contact_info) {
-      // 支援 "David (0918-xxx)" 或 "David 0918-xxx" 格式
-      const parts = dnData.contact_info.split(/[()/\-–]/).map(s => s.trim()).filter(Boolean);
-      if (parts.length >= 2) {
-        parsedContact = parts[0];
-        parsedPhone = parts.slice(1).join('-');
-      } else {
-        parsedContact = dnData.contact_info;
-      }
-    }
-    setCustPerson(parsedContact);
-    setCustPhone(parsedPhone);
-    setCustAddress(dnData.location || '');
-
-    // 3. 嘗試由資料庫查詢該客戶最新完整主檔補足聯絡人與地址
-    if (window.electronAPI && window.electronAPI.namedQuery) {
-      window.electronAPI.namedQuery('fetchCustomers')
-        .then(res => {
-          if (res.success && res.rows) {
-            const matched = res.rows.find(c => c.name === companyName);
-            if (matched) {
-              // fetchCustomers 回傳的欄位叫 contact（contact_person AS contact）
-              if (matched.contact) setCustPerson(matched.contact);
-              if (matched.phone) setCustPhone(matched.phone);
-              if (matched.address) setCustAddress(matched.address);
-            }
-          }
-        })
-        .catch(err => console.error('Load customer details error:', err));
-    }
-
-    // 4. 明細列處理
-    const shippingDateStr = formatDateDot(dnData.shipping_date);
-    const returnDateStr = formatDateDot(dnData.expected_return_date);
-
-    const formattedItems = (items || []).map(item => {
-      const modelText = [item.brand, item.model].filter(Boolean).join(' ') || item.model || '';
-      return {
-        model: modelText,
-        sn: item.sn || '--',
-        purpose: item.purpose || '運作測試',
-        loanDate: shippingDateStr,
-        returnDate: returnDateStr,
-        remarks: item.specification || ''
+      // 客戶主檔補足聯絡人、電話與地址（fetchCustomers 回傳的欄位叫 contact）
+      const matched = customers?.success ? (customers.rows || []).find((c) => c.name === base.custCompany) : null;
+      const preset = presets[base.selectedPreset] || presets.PRESET_A;
+      const defaults = {
+        ...base,
+        headerRightText: preset?.headerRight || '',
+        custPerson: matched?.contact || base.custPerson,
+        custPhone: matched?.phone || base.custPhone,
+        custAddress: matched?.address || base.custAddress,
       };
-    });
 
-    // 至少補足至 5 列以維持 A4 排版標準
-    const rows = [...formattedItems];
-    while (rows.length < 5) {
-      rows.push({
-        model: '',
-        sn: '',
-        purpose: '',
-        loanDate: '',
-        returnDate: '',
-        remarks: ''
-      });
-    }
-    setTableRows(rows);
-
+      const saved = fromDraft(draftRes?.success ? draftRes.rows?.[0]?.print_draft : null);
+      const form = saved ? { ...defaults, ...saved } : defaults;
+      applyForm(form, presets);
+      setSavedForm({ ...form, customLogo: form.customLogo || null });
+      setHasSavedDraft(!!saved);
+    })();
+    return () => { cancelled = true; };
   }, [isOpen, dnData, items]);
+
+  /** 儲存：存回這張借用單，關掉再打開會照這份顯示 */
+  const handleSaveDraft = async () => {
+    if (!dnData?.id) return;
+    setIsSaving(true);
+    try {
+      const draft = toDraft(currentForm);
+      const res = await window.electronAPI.namedQuery('saveLentPrintDraft', [draft, dnData.id]);
+      if (!res?.success || !res.rows?.length) throw new Error(res?.error || '找不到這張借用單');
+      const changed = changedFields(savedForm, currentForm);
+      await logUpdate('LENT', dnData.request_no, dnData.customer || '借用單',
+        `儲存借貨申請單 [${dnData.request_no}] 的修改：${changed.map((k) => FIELD_LABELS[k]).join('、') || '無變更'}`,
+        { dnId: dnData.id, dnNumber: dnData.request_no, changed, logoDropped: !!currentForm.customLogo && !draft.form.customLogo });
+      setSavedForm({ ...currentForm, customLogo: draft.form.customLogo || null });
+      setHasSavedDraft(true);
+      setIsEditMode(false);
+      if (currentForm.customLogo && !draft.form.customLogo) {
+        alert('已儲存。換過的 LOGO 檔案太大沒有一起存，下次打開會用範本的 LOGO。');
+      }
+    } catch (err) {
+      alert('儲存失敗：' + err.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  /** 還原預設：清掉存過的內容，回到依借用單產生的預設內容 */
+  const handleResetDraft = async () => {
+    if (!window.confirm('確定要還原成預設內容嗎？這張借貨申請單儲存過的修改都會清掉。')) return;
+    try {
+      if (hasSavedDraft && dnData?.id) {
+        const res = await window.electronAPI.namedQuery('clearLentPrintDraft', [dnData.id]);
+        if (!res?.success) throw new Error(res?.error || '未知錯誤');
+        await logUpdate('LENT', dnData.request_no, dnData.customer || '借用單',
+          `借貨申請單 [${dnData.request_no}] 還原為預設內容`, { dnId: dnData.id, dnNumber: dnData.request_no });
+      }
+      const presets = getCompanyPresets();
+      const base = buildDefaultForm(dnData, items);
+      const form = { ...base, headerRightText: presets[base.selectedPreset]?.headerRight || '' };
+      applyForm(form, presets);
+      setSavedForm(form);
+      setHasSavedDraft(false);
+    } catch (err) {
+      alert('還原失敗：' + err.message);
+    }
+  };
+
+  /** 關閉：有未儲存的修改先問 */
+  const handleClose = () => {
+    if (isDirty && !window.confirm('借貨申請單有未儲存的修改，關閉後會遺失。確定要關閉嗎？')) return;
+    onClose();
+  };
 
   // 開啟時讀取經銷商清單
   useEffect(() => {
@@ -172,30 +281,13 @@ const LentOrderPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
     setDealerAddress(dealer?.address || '');
   };
 
-  // 開啟時從伺服器讀取最新範本（所有人共用），並套用目前選的那一個
-  useEffect(() => {
-    if (!isOpen) return;
-    let cancelled = false;
-    loadCompanyPresets().then((allPresets) => {
-      if (cancelled) return;
-      setPresetsMap(allPresets);
-      const key = allPresets[selectedPreset] ? selectedPreset : (allPresets.PRESET_A ? 'PRESET_A' : Object.keys(allPresets)[0]);
-      setSelectedPreset(key);
-      const preset = allPresets[key];
-      if (preset) {
-        setCurrentLogo(preset.logo);
-        setHeaderRightText(preset.headerRight);
-      }
-    });
-    return () => { cancelled = true; };
-  }, [isOpen]);
-
   // 切換公司範本
   const handlePresetChange = (presetKey) => {
     setSelectedPreset(presetKey);
     // 換範本只換頁首與公司資訊，已選的經銷商不受影響
     const preset = presetsMap[presetKey];
     if (preset) {
+      setLogoCustom(false);
       setCurrentLogo(preset.logo);
       setHeaderRightText(preset.headerRight);
     }
@@ -209,6 +301,7 @@ const LentOrderPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
     setSelectedPreset(targetId);
     const activePreset = allPresets[targetId];
     if (activePreset) {
+      setLogoCustom(false);
       setCurrentLogo(activePreset.logo);
       setHeaderRightText(activePreset.headerRight);
     }
@@ -220,6 +313,7 @@ const LentOrderPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
     if (file) {
       const reader = new FileReader();
       reader.onload = (uploadEvent) => {
+        setLogoCustom(true);
         setCurrentLogo(uploadEvent.target.result);
       };
       reader.readAsDataURL(file);
@@ -376,7 +470,7 @@ const LentOrderPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="loan-modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="loan-modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}>
       <div className="loan-modal-container">
         
         {/* 頂部工具列：第一列是標題與主要動作，第二列是單據設定 */}
@@ -386,6 +480,27 @@ const LentOrderPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
               <FileText size={18} color="#60a5fa" /> 借貨申請單預覽
             </span>
             <div className="loan-toolbar-actions">
+              {/* 修改過的內容存回這張借用單，關掉再打開仍保留 */}
+              <span className="loan-save-status" aria-live="polite" style={{ fontSize: '12px', fontWeight: 700, color: isDirty ? '#f59e0b' : '#94a3b8' }}>
+                {isDirty ? '● 有未儲存的修改' : hasSavedDraft ? '已儲存' : ''}
+              </span>
+              <button
+                onClick={handleSaveDraft}
+                disabled={!isDirty || isSaving || !dnData?.id}
+                className="loan-toolbar-btn loan-btn-primary"
+                title="把修改過的內容存回這張借用單，關閉再打開仍保留"
+              >
+                {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                {isSaving ? '儲存中...' : '儲存'}
+              </button>
+              <button
+                onClick={handleResetDraft}
+                disabled={!hasSavedDraft && !isDirty}
+                className="loan-toolbar-btn loan-btn-secondary"
+                title="清掉儲存過的修改，回到依借用單產生的內容"
+              >
+                <RotateCcw size={16} /> 還原預設
+              </button>
               <button
                 onClick={handlePrint}
                 disabled={isPrinting}
@@ -404,7 +519,7 @@ const LentOrderPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
                 {isDownloading ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
                 {isDownloading ? '下載生成中...' : '下載圖檔'}
               </button>
-              <button onClick={onClose} className="loan-toolbar-btn loan-btn-secondary">
+              <button onClick={handleClose} className="loan-toolbar-btn loan-btn-secondary">
                 <X size={16} /> 關閉
               </button>
             </div>
