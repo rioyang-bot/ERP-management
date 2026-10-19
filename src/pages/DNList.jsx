@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { buildDnSheet, downloadSheet } from '../utils/detailExcel';
 import { fixDnLocation } from '../utils/dnLocationFix';
+import { fixDnEndUser, serialItems } from '../utils/dnEndUserFix';
 import ExchangeOrderList from '../components/ExchangeOrderList';
 import { logStatusChange, logDelete, logUpdate } from '../utils/auditLogger';
 import { createHwSyncTracker } from '../utils/mountedHwSync';
@@ -194,9 +195,39 @@ const DNList = ({ isSplitMode = false }) => {
     }
   };
 
+  // 修改 End-user：null 代表沒在改
+  const [endUserEdit, setEndUserEdit] = useState(null);
+  const [endUserSaving, setEndUserSaving] = useState(false);
+
+  const handleFixEndUser = async () => {
+    const next = (endUserEdit ?? '').trim();
+    const before = (selectedDN.end_user || '').trim();
+    if (next === before) { setEndUserEdit(null); return; }
+    const sns = serialItems(dnItems).map((it) => it.sn);
+    if (!window.confirm(
+      `確定把出貨單 [${selectedDN.request_no}] 的 End-user 改成「${next || '（空白）'}」嗎？`
+      + (sns.length
+        ? `\n\n單上的設備／硬體（${sns.join('、')}）與它們搭載的硬體，End-user 會一併覆蓋${next ? '' : '（清空）'}。`
+        : '')
+    )) return;
+    setEndUserSaving(true);
+    try {
+      const { assetSns } = await fixDnEndUser(selectedDN, dnItems, next);
+      setSelectedDN((prev) => ({ ...prev, end_user: next || null }));
+      setEndUserEdit(null);
+      fetchRecords();
+      alert(`已修改 End-user。${assetSns.length ? `\n覆蓋了 ${assetSns.length} 件設備／硬體的 End-user。` : ''}`);
+    } catch (err) {
+      alert('修改失敗：' + err.message);
+    } finally {
+      setEndUserSaving(false);
+    }
+  };
+
   const handleViewDetails = async (dn) => {
     setSelectedDN(dn);
     setLocationEdit(null);
+    setEndUserEdit(null);
     setIsModalOpen(true);
     setIsDetailLoading(true);
     try {
@@ -832,12 +863,40 @@ const DNList = ({ isSplitMode = false }) => {
                     </span>
                   )}
                 </div>
-                {selectedDN.end_user && (
-                  <div className="dm-summary-item">
-                    <span className="dm-summary-label">End-user:</span>
-                    <span className="dm-summary-value">{selectedDN.end_user}</span>
-                  </div>
-                )}
+                {/* End-user：可修改；單上有設備／硬體時一併覆蓋資產的 End-user（見 utils/dnEndUserFix.js） */}
+                <div className="dm-summary-item">
+                  <span className="dm-summary-label">End-user:</span>
+                  {endUserEdit !== null ? (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                      <input
+                        type="text"
+                        value={endUserEdit}
+                        onChange={(e) => setEndUserEdit(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') handleFixEndUser(); if (e.key === 'Escape') setEndUserEdit(null); }}
+                        aria-label="修改 End-user"
+                        autoFocus
+                        style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', fontSize: '0.85rem', width: '180px' }}
+                      />
+                      <button type="button" onClick={handleFixEndUser} disabled={endUserSaving} aria-label="儲存 End-user"
+                        style={{ padding: '3px 10px', borderRadius: '6px', border: 'none', backgroundColor: '#10b981', color: '#fff', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}>
+                        {endUserSaving ? '儲存中...' : '儲存'}
+                      </button>
+                      <button type="button" onClick={() => setEndUserEdit(null)} disabled={endUserSaving} aria-label="取消修改 End-user"
+                        style={{ padding: '3px 8px', borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-muted)', fontSize: '0.75rem', cursor: 'pointer' }}>
+                        取消
+                      </button>
+                    </span>
+                  ) : (
+                    <span className="dm-summary-value" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={selectedDN.end_user ? undefined : { color: 'var(--text-subtle)' }}>{selectedDN.end_user || '-'}</span>
+                      <button type="button" onClick={() => setEndUserEdit(selectedDN.end_user || '')}
+                        title="修改 End-user（單上有設備／硬體時，一併覆蓋它們的 End-user）" aria-label="修改 End-user"
+                        style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '20px', height: '20px', padding: 0, borderRadius: '5px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: '#f59e0b', cursor: 'pointer' }}>
+                        <Pencil size={11} />
+                      </button>
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* 項目清單 */}
