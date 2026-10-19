@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   FileText, Search, Filter, Eye, RefreshCw, AlertCircle, Trash2, Calendar, 
-  Printer, Paperclip, Upload, FileCheck, ExternalLink, X, Pencil, Clock, CheckCircle, Repeat
+  Printer, Paperclip, Upload, FileCheck, ExternalLink, X, Pencil, Clock, CheckCircle, Repeat, FileSpreadsheet
 } from 'lucide-react';
+import { buildDnSheet, downloadSheet } from '../utils/detailExcel';
 import ExchangeOrderList from '../components/ExchangeOrderList';
 import { logStatusChange, logDelete, logUpdate } from '../utils/auditLogger';
 import { createHwSyncTracker } from '../utils/mountedHwSync';
@@ -901,6 +902,16 @@ const DNList = ({ isSplitMode = false }) => {
             </div>
 
             <div className="dm-footer">
+              {/* 單據資訊＋品項下載成 Excel（見 utils/detailExcel.js） */}
+              <button
+                type="button"
+                className="dm-btn dm-btn-outline"
+                onClick={() => downloadSheet(buildDnSheet(selectedDN, dnItems), `出貨單明細_${selectedDN.request_no}`, '出貨單明細')}
+                disabled={isDetailLoading || dnItems.length === 0}
+                title="把這張出貨單的資訊與品項下載成 Excel"
+              >
+                <FileSpreadsheet size={16} /> 下載 Excel
+              </button>
               <button
                 type="button"
                 className="dm-btn dm-btn-success"

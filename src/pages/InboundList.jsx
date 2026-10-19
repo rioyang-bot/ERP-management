@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { ArrowDownToLine, Search, Filter, Eye, RefreshCw, AlertCircle, Trash2, Calendar, Hash, FileText, Plus, Edit2, Save, X, Clock, FileCheck, CheckCircle, Paperclip } from 'lucide-react';
+import { ArrowDownToLine, Search, Filter, Eye, RefreshCw, AlertCircle, Trash2, Calendar, Hash, FileText, Plus, Edit2, Save, X, Clock, FileCheck, CheckCircle, Paperclip, FileSpreadsheet } from 'lucide-react';
+import { buildInboundSheet, downloadSheet } from '../utils/detailExcel';
 import { logUpdate, logDelete, logSnChange, logStatusChange } from '../utils/auditLogger';
 import InboundRegistrationModal from '../components/InboundRegistrationModal';
 import { usePageSize } from '../utils/usePageSize';
@@ -1349,6 +1350,19 @@ const InboundList = ({ isSplitMode = false }) => {
                 <Trash2 size={16} /> {deleting ? '刪除中...' : '刪除進貨單'}
               </button>
               )}
+              {/* 單據資訊＋品項下載成 Excel（見 utils/detailExcel.js） */}
+              <button
+                type="button"
+                className="dm-btn dm-btn-outline"
+                onClick={() => downloadSheet(
+                  buildInboundSheet(selectedOrder, orderItems, { isDraft: isDraftOrder(selectedOrder) }),
+                  `進貨單明細_${selectedOrder.order_no}`, '進貨單明細'
+                )}
+                disabled={isDetailLoading || orderItems.length === 0}
+                title="把這張進貨單的資訊與品項下載成 Excel"
+              >
+                <FileSpreadsheet size={16} /> 下載 Excel
+              </button>
               <button type="button" className="dm-btn dm-btn-outline" onClick={() => setIsModalOpen(false)}>
                 關閉視窗
               </button>
