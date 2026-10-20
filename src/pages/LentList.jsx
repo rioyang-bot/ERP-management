@@ -7,6 +7,7 @@ import {
 import { toLocalYmd, addDays, daysBetween, extensionBase, minExtensionDate, validateExtension } from '../utils/lentReturnDate';
 import { logStatusChange, logUpdate, logDelete } from '../utils/auditLogger';
 import { createHwSyncTracker, createBackToStockTracker } from '../utils/mountedHwSync';
+import { returnLendOrder } from '../utils/lendReturn';
 import LentOrderPrintModal from '../components/LentOrderPrintModal';
 import LendOrderRegistrationModal from '../components/LendOrderRegistrationModal';
 import { usePageSize } from '../utils/usePageSize';
@@ -432,56 +433,8 @@ const LentList = () => {
     if (!dn || !date) return;
 
     try {
-      const res = await window.electronAPI.namedQuery('fetchDNItems', [dn.id]);
-      if (!res.success) throw new Error('讀取明細失敗');
-      const items = res.rows;
-      
-      // 與確認借出相同：整張單放在同一個交易裡，避免只回補一半的庫存
-      const steps = [];
-      const back = createBackToStockTracker();
-      for (const item of items) {
-        if (isMountedRow(item)) {
-          // 隨設備借出的掛載耗材：回到 LAB，重新掛回原來那台設備
-          steps.push(...lendReturnMountedSteps(item, dn.request_no, '歸還'));
-        } else if (item.category_name === '耗材') {
-          // 耗材沒有序號可以改狀態，借出時扣掉的數量要在這裡加回庫存，
-          // 否則單子雖然標記為已歸還，庫存卻永遠短少那些數量
-          steps.push({
-            queryName: 'updateStockQtyOnLendReturn',
-            params: [item.quantity, item.item_id],
-            expectRows: 1,
-            errorMessage: `回補耗材 [${item.brand} ${item.model}] 庫存失敗，查無此品項。`,
-          });
-        } else if ((item.category_name === '硬體' || item.category_name === '設備') && item.sn) {
-          // 改回在庫，掛在設備上的硬體跟著；交易完成後各記一筆（見 utils/mountedHwSync.js）
-          steps.push(...back.steps(item));
-        }
-      }
-
-      steps.push({
-        queryName: 'updateOutboundRequestReturned',
-        params: [dn.id, date],
-        expectRows: 1,
-        errorMessage: '變更借用單狀態失敗。',
-      });
-
-      const txRes = await window.electronAPI.runTransaction(steps);
-      if (!txRes.success) {
-        throw new Error((txRes.error || '登記歸還失敗。') + '\n\n所有變更已全部退回，庫存與單據狀態維持原樣。');
-      }
-
-      await back.log(txRes.results, `借用單 [${dn.request_no}] 歸還入庫（歸還日 ${date}）`,
-        { dnNumber: dn.request_no, returnDate: date });
-
-      logStatusChange(
-        'LENT',
-        dn.request_no,
-        dn.customer || '借用單',
-        'SHIPPED',
-        'RETURNED',
-        `登記借用單 [${dn.request_no}] 歸還入庫 (歸還日: ${date}, 共 ${items.length} 項品項)`,
-        { dnId: dn.id, dnNumber: dn.request_no, customer: dn.customer, returnDate: date, itemsCount: items.length, items: items.map(i => ({ model: i.model, brand: i.brand, sn: i.sn })) }
-      );
+      // 整張單一個交易、設備與硬體各記一筆紀錄（維修完工收回代用機也用同一套，見 utils/lendReturn.js）
+      await returnLendOrder(dn, date);
 
       alert('歸還成功！設備已恢復為在庫狀態，耗材數量已回補庫存。');
       setReturnModal({ show: false, dn: null, date: '' });
@@ -764,6 +717,12 @@ const LentList = () => {
                 <tr key={dn.id} className="row-hover" style={{ borderBottom: '1px solid var(--table-border)', color: 'var(--text-main)' }}>
                   <td style={{ padding: '12px', fontWeight: 700, color: 'var(--text-main)' }}>
                     {dn.request_no}
+                    {/* 維修代用機：借給哪張維修單（見 utils/repairLoaner.js） */}
+                    {dn.repair_no && (
+                      <span title={`維修單 ${dn.repair_no} 送修期間的代用機`} data-testid={`lent-repair-tag-${dn.id}`} style={{ marginLeft: '6px', fontSize: '0.72rem', fontWeight: 800, color: '#db2777', backgroundColor: 'rgba(219, 39, 119, 0.12)', padding: '1px 6px', borderRadius: '6px', whiteSpace: 'nowrap' }}>
+                        維修代用 {dn.repair_no}
+                      </span>
+                    )}
                   </td>
                   <td style={{ padding: '12px', color: 'var(--text-muted)' }}>{new Date(dn.shipping_date).toLocaleDateString()}</td>
                   <td style={{ padding: '12px' }}>

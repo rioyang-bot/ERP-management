@@ -192,11 +192,11 @@ describe('操作欄的階段按鈕', () => {
     const column = [...cell.firstElementChild.children].find((c) => c.tagName === 'DIV');
     expect(column.style.flexDirection).toBe('column');
     const labels = [...column.querySelectorAll('button')].map((b) => b.textContent.trim());
-    expect(labels).toEqual(['免送原廠', '送修原廠', '以庫存換貨']);
+    expect(labels).toEqual(['免送原廠', '送修原廠', '以庫存換貨', '提供代用機']);
   });
 
   /** 三顆同一個樣式（外框＋淡底色），只有顏色不同 */
-  it('免送原廠、送修原廠、以庫存換貨樣式相同、顏色不同', async () => {
+  it('免送原廠、送修原廠、以庫存換貨、提供代用機樣式相同、顏色不同', async () => {
     const cell = await openOnSite();
     const column = [...cell.firstElementChild.children].find((c) => c.tagName === 'DIV');
     const btns = [...column.querySelectorAll('button')];
@@ -206,8 +206,8 @@ describe('操作欄的階段按鈕', () => {
     expect(btns[0].style.borderStyle).toBe('solid');
     // 每顆的文字顏色和外框同色，三顆彼此不同
     for (const b of btns) expect(b.style.borderColor).toBe(b.style.color);
-    expect(new Set(btns.map((b) => b.style.color)).size).toBe(3);
-    expect(new Set(btns.map((b) => b.style.backgroundColor)).size).toBe(3);
+    expect(new Set(btns.map((b) => b.style.color)).size).toBe(4);
+    expect(new Set(btns.map((b) => b.style.backgroundColor)).size).toBe(4);
   });
 
   it('檢視、刪除不在直排裡，仍排在同一列', async () => {

@@ -228,6 +228,11 @@
       "file": "migration_lent_print_draft.sql",
       "type": "schema",
       "note": "借貨申請單預覽修改後可儲存，關閉再打開仍保留"
+    },
+    {
+      "file": "migration_repair_loaner.sql",
+      "type": "schema",
+      "note": "維修代用機：借用單連回維修單"
     }
   ]
 }
