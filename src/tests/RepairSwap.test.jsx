@@ -24,7 +24,9 @@ const ORDER = {
   on_site_date: '2026-10-13', on_site_status: '無法開機', contact_person: '吳先生', contact_phone: '0900',
   item_count: 1, items: [BROKEN_ITEM], created_at: '2026-10-13T01:00:00Z',
 };
-const BROKEN_ASSET = { id: 1689, sn: 'X0341997', status: 'REPAIRING', client: '凱基 吳沛恆', location: 'COLO', item_master_id: 336, brand: 'BLACKCORE', model: 'BCHFT-1PC', type: 'SERVER', category_name: '設備', custom_attributes: { project_name: '凱基 HFT' } };
+const BROKEN_ASSET = { id: 1689, sn: 'X0341997', status: 'REPAIRING', client: '凱基 吳沛恆', location: 'COLO', item_master_id: 336, brand: 'BLACKCORE', model: 'BCHFT-1PC', type: 'SERVER', category_name: '設備', custom_attributes: { project_name: '凱基 HFT' },
+  // 保固資訊 P/S/W/C：換貨時整組轉給新設備
+  installed_date: '2026-01-05', system_date: '2026-01-06', warranty_expire: '2029-01-05', customer_warranty_expire: null };
 const CANDIDATES = [
   { id: 1801, sn: 'Z-OTHER', item_master_id: 900, brand: 'DELL', model: 'R750', type: 'STORAGE', category_name: '設備', mounted_count: 0 },
   { id: 1767, sn: 'X0346994', item_master_id: 401, brand: 'BLACKCORE', model: '3122-RL', type: 'SERVER', category_name: '設備', mounted_count: 2 },
@@ -116,12 +118,23 @@ describe('查詢', () => {
   it('只有客戶送修、還在現場處理的單能換貨', () => {
     expect(queries.updateRepairSwapCompleted).toContain("status = 'ON_SITE_HANDLING' AND COALESCE(is_internal, FALSE) = FALSE");
   });
-  it('新設備必須還在庫；客戶、地點、專案、客戶保固沿用故障機', () => {
+  it('新設備必須還在庫；客戶、地點、專案沿用故障機', () => {
     const q = queries.swapShipReplacementAsset;
     expect(q).toContain("n.status = 'ACTIVE'");
-    for (const s of ['client = o.client', 'end_user = o.end_user', 'location = o.location', "'project_name', o.custom_attributes->>'project_name'", 'COALESCE(o.customer_warranty_expire, n.customer_warranty_expire)']) {
+    for (const s of ['client = o.client', 'end_user = o.end_user', 'location = o.location', "'project_name', o.custom_attributes->>'project_name'"]) {
       expect(q).toContain(s);
     }
+  });
+  /** 保固資訊（P 安裝日期、S 系統日期、W 原廠保固、C 客戶保固）整組照搬故障機，不留新設備原本的 */
+  it('保固資訊 P/S/W/C 整組轉給新設備；換回來的那台清空', () => {
+    const ship = queries.swapShipReplacementAsset;
+    for (const f of ['installed_date', 'system_date', 'warranty_expire', 'customer_warranty_expire']) {
+      expect(ship).toContain(`${f} = o.${f}`);
+      expect(queries.swapReturnBrokenAsset).toContain(`${f} = NULL`);
+    }
+    expect(ship).not.toContain('COALESCE(o.customer_warranty_expire');
+    // 出貨日期仍是換貨日
+    expect(ship).toContain('shipping_date = $3::date');
   });
   it('換回來的設備：回到在庫（不標維修中），客戶、地點、出貨日期、專案清空', () => {
     const q = queries.swapReturnBrokenAsset;
@@ -200,6 +213,13 @@ describe('換貨視窗', () => {
     const logs = JSON.stringify(calls.filter((c) => c.query === 'insertAuditLog'));
     expect(logs).toContain('出貨給 [凱基]，取代故障的 [X0341997]');
     expect(logs).toContain('自 [凱基] 換回（由 [X0346994] 替換），回到在庫');
+    // 保固資訊轉移寫進兩台的事件紀錄
+    expect(logs).toContain('保固資訊沿用 [X0341997]：P 2026-01-05／S 2026-01-06／W 2029-01-05／C -');
+    expect(logs).toContain('保固資訊已轉給 [X0346994]，本機清空');
+    const newLog = calls.find((c) => c.query === 'insertAuditLog' && c.params[6] === 'X0346994').params[9];
+    expect(newLog).toMatchObject({ warrantyFrom: 'X0341997', warranty: { installed_date: '2026-01-05', system_date: '2026-01-06', warranty_expire: '2029-01-05', customer_warranty_expire: null } });
+    // 確認視窗先講清楚會轉什麼
+    expect(window.confirm.mock.calls.at(-1)[0]).toContain('保固資訊轉給 X0346994：P 2026-01-05／S 2026-01-06／W 2029-01-05／C -');
     expect(logs).toContain('自動建立出貨單 [DN-20261013-03]');
     await waitFor(() => expect(onSuccess).toHaveBeenCalledWith('DN-20261013-03'));
   });

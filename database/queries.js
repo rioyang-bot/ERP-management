@@ -2504,7 +2504,9 @@ export const queries = {
     WHERE id = $4::integer AND status = 'ON_SITE_HANDLING' AND COALESCE(is_internal, FALSE) = FALSE
     RETURNING id`,
 
-  // 2. 新設備出貨給客戶：客戶、End-user、地點、專案與客戶保固沿用故障的那一台。
+  // 2. 新設備出貨給客戶：客戶、End-user、地點、專案沿用故障的那一台。
+  //    保固資訊（P 安裝日期、S 系統日期、W 原廠保固、C 客戶保固）整組照搬故障那台的 ——
+  //    客戶的保固條件延續到新設備；故障那台沒填的，新設備也就沒有（不留新設備原本的）。
   //    條件要求新設備還在庫，被別人先拿走就改不到、整批退回
   swapShipReplacementAsset: `
     UPDATE assets n SET
@@ -2512,9 +2514,11 @@ export const queries = {
       client = o.client,
       end_user = o.end_user,
       location = o.location,
-      installed_date = $3::date,
+      installed_date = o.installed_date,
+      system_date = o.system_date,
+      warranty_expire = o.warranty_expire,
+      customer_warranty_expire = o.customer_warranty_expire,
       shipping_date = $3::date,
-      customer_warranty_expire = COALESCE(o.customer_warranty_expire, n.customer_warranty_expire),
       custom_attributes = COALESCE(n.custom_attributes, '{}'::jsonb)
         || jsonb_strip_nulls(jsonb_build_object(
              'project_name', o.custom_attributes->>'project_name',
@@ -2526,7 +2530,8 @@ export const queries = {
     RETURNING n.id, n.sn`,
 
   // 3. 換回來的那台：先回到在庫（使用者要求，不標維修中；要送修再另開內部維修單），
-  //    客戶、End-user、地點、出貨日期與專案清空，記下換成了哪一台
+  //    客戶、End-user、地點、出貨日期與專案清空，記下換成了哪一台。
+  //    保固資訊（P/S/W/C）已經轉給新設備，這台一併清空
   swapReturnBrokenAsset: `
     UPDATE assets SET
       status = 'ACTIVE',
@@ -2534,6 +2539,10 @@ export const queries = {
       end_user = NULL,
       location = NULL,
       shipping_date = NULL,
+      installed_date = NULL,
+      system_date = NULL,
+      warranty_expire = NULL,
+      customer_warranty_expire = NULL,
       custom_attributes = (COALESCE(custom_attributes, '{}'::jsonb) - 'project_name' - 'end_user')
         || jsonb_build_object('swapped_to_sn', $2::text, 'swap_repair_no', $4::text, 'swap_date', $3::text),
       updated_at = CURRENT_TIMESTAMP
