@@ -4,10 +4,11 @@
  * 客戶的設備故障，直接從公司庫存拿一台換給客戶，故障的那台取回。
  * 在維修單上一次完成（同一個交易）：
  *   - 維修單結案，維修結果記下「哪一台換成哪一台」與出貨單號
- *   - 新設備出貨：客戶、End-user、地點、專案、客戶保固沿用故障的那一台；
+ *   - 新設備出貨：客戶、End-user、地點、專案沿用故障的那一台；
+ *     保固資訊（P 安裝日期／S 系統日期／W 原廠保固／C 客戶保固）整組轉給新設備；
  *     它身上的搭載硬體一起出貨
  *   - 換回來的設備：先回到在庫（不標維修中；確定要送修再另開內部維修單），
- *     客戶、地點、出貨日期清空；搭載硬體跟著取回
+ *     客戶、地點、出貨日期清空，保固資訊（P/S/W/C）清空；搭載硬體跟著取回
  *   - 自動產生一張已出貨的出貨單，可列印交貨簽收單、上傳客戶簽收
  *
  * 舊機的搭載硬體可以逐件選擇（例如 NIC 不帶回，其餘帶回）：
@@ -18,6 +19,19 @@
  */
 
 const norm = (s) => String(s ?? '').trim().toUpperCase();
+
+/** 換貨時轉給新設備的保固資訊（P/S/W/C），順序與設備列表的「保固資訊」欄一致 */
+export const WARRANTY_FIELDS = [
+  ['installed_date', 'P'], ['system_date', 'S'], ['warranty_expire', 'W'], ['customer_warranty_expire', 'C'],
+];
+
+/** 從資產取出保固資訊；日期只留 YYYY-MM-DD */
+export const pickWarranty = (asset = {}) => Object.fromEntries(
+  WARRANTY_FIELDS.map(([k]) => [k, asset?.[k] ? String(asset[k]).slice(0, 10) : null]),
+);
+
+/** 「P 2026-01-01／S -／W 2027-01-01／C 2028-01-01」 */
+export const warrantyText = (w = {}) => WARRANTY_FIELDS.map(([k, l]) => `${l} ${w[k] || '-'}`).join('／');
 
 /**
  * 候選設備排序：同一個品項（同廠牌型號規格）最前面，其次同廠牌型號、同類型、同類別。

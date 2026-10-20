@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Repeat, AlertCircle, Info, ArrowRight } from 'lucide-react';
 import { logStatusChange, logCreate, logUpdate, logMountedHwStatusSync, getCurrentUser } from '../utils/auditLogger';
-import { rankSwapCandidates, MATCH_LABEL, validateSwap, swapResultsText, buildSwapSteps, swapHwSyncLogs } from '../utils/repairSwap';
+import { rankSwapCandidates, MATCH_LABEL, validateSwap, swapResultsText, buildSwapSteps, swapHwSyncLogs, pickWarranty, warrantyText } from '../utils/repairSwap';
 import './detail/DetailModal.css';
 
 /**
@@ -121,6 +121,8 @@ const SwapFromStockModal = ({ isOpen, onClose, repairOrder, onSuccess }) => {
       oldAssetId: brokenAssets[it.id].id,
       oldSn: it.sn.trim(),
       oldStatus: brokenAssets[it.id].status,
+      // 保固資訊整組轉給新設備（換回來的那台清空），事件紀錄要寫轉了什麼
+      warranty: pickWarranty(brokenAssets[it.id]),
       newAssetId: picks[it.id].id,
       newSn: picks[it.id].sn,
       newItemMasterId: picks[it.id].item_master_id,
@@ -132,8 +134,8 @@ const SwapFromStockModal = ({ isOpen, onClose, repairOrder, onSuccess }) => {
 
     if (!window.confirm(
       `確定以庫存設備換貨嗎？\n\n`
-      + pairs.map((p) => `　· 故障 ${p.oldSn} → 換給客戶 ${p.newSn}`).join('\n')
-      + `\n\n新設備出貨給「${dn.customer}」（${dn.location || '地點未填'}），換回來的設備回到「在庫」，`
+      + pairs.map((p) => `　· 故障 ${p.oldSn} → 換給客戶 ${p.newSn}\n　　保固資訊轉給 ${p.newSn}：${warrantyText(p.warranty)}`).join('\n')
+      + `\n\n新設備出貨給「${dn.customer}」（${dn.location || '地點未填'}），換回來的設備回到「在庫」、保固資訊清空，`
       + '維修單結案，並產生一張已出貨的出貨單。'
       + (hwLines.length > 0 ? `\n\n搭載硬體：\n${hwLines.join('\n')}` : '')
     )) return;
@@ -153,11 +155,11 @@ const SwapFromStockModal = ({ isOpen, onClose, repairOrder, onSuccess }) => {
 
       for (const p of pairs) {
         await logStatusChange('DEVICE', p.newSn, p.newSn, 'ACTIVE', 'SHIPPED',
-          `維修單 [${repairOrder.repair_no}] 以庫存設備換貨，出貨給 [${dn.customer}]，取代故障的 [${p.oldSn}]（出貨單 ${dnNo}）`,
-          { repairNo: repairOrder.repair_no, oldSn: p.oldSn, newSn: p.newSn, dnNo, swap: true });
+          `維修單 [${repairOrder.repair_no}] 以庫存設備換貨，出貨給 [${dn.customer}]，取代故障的 [${p.oldSn}]（出貨單 ${dnNo}）；保固資訊沿用 [${p.oldSn}]：${warrantyText(p.warranty)}`,
+          { repairNo: repairOrder.repair_no, oldSn: p.oldSn, newSn: p.newSn, dnNo, swap: true, warrantyFrom: p.oldSn, warranty: p.warranty });
         await logStatusChange('DEVICE', p.oldSn, p.oldSn, p.oldStatus || 'SHIPPED', 'ACTIVE',
-          `維修單 [${repairOrder.repair_no}] 以庫存設備換貨，自 [${dn.customer}] 換回（由 [${p.newSn}] 替換），回到在庫`,
-          { repairNo: repairOrder.repair_no, oldSn: p.oldSn, newSn: p.newSn, dnNo, swap: true });
+          `維修單 [${repairOrder.repair_no}] 以庫存設備換貨，自 [${dn.customer}] 換回（由 [${p.newSn}] 替換），回到在庫；保固資訊已轉給 [${p.newSn}]，本機清空`,
+          { repairNo: repairOrder.repair_no, oldSn: p.oldSn, newSn: p.newSn, dnNo, swap: true, warrantyTo: p.newSn, warrantyCleared: p.warranty });
       }
       // 搭載硬體的移動各記一筆，硬體自己的履歷才看得到
       for (const p of pairs) {
@@ -255,8 +257,8 @@ const SwapFromStockModal = ({ isOpen, onClose, repairOrder, onSuccess }) => {
             <Info size={16} style={{ flexShrink: 0, marginTop: '2px', color: '#0891b2' }} />
             <div>
               從庫存拿一台換給客戶，故障的那台取回。確認後會一次完成：
-              新設備<b style={{ color: 'var(--text-main)' }}>出貨給客戶</b>（客戶、地點、專案、客戶保固沿用故障的那台，搭載硬體一起出貨）、
-              換回來的設備<b style={{ color: 'var(--text-main)' }}>回到在庫</b>（客戶、地點清空，搭載硬體跟著取回）、
+              新設備<b style={{ color: 'var(--text-main)' }}>出貨給客戶</b>（客戶、地點、專案沿用故障的那台，<b style={{ color: 'var(--text-main)' }}>保固資訊 P/S/W/C 整組轉給新設備</b>，搭載硬體一起出貨）、
+              換回來的設備<b style={{ color: 'var(--text-main)' }}>回到在庫</b>（客戶、地點、保固資訊清空，搭載硬體跟著取回）、
               維修單結案，並<b style={{ color: 'var(--text-main)' }}>產生一張已出貨的出貨單</b>可列印簽收單。
             </div>
           </div>
