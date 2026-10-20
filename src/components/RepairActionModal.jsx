@@ -6,6 +6,8 @@ import {
 import { logUpdate } from '../utils/auditLogger';
 import { performInPlaceReplacement, performOneToOneReplacement } from '../utils/rmaService';
 import { setRepairAssetStatus } from '../utils/repairAssetStatus';
+import { outstandingLoaners, activeLoaners, loanerLabel } from '../utils/repairLoaner';
+import { returnLendOrder } from '../utils/lendReturn';
 
 // 自行維修的常用結果跟原廠是兩回事，混在一起只會讓人挑到不對的敘述
 const IN_HOUSE_RESULTS = [
@@ -60,6 +62,8 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
   const [rmaMode, setRmaMode] = useState('IN_PLACE'); // 'IN_PLACE' | 'ONE_TO_ONE'
   const [rmaNo, setRmaNo] = useState('');
   const [replacementSns, setReplacementSns] = useState({});
+  // 完工時一併登記代用機歸還
+  const [returnLoaners, setReturnLoaners] = useState(true);
 
   useEffect(() => {
     if (isOpen && repairOrder) {
@@ -71,11 +75,17 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
       setRmaMode('IN_PLACE');
       setRmaNo('');
       setReplacementSns({});
+      setReturnLoaners(true);
       setError('');
     }
   }, [isOpen, repairOrder, actionType]);
 
   if (!isOpen || !repairOrder) return null;
+
+  // 維修代用機：完工交回客戶時（完工出貨、自行維修完工）提醒收回，預設一併登記歸還
+  const isCompletion = actionType === 'COMPLETE' || actionType === 'IN_HOUSE_COMPLETE';
+  const loanersOut = outstandingLoaners(repairOrder);
+  const loanersPending = activeLoaners(repairOrder).filter((l) => l.status === 'PENDING');
 
   const getActionConfig = () => {
     switch (actionType) {
@@ -319,7 +329,26 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
           sns: items.map((it) => it.sn).filter(Boolean),
         });
 
-      alert(`✅ 操作成功！維修單 [${repairOrder.repair_no}] 狀態已更新。`);
+      // 維修代用機：維修單已經完工，再逐張登記歸還；失敗的不影響已完成的完工，請使用者到借用列表處理
+      let loanerNote = '';
+      if (isCompletion && returnLoaners && loanersOut.length > 0) {
+        const done = [];
+        const failed = [];
+        for (const l of loanersOut) {
+          try {
+            await returnLendOrder(l, date, { note: `維修單 [${repairOrder.repair_no}] 完工時一併歸還代用機` });
+            done.push(l.request_no);
+          } catch (loanErr) {
+            failed.push(`${l.request_no}：${loanErr.message}`);
+          }
+        }
+        if (done.length) loanerNote += `\n代用機已登記歸還：${done.join('、')}`;
+        if (failed.length) loanerNote += `\n\n⚠️ 代用機歸還失敗，請到借用列表登記：\n${failed.join('\n')}`;
+      } else if (isCompletion && loanersOut.length > 0) {
+        loanerNote = `\n\n提醒：代用機 ${loanersOut.map(loanerLabel).join('、')} 還沒歸還，請到借用列表登記。`;
+      }
+
+      alert(`✅ 操作成功！維修單 [${repairOrder.repair_no}] 狀態已更新。${loanerNote}`);
       if (onSuccess) onSuccess();
       onClose();
     } catch (err) {
@@ -705,6 +734,35 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
               }}
             />
           </div>
+          )}
+
+          {/* 維修代用機：完工交回客戶時提醒收回（見 utils/repairLoaner.js） */}
+          {isCompletion && (loanersOut.length > 0 || loanersPending.length > 0) && (
+            <div data-testid="repair-loaner-reminder" style={{
+              padding: '10px 14px', borderRadius: '8px', border: '1px solid rgba(219, 39, 119, 0.35)',
+              backgroundColor: 'rgba(219, 39, 119, 0.08)', fontSize: '13px', color: 'var(--text-main)',
+              display: 'flex', flexDirection: 'column', gap: '6px'
+            }}>
+              {loanersOut.length > 0 && (
+                <>
+                  <div style={{ fontWeight: 800, color: '#db2777' }}>
+                    客戶手上還有代用機：{loanersOut.map(loanerLabel).join('、')}
+                  </div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 700 }}>
+                    <input type="checkbox" checked={returnLoaners} onChange={(e) => setReturnLoaners(e.target.checked)} />
+                    完工時一併登記代用機歸還（歸還日同完工日）
+                  </label>
+                  {!returnLoaners && (
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>不勾的話，之後到借用列表登記歸還。</div>
+                  )}
+                </>
+              )}
+              {loanersPending.length > 0 && (
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                  代用機借用單 {loanersPending.map((l) => l.request_no).join('、')} 還沒確認借出，請到借用列表處理（取消或刪除）。
+                </div>
+              )}
+            </div>
           )}
 
           {/* 底部按鈕 */}

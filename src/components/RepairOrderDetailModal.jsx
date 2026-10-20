@@ -3,8 +3,9 @@ import { getRepairScopeLabel } from '../utils/repairScope';
 import { logUpdate } from '../utils/auditLogger';
 import {
   X, FileText, Building2, Calendar, CheckCircle2, Clock,
-  Truck, Wrench, PackageCheck, Printer, ShieldAlert, Cpu, Edit2, Save, Repeat
+  Truck, Wrench, PackageCheck, Printer, ShieldAlert, Cpu, Edit2, Save, Repeat, Laptop
 } from 'lucide-react';
+import { canProvideLoaner, activeLoaners, LOANER_STATUS_LABEL } from '../utils/repairLoaner';
 
 // 四個階段的說明各有自己的欄位與更新查詢。
 // 每一支都只動自己那一欄 —— updateRepairOrderDetails 一次覆寫八個欄位，
@@ -615,6 +616,35 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
             </table>
           </div>
 
+          {/* 維修代用機：送修期間借給客戶暫用的設備（借用單，見 utils/repairLoaner.js） */}
+          {(repairOrder.loaners || []).length > 0 && (
+            <div style={{ marginTop: '16px' }} data-testid="repair-detail-loaners">
+              <div style={{ fontSize: '13px', fontWeight: 800, color: '#db2777', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Laptop size={15} /> 維修代用機
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {repairOrder.loaners.map((l) => (
+                  <div key={l.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)', fontSize: '12px' }}>
+                    <span style={{ fontWeight: 800, color: 'var(--text-main)' }}>借用單 {l.request_no}</span>
+                    <span style={{
+                      padding: '2px 8px', borderRadius: '20px', fontWeight: 800, fontSize: '11px',
+                      backgroundColor: l.status === 'RETURNED' ? 'var(--bg-surface)' : 'rgba(219, 39, 119, 0.12)',
+                      color: l.status === 'RETURNED' ? 'var(--text-muted)' : '#db2777',
+                    }}>
+                      {LOANER_STATUS_LABEL[l.status] || l.status}
+                    </span>
+                    {l.sns && <span style={{ fontWeight: 700 }}>{l.sns}</span>}
+                    <span style={{ color: 'var(--text-muted)' }}>
+                      {l.status === 'RETURNED'
+                        ? `歸還日 ${String(l.actual_return_date || '').slice(0, 10) || '-'}`
+                        : `預計歸還 ${String(l.expected_return_date || '').slice(0, 10) || '未指定'}`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
         </div>
 
         {/* 底部按鈕區 */}
@@ -649,6 +679,30 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
                 }}
               >
                 <Wrench size={15} /> 自行維修完工
+              </button>
+            )}
+
+            {/* 維修代用機：送修期間借一台給客戶暫用；已有未歸還的就不再顯示 */}
+            {canProvideLoaner(repairOrder) && activeLoaners(repairOrder).length === 0 && onOpenAction && (
+              <button
+                onClick={() => {
+                  onClose();
+                  onOpenAction(repairOrder, 'LOANER');
+                }}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  border: '1px solid #db2777',
+                  backgroundColor: 'rgba(219, 39, 119, 0.12)',
+                  color: '#db2777',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <Laptop size={15} /> 提供代用機
               </button>
             )}
 

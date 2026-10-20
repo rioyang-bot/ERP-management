@@ -15,12 +15,31 @@ import '../pages/Outbound.css';
  * 只有「待借出」的單可以編輯 —— 已出庫的內容改了會與實際庫存不符，
  * 這點在資料庫的 UPDATE 條件裡也擋了一層，畫面漏擋也不會改到。
  */
-const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess, editingDn = null }) => {
+/**
+ * @param {object} [repairLink] 維修代用機：從維修單開的借用單。帶入客戶與聯絡資訊、
+ *        建單時連回維修單（outbound_requests.repair_id），不讀也不寫草稿
+ *        { repairId, repairNo, customer, contactInfo }
+ */
+const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess, editingDn = null, repairLink = null }) => {
   const isEditing = !!editingDn;
+  // 從維修單開的（代用機）：與一般新建的草稿互不干擾
+  const isRepairLoaner = !isEditing && !!repairLink;
   const { authUser } = useContext(RoleContext) || {};
 
   // --- 單據標頭狀態 ---
   const [header, setHeader] = useState(() => {
+    if (repairLink && !editingDn) {
+      return {
+        customer: repairLink.customer || '',
+        customerId: '',
+        contact_info: repairLink.contactInfo || '',
+        location: '',
+        date: new Date().toISOString().split('T')[0],
+        expected_return_date: '',
+        project_name: '',
+        purpose: '維修代用機'
+      };
+    }
     const saved = localStorage.getItem('lend_draft_header');
     return saved ? JSON.parse(saved) : {
       customer: '',
@@ -45,6 +64,7 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess, editingDn = nu
   const [showDeviceDropdown, setShowDeviceDropdown] = useState(false);
   const [showHwDropdown, setShowHwDropdown] = useState(false);
   const [outboundItems, setOutboundItems] = useState(() => {
+    if (repairLink && !editingDn) return [];
     const saved = localStorage.getItem('lend_draft_items');
     return saved ? JSON.parse(saved) : [];
   });
@@ -83,18 +103,19 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess, editingDn = nu
   };
 
   // --- 持久化同步 ---
-  // 草稿只服務「新建」：編輯既有單據時寫進草稿，會在下次新建時把別人的單帶出來
+  // 草稿只服務「新建」：編輯既有單據時寫進草稿，會在下次新建時把別人的單帶出來；
+  // 維修代用機也不寫，免得一般新建時帶出維修單的客戶
   useEffect(() => {
-    if (isOpen && !isEditing) {
+    if (isOpen && !isEditing && !isRepairLoaner) {
       localStorage.setItem('lend_draft_header', JSON.stringify(header));
     }
-  }, [header, isOpen, isEditing]);
+  }, [header, isOpen, isEditing, isRepairLoaner]);
 
   useEffect(() => {
-    if (isOpen && !isEditing) {
+    if (isOpen && !isEditing && !isRepairLoaner) {
       localStorage.setItem('lend_draft_items', JSON.stringify(outboundItems));
     }
-  }, [outboundItems, isOpen, isEditing]);
+  }, [outboundItems, isOpen, isEditing, isRepairLoaner]);
 
   // 進入編輯模式時載入該單的內容
   useEffect(() => {
@@ -162,7 +183,14 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess, editingDn = nu
       });
 
       const custRes = await window.electronAPI.namedQuery('fetchCustomers');
-      if (custRes.success) setCustomers(custRes.rows || []);
+      if (custRes.success) {
+        setCustomers(custRes.rows || []);
+        // 維修代用機：地點帶入客戶主檔的地址（跟手動選客戶時一樣）
+        if (repairLink && !editingDn) {
+          const matched = (custRes.rows || []).find((c) => c.name === repairLink.customer);
+          if (matched?.address) setHeader((prev) => (prev.location ? prev : { ...prev, location: matched.address }));
+        }
+      }
 
       const csmRes = await window.electronAPI.namedQuery('fetchConsumablesList');
       if (csmRes.success) setConsumables(csmRes.rows || []);
@@ -434,6 +462,16 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess, editingDn = nu
       // 明細的單頭 id：編輯用既有的，新建則取用上一步產生的
       const requestIdRef = isEditing ? editingDn.id : { $ref: 'request.rows.0.id' };
 
+      // 維修代用機：連回維修單（同一個交易，連不上就整張不建）
+      if (isRepairLoaner) {
+        steps.push({
+          queryName: 'linkLendToRepair',
+          params: [requestIdRef, repairLink.repairId],
+          expectRows: 1,
+          errorMessage: `無法連回維修單 [${repairLink.repairNo}]`,
+        });
+      }
+
       for (const item of outboundItems) {
         const itemPurpose = item.purpose || header.purpose || '運作測試';
         steps.push({
@@ -482,8 +520,9 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess, editingDn = nu
         'LENT',
         dnNumber,
         header.customer || '借用單',
-        `${isEditing ? '修改' : '建立'}借用單 [${dnNumber}] 對象: ${header.customer} 共 ${outboundItems.length} 個品項 (預計歸還日: ${header.expected_return_date || '未指定'})`,
-        { dnNumber, customer: header.customer, location: header.location, request_type: 'LEND', expected_return_date: header.expected_return_date, itemsCount: outboundItems.length, items: outboundItems.map(i => ({ model: i.model, brand: i.brand, sn: i.sn, qty: i.qty, purpose: i.purpose || header.purpose || '運作測試' })) }
+        `${isEditing ? '修改' : '建立'}借用單 [${dnNumber}] 對象: ${header.customer} 共 ${outboundItems.length} 個品項 (預計歸還日: ${header.expected_return_date || '未指定'})`
+          + (isRepairLoaner ? `，維修單 [${repairLink.repairNo}] 代用機` : ''),
+        { dnNumber, repairNo: isRepairLoaner ? repairLink.repairNo : undefined, customer: header.customer, location: header.location, request_type: 'LEND', expected_return_date: header.expected_return_date, itemsCount: outboundItems.length, items: outboundItems.map(i => ({ model: i.model, brand: i.brand, sn: i.sn, qty: i.qty, purpose: i.purpose || header.purpose || '運作測試' })) }
       );
 
       // 單頭 id 由交易的第一步產生
@@ -499,6 +538,7 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess, editingDn = nu
         expected_return_date: header.expected_return_date,
         status: 'PENDING',
         request_type: 'LEND',
+        repair_no: isRepairLoaner ? repairLink.repairNo : null,
         creator_name: authUser?.full_name || 'Admin'
       };
       const createdItemsSnapshot = outboundItems.map(i => ({
@@ -508,7 +548,7 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess, editingDn = nu
 
       alert(`借用單 [${dnNumber}] 已成功${isEditing ? '修改' : '建立'}！\n已為您自動載入「借貨申請單」預覽，您可直接列印或下載 PDF。`);
 
-      // 清除暫存
+      // 清除暫存（維修代用機沒有用草稿，不動一般新建的草稿）
       setOutboundItems([]);
       setHeader({
         customer: '',
@@ -520,8 +560,10 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess, editingDn = nu
         project_name: '',
         purpose: '運作測試'
       });
-      localStorage.removeItem('lend_draft_items');
-      localStorage.removeItem('lend_draft_header');
+      if (!isRepairLoaner) {
+        localStorage.removeItem('lend_draft_items');
+        localStorage.removeItem('lend_draft_header');
+      }
 
       if (onSuccess) {
         onSuccess(createdDnInfo, createdItemsSnapshot);
@@ -629,6 +671,11 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess, editingDn = nu
             <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px', marginBottom: 0 }}>
               建立借用申請單，支援設備序號自動導出與耗材選取，建立後可直接產生並列印借貨申請單。
             </p>
+            {isRepairLoaner && (
+              <div data-testid="lend-repair-loaner-banner" style={{ marginTop: '8px', display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 10px', borderRadius: '6px', backgroundColor: 'rgba(8, 145, 178, 0.12)', color: '#0891b2', fontSize: '12px', fontWeight: 800 }}>
+                🔧 維修單 [{repairLink.repairNo}] 的代用機：客戶設備送修期間暫借，修好送回時收回（保固資訊不轉移）
+              </div>
+            )}
           </div>
           <button
             onClick={onClose}

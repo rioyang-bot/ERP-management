@@ -1768,9 +1768,12 @@ export const queries = {
            (SELECT string_agg(COALESCE(oi.sn, '') || ' ' || COALESCE(im.model, '') || ' ' || COALESCE(im.brand, ''), ' ')
             FROM outbound_items oi
             JOIN item_master im ON oi.item_id = im.id
-            WHERE oi.request_id = r.id) as searchable_items
+            WHERE oi.request_id = r.id) as searchable_items,
+           -- 維修代用機：借給哪張維修單
+           ro.repair_no as repair_no
     FROM outbound_requests r
     LEFT JOIN users u ON r.creator_id = u.id
+    LEFT JOIN repair_orders ro ON ro.id = r.repair_id
     WHERE r.request_type = 'LEND' AND r.status IN ('PENDING', 'SHIPPED', 'RETURNED')
     ORDER BY r.created_at DESC, r.expected_return_date ASC NULLS LAST
   `,
@@ -2467,13 +2470,30 @@ export const queries = {
               'asset_id', ri.asset_id,
               'item_master_id', ri.item_master_id,
               'replacement_sn', ri.replacement_sn
-           )) FROM repair_items ri WHERE ri.repair_id = ro.id) as items
+           )) FROM repair_items ri WHERE ri.repair_id = ro.id) as items,
+           -- 維修代用機：連到這張維修單的借用單（見 migration_repair_loaner.sql）
+           COALESCE((SELECT json_agg(json_build_object(
+              'id', r.id,
+              'request_no', r.request_no,
+              'status', r.status,
+              'customer', r.customer,
+              'expected_return_date', r.expected_return_date,
+              'actual_return_date', r.actual_return_date,
+              'sns', (SELECT string_agg(oi.sn, '、' ORDER BY oi.id) FROM outbound_items oi
+                      WHERE oi.request_id = r.id AND oi.sn IS NOT NULL AND TRIM(oi.sn) <> '')
+           ) ORDER BY r.id) FROM outbound_requests r
+             WHERE r.repair_id = ro.id AND r.request_type = 'LEND'), '[]'::json) as loaners
     FROM repair_orders ro
     LEFT JOIN users u ON ro.creator_id = u.id
     -- 已結案的排到最後：還在跑的單才是每天要盯的，結案的只是備查。
     -- 布林值排序時 false 在前，因此 ASC 就是「未結案先、結案後」。
     ORDER BY (ro.status = 'COMPLETED') ASC, ro.created_at DESC, ro.id DESC
   `,
+  // 維修代用機：新建的借用單連回維修單（與建立借用單在同一個交易）
+  linkLendToRepair: `
+    UPDATE outbound_requests SET repair_id = $2::integer
+    WHERE id = $1::integer AND request_type = 'LEND'
+    RETURNING id`,
   // --- 以庫存設備換貨（見 src/utils/repairSwap.js）--------------------------
   // 客戶的設備故障，直接從庫存拿一台換給客戶，故障的那台取回。
   // 下面幾支在同一個交易裡依序執行，任何一步失敗整批退回。

@@ -2,13 +2,16 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Wrench, Search, Plus, Trash2, CheckCircle, AlertCircle, 
   Truck, PackageCheck, RotateCcw, ExternalLink, RefreshCw, FileText,
-  Calendar, Building2, Cpu, Server, ChevronRight, Eye, Home, Repeat
+  Calendar, Building2, Cpu, Server, ChevronRight, Eye, Home, Repeat, Laptop
 } from 'lucide-react';
 import RepairOrderRegistrationModal from '../components/RepairOrderRegistrationModal';
 import RepairActionModal from '../components/RepairActionModal';
 import RepairOrderPrintModal from '../components/RepairOrderPrintModal';
 import RepairOrderDetailModal from '../components/RepairOrderDetailModal';
 import SwapFromStockModal from '../components/SwapFromStockModal';
+import LendOrderRegistrationModal from '../components/LendOrderRegistrationModal';
+import LentOrderPrintModal from '../components/LentOrderPrintModal';
+import { canProvideLoaner, activeLoaners, LOANER_STATUS_LABEL } from '../utils/repairLoaner';
 import { logDelete, logUpdate } from '../utils/auditLogger';
 import { logRepairAssetStatus } from '../utils/repairAssetStatus';
 import { getRepairScopeLabel, getRepairSubLabel, INTERNAL_LABEL } from '../utils/repairScope';
@@ -36,7 +39,8 @@ const STATUS_CONFIG = {
 const ONSITE_BTN_COLORS = {
   noOem: { color: '#0d9488', bg: 'rgba(13, 148, 136, 0.12)' }, // 青綠
   sendOem: { color: '#d97706', bg: 'rgba(217, 119, 6, 0.12)' }, // 橘
-  swap: { color: '#6366f1', bg: 'rgba(99, 102, 241, 0.12)' } // 靛藍
+  swap: { color: '#6366f1', bg: 'rgba(99, 102, 241, 0.12)' }, // 靛藍
+  loaner: { color: '#db2777', bg: 'rgba(219, 39, 119, 0.12)' } // 桃紅：維修代用機
 };
 const onSiteBtnStyle = ({ color, bg }) => ({
   padding: '6px 10px',
@@ -76,6 +80,9 @@ const RepairList = () => {
   const [actionModal, setActionModal] = useState({ isOpen: false, order: null, type: 'SEND_OEM' });
   // 以庫存設備換貨（見 utils/repairSwap.js）
   const [swapOrder, setSwapOrder] = useState(null);
+  // 維修代用機：從這張維修單開借用單（見 utils/repairLoaner.js）；建好後直接顯示借貨申請單
+  const [loanerOrder, setLoanerOrder] = useState(null);
+  const [loanerPrint, setLoanerPrint] = useState(null);
   const [printModal, setPrintModal] = useState({ isOpen: false, order: null });
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = usePageSize('repair_list', 10);
@@ -582,6 +589,18 @@ const RepairList = () => {
                             </span>
                           </div>
                         )}
+                        {/* 維修代用機：還沒歸還的列出來，客戶手上有哪台一眼看得到 */}
+                        {activeLoaners(order).map((l) => (
+                          <div key={l.id} style={{ marginTop: '4px' }} data-testid={`repair-loaner-${order.id}`}>
+                            <span title={`維修代用機：借用單 ${l.request_no}`} style={{
+                              padding: '3px 8px', borderRadius: '20px', backgroundColor: ONSITE_BTN_COLORS.loaner.bg,
+                              color: ONSITE_BTN_COLORS.loaner.color, fontWeight: 800, fontSize: '10px',
+                              display: 'inline-flex', alignItems: 'center', gap: '3px'
+                            }}>
+                              <Laptop size={10} /> 代用機{LOANER_STATUS_LABEL[l.status]}{l.sns ? ` ${l.sns}` : ''}
+                            </span>
+                          </div>
+                        ))}
                       </td>
 
                       {/* 維修時程：現場、送修、返還、完工四個日期併成一欄。
@@ -696,6 +715,17 @@ const RepairList = () => {
                                 title="從庫存拿一台換給客戶，故障的取回（回到在庫）並結案"
                               >
                                 <Repeat size={13} /> 以庫存換貨
+                              </button>
+                            )}
+
+                            {/* 維修代用機：送修期間借一台給客戶暫用（走借用單，保固不轉移） */}
+                            {canProvideLoaner(order) && activeLoaners(order).length === 0 && (
+                              <button
+                                onClick={() => setLoanerOrder(order)}
+                                style={onSiteBtnStyle(ONSITE_BTN_COLORS.loaner)}
+                                title="客戶設備送修期間，借一台設備給客戶暫用（建立借用單，修好送回時收回）"
+                              >
+                                <Laptop size={13} /> 提供代用機
                               </button>
                             )}
 
@@ -908,7 +938,11 @@ const RepairList = () => {
           setDetailModal((m) => (m.order ? { ...m, order: { ...m.order, ...patch } } : m));
           fetchRecords();
         }}
-        onOpenAction={(order, type) => (type === 'SWAP' ? setSwapOrder(order) : setActionModal({ isOpen: true, order, type }))}
+        onOpenAction={(order, type) => {
+          if (type === 'SWAP') setSwapOrder(order);
+          else if (type === 'LOANER') setLoanerOrder(order);
+          else setActionModal({ isOpen: true, order, type });
+        }}
         onOpenPrint={(order) => setPrintModal({ isOpen: true, order })}
       />
 
@@ -926,6 +960,33 @@ const RepairList = () => {
         repairOrder={swapOrder}
         onSuccess={fetchRecords}
       />
+
+      {/* 維修代用機：借用單連回這張維修單 */}
+      {loanerOrder && (
+        <LendOrderRegistrationModal
+          isOpen
+          onClose={() => setLoanerOrder(null)}
+          repairLink={{
+            repairId: loanerOrder.id,
+            repairNo: loanerOrder.repair_no,
+            customer: loanerOrder.customer_name,
+            contactInfo: [loanerOrder.contact_person, loanerOrder.contact_phone].filter(Boolean).join(' '),
+          }}
+          onSuccess={(dn, items) => {
+            setLoanerOrder(null);
+            fetchRecords();
+            setLoanerPrint({ dn, items });
+          }}
+        />
+      )}
+      {loanerPrint && (
+        <LentOrderPrintModal
+          isOpen
+          onClose={() => setLoanerPrint(null)}
+          dnData={loanerPrint.dn}
+          items={loanerPrint.items}
+        />
+      )}
 
       <RepairOrderPrintModal
         isOpen={printModal.isOpen}
