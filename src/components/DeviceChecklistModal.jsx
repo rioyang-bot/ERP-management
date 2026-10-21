@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { logUpdate } from '../utils/auditLogger';
 import DeviceChecklistPrintModal from './DeviceChecklistPrintModal';
+import ChecklistWordButton from './ChecklistWordButton';
 import AssetPhotoSection from './AssetPhotoSection';
 import { groupMatchLevel, pickDefaultGroup } from '../utils/checklistGroupScope';
 
@@ -370,6 +371,8 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
               >
                 <Printer size={15} /> 列印
               </button>
+              {/* 匯出 Word，連照片一起（見 utils/checklistDocx.js） */}
+              <ChecklistWordButton device={device} items={applied} disabled={applied.length === 0} />
               <button
                 onClick={handleClose}
                 aria-label="關閉"
