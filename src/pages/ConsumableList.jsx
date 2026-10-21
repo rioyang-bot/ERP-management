@@ -6,7 +6,8 @@ import ConsumableRegistrationModal from '../components/ConsumableRegistrationMod
 import ConsumableBatchImportModal from '../components/ConsumableBatchImportModal';
 import { logUpdate, logDelete } from '../utils/auditLogger';
 import { usePageSize } from '../utils/usePageSize';
-import { useCardOrderByMode } from '../hooks/useCardLayout';
+import { useCardOrderByMode, useCardLayoutByMode } from '../hooks/useCardLayout';
+import { normalizeSlotLayout, moveCardToSlot, slotCount, SLOT_COLUMNS } from '../utils/cardSlots';
 import CardAggregationSelect from '../components/common/CardAggregationSelect';
 import { CONSUMABLE_AGGREGATION_MODES, getConsumableGroupField } from '../utils/cardAggregation';
 import PageSizeSelector from '../components/common/PageSizeSelector';
@@ -298,8 +299,11 @@ const ConsumableList = ({ isSplitMode = false }) => {
   const paginatedItems = filteredItems.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   // --- 儀表板拖曳排序邏輯 ---
-  // 卡片排列以登入身分為範圍存在伺服器端，每個人各自一份
-  const [typeOrder, setTypeOrder] = useCardOrderByMode('cardOrder:consumableList', aggregationMode, 'consumable_type_order');
+  // 卡片排列以登入身分為範圍存在伺服器端，每個人各自一份。
+  // 跟設備、硬體列表同一套：每列 6 格，可以拖到任何一格（包括空格），見 utils/cardSlots.js。
+  // 舊版只存順序（typeOrder），第一次換成格位時照它的順序擺，原本排好的不會亂掉
+  const [typeOrder] = useCardOrderByMode('cardOrder:consumableList', aggregationMode, 'consumable_type_order');
+  const [layoutMap, setLayoutMap, layoutLoaded] = useCardLayoutByMode('cardLayout:consumableList', aggregationMode);
   const [draggingCardKey, setDraggingCardKey] = useState(null);
 
   const [retiredKeys, setRetiredKeys] = useState(() => {
@@ -316,21 +320,11 @@ const ConsumableList = ({ isSplitMode = false }) => {
     e.dataTransfer.setData('text/plain', key);
   };
 
-  const handleTypeDrop = (e, targetKey, currentKeys) => {
+  // 放到某一格：有卡片就互換位置，空格就直接放過去
+  const handleDropOnSlot = (e, targetSlotIdx, currentLayout) => {
     e.preventDefault();
     const sourceKey = e.dataTransfer.getData('text/plain');
-    if (!sourceKey || sourceKey === targetKey) {
-      setDraggingCardKey(null);
-      return;
-    }
-    const newOrder = [...currentKeys];
-    const sourceIdx = newOrder.indexOf(sourceKey);
-    const targetIdx = newOrder.indexOf(targetKey);
-    if (sourceIdx > -1 && targetIdx > -1) {
-      newOrder.splice(sourceIdx, 1);
-      newOrder.splice(targetIdx, 0, sourceKey);
-      setTypeOrder(newOrder);
-    }
+    if (sourceKey) setLayoutMap(moveCardToSlot(currentLayout, sourceKey, targetSlotIdx));
     setDraggingCardKey(null);
   };
 
@@ -415,18 +409,15 @@ const ConsumableList = ({ isSplitMode = false }) => {
     const activeKeys = allKeys.filter(k => !retiredKeys.includes(k));
     const retiredList = allKeys.filter(k => retiredKeys.includes(k)).map(k => statsMap[k]);
 
-    // 依排序記憶體排列表格
-    const orderedActiveKeys = [
-      ...typeOrder.filter(k => activeKeys.includes(k)),
-      ...activeKeys.filter(k => !typeOrder.includes(k))
-    ];
+    // 格位排列：拿掉已不存在的卡片、新卡片補到空位（第一次沿用舊的順序）。
+    // 伺服器上的排列還沒回來前不回寫，免得把存好的位置蓋成預設位置
+    const { layout: slotLayout, changed: layoutChanged } = normalizeSlotLayout(layoutMap, activeKeys, typeOrder);
+    if (layoutChanged && layoutLoaded) setLayoutMap(slotLayout);
 
-    const displayKeys = orderedActiveKeys.filter(k => {
-      if (!searchTerm) return true;
-      const lk = k.toLowerCase();
-      const terms = searchTerm.toLowerCase().split(/\s+/).filter(t => t);
-      return terms.some(t => lk.includes(t));
-    });
+    // 搜尋時只列符合的卡片（不能拖曳），跟設備、硬體列表一樣
+    const terms = (searchTerm || '').toLowerCase().split(/\s+/).filter(Boolean);
+    const orderedKeys = Object.keys(slotLayout).sort((a, b) => Number(a) - Number(b)).map((i) => slotLayout[i]);
+    const displayKeys = terms.length === 0 ? orderedKeys : orderedKeys.filter((k) => terms.some((t) => k.toLowerCase().includes(t)));
 
     const renderCard = (st, isDraggable = false, isRetired = false) => {
       const isSelected = selectedType === st.type;
@@ -435,10 +426,12 @@ const ConsumableList = ({ isSplitMode = false }) => {
           key={st.key}
           draggable={isDraggable}
           onDragStart={isDraggable ? (e) => handleTypeDragStart(e, st.key) : undefined}
+          onDragEnd={isDraggable ? () => setDraggingCardKey(null) : undefined}
+          data-testid={`consumable-card-${st.key}`}
           onClick={() => handleCardClick(st.type)}
           style={{
             backgroundColor: isSelected ? 'var(--primary-bg, rgba(37, 99, 235, 0.08))' : 'var(--bg-surface)',
-            padding: '12px 16px',
+            padding: '10px 12px',
             borderRadius: '14px',
             border: isSelected ? '2px solid var(--primary-color)' : '1px solid var(--border-color)',
             boxShadow: isSelected ? '0 4px 12px rgba(37, 99, 235, 0.2)' : 'var(--card-shadow)',
@@ -482,17 +475,17 @@ const ConsumableList = ({ isSplitMode = false }) => {
 
           {/* 卡片頂部標題與總計 */}
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingRight: '48px' }}>
-              <div style={{ fontSize: '15px', fontWeight: '900', color: isSelected ? 'var(--primary-color)' : 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                <Package size={17} color={isSelected ? 'var(--primary-color)' : 'var(--text-muted)'} />
-                <span>{st.type}</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingRight: '44px', gap: '4px' }}>
+              <div style={{ fontSize: '13px', fontWeight: '900', color: isSelected ? 'var(--primary-color)' : 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
+                <Package size={14} style={{ flexShrink: 0 }} color={isSelected ? 'var(--primary-color)' : 'var(--text-muted)'} />
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }} title={st.type}>{st.type}</span>
               </div>
-              <span style={{ fontSize: '11px', fontWeight: '800', color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', backgroundColor: 'var(--bg-surface-subtle)', padding: '2px 6px', borderRadius: '6px' }}>
+              <span style={{ fontSize: '10px', fontWeight: '800', color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', backgroundColor: 'var(--bg-surface-subtle)', padding: '1px 5px', borderRadius: '4px', whiteSpace: 'nowrap', flexShrink: 0 }}>
                 共 {st.total_qty} 個
               </span>
             </div>
 
-            <div style={{ color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', fontSize: '12px', fontWeight: '600', marginTop: '4px', paddingLeft: '23px' }}>
+            <div style={{ color: isSelected ? 'var(--primary-color)' : 'var(--text-muted)', fontSize: '11px', fontWeight: '600', marginTop: '3px', paddingLeft: '19px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {/* 依廠牌聚合時「N 個廠牌」恆為 1，講有幾種類型才有資訊量 */}
               {aggregationMode === 'BRAND'
                 ? `${st.typesCount} 種類型 · ${st.modelsCount} 款型號`
@@ -501,7 +494,7 @@ const ConsumableList = ({ isSplitMode = false }) => {
           </div>
 
           {/* 底部數據指標格 (在席 / 借測 / 總計) */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', marginTop: '8px', paddingTop: '6px', borderTop: '1px solid var(--border-color)', fontSize: '11px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '3px 6px', marginTop: '8px', paddingTop: '6px', borderTop: '1px solid var(--border-color)', fontSize: '11px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
               <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>在席</span>
               <span style={{ color: 'var(--primary-color)', fontWeight: 800 }}>{st.stock_qty}</span>
@@ -537,19 +530,38 @@ const ConsumableList = ({ isSplitMode = false }) => {
       );
     };
 
+    const gridStyle = { display: 'grid', gridTemplateColumns: `repeat(${SLOT_COLUMNS}, minmax(0, 1fr))`, gap: '12px', padding: '16px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '16px', border: '1px solid var(--border-color)' };
+
+    // 搜尋中：只列符合的卡片，不能拖曳
+    if (terms.length > 0) {
+      return (
+        <div style={{ marginBottom: '24px' }}>
+          {displayKeys.length > 0 && (
+            <div style={gridStyle}>
+              {displayKeys.map((key) => statsMap[key] && <div key={key}>{renderCard(statsMap[key], false, false)}</div>)}
+            </div>
+          )}
+          {renderRetiredSection(retiredList)}
+        </div>
+      );
+    }
+
+    // 每列 6 格，拖曳時每一格都可以放（空格顯示虛線框），並多一列空位可以往下放
+    const slots = Array.from({ length: slotCount(slotLayout, !!draggingCardKey) });
     return (
       <div style={{ marginBottom: '24px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '14px', padding: '16px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '16px', border: '1px solid var(--border-color)' }}>
-          {displayKeys.map(key => {
-            const st = statsMap[key];
-            if (!st) return null;
+        <div style={gridStyle} data-testid="consumable-card-grid">
+          {slots.map((_, idx) => {
+            const st = statsMap[slotLayout[idx]];
             return (
               <div
-                key={key}
+                key={idx}
+                data-testid={`consumable-slot-${idx}`}
                 onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => handleTypeDrop(e, key, orderedActiveKeys)}
+                onDrop={(e) => handleDropOnSlot(e, idx, slotLayout)}
+                style={{ minHeight: '80px', borderRadius: '14px', border: draggingCardKey ? '1px dashed var(--border-color)' : '1px solid transparent', backgroundColor: draggingCardKey ? 'var(--bg-surface-hover)' : 'transparent', transition: 'all 0.2s' }}
               >
-                {renderCard(st, true, false)}
+                {st && renderCard(st, true, false)}
               </div>
             );
           })}
