@@ -88,6 +88,9 @@ export function preserveDisplayedDateText(worksheet) {
     if (typeof cell.w !== 'string' || !cell.w) continue; // 需有顯示文字
     cell.t = 's';
     cell.v = cell.w;
+    // 日期格式一併拿掉：SheetJS 0.20 起 sheet_to_json 看到日期格式會把值再轉成 Date，
+    // 換成文字的「2025-01-01」、「Jan-26」會被轉成 Invalid Date
+    delete cell.z;
   }
   return worksheet;
 }
@@ -148,6 +151,20 @@ export function decodeTextBuffer(buffer) {
 }
 
 /**
+ * 字碼頁對照表（舊版 .xls 的非 Unicode 文字要靠它解碼）。
+ * SheetJS 0.20 起不再內建，要另外載入；檔案約 470 KB，只在匯入時才載入一次。
+ */
+let codepagesReady = null;
+export const ensureCodepages = () => {
+  if (!codepagesReady) {
+    codepagesReady = import('xlsx/dist/cpexcel.full.mjs')
+      .then((cptable) => XLSX.set_cptable(cptable))
+      .catch((err) => { codepagesReady = null; console.warn('載入字碼頁失敗，非 Unicode 文字可能顯示異常', err); });
+  }
+  return codepagesReady;
+};
+
+/**
  * 讀取 Excel / CSV 檔案並自動校正中文字元編碼
  */
 export async function parseSpreadsheetFile(selectedFile) {
@@ -155,6 +172,7 @@ export async function parseSpreadsheetFile(selectedFile) {
   const fileName = (selectedFile.name || '').toLowerCase();
   const isCsv = fileName.endsWith('.csv') || fileName.endsWith('.txt');
 
+  await ensureCodepages();
   const arrayBuffer = await selectedFile.arrayBuffer();
   let workbook;
 
@@ -211,6 +229,7 @@ export async function parseSpreadsheet2D(selectedFile) {
   const fileName = (selectedFile.name || '').toLowerCase();
   const isCsv = fileName.endsWith('.csv') || fileName.endsWith('.txt');
 
+  await ensureCodepages();
   const arrayBuffer = await selectedFile.arrayBuffer();
   let workbook;
 

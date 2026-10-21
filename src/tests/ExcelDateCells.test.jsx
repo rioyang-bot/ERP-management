@@ -36,9 +36,10 @@ describe('Excel 日期格式儲存格', () => {
   it('文字性質的欄位應保留 Excel 顯示的文字，而非日期序號', () => {
     const sheet = roundTrip(makeSheet());
 
-    // 修正前的行為：取到原始序號
+    // 修正前的行為：拿不到使用者看到的「Jan-26」——
+    // SheetJS 0.18 取到原始序號 46023，0.20 起轉成 Date（還會因時區差一天）
     const before = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true })[0];
-    expect(before['Order Source']).toBe(46023);
+    expect(before['Order Source']).not.toBe('Jan-26');
 
     preserveDisplayedDateText(sheet);
 
