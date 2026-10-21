@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { X, Printer, ClipboardCheck } from 'lucide-react';
 import { buildChecklistSheet } from '../utils/checklistSheet';
+import ChecklistWordButton from './ChecklistWordButton';
 
 /**
  * 單一設備的出機檢查表列印
@@ -52,6 +53,7 @@ const DeviceChecklistPrintModal = ({ isOpen, onClose, device, items = [] }) => {
             >
               <Printer size={15} /> {isPrinting ? '準備列印...' : '列印 / 另存 PDF'}
             </button>
+            <ChecklistWordButton device={device} items={items} disabled={items.length === 0} />
             <button
               onClick={onClose}
               aria-label="關閉預覽"
