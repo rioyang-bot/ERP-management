@@ -140,7 +140,7 @@ describe('主機照片區塊', () => {
     expect(called('insertAuditLog')[0].params[8]).toContain('上傳主機照片');
   });
 
-  it('點縮圖會把原檔存下來，檔名用使用者原本的那一個', async () => {
+  it('點下載鈕會把原檔存下來，檔名用使用者原本的那一個（點縮圖是預覽，見 ChecklistPhotoPreview.test.jsx）', async () => {
     const clicked = [];
     const realClick = HTMLAnchorElement.prototype.click;
     HTMLAnchorElement.prototype.click = function stub() {
