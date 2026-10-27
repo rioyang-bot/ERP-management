@@ -4,11 +4,9 @@ import { useNavigate } from 'react-router-dom';
 import { toFormRows, monthRange, rocYear, fillEquipmentForm, formFileName } from '../utils/isoEquipmentForm';
 import templateUrl from '../assets/templates/S-408-02-equipment-in-out-v1.0.docx?url';
 
-/** 預設上個月：月底才整理當月的單據，多半要匯的是剛結束的那個月 */
+/** 預設本月 */
 const defaultMonth = () => {
   const d = new Date();
-  d.setDate(1);
-  d.setMonth(d.getMonth() - 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 };
 

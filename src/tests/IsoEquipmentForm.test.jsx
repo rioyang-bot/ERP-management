@@ -127,12 +127,14 @@ describe('報表頁', () => {
     };
   });
 
-  it('預設上個月；預覽列出設備進出與攜出／攜入數量；換月份重新查', async () => {
+  it('預設本月；預覽列出設備進出與攜出／攜入數量；換月份重新查', async () => {
     render(<MemoryRouter><IsoEquipmentForm /></MemoryRouter>);
     const now = new Date();
-    const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const ym = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`;
+    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     expect(screen.getByLabelText('月份')).toHaveValue(ym);
+    const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const nextYm = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`;
+    expect(window.electronAPI.namedQuery).toHaveBeenCalledWith('fetchEquipmentMovements', [`${ym}-01`, `${nextYm}-01`]);
     // 借出與歸還各一列
     await waitFor(() => expect(screen.getAllByText('SECRETHFT SECRETHFT-ARL 8C-Gen1', { selector: 'td' })).toHaveLength(2));
     expect(screen.getByText('攜出 6')).toBeInTheDocument();
