@@ -30,10 +30,18 @@ const ORDERS = [
 describe('期間的計算', () => {
   const now = new Date('2026-10-01T10:00:00');
   it('近 3 個月、本月、今年、全部', () => {
-    expect(periodRange('3M', {}, now)).toEqual({ from: '2026-07-01', to: '2026-10-01' });
-    expect(periodRange('MONTH', {}, now)).toEqual({ from: '2026-10-01', to: '2026-10-01' });
-    expect(periodRange('YEAR', {}, now)).toEqual({ from: '2026-01-01', to: '2026-10-01' });
+    expect(periodRange('3M', {}, now)).toEqual({ from: '2026-07-01', to: null });
+    expect(periodRange('MONTH', {}, now)).toEqual({ from: '2026-10-01', to: null });
+    expect(periodRange('YEAR', {}, now)).toEqual({ from: '2026-01-01', to: null });
     expect(periodRange('ALL', {}, now)).toEqual({ from: null, to: null });
+  });
+
+  // RMA-20261022-01：今天以庫存設備換貨結案，出貨日填後天，列表上整張不見
+  it('完工出貨日填未來的日期，本月、近 3 個月、今年都看得到', () => {
+    const future = order(9, 'RMA-SHIP-LATER', 'COMPLETED', '2026-10-03');
+    for (const p of ['MONTH', '3M', 'YEAR']) expect(inPeriod(future, periodRange(p, {}, now))).toBe(true);
+    // 自訂期間照使用者設的迄日
+    expect(inPeriod(future, periodRange('CUSTOM', { from: '2026-09-01', to: '2026-10-01' }, now))).toBe(false);
   });
 
   it('未結案的不管多舊都算在期間內', () => {
