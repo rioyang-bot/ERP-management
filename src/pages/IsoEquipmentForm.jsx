@@ -71,7 +71,7 @@ const IsoEquipmentForm = () => {
             <ShieldCheck size={24} color="#ea580c" /> 設備攜出入單 (ISO 27001 S-408-02)
           </h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '12px', margin: '2px 0 0' }}>
-            依月份把設備的進貨、出貨、借出與歸還填進公司的設備攜出入單範本，頁首頁尾照範本。只列設備，硬體與耗材不列入；相同廠牌／型號／規格加總數量。
+            依月份把設備的進出（進貨、出貨、借出、歸還、換貨、維修取回／送修原廠／原廠返還／完工交回）填進公司的設備攜出入單範本，頁首頁尾照範本。只列設備，硬體與耗材不列入；相同廠牌／型號／規格加總數量。
           </p>
         </div>
         <button type="button" onClick={() => navigate('/reports')} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-main)', fontWeight: 700, cursor: 'pointer' }}>
