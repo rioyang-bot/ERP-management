@@ -1664,11 +1664,27 @@ export const queries = {
     RETURNING a.id, a.sn`,
   // ISO 27001 設備攜出入單（見 utils/isoEquipmentForm.js）：一個月內設備的進出，
   // 只算類別為「設備」的（硬體、耗材不列），依日期、原因、對象與廠牌／型號／規格加總數量。
-  //   進貨單（已進貨）＝攜入／進貨／供應商；出貨單（已出貨）＝攜出／出貨／客戶；
-  //   借用單借出＝攜出／借出／客戶；借用單歸還＝攜入／歸還／客戶
+  //   進貨單（已進貨）＝攜入／進貨／供應商；出貨單（已出貨）＝攜出／出貨／客戶
+  //     （換貨單產生的出貨單＝換貨、維修以庫存換貨產生的＝維修換貨）；
+  //   借用單借出＝攜出／借出／客戶；借用單歸還＝攜入／歸還／客戶；
+  //   換貨單換回＝攜入／換貨／客戶；
+  //   客戶送修：現場取回＝攜入／維修取回／客戶、完工交回＝攜出／維修完工／客戶
+  //     （以庫存換貨的單，故障機留在公司，沒有交回）；
+  //   送修原廠＝攜出／送修原廠／原廠、原廠返還＝攜入／原廠返還／原廠（內部維修也算）
   // $1 起日（含）、$2 迄日（不含），YYYY-MM-DD
   fetchEquipmentMovements: `
-    WITH mv AS (
+    WITH repair_dev AS (
+      -- 維修單上的設備：品項以明細記的為準，沒記的從資產（序號）找回來
+      SELECT ro.*, im.brand, im.model, im.specification
+      FROM repair_orders ro
+      JOIN repair_items ri ON ri.repair_id = ro.id
+      LEFT JOIN assets a ON a.id = ri.asset_id
+        OR (ri.asset_id IS NULL AND ri.sn IS NOT NULL AND TRIM(a.sn) = TRIM(ri.sn))
+      JOIN item_master im ON im.id = COALESCE(ri.item_master_id, a.item_master_id)
+      JOIN categories c ON c.id = im.category_id
+      WHERE c.name = '設備'
+    ),
+    mv AS (
       SELECT COALESCE(io.order_date, io.created_at::date) AS move_date, 'IN' AS direction, '進貨' AS reason, 1 AS src,
              COALESCE(p.name, '') AS vendor, im.brand, im.model, im.specification, ii.quantity AS qty
       FROM inbound_items ii
@@ -1678,7 +1694,11 @@ export const queries = {
       JOIN categories c ON c.id = im.category_id
       WHERE io.status = 'COMPLETED' AND c.name = '設備'
       UNION ALL
-      SELECT r.shipping_date, 'OUT', '出貨', 2, COALESCE(r.customer, ''), im.brand, im.model, im.specification, oi.quantity
+      SELECT r.shipping_date, 'OUT',
+             CASE WHEN EXISTS (SELECT 1 FROM exchange_orders e WHERE e.outbound_request_id = r.id) THEN '換貨'
+                  WHEN EXISTS (SELECT 1 FROM repair_orders ro WHERE ro.swap_dn_no = r.request_no) THEN '維修換貨'
+                  ELSE '出貨' END,
+             2, COALESCE(r.customer, ''), im.brand, im.model, im.specification, oi.quantity
       FROM outbound_items oi
       JOIN outbound_requests r ON r.id = oi.request_id
       JOIN item_master im ON im.id = oi.item_id
@@ -1698,6 +1718,29 @@ export const queries = {
       JOIN item_master im ON im.id = oi.item_id
       JOIN categories c ON c.id = im.category_id
       WHERE r.request_type = 'LEND' AND r.status = 'RETURNED' AND r.actual_return_date IS NOT NULL AND c.name = '設備'
+      UNION ALL
+      -- 換貨單換回的設備（換出的走它產生的出貨單）
+      SELECT e.exchange_date, 'IN', '換貨', 5, COALESCE(e.customer, ''), im.brand, im.model, im.specification, x.quantity
+      FROM exchange_items x
+      JOIN exchange_orders e ON e.id = x.exchange_id
+      JOIN item_master im ON im.id = x.item_id
+      JOIN categories c ON c.id = im.category_id
+      WHERE x.direction = 'IN' AND c.name = '設備'
+      UNION ALL
+      -- 維修：從客戶那裡取回
+      SELECT on_site_date, 'IN', '維修取回', 6, COALESCE(customer_name, ''), brand, model, specification, 1
+      FROM repair_dev WHERE NOT COALESCE(is_internal, FALSE) AND on_site_date IS NOT NULL
+      UNION ALL
+      SELECT send_oem_date, 'OUT', '送修原廠', 7, COALESCE(NULLIF(TRIM(supplier_name), ''), '原廠'), brand, model, specification, 1
+      FROM repair_dev WHERE send_oem_date IS NOT NULL
+      UNION ALL
+      SELECT oem_return_date, 'IN', '原廠返還', 8, COALESCE(NULLIF(TRIM(supplier_name), ''), '原廠'), brand, model, specification, 1
+      FROM repair_dev WHERE oem_return_date IS NOT NULL
+      UNION ALL
+      -- 維修完工交回客戶；以庫存換貨的單故障機留在公司，不算
+      SELECT completion_date, 'OUT', '維修完工', 9, COALESCE(customer_name, ''), brand, model, specification, 1
+      FROM repair_dev WHERE NOT COALESCE(is_internal, FALSE) AND status = 'COMPLETED' AND completion_date IS NOT NULL
+        AND COALESCE(TRIM(swap_dn_no), '') = ''
     )
     SELECT move_date, direction, reason, vendor,
            COALESCE(brand, '') AS brand, COALESCE(model, '') AS model, COALESCE(specification, '') AS specification,

@@ -35,12 +35,31 @@ const unpack = async (blob) => {
 };
 
 describe('查詢', () => {
-  it('只算設備；四種來源與日期欄位', () => {
+  /** 進貨、出貨、借出、歸還以外：換貨換回、維修取回／送修原廠／原廠返還／完工交回 */
+  it('換貨與維修的設備進出', () => {
     const q = queries.fetchEquipmentMovements;
-    expect(q.match(/c\.name = '設備'/g)).toHaveLength(4);
+    // 換貨單、維修以庫存換貨產生的出貨單標出原因
+    expect(q).toContain("WHEN EXISTS (SELECT 1 FROM exchange_orders e WHERE e.outbound_request_id = r.id) THEN '換貨'");
+    expect(q).toContain("WHEN EXISTS (SELECT 1 FROM repair_orders ro WHERE ro.swap_dn_no = r.request_no) THEN '維修換貨'");
+    expect(q).toContain("e.exchange_date, 'IN', '換貨'");
+    expect(q).toContain("WHERE x.direction = 'IN' AND c.name = '設備'");
+    // 維修：客戶送修才有取回與完工交回；送修原廠、原廠返還內部維修也算
+    expect(q).toContain("on_site_date, 'IN', '維修取回'");
+    expect(q).toContain("send_oem_date, 'OUT', '送修原廠', 7, COALESCE(NULLIF(TRIM(supplier_name), ''), '原廠')");
+    expect(q).toContain("oem_return_date, 'IN', '原廠返還'");
+    expect(q).toContain("completion_date, 'OUT', '維修完工'");
+    // 以庫存換貨的單，故障機留在公司，完工不算交回
+    expect(q).toContain("AND COALESCE(TRIM(swap_dn_no), '') = ''");
+    expect(q.match(/NOT COALESCE\(is_internal, FALSE\)/g)).toHaveLength(2);
+  });
+
+  it('只算設備；進貨、出貨、借出、歸還與日期欄位', () => {
+    const q = queries.fetchEquipmentMovements;
+    // 進貨、出貨、借出、歸還、換貨換回各一處，維修單的設備一處
+    expect(q.match(/c\.name = '設備'/g)).toHaveLength(6);
     expect(q).toContain("io.status = 'COMPLETED'");
     expect(q).toContain("'IN' AS direction, '進貨'");
-    expect(q).toContain("'OUT', '出貨'");
+    expect(q).toContain("ELSE '出貨' END");
     expect(q).toContain("'OUT', '借出'");
     expect(q).toContain("r.actual_return_date, 'IN', '歸還'");
     expect(q).toContain('GROUP BY move_date, direction, reason, src, vendor, brand, model, specification');
