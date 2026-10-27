@@ -22,20 +22,22 @@ const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0
 
 /**
  * 期間的起訖日（含當天），YYYY-MM-DD；沒有限制的一端為 null。
+ *
+ * 本月、近 3 個月、今年只限制起點，不截止到今天：完工出貨日可以填未來的日期
+ * （例如今天先結案、後天才出貨），截止到今天的話這種單在列表上會整張消失。
  * @param {string} period PERIODS 的 key
  * @param {{from?: string, to?: string}} custom 自訂的起訖
  */
 export function periodRange(period, custom = {}, now = new Date()) {
-  const today = ymd(now);
   switch (period) {
     case 'MONTH':
-      return { from: ymd(new Date(now.getFullYear(), now.getMonth(), 1)), to: today };
+      return { from: ymd(new Date(now.getFullYear(), now.getMonth(), 1)), to: null };
     case '3M': {
       const d = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
-      return { from: ymd(d), to: today };
+      return { from: ymd(d), to: null };
     }
     case 'YEAR':
-      return { from: `${now.getFullYear()}-01-01`, to: today };
+      return { from: `${now.getFullYear()}-01-01`, to: null };
     case 'CUSTOM':
       return { from: custom.from || null, to: custom.to || null };
     default:
