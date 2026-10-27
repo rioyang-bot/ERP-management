@@ -182,6 +182,114 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
     );
   };
 
+  // 送修的供應商。清單在按下修改時才載入
+  const startSupplierEdit = () => {
+    const orderId = repairOrder.id;
+    setEdit({ orderId, field: 'supplier', value: repairOrder.supplier_id ? String(repairOrder.supplier_id) : '', list: [] });
+    Promise.resolve().then(() => window.electronAPI.namedQuery('fetchSuppliers')).then((res) => {
+      if (!res?.success) return;
+      setEdit((cur) => (cur?.field === 'supplier' && cur.orderId === orderId ? { ...cur, list: res.rows || [] } : cur));
+    }).catch((err) => console.error('Failed to load suppliers:', err));
+  };
+
+  const handleSaveSupplier = async () => {
+    const nextId = edit?.value || '';
+    const beforeId = repairOrder.supplier_id ? String(repairOrder.supplier_id) : '';
+    if (nextId === beforeId) { setEdit(null); return; }
+    const nextName = nextId ? (edit.list.find((x) => String(x.id) === nextId)?.name || null) : null;
+    const before = repairOrder.supplier_name || '';
+
+    setSaving(true);
+    try {
+      const res = await window.electronAPI.namedQuery('updateRepairSupplier', [
+        nextId ? Number(nextId) : null, nextName, repairOrder.id,
+      ]);
+      if (!res.success) throw new Error(res.error || '未知錯誤');
+      if (!res.rows || res.rows.length === 0) throw new Error('找不到這張維修單，可能已被刪除');
+
+      await logUpdate(
+        'REPAIR', repairOrder.repair_no, repairOrder.customer_name,
+        `修改維修單 [${repairOrder.repair_no}] 的送修供應商`,
+        { orderNo: repairOrder.repair_no, before, after: nextName || '' }
+      );
+      setEdit(null);
+      onUpdated?.({ supplier_id: nextId ? Number(nextId) : null, supplier_name: nextName });
+    } catch (err) {
+      alert('儲存失敗：' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const supplierBlock = () => {
+    const editing = edit?.field === 'supplier' && edit?.orderId === repairOrder.id;
+    return (
+      <div style={BLOCK}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+          <div style={CARD_LABEL}>送修供應商 (Supplier)</div>
+          {!editing && (
+            <button type="button" onClick={startSupplierEdit} title="修改送修供應商" aria-label="修改送修供應商" style={ICON_BTN}>
+              <Edit2 size={11} />
+            </button>
+          )}
+        </div>
+        {editing ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px' }}>
+            <select
+              value={edit.value}
+              onChange={(e) => setEdit({ ...edit, value: e.target.value })}
+              aria-label="送修供應商"
+              style={{
+                width: '100%', padding: '6px 8px', borderRadius: '6px',
+                border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)',
+                color: 'var(--input-text)', fontSize: '12px', outline: 'none',
+              }}
+            >
+              <option value="">未指定</option>
+              {/* 單上記的供應商已停用時不在清單裡，仍要看得到 */}
+              {repairOrder.supplier_id && !edit.list.some((x) => String(x.id) === String(repairOrder.supplier_id)) && (
+                <option value={String(repairOrder.supplier_id)}>{repairOrder.supplier_name || '原供應商'}</option>
+              )}
+              {edit.list.map((sp) => (
+                <option key={sp.id} value={sp.id}>
+                  {sp.name}{sp.contact ? `（${sp.contact}）` : ''}
+                </option>
+              ))}
+            </select>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <button
+                type="button"
+                onClick={handleSaveSupplier}
+                disabled={saving}
+                aria-label="儲存送修供應商"
+                style={{
+                  ...SMALL_BTN, border: 'none', color: '#fff', fontWeight: 700,
+                  backgroundColor: saving ? 'var(--border-color)' : '#16a34a',
+                  cursor: saving ? 'wait' : 'pointer',
+                }}
+              >
+                <Save size={12} /> {saving ? '儲存中' : '儲存'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setEdit(null)}
+                aria-label="取消修改送修供應商"
+                style={{
+                  ...SMALL_BTN, border: '1px solid var(--border-color)',
+                  backgroundColor: 'var(--bg-surface)', color: 'var(--text-muted)',
+                }}
+              >
+                <X size={12} /> 取消
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div style={BLOCK_BODY}>{repairOrder.supplier_name || '尚未選擇'}</div>
+        )}
+      </div>
+    );
+  };
+
   const resultsBlock = (hint) => stageBlock(
     '維修與檢測結果 (Results)',
     repairOrder.results || hint,
@@ -516,6 +624,7 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
                 <div style={CARD_META}>
                   狀態：{noOem ? '不適用 (不需送回原廠)' : (repairOrder.send_oem_date ? '原廠處理中 (REPAIRING)' : '現場在庫')}
                 </div>
+                {!noOem && supplierBlock()}
                 {stageBlock('送修備註 (Remarks)', repairOrder.send_oem_remarks || '尚未填寫', 'send_oem_remarks')}
               </div>
 

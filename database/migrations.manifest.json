@@ -233,6 +233,11 @@
       "file": "migration_repair_loaner.sql",
       "type": "schema",
       "note": "維修代用機：借用單連回維修單"
+    },
+    {
+      "file": "migration_repair_supplier_any.sql",
+      "type": "schema",
+      "note": "維修單：客戶送修也能選送修的供應商"
     }
   ]
 }

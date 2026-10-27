@@ -64,6 +64,9 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
   const [replacementSns, setReplacementSns] = useState({});
   // 完工時一併登記代用機歸還
   const [returnLoaners, setReturnLoaners] = useState(true);
+  // 送修原廠：送去哪一家供應商（來源是客戶／廠商管理裡的供應商）
+  const [supplierId, setSupplierId] = useState('');
+  const [supplierList, setSupplierList] = useState([]);
 
   useEffect(() => {
     if (isOpen && repairOrder) {
@@ -76,9 +79,17 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
       setRmaNo('');
       setReplacementSns({});
       setReturnLoaners(true);
+      setSupplierId(repairOrder.supplier_id ? String(repairOrder.supplier_id) : '');
       setError('');
     }
   }, [isOpen, repairOrder, actionType]);
+
+  useEffect(() => {
+    if (!isOpen || actionType !== 'SEND_OEM') return;
+    Promise.resolve().then(() => window.electronAPI.namedQuery('fetchSuppliers')).then((res) => {
+      if (res?.success) setSupplierList(res.rows || []);
+    }).catch((err) => console.error('Failed to load suppliers:', err));
+  }, [isOpen, actionType]);
 
   if (!isOpen || !repairOrder) return null;
 
@@ -153,6 +164,12 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
 
   const isInternal = !!repairOrder?.is_internal;
   const config = getActionConfig();
+  // 清單還沒載入時用單上記的名稱，不會把原本的供應商寫成空白
+  const supplierName = supplierId
+    ? (supplierList.find((x) => String(x.id) === String(supplierId))?.name
+      || (String(repairOrder.supplier_id) === String(supplierId) ? repairOrder.supplier_name : null)
+      || null)
+    : null;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -177,11 +194,13 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
       const logDetails = { repairNo: repairOrder.repair_no, action: actionType };
 
       if (actionType === 'SEND_OEM') {
-        // 1. 寫入 Send OEM Date，更新為 SENT_OEM
+        // 1. 寫入 Send OEM Date 與送修的供應商，更新為 SENT_OEM
         const res = await window.electronAPI.namedQuery('updateRepairSendOEM', [
           date,
           remarks.trim() || null,
-          repairOrder.id
+          repairOrder.id,
+          supplierId ? Number(supplierId) : null,
+          supplierName,
         ]);
         if (!res.success) throw new Error(res.error || '更新送修狀態失敗');
 
@@ -189,8 +208,8 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
         //    掛在設備上的硬體跟著，設備與硬體各記一筆（見 utils/repairAssetStatus.js）
         for (const item of items) {
           await setRepairAssetStatus(item.sn, 'REPAIRING', {
-            note: `維修單 [${repairOrder.repair_no}] 寄出送修原廠`,
-            details: logDetails,
+            note: `維修單 [${repairOrder.repair_no}] 寄出送修原廠${supplierName ? ` [${supplierName}]` : ''}`,
+            details: { ...logDetails, supplier: supplierName },
           });
         }
       } else if (actionType === 'OEM_RETURN') {
@@ -326,6 +345,7 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
           date,
           results: results.trim() || null,
           remarks: remarks.trim() || null,
+          ...(actionType === 'SEND_OEM' ? { supplier: supplierName } : {}),
           sns: items.map((it) => it.sn).filter(Boolean),
         });
 
@@ -507,6 +527,43 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
               }}
             />
           </div>
+
+          {/* 送修原廠：送去哪一家供應商 */}
+          {actionType === 'SEND_OEM' && (
+            <div>
+              <label htmlFor="repair-send-oem-supplier" style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--text-main)', marginBottom: '6px' }}>
+                送修供應商 (Supplier)
+                <span style={{ marginLeft: '6px', fontWeight: 500, color: 'var(--text-subtle)' }}>
+                  送回哪一家原廠
+                </span>
+              </label>
+              <select
+                id="repair-send-oem-supplier"
+                value={supplierId}
+                onChange={(e) => setSupplierId(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '10px 14px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: 'var(--bg-surface-subtle)',
+                  color: 'var(--text-main)',
+                  fontSize: '14px'
+                }}
+              >
+                <option value="">請選擇供應商...</option>
+                {/* 單上記的供應商已停用時不在清單裡，仍要看得到 */}
+                {repairOrder.supplier_id && !supplierList.some((x) => String(x.id) === String(repairOrder.supplier_id)) && (
+                  <option value={String(repairOrder.supplier_id)}>{repairOrder.supplier_name || '原供應商'}</option>
+                )}
+                {supplierList.map((sp) => (
+                  <option key={sp.id} value={sp.id}>
+                    {sp.name}{sp.contact ? `（${sp.contact}）` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* 原廠返還與自行維修都要填寫維修結果 (Results) */}
           {(actionType === 'OEM_RETURN' || actionType === 'IN_HOUSE_COMPLETE') && (

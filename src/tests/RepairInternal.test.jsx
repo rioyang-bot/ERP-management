@@ -216,12 +216,12 @@ describe('對象底下的第二行', () => {
 });
 
 describe('供應商的資料表規則', () => {
-  it('供應商只屬於內部維修', async () => {
+  // 客戶送修也要記送去哪一家，之後的 migration 拿掉了這條限制（見 RepairSendOemSupplier.test.jsx）
+  it('「供應商只屬於內部維修」的限制已拿掉', async () => {
     const fs = await import('fs');
-    const sql = fs.readFileSync('database/migration_repair_supplier.sql', 'utf8');
+    const sql = fs.readFileSync('database/migration_repair_supplier_any.sql', 'utf8');
 
-    expect(sql).toContain('repair_orders_supplier_only_internal');
-    expect(sql).toContain('is_internal = TRUE');
+    expect(sql).toContain('DROP CONSTRAINT IF EXISTS repair_orders_supplier_only_internal');
   });
 
   it('供應商被刪除時單據留著，名稱仍看得到', async () => {
