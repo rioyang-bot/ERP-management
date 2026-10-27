@@ -2867,14 +2867,26 @@ export const queries = {
   // 每個階段各寫自己的說明欄位，不再共用 remarks —— 共用時後面的步驟會蓋掉前面的。
   // 直接寫入而不是 COALESCE：彈窗開啟時已帶入現值，使用者把內容刪光就是要清空，
   // COALESCE 會默默留著舊字，看起來像沒存到。
+  // $4 / $5 是送去哪一家供應商（id 與名稱）。名稱另存，供應商日後停用或刪除仍看得出來
   updateRepairSendOEM: `
-    UPDATE repair_orders 
-    SET status = 'SENT_OEM', 
-        send_oem_date = $1, 
+    UPDATE repair_orders
+    SET status = 'SENT_OEM',
+        send_oem_date = $1,
         send_oem_remarks = NULLIF(TRIM(COALESCE($2, '')), ''),
-        updated_at = CURRENT_TIMESTAMP 
-    WHERE id = $3 
+        supplier_id = $4::integer,
+        supplier_name = NULLIF(TRIM(COALESCE($5::text, '')), ''),
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = $3
     RETURNING *
+  `,
+  // 維修單明細更正送修的供應商
+  updateRepairSupplier: `
+    UPDATE repair_orders
+    SET supplier_id = $1::integer,
+        supplier_name = NULLIF(TRIM(COALESCE($2::text, '')), ''),
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = $3
+    RETURNING id, supplier_id, supplier_name
   `,
   // $5 為 true（公司內部）時，原廠返還就是終點：東西回到自己庫房，
   // 沒有客戶可以出貨。單據直接結案，完工日期就是返還日期。
