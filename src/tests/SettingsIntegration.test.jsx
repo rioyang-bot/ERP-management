@@ -88,4 +88,36 @@ describe('Settings 頁面完整流程整合測試', () => {
     // 點選後依然保持不可移除樣式與不可編輯狀態
     expect(settingsOptionContainer.style.cursor).toBe('not-allowed');
   });
+
+  it('設備攜出入單簽核權限：管理員也能勾選；儲存寫進 menu_access 並留下事件紀錄', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, 'alert').mockImplementation(() => {});
+    render(
+      <RoleContext.Provider value={{ authUser: mockAuthUser, role: 'ADMIN', setAuthUser: vi.fn() }}>
+        <Settings />
+      </RoleContext.Provider>
+    );
+    await user.click(await screen.findByTitle(/設定功能權限/));
+    await screen.findByRole('heading', { name: '權限設定', level: 2 });
+
+    const supervisor = screen.getByRole('checkbox', { name: '可簽核：權責主管' });
+    expect(supervisor).toHaveAttribute('aria-checked', 'false');
+    await user.click(supervisor);
+    expect(supervisor).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('checkbox', { name: '可簽核：機房管理員' })).toHaveAttribute('aria-checked', 'false');
+
+    await user.click(screen.getByText(/儲存權限設定/));
+    await waitFor(() => {
+      const call = window.electronAPI.namedQuery.mock.calls.find(([q]) => q === 'updateUserAccess');
+      expect(call[1][0]).toMatchObject({ isoSignSupervisor: true });
+      expect(call[1][0].isoSignRoomAdmin).toBeFalsy();
+      expect(call[1][1]).toBe(1);
+    });
+    await waitFor(() => {
+      const log = window.electronAPI.namedQuery.mock.calls.find(([q]) => q === 'insertAuditLog');
+      expect(log[1][4]).toBe('USER');
+      expect(log[1][8]).toBe('修改使用者 [METECH] 選單權限設定（設備攜出入單簽核：權責主管）');
+      expect(log[1][9].iso_sign_roles).toEqual(['權責主管']);
+    });
+  });
 });

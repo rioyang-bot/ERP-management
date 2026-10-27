@@ -12,6 +12,7 @@ import { queries as namedQueries } from './database/queries.js';
 import { createAuth } from './server/auth.js';
 import { createAuthRoutes } from './server/authRoutes.js';
 import { createPreferenceRoutes } from './server/preferenceRoutes.js';
+import { createIsoSignatureRoutes } from './server/isoSignatureRoutes.js';
 import { prepareQueryParams } from './server/queryParams.js';
 import { runTransaction } from './server/transaction.js';
 import { ensureMonthlyBalances } from './server/monthlyBalance.js';
@@ -315,6 +316,9 @@ app.use('/api/auth', createAuthRoutes(pool, auth));
 
 // 使用者個人偏好設定（例如各列表的顯示欄位），對象取自連線階段
 app.use('/api/preferences', createPreferenceRoutes(pool, auth));
+
+// ISO 表單線上簽核（設備攜出入單）：簽的人取自連線階段，不能代簽
+app.use('/api/iso-signatures', createIsoSignatureRoutes(pool, auth, namedQueries));
 
 
 const uploadSingle = upload.single('file');

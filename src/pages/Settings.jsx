@@ -20,6 +20,13 @@ const MENU_OPTIONS = [
   { id: 'settings', label: '系統管理 (Accounts)' },
 ];
 
+// ISO 表單線上簽核：誰可以簽哪個角色（伺服器依這兩個權限判斷，見 server/isoSignatureRoutes.js）。
+// 跟選單權限不同，管理員也要勾了才能簽。
+const SIGN_OPTIONS = [
+  { id: 'isoSignRoomAdmin', label: '機房管理員' },
+  { id: 'isoSignSupervisor', label: '權責主管' },
+];
+
 const Settings = () => {
   const { authUser, setAuthUser } = useContext(RoleContext);
 
@@ -239,8 +246,8 @@ const Settings = () => {
     setShowPermissionModal(true);
   };
 
-  const handleTogglePermission = (menuId) => {
-    if (editingUser.role === 'ADMIN') {
+  const handleTogglePermission = (menuId, { allowAdmin = false } = {}) => {
+    if (editingUser.role === 'ADMIN' && !allowAdmin) {
       return;
     }
     setEditingUser(prev => ({
@@ -265,9 +272,12 @@ const Settings = () => {
     );
 
     if (res.success) {
-      logUpdate('USER', editingUser.username, editingUser.full_name || editingUser.username, `修改使用者 [${editingUser.username}] 選單權限設定`, {
+      const signRoles = SIGN_OPTIONS.filter((o) => updatedAccess[o.id]).map((o) => o.label);
+      logUpdate('USER', editingUser.username, editingUser.full_name || editingUser.username, `修改使用者 [${editingUser.username}] 選單權限設定`
+        + `（設備攜出入單簽核：${signRoles.length ? signRoles.join('、') : '無'}）`, {
         username: editingUser.username,
-        menu_access: updatedAccess
+        menu_access: updatedAccess,
+        iso_sign_roles: signRoles,
       });
       alert('權限更新成功');
       
@@ -710,6 +720,34 @@ const Settings = () => {
                   </div>
                 );
               })}
+            </div>
+
+            <div style={{ marginBottom: '28px' }}>
+              <div style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-main)', marginBottom: '4px' }}>設備攜出入單線上簽核</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '10px' }}>勾選後，這個帳號登入就能在報表中心的設備攜出入單簽名（管理員也要勾選）。</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                {SIGN_OPTIONS.map(opt => {
+                  const isChecked = !!editingUser.menu_access[opt.id];
+                  return (
+                    <div
+                      key={opt.id}
+                      role="checkbox"
+                      aria-checked={isChecked}
+                      aria-label={`可簽核：${opt.label}`}
+                      onClick={() => handleTogglePermission(opt.id, { allowAdmin: true })}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '12px', padding: '12px',
+                        borderRadius: '8px', border: '1px solid var(--border-color)', cursor: 'pointer',
+                        backgroundColor: isChecked ? 'var(--primary-bg)' : 'var(--bg-surface-subtle)',
+                        color: 'var(--text-main)', transition: 'all 0.2s'
+                      }}
+                    >
+                      {isChecked ? <CheckSquare size={18} color="var(--primary-color)" /> : <Square size={18} color="var(--text-subtle)" />}
+                      <span style={{ fontSize: '0.9rem', fontWeight: isChecked ? 600 : 400 }}>可簽：{opt.label}</span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
             <div style={{ display: 'flex', gap: '12px' }}>
