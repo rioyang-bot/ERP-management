@@ -1,6 +1,6 @@
 import React from 'react';
 import fs from 'fs';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import RepairActionModal from '../components/RepairActionModal';
@@ -130,7 +130,7 @@ describe('維修單明細更正送修供應商', () => {
         onUpdated={onUpdated}
       />
     );
-    expect(screen.getByText('技嘉 Gigabyte')).toBeInTheDocument();
+    expect(within(screen.getByTestId('repair-oem-info')).getByText('技嘉 Gigabyte')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: '修改送修供應商' }));
     await waitFor(() => expect(screen.getByRole('option', { name: '華碩 ASUS' })).toBeInTheDocument());
@@ -158,6 +158,38 @@ describe('維修單明細更正送修供應商', () => {
     await userEvent.click(screen.getByRole('button', { name: '儲存送修供應商' }));
     expect(calledWith('updateRepairSupplier')).toEqual([]);
     expect(auditLogs()).toEqual([]);
+  });
+});
+
+describe('維修單明細的原廠資訊', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockDb();
+  });
+
+  const show = (extra) => {
+    render(<RepairOrderDetailModal isOpen repairOrder={order(extra)} onClose={vi.fn()} onUpdated={vi.fn()} />);
+    return within(screen.getByTestId('repair-oem-info'));
+  };
+
+  it('只列送修供應商的名稱', () => {
+    const info = show({ status: 'SENT_OEM', supplier_id: 12, supplier_name: '華碩 ASUS' });
+    expect(info.getByText('原廠資訊 (Supplier)')).toBeInTheDocument();
+    expect(info.getByText('華碩 ASUS')).toBeInTheDocument();
+    expect(info.queryByText(/聯絡人|電話|Email|地址/)).not.toBeInTheDocument();
+  });
+
+  it('供應商已刪除仍看得到單上記的名稱', () => {
+    const info = show({ status: 'SENT_OEM', supplier_id: null, supplier_name: '已刪除的廠商' });
+    expect(info.getByText('已刪除的廠商')).toBeInTheDocument();
+  });
+
+  it('還沒選供應商時說明在哪裡選', () => {
+    expect(show({}).getByText(/尚未選擇/)).toBeInTheDocument();
+  });
+
+  it('不需送回原廠的單標示不適用', () => {
+    expect(show({ no_oem_required: true }).getByText('不適用（不需送回原廠）')).toBeInTheDocument();
   });
 });
 

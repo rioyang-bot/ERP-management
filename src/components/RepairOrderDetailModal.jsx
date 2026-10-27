@@ -493,6 +493,21 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
               )}
             </div>
 
+            {/* 原廠資訊：送去哪一家供應商 */}
+            <div data-testid="repair-oem-info">
+              <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)' }}>原廠資訊 (Supplier)</span>
+              {repairOrder.supplier_name ? (
+                <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-main)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Truck size={16} color="#d97706" />
+                  {repairOrder.supplier_name}
+                </div>
+              ) : (
+                <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  {noOem ? '不適用（不需送回原廠）' : '尚未選擇（送修原廠時選擇，或在下方送修原廠卡片修改）'}
+                </div>
+              )}
+            </div>
+
             <div>
               <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)' }}>建立日期</span>
               <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-main)', marginTop: '4px' }}>
