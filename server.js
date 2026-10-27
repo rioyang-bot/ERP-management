@@ -2,7 +2,6 @@ import 'dotenv/config';
 import https from 'https';
 import express from 'express';
 import cors from 'cors';
-import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -16,6 +15,7 @@ import { createPreferenceRoutes } from './server/preferenceRoutes.js';
 import { prepareQueryParams } from './server/queryParams.js';
 import { runTransaction } from './server/transaction.js';
 import { ensureMonthlyBalances } from './server/monthlyBalance.js';
+import { createUpload, MAX_UPLOAD_MB } from './server/upload.js';
 
 const { Pool } = pg;
 const __filename = fileURLToPath(import.meta.url);
@@ -224,31 +224,8 @@ async function autoMergeDuplicateItemMasters(clientPool) {
 }
 
 const uploadsDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    let folderPath = 'uploads/';
-    if (req.body.projectName) {
-      const safeName = req.body.projectName.replace(/[^a-zA-Z0-9_\-\u4e00-\u9fa5]/g, '_');
-      folderPath = path.join('uploads', safeName);
-      const fullPath = path.join(__dirname, folderPath);
-      if (!fs.existsSync(fullPath)) {
-        fs.mkdirSync(fullPath, { recursive: true });
-      }
-    }
-    cb(null, folderPath);
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    const baseName = path.basename(file.originalname, ext);
-    cb(null, `${baseName}-${Date.now()}${ext}`);
-  }
-});
-// 上傳沒有上限時，一支手機連拍就能把磁碟塞滿。
-// 25 MB 容得下掃描的報價單與手機直出的照片，又不至於讓單一檔案失控。
-const MAX_UPLOAD_MB = 25;
-const upload = multer({ storage, limits: { fileSize: MAX_UPLOAD_MB * 1024 * 1024 } });
+// 上傳設定（中文檔名以 UTF-8 解讀、25 MB 上限）見 server/upload.js
+const upload = createUpload(__dirname);
 
 // CORS：僅允許自家前端來源，避免任意網站透過瀏覽器讀取本系統資料。
 // 以環境變數 ALLOWED_ORIGINS 設定（逗號分隔），未設定時僅允許同源與本機。
@@ -358,11 +335,9 @@ app.post('/api/upload', auth.requireAuth, (req, res, next) => {
 }, (req, res) => {
   if (!req.file) return res.status(400).json({ success: false, error: 'No file uploaded' });
   
-  let fileUrl = req.file.path.replace(/\\/g, '/');
-  if (!fileUrl.startsWith('/')) {
-    fileUrl = '/' + fileUrl;
-  }
-  
+  // 存檔位置是絕對路徑（見 server/upload.js），網址取它相對專案目錄的部分：/uploads/檔名
+  const fileUrl = '/' + path.relative(__dirname, req.file.path).split(path.sep).join('/');
+
   res.json({ success: true, fileName: req.file.filename, url: fileUrl });
 });
 
