@@ -238,6 +238,11 @@
       "file": "migration_repair_supplier_any.sql",
       "type": "schema",
       "note": "維修單：客戶送修也能選送修的供應商"
+    },
+    {
+      "file": "fix_rma_20261022_ship_date.sql",
+      "type": "data",
+      "note": "更正 RMA-20261022-01 以庫存設備換貨誤選的出貨日 10/29 → 10/22，出貨單號 DN-20261029-01 → DN-20261022-01；只在資料仍為 10/29 時動作"
     }
   ]
 }
