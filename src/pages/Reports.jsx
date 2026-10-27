@@ -12,7 +12,8 @@ import {
   FileSpreadsheet, 
   ShieldCheck, 
   Network,
-  ClipboardCheck
+  ClipboardCheck,
+  FileText
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import './Reports.css';
@@ -101,6 +102,19 @@ const Reports = () => {
       desc: '全系統資料異動與操作稽核日誌，即時追蹤設備、硬體、耗材、採購、進出貨與系統設定之新增、變更與刪除事件。',
       tags: ['操作稽核', '新增變更刪除', '異動追蹤', '全系統日誌', 'CSV 匯出'],
       path: '/event-logs'
+    },
+    {
+      id: 'iso-equipment-form',
+      title: '設備攜出入單 (ISO 27001 S-408-02)',
+      category: 'AUDIT',
+      categoryLabel: '歷史稽核',
+      icon: <FileText size={28} />,
+      iconBg: 'linear-gradient(135deg, #2b579a, #1e3f73)',
+      status: 'ACTIVE',
+      statusText: '已上線',
+      desc: '依月份把設備的進貨、出貨、借出與歸還填進公司的 S-408-02 設備攜出入單範本並匯出 Word，頁首頁尾照範本；只列設備，相同廠牌／型號／規格加總數量。',
+      tags: ['ISO 27001', '依月份匯出', 'Word 範本', '攜出／攜入', '只列設備'],
+      path: '/iso-equipment-form'
     }
   ];
 

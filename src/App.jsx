@@ -16,6 +16,7 @@ import DNList from './pages/DNList';
 import LentList from './pages/LentList';
 import Reports from './pages/Reports';
 import ChecklistTemplates from './pages/ChecklistTemplates';
+import IsoEquipmentForm from './pages/IsoEquipmentForm';
 import PJReport from './pages/PJReport';
 import FlowHistory from './pages/FlowHistory';
 import EventLogs from './pages/EventLogs';
@@ -87,6 +88,7 @@ function App() {
               <Route path="partners" element={<Partners />} />
               <Route path="reports" element={<Reports />} />
               <Route path="checklist-templates" element={<ChecklistTemplates />} />
+              <Route path="iso-equipment-form" element={<IsoEquipmentForm />} />
               <Route path="pj-report" element={<PJReport />} />
               <Route path="process-flow" element={<ProcessFlow />} />
               <Route path="flow-history" element={<FlowHistory />} />

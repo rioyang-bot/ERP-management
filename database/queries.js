@@ -1662,6 +1662,50 @@ export const queries = {
       AND TRIM(a.sn) = TRIM(oi.sn) AND a.status = 'SHIPPED'
       AND COALESCE(TRIM(a.location), '') = COALESCE(TRIM($3), '')
     RETURNING a.id, a.sn`,
+  // ISO 27001 設備攜出入單（見 utils/isoEquipmentForm.js）：一個月內設備的進出，
+  // 只算類別為「設備」的（硬體、耗材不列），依日期、原因、對象與廠牌／型號／規格加總數量。
+  //   進貨單（已進貨）＝攜入／進貨／供應商；出貨單（已出貨）＝攜出／出貨／客戶；
+  //   借用單借出＝攜出／借出／客戶；借用單歸還＝攜入／歸還／客戶
+  // $1 起日（含）、$2 迄日（不含），YYYY-MM-DD
+  fetchEquipmentMovements: `
+    WITH mv AS (
+      SELECT COALESCE(io.order_date, io.created_at::date) AS move_date, 'IN' AS direction, '進貨' AS reason, 1 AS src,
+             COALESCE(p.name, '') AS vendor, im.brand, im.model, im.specification, ii.quantity AS qty
+      FROM inbound_items ii
+      JOIN inbound_orders io ON io.id = ii.inbound_order_id
+      LEFT JOIN partners p ON p.id = io.partner_id
+      JOIN item_master im ON im.id = ii.item_id
+      JOIN categories c ON c.id = im.category_id
+      WHERE io.status = 'COMPLETED' AND c.name = '設備'
+      UNION ALL
+      SELECT r.shipping_date, 'OUT', '出貨', 2, COALESCE(r.customer, ''), im.brand, im.model, im.specification, oi.quantity
+      FROM outbound_items oi
+      JOIN outbound_requests r ON r.id = oi.request_id
+      JOIN item_master im ON im.id = oi.item_id
+      JOIN categories c ON c.id = im.category_id
+      WHERE COALESCE(r.request_type, 'SALE') <> 'LEND' AND r.status IN ('SHIPPED', 'RETURNED') AND c.name = '設備'
+      UNION ALL
+      SELECT r.shipping_date, 'OUT', '借出', 3, COALESCE(r.customer, ''), im.brand, im.model, im.specification, oi.quantity
+      FROM outbound_items oi
+      JOIN outbound_requests r ON r.id = oi.request_id
+      JOIN item_master im ON im.id = oi.item_id
+      JOIN categories c ON c.id = im.category_id
+      WHERE r.request_type = 'LEND' AND r.status IN ('SHIPPED', 'RETURNED') AND c.name = '設備'
+      UNION ALL
+      SELECT r.actual_return_date, 'IN', '歸還', 4, COALESCE(r.customer, ''), im.brand, im.model, im.specification, oi.quantity
+      FROM outbound_items oi
+      JOIN outbound_requests r ON r.id = oi.request_id
+      JOIN item_master im ON im.id = oi.item_id
+      JOIN categories c ON c.id = im.category_id
+      WHERE r.request_type = 'LEND' AND r.status = 'RETURNED' AND r.actual_return_date IS NOT NULL AND c.name = '設備'
+    )
+    SELECT move_date, direction, reason, vendor,
+           COALESCE(brand, '') AS brand, COALESCE(model, '') AS model, COALESCE(specification, '') AS specification,
+           SUM(COALESCE(qty, 1))::int AS qty
+    FROM mv
+    WHERE move_date >= $1::date AND move_date < $2::date
+    GROUP BY move_date, direction, reason, src, vendor, brand, model, specification
+    ORDER BY move_date, src, vendor, brand, model, specification`,
   // 借貨申請單預覽裡修改並儲存的內容（見 utils/lentPrintDraft.js）。
   // 以物件傳入：伺服器的參數過濾只處理字串，物件原樣轉成 JSON，注意事項裡的 ( ) ! 等字元才不會被刪掉
   fetchLentPrintDraft: `SELECT print_draft FROM outbound_requests WHERE id = $1::integer`,
