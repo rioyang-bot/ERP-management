@@ -481,10 +481,12 @@ export const queries = {
       a.sn, 
       a.asset_no,
       a.status, 
-      a.location, 
-      i.brand, 
-      i.model, 
-      c.name as category_name
+      a.location,
+      i.brand,
+      i.model,
+      c.name as category_name,
+      -- 保管人＝資產的 End-user；欄位與 custom_attributes 兩處都可能有，先讀欄位
+      COALESCE(NULLIF(TRIM(a.end_user), ''), NULLIF(TRIM(a.custom_attributes->>'end_user'), '')) AS end_user
     FROM assets a
     JOIN item_master i ON a.item_master_id = i.id
     LEFT JOIN categories c ON i.category_id = c.id
