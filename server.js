@@ -17,6 +17,7 @@ import { prepareQueryParams } from './server/queryParams.js';
 import { runTransaction } from './server/transaction.js';
 import { ensureMonthlyBalances } from './server/monthlyBalance.js';
 import { createUpload, MAX_UPLOAD_MB } from './server/upload.js';
+import { createJsonBodyParser } from './server/jsonBody.js';
 
 const { Pool } = pg;
 const __filename = fileURLToPath(import.meta.url);
@@ -254,8 +255,8 @@ app.use(cors({
   credentials: true,
 }));
 // 公司範本的 LOGO 以 data: 網址存在範本裡（單張上限 1 MB，見 src/utils/companyPresets.js），
-// 預設的 100 KB 一張圖就超過了
-app.use(express.json({ limit: '5mb' }));
+// 預設的 100 KB 一張圖就超過了。不接受壓縮過的請求內容，理由見 server/jsonBody.js
+app.use(createJsonBodyParser({ limit: '5mb' }));
 
 const auth = createAuth(pool);
 

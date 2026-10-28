@@ -208,6 +208,6 @@ describe('範本的伺服器查詢', () => {
 
   it('伺服器收得下含 LOGO 的範本', () => {
     const server = require('fs').readFileSync('server.js', 'utf8');
-    expect(server).toContain("app.use(express.json({ limit: '5mb' }));");
+    expect(server).toContain("app.use(createJsonBodyParser({ limit: '5mb' }));");
   });
 });
