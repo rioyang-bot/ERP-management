@@ -154,7 +154,7 @@ const Stocktaking = () => {
       ]);
     } else if (activeTab === 'company') {
       filename = `公司資產盤點單_${today}.csv`;
-      headers = ['資產分類', '廠牌', '型號', '資產序號(Asset No)', '序號(S/N)', '狀態', '存放地點', '保管人', '實盤確認', '盤點備註'];
+      headers = ['資產分類', '廠牌', '型號', '資產序號(Asset No)', '序號(S/N)', '狀態', '存放地點', '保管人(End-User)', '實盤確認', '盤點備註'];
 
       csvRows = filteredData.map(item => [
         item.category_name || '',
@@ -318,7 +318,7 @@ const Stocktaking = () => {
                   <th style={{ width: '200px' }}>序號 (S/N)</th>
                   <th style={{ width: '100px', textAlign: 'center' }}>狀態</th>
                   <th>存放地點</th>
-                  <th style={{ width: '140px' }}>保管人</th>
+                  <th style={{ width: '140px' }}>保管人(End-User)</th>
                   <th style={{ width: '120px', textAlign: 'center' }}>實盤總數</th>
                   <th style={{ width: '150px' }}>盤點備註</th>
                 </tr>
@@ -456,7 +456,7 @@ const Stocktaking = () => {
             盤點時通常先清這一批。
           </div>
           <div>
-            • <b>保管人</b>（公司資產）：取自設備／硬體的 End-user，沒填的顯示「未指定」，要改請到設備或硬體列表修改。
+            • <b>保管人(End-User)</b>（公司資產）：取自設備／硬體的 End-user，沒填的顯示「未指定」，要改請到設備或硬體列表修改。
           </div>
           <div>
             • <b>實盤總數與盤點備註</b>：這兩欄<b>刻意留白，供列印後手寫</b>。
