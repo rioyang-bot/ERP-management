@@ -36,6 +36,7 @@ const showCompany = async () => {
   await screen.findByText('QTU5250009');
 };
 
+const LABEL = '保管人(End-User)';
 const headers = () => screen.getAllByRole('columnheader').map((th) => th.textContent.trim());
 const cellsOf = (sn) => [...screen.getByText(sn).closest('tr').querySelectorAll('td')].map((td) => td.textContent.trim());
 
@@ -49,14 +50,14 @@ describe('公司資產盤點：保管人', () => {
   it('保管人欄排在存放地點後面、實盤總數前面', async () => {
     await showCompany();
     const h = headers();
-    expect(h.indexOf('保管人')).toBe(h.indexOf('存放地點') + 1);
-    expect(h.indexOf('實盤總數')).toBe(h.indexOf('保管人') + 1);
-    expect(cellsOf('QTU5250009')[h.indexOf('保管人')]).toBe('王大明');
+    expect(h.indexOf(LABEL)).toBe(h.indexOf('存放地點') + 1);
+    expect(h.indexOf('實盤總數')).toBe(h.indexOf(LABEL) + 1);
+    expect(cellsOf('QTU5250009')[h.indexOf(LABEL)]).toBe('王大明');
   });
 
   it('沒有 End-user 的顯示「未指定」，不是空白', async () => {
     await showCompany();
-    expect(cellsOf('A9000000009')[headers().indexOf('保管人')]).toBe('未指定');
+    expect(cellsOf('A9000000009')[headers().indexOf(LABEL)]).toBe('未指定');
   });
 
   it('可以用保管人搜尋', async () => {
@@ -74,7 +75,7 @@ describe('公司資產盤點：保管人', () => {
     await userEvent.click(screen.getByRole('button', { name: /下載 CSV/ }));
     const text = await blobs[0].text();
     const [head, first, second] = text.replace(/^﻿/, '').split('\n');
-    expect(head).toBe('資產分類,廠牌,型號,資產序號(Asset No),序號(S/N),狀態,存放地點,保管人,實盤確認,盤點備註');
+    expect(head).toBe('資產分類,廠牌,型號,資產序號(Asset No),序號(S/N),狀態,存放地點,保管人(End-User),實盤確認,盤點備註');
     expect(first).toBe('"設備","RARITAN","PX3-5466R","METECH-2026-001","QTU5250009","在庫","BQDC3F","王大明","",""');
     expect(second.split('","')[6]).toBe('LAB， 2F');
     expect(second.split('","')[7]).toBe('');
@@ -85,6 +86,6 @@ describe('公司資產盤點：保管人', () => {
     const { default: Stocktaking } = await import('../pages/Stocktaking');
     render(<Stocktaking />);
     await screen.findByText('DCS-7010TX');
-    expect(headers()).not.toContain('保管人');
+    expect(headers()).not.toContain(LABEL);
   });
 });
