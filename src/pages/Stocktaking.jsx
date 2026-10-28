@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Download, ClipboardList, RotateCw, Server, Package, Cpu } from 'lucide-react';
+import { Download, ClipboardList, RotateCw, Server, Package, Cpu, Edit2 } from 'lucide-react';
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
+import CompanyAssetEditModal from '../components/CompanyAssetEditModal';
 import { getBalanceMonths, indexBalances, getBalance } from '../utils/monthlyBalanceView';
 import './Stocktaking.css';
 
@@ -11,6 +12,7 @@ const Stocktaking = () => {
   const [assets, setAssets] = useState([]); // Contains both devices and hardware
   const [consumables, setConsumables] = useState([]);
   const [companyAssets, setCompanyAssets] = useState([]);
+  const [editingAsset, setEditingAsset] = useState(null); // 公司資產：編輯詳細資訊
   const [loading, setLoading] = useState(false);
 
   // Filters
@@ -117,6 +119,17 @@ const Stocktaking = () => {
   useEffect(() => {
     setCurrentPage(1);
   }, [activeTab, searchTerm, onlyRecentOutbound]);
+
+  // 保管人輸入時的建議：沿用其他公司資產已經填過的寫法，避免同一個人有好幾種寫法
+  const endUserOptions = useMemo(
+    () => [...new Set(companyAssets.map((a) => (a.end_user || '').trim()).filter(Boolean))].sort(),
+    [companyAssets]
+  );
+
+  const handleCompanyAssetSaved = (updated) => {
+    setCompanyAssets((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+    setEditingAsset(null);
+  };
 
   const totalPages = Math.ceil(filteredData.length / itemsPerPage) || 1;
   const paginatedData = filteredData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
@@ -321,6 +334,7 @@ const Stocktaking = () => {
                   <th style={{ width: '140px' }}>保管人(End-User)</th>
                   <th style={{ width: '120px', textAlign: 'center' }}>實盤總數</th>
                   <th style={{ width: '150px' }}>盤點備註</th>
+                  <th className="st-no-print" style={{ width: '120px', textAlign: 'center' }}>操作</th>
                 </tr>
               ) : (
                 <tr>
@@ -372,6 +386,11 @@ const Stocktaking = () => {
                         </td>
                         <td style={{ textAlign: 'center' }}><span className="st-print-blank"></span></td>
                         <td><span className="st-print-blank" style={{ width: '100%' }}></span></td>
+                        <td className="st-no-print" style={{ textAlign: 'center' }}>
+                          <button type="button" className="st-row-action" onClick={() => setEditingAsset(item)}>
+                            <Edit2 size={14} /> 編輯詳細資訊
+                          </button>
+                        </td>
                       </tr>
                     );
                   }
@@ -419,7 +438,7 @@ const Stocktaking = () => {
                 })
               ) : (
                 <tr>
-                  <td colSpan={(activeTab === 'consumables' ? 7 : (activeTab === 'company' ? 9 : 6)) + (activeTab === 'company' ? 0 : balanceMonths.length)} className="st-empty">
+                  <td colSpan={(activeTab === 'consumables' ? 7 : (activeTab === 'company' ? 10 : 6)) + (activeTab === 'company' ? 0 : balanceMonths.length)} className="st-empty">
                     {`沒有符合的${activeTab === 'devices' ? '設備' : activeTab === 'hardware' ? '硬體' : activeTab === 'company' ? '公司資產' : '耗材'}`}
                   </td>
                 </tr>
@@ -456,7 +475,11 @@ const Stocktaking = () => {
             盤點時通常先清這一批。
           </div>
           <div>
-            • <b>保管人(End-User)</b>（公司資產）：取自設備／硬體的 End-user，沒填的顯示「未指定」，要改請到設備或硬體列表修改。
+            • <b>保管人(End-User)</b>（公司資產）：取自設備／硬體的 End-user，沒填的顯示「未指定」。
+          </div>
+          <div>
+            • <b>編輯詳細資訊</b>（公司資產）：每列最右側可直接修改資產序號、存放地點、保管人(End-User)與備註，
+            存檔後寫入設備／硬體的資料並記在事件紀錄；廠牌、型號、序號等其他欄位仍到設備或硬體列表修改。
           </div>
           <div>
             • <b>實盤總數與盤點備註</b>：這兩欄<b>刻意留白，供列印後手寫</b>。
@@ -468,6 +491,15 @@ const Stocktaking = () => {
           </div>
         </div>
       </div>
+
+      {editingAsset && (
+        <CompanyAssetEditModal
+          item={editingAsset}
+          endUserOptions={endUserOptions}
+          onClose={() => setEditingAsset(null)}
+          onSaved={handleCompanyAssetSaved}
+        />
+      )}
     </div>
   );
 };

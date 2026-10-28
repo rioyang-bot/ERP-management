@@ -486,7 +486,8 @@ export const queries = {
       i.model,
       c.name as category_name,
       -- 保管人＝資產的 End-user；欄位與 custom_attributes 兩處都可能有，先讀欄位
-      COALESCE(NULLIF(TRIM(a.end_user), ''), NULLIF(TRIM(a.custom_attributes->>'end_user'), '')) AS end_user
+      COALESCE(NULLIF(TRIM(a.end_user), ''), NULLIF(TRIM(a.custom_attributes->>'end_user'), '')) AS end_user,
+      a.remarks
     FROM assets a
     JOIN item_master i ON a.item_master_id = i.id
     LEFT JOIN categories c ON i.category_id = c.id
@@ -495,6 +496,20 @@ export const queries = {
       AND c.name IN ('設備', '硬體')
     ORDER BY a.status, i.brand, i.model
   `,
+  // 盤點表直接改公司資產的盤點欄位（資產序號、存放地點、保管人、備註），其餘欄位不動。
+  // End-user 有欄位與 custom_attributes 兩處（列表先讀欄位），兩處一起寫才不會顯示舊值。
+  // 只限公司資產，避免拿別的資產 id 改到一般銷售的設備。
+  updateCompanyAssetStocktakingInfo: `
+    UPDATE assets SET
+      asset_no = NULLIF(TRIM($1::text), ''),
+      location = NULLIF(TRIM($2::text), ''),
+      end_user = NULLIF(TRIM($3::text), ''),
+      custom_attributes = (CASE WHEN custom_attributes IS NOT NULL AND jsonb_typeof(custom_attributes) = 'object' THEN custom_attributes ELSE '{}'::jsonb END)
+        || jsonb_build_object('end_user', COALESCE(TRIM($3::text), '')),
+      remarks = NULLIF(TRIM($4::text), ''),
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = $5::integer AND ownership = 'COMPANY'
+    RETURNING id`,
   // View Data Queryies
   fetchMenuAssetBrands: `SELECT DISTINCT i.brand FROM assets a JOIN item_master i ON a.item_master_id = i.id LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '設備' ORDER BY i.brand ASC`,
   fetchMenuConsumableTypes: `SELECT DISTINCT i.type FROM item_master i LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '耗材' ORDER BY i.type ASC`,
