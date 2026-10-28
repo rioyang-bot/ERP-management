@@ -243,6 +243,16 @@
       "file": "fix_rma_20261022_ship_date.sql",
       "type": "data",
       "note": "更正 RMA-20261022-01 以庫存設備換貨誤選的出貨日 10/29 → 10/22，出貨單號 DN-20261029-01 → DN-20261022-01；只在資料仍為 10/29 時動作"
+    },
+    {
+      "file": "migration_iso_form_signatures.sql",
+      "type": "schema",
+      "note": "ISO 表單線上簽核：設備攜出入單每月由機房管理員、權責主管手寫簽名"
+    },
+    {
+      "file": "migration_user_signatures.sql",
+      "type": "schema",
+      "note": "個人簽名檔：簽核時使用自己帳號上傳的簽名"
     }
   ]
 }

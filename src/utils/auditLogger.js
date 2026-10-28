@@ -21,7 +21,9 @@ export const MODULE_MAP = {
   // 客戶換貨單（換回的良品回在庫、換出的產生出貨單）
   EXCHANGE: { key: 'EXCHANGE', label: '客戶換貨' },
   // 主檔整併這類資料維護工具用的模組，理由同上
-  SYSTEM_SETTINGS: { key: 'SYSTEM_SETTINGS', label: '系統維護' }
+  SYSTEM_SETTINGS: { key: 'SYSTEM_SETTINGS', label: '系統維護' },
+  // ISO 表單線上簽核（由伺服器寫入，見 server/isoSignatureRoutes.js）
+  ISO_FORM: { key: 'ISO_FORM', label: 'ISO 表單' }
 };
 
 export const ACTION_TYPES = {

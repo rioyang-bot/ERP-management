@@ -99,6 +99,23 @@ if (!window.electronAPI) {
       }
     },
 
+    // ISO 表單線上簽核：簽的人由伺服器依連線階段判定
+    //   method GET 讀這個月的簽核狀態；POST 簽名（body.signature 為 PNG data: 網址）；DELETE 撤銷
+    isoSignature: async (method, form, period, role, body) => {
+      try {
+        const url = [`${API_BASE}/api/iso-signatures`, form, period, role].filter(Boolean).map((s, i) => (i ? encodeURIComponent(s) : s)).join('/');
+        const response = await authFetch(url, {
+          method,
+          headers: body ? { 'Content-Type': 'application/json' } : undefined,
+          body: body ? JSON.stringify(body) : undefined,
+        });
+        const data = await response.json();
+        return response.ok ? data : { success: false, error: data.error || `HTTP ${response.status}` };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+
     // 登入：送出帳號與密碼，由伺服器端驗證並回傳連線代碼。
     // 密碼不在前端做任何雜湊或比對。
     authLogin: async (username, password) => {
