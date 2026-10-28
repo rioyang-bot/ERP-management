@@ -22,6 +22,7 @@ import { useCardLayoutByMode } from '../hooks/useCardLayout';
 import DeviceChecklistModal from '../components/DeviceChecklistModal';
 import MountedConsumablesSection from '../components/MountedConsumablesSection';
 import { groupMountedHwByType, UNREGISTERED } from '../utils/mountedHwGroups';
+import { sameAssetNo, checkDuplicateAssetNo } from '../utils/assetNo';
 
 // 設備列表的欄位清單：id 對應表格的每一欄，always 代表不可隱藏
 const DEVICE_COLUMNS = [
@@ -198,6 +199,7 @@ const DeviceList = ({ isSplitMode = false }) => {
     f._origType = f.type || '';
     f._origSpec = f.specification || '';
     f._origComponents = Array.isArray(f.components) ? f.components : [];
+    f._origAssetNo = f.asset_no || '';
     
     let attrs = {};
     try { attrs = typeof f.custom_attributes === 'string' ? JSON.parse(f.custom_attributes) : (f.custom_attributes || {}); } catch { attrs = {}; }
@@ -342,6 +344,15 @@ const DeviceList = ({ isSplitMode = false }) => {
       const checkRes = await window.electronAPI.namedQuery('checkAssetSnExistsExcludeSelf', [newSn, editItem.id]);
       if (checkRes.success && checkRes.rows?.length > 0) {
         alert(`序號「${newSn}」已存在於其他設備或資產，請勿重複使用！`);
+        return;
+      }
+    }
+
+    // 資產序號防重：只有公司資產會存編號，且只在編號有改時檢查
+    if ((editItem.ownership || 'FOR_SALE') === 'COMPANY' && !sameAssetNo(editItem.asset_no, editItem._origAssetNo)) {
+      const dupMsg = await checkDuplicateAssetNo(editItem.asset_no, editItem.id);
+      if (dupMsg) {
+        alert(dupMsg);
         return;
       }
     }

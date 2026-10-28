@@ -241,6 +241,13 @@ export const queries = {
       AND h.status IS DISTINCT FROM d.status
     RETURNING h.id, h.sn, h.status, prev.status AS old_status, d.sn AS device_sn`,
   checkAssetSnExistsExcludeSelf: `SELECT id, sn FROM assets WHERE TRIM(sn) = TRIM($1) AND id != $2 LIMIT 1`,
+  // 資產序號（公司財產編號）不可與其他設備／硬體重複；不分大小寫、忽略前後空白，帶出佔用的那一台方便查
+  checkAssetNoExistsExcludeSelf: `
+    SELECT a.id, a.sn, a.asset_no, i.brand, i.model
+    FROM assets a
+    LEFT JOIN item_master i ON a.item_master_id = i.id
+    WHERE a.asset_no IS NOT NULL AND UPPER(TRIM(a.asset_no)) = UPPER(TRIM($1::text)) AND a.id <> $2::integer
+    LIMIT 1`,
   checkAssetSnExists: `SELECT id, sn FROM assets WHERE TRIM(sn) = TRIM($1) LIMIT 1`,
   // 新序號還沒被任何資產用走時回一筆，被占用時回 0 筆。
   // 交易以 expectRows 擋在最前面，避免撞上唯一鍵才失敗。

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Save } from 'lucide-react';
 import { logUpdate } from '../utils/auditLogger';
+import { sameAssetNo, checkDuplicateAssetNo } from '../utils/assetNo';
 
 /**
  * 庫存盤點表 > 公司資產：編輯詳細資訊
@@ -39,6 +40,11 @@ const CompanyAssetEditModal = ({ item, endUserOptions = [], onClose, onSaved }) 
 
     setSaving(true);
     try {
+      // 只在資產序號有改時檢查：既有資料就算撞號，改其他欄位也不該被擋
+      if (!sameAssetNo(form.asset_no, item.asset_no)) {
+        const dupMsg = await checkDuplicateAssetNo(form.asset_no, item.id);
+        if (dupMsg) { alert(dupMsg); return; }
+      }
       const res = await window.electronAPI.namedQuery('updateCompanyAssetStocktakingInfo', [
         form.asset_no, form.location, form.end_user, form.remarks, item.id,
       ]);
