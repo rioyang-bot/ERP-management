@@ -91,7 +91,8 @@ const Stocktaking = () => {
             (item.model || '').toLowerCase().includes(term) ||
             (item.sn || '').toLowerCase().includes(term) ||
             (item.asset_no || '').toLowerCase().includes(term) ||
-            (item.category_name || '').toLowerCase().includes(term)
+            (item.category_name || '').toLowerCase().includes(term) ||
+            (item.end_user || '').toLowerCase().includes(term)
           );
         }
         return true;
@@ -153,7 +154,7 @@ const Stocktaking = () => {
       ]);
     } else if (activeTab === 'company') {
       filename = `公司資產盤點單_${today}.csv`;
-      headers = ['資產分類', '廠牌', '型號', '資產序號(Asset No)', '序號(S/N)', '狀態', '存放地點', '實盤確認', '盤點備註'];
+      headers = ['資產分類', '廠牌', '型號', '資產序號(Asset No)', '序號(S/N)', '狀態', '存放地點', '保管人', '實盤確認', '盤點備註'];
 
       csvRows = filteredData.map(item => [
         item.category_name || '',
@@ -163,6 +164,7 @@ const Stocktaking = () => {
         item.sn || '',
         item.status === 'ACTIVE' ? '在庫' : (item.status === 'LENT' ? '借出' : item.status),
         (item.location || '').replace(/,/g, '，'),
+        (item.end_user || '').replace(/,/g, '，'),
         '', // 留空給現場人員填寫
         ''  // 留空給現場人員填寫
       ]);
@@ -271,7 +273,7 @@ const Stocktaking = () => {
             <input
               type="text"
               className="st-input"
-              placeholder="搜尋廠牌、型號、類型、規格..."
+              placeholder={activeTab === 'company' ? '搜尋廠牌、型號、序號、資產序號、保管人...' : '搜尋廠牌、型號、類型、規格...'}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
@@ -316,6 +318,7 @@ const Stocktaking = () => {
                   <th style={{ width: '200px' }}>序號 (S/N)</th>
                   <th style={{ width: '100px', textAlign: 'center' }}>狀態</th>
                   <th>存放地點</th>
+                  <th style={{ width: '140px' }}>保管人</th>
                   <th style={{ width: '120px', textAlign: 'center' }}>實盤總數</th>
                   <th style={{ width: '150px' }}>盤點備註</th>
                 </tr>
@@ -363,6 +366,10 @@ const Stocktaking = () => {
                           </span>
                         </td>
                         <td style={{ fontSize: '13px', color: '#475569' }}>{item.location}</td>
+                        {/* 保管人取資產的 End-user；沒填的標示出來，盤點時才知道要補 */}
+                        <td style={{ fontSize: '13px' }}>
+                          {item.end_user || <span style={{ color: '#94a3b8' }}>未指定</span>}
+                        </td>
                         <td style={{ textAlign: 'center' }}><span className="st-print-blank"></span></td>
                         <td><span className="st-print-blank" style={{ width: '100%' }}></span></td>
                       </tr>
@@ -412,7 +419,7 @@ const Stocktaking = () => {
                 })
               ) : (
                 <tr>
-                  <td colSpan={(activeTab === 'consumables' ? 7 : (activeTab === 'company' ? 8 : 6)) + (activeTab === 'company' ? 0 : balanceMonths.length)} className="st-empty">
+                  <td colSpan={(activeTab === 'consumables' ? 7 : (activeTab === 'company' ? 9 : 6)) + (activeTab === 'company' ? 0 : balanceMonths.length)} className="st-empty">
                     {`沒有符合的${activeTab === 'devices' ? '設備' : activeTab === 'hardware' ? '硬體' : activeTab === 'company' ? '公司資產' : '耗材'}`}
                   </td>
                 </tr>
@@ -447,6 +454,9 @@ const Stocktaking = () => {
           <div>
             • <b>近期異動</b>：近三個月內有出貨或借還紀錄的品項。上方可勾選只顯示這些品項，
             盤點時通常先清這一批。
+          </div>
+          <div>
+            • <b>保管人</b>（公司資產）：取自設備／硬體的 End-user，沒填的顯示「未指定」，要改請到設備或硬體列表修改。
           </div>
           <div>
             • <b>實盤總數與盤點備註</b>：這兩欄<b>刻意留白，供列印後手寫</b>。
