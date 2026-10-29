@@ -211,11 +211,19 @@ describe('耗材工具列', () => {
     expect(select.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('自訂標籤功能已移除', async () => {
+  // 自訂標籤改存在帳號裡之後恢復（見 ConsumableCustomTags.test.jsx）：
+  // 聚合規則仍排最前面，標籤在聚合規則與搜尋框之間
+  it('自訂標籤排在聚合規則與搜尋框之間', async () => {
+    window.electronAPI.getUserPreference.mockImplementation((key) =>
+      Promise.resolve({ success: true, value: key === 'consumableSearchTags' ? ['METECH'] : null }));
     await show();
-    expect(screen.queryByText('自訂標籤')).not.toBeInTheDocument();
-    expect(document.querySelector('[data-testid="open-custom-tags-btn"]')).toBeNull();
-    expect(document.querySelector('[data-testid="custom-tags-container"]')).toBeNull();
+    const select = screen.getByLabelText('聚合規則:');
+    const tags = await screen.findByTestId('custom-tags-container');
+    const search = screen.getByPlaceholderText(/快速搜尋/);
+
+    expect(select.compareDocumentPosition(tags) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(tags.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByTestId('open-custom-tags-btn')).toBeInTheDocument();
   });
 
   it('搜尋框仍然可用 —— 標籤原本做的事，搜尋框本來就做得到', async () => {
