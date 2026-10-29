@@ -2365,6 +2365,8 @@ export const queries = {
       CASE
         WHEN l.details->>'exchange' = 'IN' THEN 'EXCHANGE_RETURN'
         WHEN l.details->>'direction' IN ('TO_LAB', 'TO_STOCK') THEN 'LAB_TRANSFER'
+        -- 盤點調整（server/stockAdjustRoutes.js）：數量欄是差額的絕對值，盤虧／盤盈看摘要
+        WHEN l.details->>'stockAdjust' IN ('LOSS', 'GAIN') THEN 'STOCK_ADJUST'
         ELSE 'ADJUST'
       END as transaction_type,
       l.timestamp::date as transaction_date,

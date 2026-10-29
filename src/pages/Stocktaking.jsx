@@ -1,8 +1,10 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Download, ClipboardList, RotateCw, Server, Package, Cpu, Edit2 } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useContext } from 'react';
+import { Download, ClipboardList, RotateCw, Server, Package, Cpu, Edit2, ClipboardCheck } from 'lucide-react';
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 import CompanyAssetEditModal from '../components/CompanyAssetEditModal';
+import StockAdjustModal from '../components/StockAdjustModal';
+import { RoleContext } from '../context/RoleContext';
 import { getBalanceMonths, indexBalances, getBalance } from '../utils/monthlyBalanceView';
 import './Stocktaking.css';
 
@@ -13,6 +15,11 @@ const Stocktaking = () => {
   const [consumables, setConsumables] = useState([]);
   const [companyAssets, setCompanyAssets] = useState([]);
   const [editingAsset, setEditingAsset] = useState(null); // 公司資產：編輯詳細資訊
+  // 耗材盤點調整：要有「可盤點調整」權限才顯示（伺服器也會檢查）
+  const { authUser } = useContext(RoleContext) || {};
+  const canStockAdjust = !!authUser?.menu_access?.stockAdjust;
+  const [adjustItem, setAdjustItem] = useState(null);
+  const showAdjustCol = activeTab === 'consumables' && canStockAdjust;
   const [loading, setLoading] = useState(false);
 
   // Filters
@@ -353,6 +360,7 @@ const Stocktaking = () => {
                   ))}
                   <th style={{ width: '120px', textAlign: 'center' }}>實盤總數</th>
                   <th style={{ width: '150px' }}>盤點備註</th>
+                  {showAdjustCol && <th className="st-no-print" style={{ width: '110px', textAlign: 'center' }}>操作</th>}
                 </tr>
               )}
             </thead>
@@ -433,12 +441,19 @@ const Stocktaking = () => {
                       })}
                       <td style={{ textAlign: 'center' }}><span className="st-print-blank"></span></td>
                       <td><span className="st-print-blank" style={{ width: '100%' }}></span></td>
+                      {showAdjustCol && (
+                        <td className="st-no-print" style={{ textAlign: 'center' }}>
+                          <button type="button" className="st-row-action st-row-action-adjust" onClick={() => setAdjustItem(item)}>
+                            <ClipboardCheck size={14} /> 盤點調整
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   );
                 })
               ) : (
                 <tr>
-                  <td colSpan={(activeTab === 'consumables' ? 7 : (activeTab === 'company' ? 10 : 6)) + (activeTab === 'company' ? 0 : balanceMonths.length)} className="st-empty">
+                  <td colSpan={(activeTab === 'consumables' ? 7 : (activeTab === 'company' ? 10 : 6)) + (activeTab === 'company' ? 0 : balanceMonths.length) + (showAdjustCol ? 1 : 0)} className="st-empty">
                     {`沒有符合的${activeTab === 'devices' ? '設備' : activeTab === 'hardware' ? '硬體' : activeTab === 'company' ? '公司資產' : '耗材'}`}
                   </td>
                 </tr>
@@ -484,13 +499,26 @@ const Stocktaking = () => {
           <div>
             • <b>實盤總數與盤點備註</b>：這兩欄<b>刻意留白，供列印後手寫</b>。
             系統不會儲存這兩欄的內容，畫面上也不能輸入 ——
-            盤點結果請在紙本上填寫，若要更正系統庫存，回到各自的列表修改。
+            盤點結果請在紙本上填寫。要更正系統庫存：耗材用下方的「盤點調整」，設備與硬體回到各自的列表修改。
+          </div>
+          <div>
+            • <b>盤點調整</b>（耗材）：實盤數量與系統 Stock 不符時，按該列的「盤點調整」輸入實盤數量與原因，
+            系統 Stock 直接改成實盤數量，並記在事件紀錄與品項履歷（顯示為「盤點調整」）。
+            需要帳號有「可盤點調整」權限（系統管理 → 權限設定）。只調整 Stock；LAB 有差異請先在耗材列表用「庫存異動 (Stock↔LAB)」移回 Stock 再調整。
           </div>
           <div>
             • <b>匯出</b>：右上角可匯出 CSV，欄位與畫面一致，同樣保留實盤與備註兩個空欄。
           </div>
         </div>
       </div>
+
+      {adjustItem && (
+        <StockAdjustModal
+          item={adjustItem}
+          onClose={() => setAdjustItem(null)}
+          onAdjusted={() => { setAdjustItem(null); window.dispatchEvent(new CustomEvent('db-update')); fetchData(); }}
+        />
+      )}
 
       {editingAsset && (
         <CompanyAssetEditModal

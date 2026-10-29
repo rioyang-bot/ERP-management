@@ -27,6 +27,10 @@ const SIGN_OPTIONS = [
   { id: 'isoSignSupervisor', label: '權責主管' },
 ];
 
+// 耗材盤點調整：直接把 Stock 改成實盤數量（伺服器依這個權限判斷，見 server/stockAdjustRoutes.js）。
+// 同樣不跟著選單權限走，管理員也要勾了才能調整。
+const STOCK_ADJUST_OPTION = { id: 'stockAdjust', label: '可盤點調整' };
+
 const Settings = () => {
   const { authUser, setAuthUser } = useContext(RoleContext);
 
@@ -274,10 +278,11 @@ const Settings = () => {
     if (res.success) {
       const signRoles = SIGN_OPTIONS.filter((o) => updatedAccess[o.id]).map((o) => o.label);
       logUpdate('USER', editingUser.username, editingUser.full_name || editingUser.username, `修改使用者 [${editingUser.username}] 選單權限設定`
-        + `（設備攜出入單簽核：${signRoles.length ? signRoles.join('、') : '無'}）`, {
+        + `（設備攜出入單簽核：${signRoles.length ? signRoles.join('、') : '無'}；盤點調整：${updatedAccess[STOCK_ADJUST_OPTION.id] ? '可' : '否'}）`, {
         username: editingUser.username,
         menu_access: updatedAccess,
         iso_sign_roles: signRoles,
+        stock_adjust: !!updatedAccess[STOCK_ADJUST_OPTION.id],
       });
       alert('權限更新成功');
       
@@ -747,6 +752,33 @@ const Settings = () => {
                     </div>
                   );
                 })}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '28px' }}>
+              <div style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-main)', marginBottom: '4px' }}>庫存盤點調整</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '10px' }}>勾選後，這個帳號可以在耗材列表與庫存盤點表把耗材的 Stock 改成實盤數量（管理員也要勾選）。</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                {(() => {
+                  const isChecked = !!editingUser.menu_access[STOCK_ADJUST_OPTION.id];
+                  return (
+                    <div
+                      role="checkbox"
+                      aria-checked={isChecked}
+                      aria-label={STOCK_ADJUST_OPTION.label}
+                      onClick={() => handleTogglePermission(STOCK_ADJUST_OPTION.id, { allowAdmin: true })}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '12px', padding: '12px',
+                        borderRadius: '8px', border: '1px solid var(--border-color)', cursor: 'pointer',
+                        backgroundColor: isChecked ? 'var(--primary-bg)' : 'var(--bg-surface-subtle)',
+                        color: 'var(--text-main)', transition: 'all 0.2s'
+                      }}
+                    >
+                      {isChecked ? <CheckSquare size={18} color="var(--primary-color)" /> : <Square size={18} color="var(--text-subtle)" />}
+                      <span style={{ fontSize: '0.9rem', fontWeight: isChecked ? 600 : 400 }}>{STOCK_ADJUST_OPTION.label}</span>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 

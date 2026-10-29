@@ -13,6 +13,7 @@ import { createAuth } from './server/auth.js';
 import { createAuthRoutes } from './server/authRoutes.js';
 import { createPreferenceRoutes } from './server/preferenceRoutes.js';
 import { createIsoSignatureRoutes } from './server/isoSignatureRoutes.js';
+import { createStockAdjustRoutes } from './server/stockAdjustRoutes.js';
 import { prepareQueryParams } from './server/queryParams.js';
 import { runTransaction } from './server/transaction.js';
 import { ensureMonthlyBalances } from './server/monthlyBalance.js';
@@ -320,6 +321,9 @@ app.use('/api/preferences', createPreferenceRoutes(pool, auth));
 
 // ISO 表單線上簽核（設備攜出入單）：簽的人取自連線階段，不能代簽
 app.use('/api/iso-signatures', createIsoSignatureRoutes(pool, auth, namedQueries));
+
+// 耗材盤點調整（只調整 Stock）：要有「可盤點調整」權限，伺服器自己檢查，見 server/stockAdjustRoutes.js
+app.use('/api/stock-adjustments', createStockAdjustRoutes(pool, auth));
 
 
 const uploadSingle = upload.single('file');

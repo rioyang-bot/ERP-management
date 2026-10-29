@@ -116,6 +116,22 @@ if (!window.electronAPI) {
       }
     },
 
+    // 耗材盤點調整（只調整 Stock）：權限由伺服器檢查，見 server/stockAdjustRoutes.js
+    //   數量已被別人異動時回 status 409 與 currentStock
+    stockAdjust: async (body) => {
+      try {
+        const response = await authFetch(`${API_BASE}/api/stock-adjustments`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await response.json();
+        return response.ok ? data : { ...data, success: false, status: response.status, error: data.error || `HTTP ${response.status}` };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+
     // 登入：送出帳號與密碼，由伺服器端驗證並回傳連線代碼。
     // 密碼不在前端做任何雜湊或比對。
     authLogin: async (username, password) => {

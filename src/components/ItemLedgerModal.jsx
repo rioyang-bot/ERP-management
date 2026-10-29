@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, History, ArrowDownToLine, ArrowUpFromLine, ArrowRightLeft, RefreshCw, Box, Layers, Hash, ChevronLeft, ChevronRight, FileSpreadsheet, Wrench, Repeat, Trash2, PackageCheck, Cpu } from 'lucide-react';
+import { X, History, ArrowDownToLine, ArrowUpFromLine, ArrowRightLeft, RefreshCw, Box, Layers, Hash, ChevronLeft, ChevronRight, FileSpreadsheet, Wrench, Repeat, Trash2, PackageCheck, Cpu, ClipboardCheck } from 'lucide-react';
 
 const ItemLedgerModal = ({ isOpen, onClose, item }) => {
   const [records, setRecords] = useState([]);
@@ -73,6 +73,8 @@ const ItemLedgerModal = ({ isOpen, onClose, item }) => {
         return { label: '回到在庫', icon: <PackageCheck size={14} />, color: '#10b981', bg: 'rgba(16, 185, 129, 0.15)' };
       case 'LAB_TRANSFER':
         return { label: '庫存調撥', icon: <ArrowRightLeft size={14} />, color: '#0891b2', bg: 'rgba(8, 145, 178, 0.15)' };
+      case 'STOCK_ADJUST':
+        return { label: '盤點調整', icon: <ClipboardCheck size={14} />, color: '#be123c', bg: 'rgba(190, 18, 60, 0.12)' };
       case 'ADJUST':
         return { label: '資料更正', icon: <History size={14} />, color: '#d97706', bg: 'rgba(217, 119, 6, 0.15)' };
       case 'STATUS_CHANGE':
