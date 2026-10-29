@@ -1,7 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useContext } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Search, Edit2, Trash2, X, Save, MoreHorizontal, ArrowLeftRight, ClipboardList, ShoppingBag, AlertTriangle, Archive, RotateCcw, Package, History, Layers } from 'lucide-react';
+import { Search, Edit2, Trash2, X, Save, MoreHorizontal, ArrowLeftRight, ClipboardList, ShoppingBag, AlertTriangle, Archive, RotateCcw, Package, History, Layers, ClipboardCheck } from 'lucide-react';
 import ItemLedgerModal from '../components/ItemLedgerModal';
+import StockAdjustModal from '../components/StockAdjustModal';
+import { RoleContext } from '../context/RoleContext';
 import ConsumableRegistrationModal from '../components/ConsumableRegistrationModal';
 import ConsumableBatchImportModal from '../components/ConsumableBatchImportModal';
 import { logUpdate, logDelete } from '../utils/auditLogger';
@@ -20,6 +22,10 @@ const modalContentStyle = { backgroundColor: 'var(--bg-surface)', border: '1px s
 
 const ConsumableList = ({ isSplitMode = false }) => {
   const navigate = useNavigate();
+  // 盤點調整要有「可盤點調整」權限（伺服器也會檢查，這裡只決定要不要顯示選項）
+  const { authUser } = useContext(RoleContext) || {};
+  const canStockAdjust = !!authUser?.menu_access?.stockAdjust;
+  const [adjustItem, setAdjustItem] = useState(null);
   const [items, setItems] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
@@ -852,6 +858,9 @@ const ConsumableList = ({ isSplitMode = false }) => {
                               <Edit2 size={14} /> 編輯詳細資訊
                             </button>
                             <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); setTransferData({ itemId: item.id, direction: 'TO_LAB', quantity: 1, deviceSn: '', note: '' }); setShowTransferModal(true); }} style={{ ...menuButtonStyle, color: 'var(--primary-color)' }}><ArrowLeftRight size={14} /> 庫存異動 (Stock↔LAB)</button>
+                            {canStockAdjust && (
+                              <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); setAdjustItem(item); }} style={{ ...menuButtonStyle, color: '#be123c' }}><ClipboardCheck size={14} /> 盤點調整</button>
+                            )}
                             <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '4px 0' }} />
                             <button onClick={() => { setActiveMenuId(null); setMenuPosition(null); handleDelete(item); }} style={{ ...menuButtonStyle, color: '#f43f5e', backgroundColor: 'rgba(244,63,94,0.1)' }}><Trash2 size={14} /> 刪除耗材</button>
                           </div>
@@ -1157,6 +1166,15 @@ const ConsumableList = ({ isSplitMode = false }) => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* 盤點調整：Stock 改成實盤數量 */}
+      {adjustItem && (
+        <StockAdjustModal
+          item={adjustItem}
+          onClose={() => setAdjustItem(null)}
+          onAdjusted={() => { setAdjustItem(null); window.dispatchEvent(new CustomEvent('db-update')); fetchConsumables(); }}
+        />
       )}
 
       {/* 品項履歷 Modal */}

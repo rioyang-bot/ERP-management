@@ -342,6 +342,8 @@
   cursor: pointer;
 }
 .st-row-action:hover { background: #eff6ff; border-color: #93c5fd; }
+.st-row-action-adjust { color: #be123c; }
+.st-row-action-adjust:hover { background: #fff1f2; border-color: #fda4af; }
 
 /* 列印時說明不需要出現，紙上要留給盤點的人寫字 */
 @media print {

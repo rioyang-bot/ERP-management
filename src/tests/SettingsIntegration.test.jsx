@@ -116,8 +116,39 @@ describe('Settings 頁面完整流程整合測試', () => {
     await waitFor(() => {
       const log = window.electronAPI.namedQuery.mock.calls.find(([q]) => q === 'insertAuditLog');
       expect(log[1][4]).toBe('USER');
-      expect(log[1][8]).toBe('修改使用者 [METECH] 選單權限設定（設備攜出入單簽核：權責主管）');
+      expect(log[1][8]).toBe('修改使用者 [METECH] 選單權限設定（設備攜出入單簽核：權責主管；盤點調整：否）');
       expect(log[1][9].iso_sign_roles).toEqual(['權責主管']);
+    });
+  });
+
+  it('可盤點調整：管理員也要勾；儲存寫進 menu_access.stockAdjust 並記在事件紀錄', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, 'alert').mockImplementation(() => {});
+    render(
+      <RoleContext.Provider value={{ authUser: mockAuthUser, role: 'ADMIN', setAuthUser: vi.fn() }}>
+        <Settings />
+      </RoleContext.Provider>
+    );
+    await user.click(await screen.findByTitle(/設定功能權限/));
+    await screen.findByRole('heading', { name: '權限設定', level: 2 });
+
+    const adjust = screen.getByRole('checkbox', { name: '可盤點調整' });
+    expect(adjust).toHaveAttribute('aria-checked', 'false');
+    await user.click(adjust);
+    expect(adjust).toHaveAttribute('aria-checked', 'true');
+
+    await user.click(screen.getByText(/儲存權限設定/));
+    await waitFor(() => {
+      const call = window.electronAPI.namedQuery.mock.calls.find(([q]) => q === 'updateUserAccess');
+      expect(call[1][0]).toMatchObject({ stockAdjust: true });
+    });
+    await waitFor(() => {
+      const log = window.electronAPI.namedQuery.mock.calls.find(([q]) => q === 'insertAuditLog');
+      expect(log[1][3]).toBe('UPDATE');
+      expect(log[1][4]).toBe('USER');
+      expect(log[1][6]).toBe('METECH');
+      expect(log[1][8]).toBe('修改使用者 [METECH] 選單權限設定（設備攜出入單簽核：無；盤點調整：可）');
+      expect(log[1][9].stock_adjust).toBe(true);
     });
   });
 });
