@@ -12,7 +12,9 @@ import { parseSearchQuery, matchesSearchQuery, SEARCH_PLACEHOLDER } from '../uti
 import { isItemRetired, getItemAggregationKey, aggregateCards, computeNewRetiredKeys, getCardTitle, showsModelSubtitle, ASSET_AGGREGATION_MODES } from '../utils/cardAggregation';
 import ColumnVisibilityModal from '../components/ColumnVisibilityModal';
 import CardAggregationLegend from '../components/CardAggregationLegend';
-import { isFullyOutOfWarranty } from '../utils/warranty';
+import { isFullyOutOfWarranty, pickWarrantyFields, finalizeWarrantyFields, warrantyInfoParams, diffWarrantyFields, describeWarrantyChanges } from '../utils/warranty';
+import WarrantyInfoCell from '../components/common/WarrantyInfoCell';
+import WarrantyFields from '../components/common/WarrantyFields';
 import { useColumnPreferences } from '../hooks/useColumnPreferences';
 import AssetIdentityCell from '../components/common/AssetIdentityCell';
 import CardAggregationSelect from '../components/common/CardAggregationSelect';
@@ -29,6 +31,7 @@ const HW_COLUMNS = [
   { id: 'client', label: '客戶 / End-user' },
   { id: 'location', label: '位置' },
   { id: 'remarks', label: '備註' },
+  { id: 'warranty', label: '保固資訊 (I/P/W/C)' },
   { id: 'status', label: '狀態' },
   { id: 'actions', label: '功能', always: true },
 ];
@@ -180,6 +183,9 @@ const HwList = ({ isSplitMode = false }) => {
       _origSpec: nic.specification || '',
       ownership: nic.ownership || 'FOR_SALE',
       shipping_date: shipDateStr,
+      // 進貨日期、安裝日期與保固：存檔時比對才知道改了什麼，寫進事件紀錄
+      ...pickWarrantyFields(nic),
+      _origWarranty: pickWarrantyFields(nic),
       temp_server_sn: nic.server_sn || nic.custom_attributes?.server_sn || '',
       temp_order_source: nic.custom_attributes?.order_source !== undefined ? nic.custom_attributes?.order_source : (nic.custom_attributes?.order_date || ''),
       temp_project_name: nic.custom_attributes?.project_name || '',
@@ -349,6 +355,12 @@ const HwList = ({ isSplitMode = false }) => {
       } catch (err) {
         console.error('Failed to update hardware shipping_date:', err);
       }
+      // 有選保固年數的，到期日依進貨日期／安裝日期算好再存
+      const warranty = finalizeWarrantyFields(editItem);
+      const warrantyRes = await window.electronAPI.namedQuery('updateAssetWarrantyInfo', warrantyInfoParams(warranty, editItem.id));
+      if (!warrantyRes?.success) {
+        alert('進貨日期／保固資訊儲存失敗：' + (warrantyRes?.error || '未知錯誤'));
+      }
       // 序號變更要看得出來 —— 原本敘述只寫「編輯硬體詳細資訊」，
       // 從履歷上完全看不出序號被改過。
       const auditName = `${editItem.brand || ''} ${editItem.model || ''}`;
@@ -364,12 +376,17 @@ const HwList = ({ isSplitMode = false }) => {
         project_name: editItem.temp_project_name,
         order_source: editItem.temp_order_source,
         shipping_date: editItem.shipping_date,
+        ...warranty,
       };
+      // 日期與保固有改才寫進敘述，事件紀錄與履歷上看得出保固年數是誰、何時改的
+      const warrantyChanges = warrantyRes?.success ? diffWarrantyFields(editItem._origWarranty, warranty) : [];
+      if (warrantyChanges.length > 0) auditDetails.warrantyChanges = warrantyChanges;
+      const warrantyText = warrantyChanges.length > 0 ? describeWarrantyChanges(warrantyChanges) : '';
       if (isSnChanged) {
-        await logSnChange('HARDWARE', origSn, newSn, auditName, '硬體編輯', auditDetails);
+        await logSnChange('HARDWARE', origSn, newSn, auditName, `硬體編輯${warrantyText ? `；${warrantyText}` : ''}`, auditDetails);
       } else {
         await logUpdate('HARDWARE', editItem.sn || editItem.id, auditName,
-          `編輯硬體詳細資訊 [${editItem.sn || editItem.id}]`, auditDetails);
+          `編輯硬體詳細資訊 [${editItem.sn || editItem.id}]${warrantyText ? `：${warrantyText}` : ''}`, auditDetails);
       }
       setShowEditModal(false); 
       window.dispatchEvent(new CustomEvent('db-update'));
@@ -916,6 +933,12 @@ const HwList = ({ isSplitMode = false }) => {
             <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('client') }}>客戶 / End-user</th>
             <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('location') }}>位置</th>
             <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('remarks') }}>備註</th>
+            <th
+              style={{ ...thStyle, textAlign: 'left', ...hideCol('warranty') }}
+              title="I 進貨日／P 安裝日／W 原廠保固到期（進貨日 + 原廠保固年數）／C 客戶保固到期（安裝日 + 客戶保固年數）。到期日後的（N年）是選的保固年數。圓形標記：綠底保＝保固內、黃底保＝90 天內到期、紅底過＝已過期；未填到期日不顯示標記。"
+            >
+              保固資訊 (I/P/W/C)
+            </th>
             <th style={{ ...thStyle, textAlign: 'left', width: '100px' , ...hideCol('status') }}>狀態</th>
             <th style={{ ...thStyle, textAlign: 'center', width: '80px' }}>功能</th>
           </tr>
@@ -1023,6 +1046,9 @@ const HwList = ({ isSplitMode = false }) => {
                   >
                     {nic.remarks || '--'}
                   </div>
+                </td>
+                <td style={{ ...tdStyle, fontSize: '10px', whiteSpace: 'nowrap', minWidth: '150px', ...hideCol('warranty') }}>
+                  <WarrantyInfoCell item={nic} />
                 </td>
                 <td style={{ ...tdStyle, width: '100px', ...hideCol('status') }}><span style={{ padding: '4px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: '800', backgroundColor: cfg.bgColor, color: cfg.color, border: `1px solid ${cfg.borderColor}`, whiteSpace: 'nowrap' }}>{cfg.label}</span>
                   {nic.lent_request_no && (
@@ -1388,6 +1414,15 @@ const HwList = ({ isSplitMode = false }) => {
                     style={editInputStyle} 
                   />
                 </label>
+              </div>
+
+              <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
+                <WarrantyFields
+                  value={editItem}
+                  onChange={(patch) => setEditItem(prev => ({ ...prev, ...patch }))}
+                  labelStyle={editLabelStyle}
+                  inputStyle={editInputStyle}
+                />
               </div>
 
               <div style={{ display: 'flex', gap: '12px', marginTop: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '24px' }}>

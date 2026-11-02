@@ -45,6 +45,18 @@ const MOUNTED_CONSUMABLES_SQL = `(SELECT json_agg(json_build_object(
 // 改完若會和既有的品項重複（同類別、類型、廠牌、型號；硬體／設備另比規格）就擋下來。
 //
 // 欄位名稱寫死在這裡，不從前端傳入。
+// 保固到期由年數算出（見 database/migration_asset_stock_date_warranty_years.sql）：
+//   原廠保固到期 = 進貨日期 + 原廠保固(年)；客戶保固到期 = 安裝日期 + 客戶保固(年)
+// 有選年數、也有基準日期才算；否則保留 fallback（原本手動填的到期日）。
+// 畫面上的即時預覽用 src/utils/warranty.js 的 addYears，兩邊規則相同。
+const WARRANTY_FROM_YEARS = (baseDate, years, fallback) =>
+  `CASE WHEN ${years} IS NOT NULL AND ${baseDate} IS NOT NULL THEN (${baseDate} + make_interval(years => ${years}::int))::date ELSE ${fallback} END`;
+// 安裝日期換成 baseDate 時，客戶保固到期跟著重算（出貨、換貨等寫入安裝日期的地方共用）。
+// 有 UPDATE ... FROM 另一張 assets 的查詢要傳 alias，不然欄位名稱會不明確
+const CUST_WARRANTY_ON_INSTALL = (baseDate, alias = '') => {
+  const col = (c) => (alias ? `${alias}.${c}` : c);
+  return `customer_warranty_expire = ${WARRANTY_FROM_YEARS(baseDate, col('customer_warranty_years'), col('customer_warranty_expire'))}`;
+};
 const NORM_UPPER = (x) => `UPPER(TRIM(REGEXP_REPLACE(COALESCE(${x}, ''), '[[:space:]]+', ' ', 'g')))`;
 const ITEM_FIX_FIELDS = {
   // 型號與新增品項時相同：去頭尾與重複空白、英文轉大寫
@@ -857,7 +869,7 @@ export const queries = {
       location = CASE WHEN COALESCE(TRIM(location), '') = '' THEN $4 ELSE location END,
       remarks = CASE WHEN COALESCE(TRIM(remarks), '') = '' THEN $5 ELSE remarks END,
       installed_date = COALESCE(installed_date, $6::date),
-      customer_warranty_expire = COALESCE(customer_warranty_expire, $7::date),
+      customer_warranty_expire = ${WARRANTY_FROM_YEARS('COALESCE(installed_date, $6::date)', 'customer_warranty_years', 'COALESCE(customer_warranty_expire, $7::date)')},
       system_date = COALESCE(system_date, $8::date),
       warranty_expire = COALESCE(warranty_expire, $9::date),
       custom_attributes = COALESCE(custom_attributes, '{}'::jsonb) || $10::jsonb,
@@ -1302,19 +1314,39 @@ export const queries = {
   // 日期打錯要改得回來，與供應商、發票號碼同一個編輯入口。
   // 只改單頭，不會動到明細、庫存或採購單的已入庫數量。
   updateInboundOrderHeader: `UPDATE inbound_orders SET partner_id = $1, invoice_no = $2, attachments = $3::jsonb, order_date = COALESCE($5::date, order_date) WHERE id = $4 RETURNING id`,
+  // 進貨日期改了，這張單入庫的資產（以序號對應）進貨日期跟著改，原廠保固到期一併重算。
+  // 只改進貨日期仍是舊日期（$3）或空白的 —— 在設備／硬體列表手動改過的不覆蓋。
+  // 待確認的單還沒有資產，自然是 0 筆。
+  syncAssetStockDateByInboundOrder: `
+    UPDATE assets a SET
+      stock_date = $2::date,
+      warranty_expire = ${WARRANTY_FROM_YEARS('$2::date', 'a.warranty_years', 'a.warranty_expire')},
+      updated_at = CURRENT_TIMESTAMP
+    FROM inbound_items ii
+    WHERE ii.inbound_order_id = $1::integer
+      AND ii.sn IS NOT NULL AND TRIM(ii.sn) <> ''
+      AND UPPER(TRIM(a.sn)) = UPPER(TRIM(ii.sn))
+      AND (a.stock_date IS NULL OR a.stock_date = $3::date)
+      AND a.stock_date IS DISTINCT FROM $2::date
+    RETURNING a.id, a.sn, a.warranty_years, a.warranty_expire,
+      (SELECT i.brand FROM item_master i WHERE i.id = a.item_master_id) AS brand,
+      (SELECT i.model FROM item_master i WHERE i.id = a.item_master_id) AS model,
+      (SELECT c.name FROM item_master i JOIN categories c ON c.id = i.category_id WHERE i.id = a.item_master_id) AS category_name`,
   // 訂單來源：硬體建檔頁本來就有這一欄，從進貨入庫進來的硬體先前填不了，
   // 同一批貨用不同入口建檔就會少掉這個資訊。空值不寫進 custom_attributes，
   // 免得留下一堆 "order_source": null 的雜訊。
   // $5 備註：確認進貨時從明細帶過來
+  // $6 進貨單 id：進貨日期 (stock_date) 取那張單的進貨日期，舊單沒有日期就退回建單當天
   insertInboundAssets: `
-    INSERT INTO assets (sn, item_master_id, status, custom_attributes, remarks)
+    INSERT INTO assets (sn, item_master_id, status, custom_attributes, remarks, stock_date)
     VALUES (
       $1, $2, 'ACTIVE',
       jsonb_strip_nulls(jsonb_build_object(
         'project_name', NULLIF(TRIM(COALESCE($3, '')), ''),
         'order_source', NULLIF(TRIM(COALESCE($4, '')), '')
       )),
-      NULLIF(TRIM(COALESCE($5, '')), '')
+      NULLIF(TRIM(COALESCE($5, '')), ''),
+      (SELECT COALESCE(order_date, created_at::date) FROM inbound_orders WHERE id = $6::integer)
     )`,
   // 整張進貨單一次填寫訂單來源。以序號比對資產，忽略大小寫與前後空白。
   // $3 為 true 時連已經填過的一併覆蓋；預設只補空的，重複執行才不會
@@ -1923,10 +1955,24 @@ export const queries = {
     WHERE prev.id = a.id AND a.sn = $3
     RETURNING a.id, a.sn, prev.status AS old_status`,
   updateAssetStatusLocationAndShippingDateBySn: `UPDATE assets SET status = $1, location = $2, shipping_date = $3 WHERE sn = $4`,
-  updateAssetStatusLocationAndInstalledDateBySn: `UPDATE assets SET status = $1, location = $2, installed_date = $3, shipping_date = $3 WHERE sn = $4`,
+  updateAssetStatusLocationAndInstalledDateBySn: `UPDATE assets SET status = $1, location = $2, installed_date = $3, shipping_date = $3, ${CUST_WARRANTY_ON_INSTALL('$3::date')} WHERE sn = $4`,
   updateMountedHardwareShippingDate: `UPDATE assets SET shipping_date = $1 WHERE custom_attributes->>'server_sn' = $2`,
-  updateMountedHardwareInstalledAndShippingDate: `UPDATE assets SET installed_date = $1, shipping_date = $1 WHERE custom_attributes->>'server_sn' = $2`,
+  updateMountedHardwareInstalledAndShippingDate: `UPDATE assets SET installed_date = $1, shipping_date = $1, ${CUST_WARRANTY_ON_INSTALL('$1::date')} WHERE custom_attributes->>'server_sn' = $2`,
   updateAssetShippingDate: `UPDATE assets SET shipping_date = $1 WHERE id = $2`,
+  // 設備／硬體編輯視窗的日期與保固：進貨日期、安裝日期、兩種保固年數與到期日。
+  // 有選年數時到期日由這裡算（畫面只是預覽），沒選就存畫面上手動填的到期日。
+  // 另外一支而不是併進 updateAssetDetails：那支 RMA 換貨也在用，參數個數不能動。
+  updateAssetWarrantyInfo: `
+    UPDATE assets SET
+      stock_date = $1::date,
+      installed_date = $2::date,
+      warranty_years = $3::smallint,
+      warranty_expire = ${WARRANTY_FROM_YEARS('$1::date', '$3::smallint', '$4::date')},
+      customer_warranty_years = $5::smallint,
+      customer_warranty_expire = ${WARRANTY_FROM_YEARS('$2::date', '$5::smallint', '$6::date')},
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = $7::integer
+    RETURNING id, stock_date, installed_date, warranty_years, warranty_expire, customer_warranty_years, customer_warranty_expire`,
   updateAssetShippingDateBySn: `UPDATE assets SET shipping_date = $1 WHERE sn = $2`,
   updateOutboundRequestStatus: `UPDATE outbound_requests SET status = $1 WHERE id = $2`,
   updateOutboundRequestReturned: `UPDATE outbound_requests SET status = 'RETURNED', actual_return_date = $2 WHERE id = $1`,
@@ -2654,6 +2700,10 @@ export const queries = {
       system_date = o.system_date,
       warranty_expire = o.warranty_expire,
       customer_warranty_expire = o.customer_warranty_expire,
+      -- 客戶保固(年) 跟著客戶保固到期一起沿用；原廠保固到期是照搬故障那台的，
+      -- 年數清掉改成手填，否則新設備自己的進貨日期 + 年數會算出另一個日期
+      warranty_years = NULL,
+      customer_warranty_years = o.customer_warranty_years,
       shipping_date = $3::date,
       custom_attributes = COALESCE(n.custom_attributes, '{}'::jsonb)
         || jsonb_strip_nulls(jsonb_build_object(
@@ -2679,6 +2729,8 @@ export const queries = {
       system_date = NULL,
       warranty_expire = NULL,
       customer_warranty_expire = NULL,
+      warranty_years = NULL,
+      customer_warranty_years = NULL,
       custom_attributes = (COALESCE(custom_attributes, '{}'::jsonb) - 'project_name' - 'end_user')
         || jsonb_build_object('swapped_to_sn', $2::text, 'swap_repair_no', $4::text, 'swap_date', $3::text),
       updated_at = CURRENT_TIMESTAMP
@@ -2697,6 +2749,7 @@ export const queries = {
       client = o.client,
       installed_date = $3::date,
       shipping_date = $3::date,
+      ${CUST_WARRANTY_ON_INSTALL('$3::date', 'h')},
       custom_attributes = COALESCE(h.custom_attributes, '{}'::jsonb)
         || jsonb_strip_nulls(jsonb_build_object('project_name', o.custom_attributes->>'project_name')),
       updated_at = CURRENT_TIMESTAMP
@@ -2827,7 +2880,7 @@ export const queries = {
   // 換出的資產：在庫才能出（被別人搶先出貨就 0 筆，整筆交易回滾）
   exchangeShipAsset: `
     UPDATE assets a SET status = 'SHIPPED', client = $2, location = $3,
-      installed_date = $4::date, shipping_date = $4::date,
+      installed_date = $4::date, shipping_date = $4::date, ${CUST_WARRANTY_ON_INSTALL('$4::date', 'a')},
       custom_attributes = COALESCE(a.custom_attributes, '{}'::jsonb) || jsonb_build_object('exchange_no', $5::text),
       updated_at = CURRENT_TIMESTAMP
     FROM assets prev
@@ -2836,6 +2889,7 @@ export const queries = {
   // 換出設備上的搭載硬體一起帶入客戶、地點與日期（狀態由 syncMountedHardwareToDevice 跟上）
   exchangeShipMounted: `
     UPDATE assets h SET client = $2, location = $3, installed_date = $4::date, shipping_date = $4::date,
+      ${CUST_WARRANTY_ON_INSTALL('$4::date')},
       updated_at = CURRENT_TIMESTAMP
     WHERE TRIM(LOWER(h.custom_attributes->>'server_sn')) = TRIM(LOWER($1))
     RETURNING h.id`,

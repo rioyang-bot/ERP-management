@@ -12,8 +12,9 @@ import { parseSearchQuery, matchesSearchQuery, SEARCH_PLACEHOLDER } from '../uti
 import { isItemRetired, getItemAggregationKey, aggregateCards, computeNewRetiredKeys, getCardTitle, showsModelSubtitle, getCardSearchText, ASSET_AGGREGATION_MODES } from '../utils/cardAggregation';
 import ColumnVisibilityModal from '../components/ColumnVisibilityModal';
 import CardAggregationLegend from '../components/CardAggregationLegend';
-import WarrantyBadge from '../components/WarrantyBadge';
-import { isFullyOutOfWarranty } from '../utils/warranty';
+import WarrantyInfoCell from '../components/common/WarrantyInfoCell';
+import WarrantyFields from '../components/common/WarrantyFields';
+import { isFullyOutOfWarranty, pickWarrantyFields, finalizeWarrantyFields, warrantyInfoParams, diffWarrantyFields, describeWarrantyChanges } from '../utils/warranty';
 import { getActiveSnTerm, filterMountableHw, getCommittedSns, toggleMountedSn } from '../utils/mountedHwFilter';
 import { useColumnPreferences } from '../hooks/useColumnPreferences';
 import AssetIdentityCell from '../components/common/AssetIdentityCell';
@@ -34,7 +35,7 @@ const DEVICE_COLUMNS = [
   { id: 'client', label: '客戶 / End-user' },
   { id: 'location', label: '位置' },
   { id: 'remarks', label: '備註' },
-  { id: 'warranty', label: '保固資訊 (P/S/W/C)' },
+  { id: 'warranty', label: '保固資訊 (I/P/S/W/C)' },
   { id: 'status', label: '狀態' },
   { id: 'checklist', label: '出機檢查' },
   { id: 'actions', label: '功能', always: true },
@@ -220,6 +221,9 @@ const DeviceList = ({ isSplitMode = false }) => {
         try { f[k] = new Date(f[k]).toISOString().split('T')[0]; } catch { f[k] = ''; }
       } else { f[k] = ''; }
     });
+    // 進貨日期、保固年數：存檔時比對才知道改了什麼，寫進事件紀錄
+    Object.assign(f, pickWarrantyFields(f));
+    f._origWarranty = pickWarrantyFields(f);
     f.end_user = f.end_user || attrs.end_user || '';
     f.contact_person = attrs.contact_person || f.partner_contact || '';
     f.contact_phone = attrs.contact_phone || f.partner_phone || '';
@@ -471,13 +475,21 @@ const DeviceList = ({ isSplitMode = false }) => {
       contact_phone: editItem.contact_phone || '',
       mounted_hw_sns: uniqueTargetHwSns.join(', ')
     };
+    // 有選保固年數的，到期日依進貨日期／安裝日期算好再存
+    const warranty = finalizeWarrantyFields(editItem);
     const res = await window.electronAPI.namedQuery('updateAssetDetails', [
-        newSn || null, editItem.client, editItem.hostname, editItem.location, editItem.installed_date || null,
-        editItem.customer_warranty_expire || null, editItem.system_date || null, editItem.warranty_expire || null,
+        newSn || null, editItem.client, editItem.hostname, editItem.location, warranty.installed_date || null,
+        warranty.customer_warranty_expire || null, editItem.system_date || null, warranty.warranty_expire || null,
         editItem.os, editItem.nic, updatedCustomAttributes, editItem.ownership || 'FOR_SALE', editItem.id,
         editItem.remarks || null, editItem.asset_no || null
     ]);
     if (res.success) {
+      // 進貨日期與保固年數另外存（updateAssetDetails 的參數 RMA 換貨也在用，不動它）
+      const warrantyRes = await window.electronAPI.namedQuery('updateAssetWarrantyInfo', warrantyInfoParams(warranty, editItem.id));
+      if (!warrantyRes?.success) {
+        alert('進貨日期／保固資訊儲存失敗：' + (warrantyRes?.error || '未知錯誤'));
+      }
+
       // 若序號有變更，連動更新掛載硬體以及相關明細
       if (isSnChanged && origSn) {
         await window.electronAPI.namedQuery('updateMountedHardwareServerSn', [newSn, origSn]);
@@ -551,14 +563,19 @@ const DeviceList = ({ isSplitMode = false }) => {
         ownership: editItem.ownership,
         os: editItem.os,
         nic: editItem.nic,
+        ...warranty,
       };
+      // 日期與保固有改才寫進敘述，事件紀錄與履歷上看得出保固年數是誰、何時改的
+      const warrantyChanges = warrantyRes?.success ? diffWarrantyFields(editItem._origWarranty, warranty) : [];
+      if (warrantyChanges.length > 0) auditDetails.warrantyChanges = warrantyChanges;
+      const warrantyText = warrantyChanges.length > 0 ? describeWarrantyChanges(warrantyChanges) : '';
 
       if (isSnChanged) {
         await logSnChange('DEVICE', origSn, newSn, auditName,
-          `設備編輯；已同步連動 ${mountedComponents.length} 件掛載硬體`, auditDetails);
+          `設備編輯；已同步連動 ${mountedComponents.length} 件掛載硬體${warrantyText ? `；${warrantyText}` : ''}`, auditDetails);
       } else {
         await logUpdate('DEVICE', newSn || editItem.id, auditName,
-          `編輯設備詳細資訊 [${newSn || editItem.id}]`, auditDetails);
+          `編輯設備詳細資訊 [${newSn || editItem.id}]${warrantyText ? `：${warrantyText}` : ''}`, auditDetails);
       }
       setShowEditModal(false);
       window.dispatchEvent(new CustomEvent('db-update'));
@@ -1050,9 +1067,9 @@ const DeviceList = ({ isSplitMode = false }) => {
                           <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('remarks') }}>備註</th>
                           <th
                             style={{ ...thStyle, textAlign: 'left', ...hideCol('warranty') }}
-                            title="P 安裝日／S 系統日／W 原廠保固到期／C 客戶保固到期。圓形標記：綠底保＝保固內、黃底保＝90 天內到期、紅底過＝已過期；未填到期日不顯示標記。"
+                            title="I 進貨日／P 安裝日／S 系統日／W 原廠保固到期（進貨日 + 原廠保固年數）／C 客戶保固到期（安裝日 + 客戶保固年數）。到期日後的（N年）是選的保固年數。圓形標記：綠底保＝保固內、黃底保＝90 天內到期、紅底過＝已過期；未填到期日不顯示標記。"
                           >
-                            保固資訊 (P/S/W/C)
+                            保固資訊 (I/P/S/W/C)
                           </th>
                           <th style={{ ...thStyle, textAlign: 'left', width: '100px' , ...hideCol('status') }}>狀態</th>
                           <th
@@ -1200,20 +1217,7 @@ const DeviceList = ({ isSplitMode = false }) => {
                                 </div>
                               </td>
                                <td style={{ ...tdStyle, fontSize: '10px', whiteSpace: 'nowrap', minWidth: '150px', ...hideCol('warranty') }}>
-                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 8px' }}>
-                                   <div><span style={{ color: '#3b82f6', fontWeight: 'bold' }}>P:</span> {item.installed_date ? new Date(item.installed_date).toLocaleDateString() : '--'}</div>
-                                   <div><span style={{ color: '#10b981', fontWeight: 'bold' }}>S:</span> {item.system_date ? new Date(item.system_date).toLocaleDateString() : '--'}</div>
-                                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                     <span style={{ color: '#ef4444', fontWeight: 'bold' }}>W:</span>
-                                     {item.warranty_expire ? new Date(item.warranty_expire).toLocaleDateString() : '--'}
-                                     <WarrantyBadge expireDate={item.warranty_expire} name="原廠保固" size={15} />
-                                   </div>
-                                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                     <span style={{ color: '#f59e0b', fontWeight: 'bold' }}>C:</span>
-                                     {item.customer_warranty_expire ? new Date(item.customer_warranty_expire).toLocaleDateString() : '--'}
-                                     <WarrantyBadge expireDate={item.customer_warranty_expire} name="客戶保固" size={15} />
-                                   </div>
-                                 </div>
+                                 <WarrantyInfoCell item={item} showSystemDate />
                                </td>
 
                               <td style={{ ...tdStyle, width: '100px', ...hideCol('status') }}>
@@ -1913,11 +1917,19 @@ const DeviceList = ({ isSplitMode = false }) => {
                 </div>
                 <div><label style={editLabelStyle}>放置位置 (Location)</label><input type="text" value={editItem.location || ''} onChange={(e) => setEditItem({...editItem, location: e.target.value})} style={editInputStyle} /></div>
               </div>
-              <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                <div><label style={editLabelStyle}>安裝日期 (Project Date)</label><input type="date" value={editItem.installed_date || ''} onChange={(e) => setEditItem({...editItem, installed_date: e.target.value})} style={editInputStyle} /></div>
-                <div><label style={editLabelStyle}>系統日期 (System Date)</label><input type="date" value={editItem.system_date || ''} onChange={(e) => setEditItem({...editItem, system_date: e.target.value})} style={editInputStyle} /></div>
-                <div><label style={editLabelStyle}>原廠保固到期 (Warranty Expire)</label><input type="date" value={editItem.warranty_expire || ''} onChange={(e) => setEditItem({...editItem, warranty_expire: e.target.value})} style={editInputStyle} /></div>
-                <div><label style={editLabelStyle}>客戶保固到期 (Cust Warranty)</label><input type="date" value={editItem.customer_warranty_expire || ''} onChange={(e) => setEditItem({...editItem, customer_warranty_expire: e.target.value})} style={editInputStyle} /></div>
+              <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '20px' }}>
+                <WarrantyFields
+                  value={editItem}
+                  onChange={(patch) => setEditItem(prev => ({ ...prev, ...patch }))}
+                  labelStyle={editLabelStyle}
+                  inputStyle={editInputStyle}
+                />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: '16px' }}>
+                  <label style={editLabelStyle}>
+                    系統日期 (System Date)
+                    <input type="date" value={editItem.system_date || ''} onChange={(e) => setEditItem({...editItem, system_date: e.target.value})} style={editInputStyle} />
+                  </label>
+                </div>
               </div>
               <div style={{ marginTop: '16px' }}>
                 <label style={editLabelStyle}>備註 (Remarks)</label>

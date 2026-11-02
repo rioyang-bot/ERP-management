@@ -114,7 +114,7 @@ describe('設備與硬體出貨日期 (shipping_date) 欄位與確認出貨自�
     expect(mountedUpdateCall.params).toEqual(['2026-09-15', 'SRV-TEST-999']);
   });
 
-  it('DeviceList 應呈現保固資訊 (P/S/W/C) 與安裝日期，不顯示獨立出貨日標籤', async () => {
+  it('DeviceList 應呈現保固資訊 (I/P/S/W/C) 與安裝日期，不顯示獨立出貨日標籤', async () => {
     window.electronAPI = {
       // 多步驟交易轉發給同一組 namedQuery 模擬，才驗證得到實際送出的查詢
       runTransaction: (steps) => createRunTransactionMock(window.electronAPI.namedQuery)(steps),
@@ -152,10 +152,10 @@ describe('設備與硬體出貨日期 (shipping_date) 欄位與確認出貨自�
       </MemoryRouter>
     );
 
-    // 驗證表格中顯示安裝日期 P: 且標頭為 保固資訊 (P/S/W/C)，不再有獨立「出:」出貨日標籤
+    // 驗證表格中顯示安裝日期 P: 且標頭為 保固資訊 (I/P/S/W/C)，不再有獨立「出:」出貨日標籤
     await waitFor(() => {
       expect(screen.getByText('DEV-TEST-001')).toBeInTheDocument();
-      expect(screen.getByText('保固資訊 (P/S/W/C)')).toBeInTheDocument();
+      expect(screen.getByText('保固資訊 (I/P/S/W/C)')).toBeInTheDocument();
       expect(screen.queryByTitle('出貨日期')).not.toBeInTheDocument();
     });
   });
