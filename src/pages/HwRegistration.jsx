@@ -6,6 +6,9 @@ import HwBatchImportModal from '../components/HwBatchImportModal';
 import { normalizeMasterName } from '../utils/normalizeMasterData';
 import { addDictionaryEntry } from '../utils/masterDictionary';
 import { validateName as validateAndSanitize } from '../utils/nameValidation';
+import WarrantyFields from '../components/common/WarrantyFields';
+import { EMPTY_WARRANTY_FORM, finalizeWarrantyFields, filledWarrantyFields } from '../utils/warranty';
+import { warrantyInsertTail } from '../utils/importWarranty';
 
 const HwRegistration = ({ isSplitMode = false }) => {
   const navigate = useNavigate();
@@ -28,7 +31,8 @@ const HwRegistration = ({ isSplitMode = false }) => {
 
   const [formData, setFormData] = useState({
     brand: '', type: '', model: '', specification: '', sn: '',
-    order_source: '', server_sn: '', project_name: '', ownership: 'FOR_SALE'
+    order_source: '', server_sn: '', project_name: '', ownership: 'FOR_SALE',
+    ...EMPTY_WARRANTY_FORM,
   });
 
   const fetchBrands = useCallback(async () => {
@@ -207,6 +211,8 @@ const HwRegistration = ({ isSplitMode = false }) => {
       let successCount = 0;
       let failCount = 0;
 
+      // 有選保固年數的，到期日依進貨日期／安裝日期算好
+      const warranty = finalizeWarrantyFields(formData);
       for (const sn of snList) {
         const custom_attributes = {
           order_source: formData.order_source || '',
@@ -216,10 +222,11 @@ const HwRegistration = ({ isSplitMode = false }) => {
 
         const res = await window.electronAPI.namedQuery('insertAssetRecord', [
           itemMasterId, sn || null, '', '', '',
-          null, null, null, null, '', '',
+          warranty.installed_date || null, warranty.customer_warranty_expire || null, null, warranty.warranty_expire || null, '', '',
           custom_attributes, formData.ownership || 'FOR_SALE',
           'ACTIVE',
-          formData.remarks || null
+          formData.remarks || null,
+          ...warrantyInsertTail(warranty),
         ]);
 
         if (res.success) {
@@ -247,7 +254,7 @@ const HwRegistration = ({ isSplitMode = false }) => {
             targetName: `${safeBrand} ${safeModel}`,
             summary: `登錄硬體零組件 [${safeBrand} ${safeModel}] ${isBulkMode ? `批次建立 ${successCount} 筆` : `序號: ${formData.sn || '未指定'}`}`,
             perSn: (sn) => `登錄硬體零組件 [${safeBrand} ${safeModel}] 序號: ${sn}（批次建檔）`,
-            details: { isBulkMode, count: successCount, brand: safeBrand, type: safeType, model: safeModel, snList: isBulkMode ? snList : [formData.sn], server_sn: safeServerSn, project_name: formData.project_name },
+            details: { isBulkMode, count: successCount, brand: safeBrand, type: safeType, model: safeModel, snList: isBulkMode ? snList : [formData.sn], server_sn: safeServerSn, project_name: formData.project_name, ...filledWarrantyFields(warranty) },
           }
         );
         alert(`成功建檔 ${successCount} 筆資料${failCount > 0 ? `，失敗 ${failCount} 筆` : ''}。`);
@@ -502,6 +509,15 @@ const HwRegistration = ({ isSplitMode = false }) => {
                 </div>
               </div>
             </div>
+
+            {/* 進貨日期、安裝日期與保固：有選年數時到期日自動算 */}
+            <WarrantyFields
+              value={formData}
+              onChange={(patch) => setFormData(prev => ({ ...prev, ...patch }))}
+              labelStyle={labelStyle}
+              inputStyle={inputStyle}
+              style={{ marginBottom: '24px' }}
+            />
 
             <div style={{ textAlign: 'right' }}>
               <button type="submit" style={{ ...inputStyle, width: '100%', backgroundColor: 'var(--primary-color)', color: 'white', border: 'none', padding: '14px', fontWeight: '900', cursor: 'pointer', borderRadius: '12px', fontSize: '16px', boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)' }}>

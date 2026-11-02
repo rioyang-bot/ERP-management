@@ -8,6 +8,7 @@ import { logEvent, ACTION_TYPES, MODULE_MAP } from '../utils/auditLogger';
 import { parseSpreadsheetFile, fixMojibake, asText, excelSerialToDate } from '../utils/encoding';
 import { matchPartnerContact } from '../utils/partnerMatcher';
 import { findColumnValue } from '../utils/importColumnMatch';
+import { readImportWarranty, resolveImportExpiries, warrantyInsertTail, YEARS_COLUMN_KEYWORDS, WARRANTY_TEMPLATE_SAMPLE } from '../utils/importWarranty';
 import { buildFillPlan, buildFillParams, buildSnListParam, getKeptFieldLabels, indexAssetsBySn } from '../utils/assetFillImport';
 
 const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] }) => {
@@ -65,7 +66,7 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
         }
         if (defsRes && defsRes.success && defsRes.rows.length > 0) {
           const allDefs = defsRes.rows[0].value || [];
-          const nativeIds = ['hostname', 'sn', 'specification', 'client', 'location', 'installed_date', 'system_date', 'warranty_expire', 'customer_warranty_expire'];
+          const nativeIds = ['hostname', 'sn', 'specification', 'client', 'location', 'installed_date', 'system_date', 'warranty_expire', 'customer_warranty_expire', 'stock_date', 'warranty_years', 'customer_warranty_years'];
           const customOnly = allDefs.filter(d => d && d.id && !nativeIds.includes(d.id));
           setCustomFieldDefs(customOnly);
         }
@@ -289,6 +290,7 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
       'Customer Warranty Expire': '2027-06-20',
       'BlackCore System Date': '2024-07-11',
       'BlackCore Warranty Expire': '2027-06-20',
+      ...WARRANTY_TEMPLATE_SAMPLE,
       'Status': 'ACTIVE'
     };
 
@@ -372,7 +374,7 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
         findColumnValue(row, [
           'Customer Warranty Expire', 'Customer Warranty Expiry', 'Customer Warranty', 
           '客戶保固到期', '客戶保固', '客戶保固日', 'Cust Warranty Expire', 'Cust Warranty', 'CustomerWarrantyExpire'
-        ]);
+        ], YEARS_COLUMN_KEYWORDS);
 
       const systemDateRaw = 
         row['BlackCore System Date'] || 
@@ -389,12 +391,18 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
         findColumnValue(row, [
           'BlackCore Warranty Expire', 'Black Core Warranty Expire', 'BlackCore Warranty Expiry', 'BlackCore Warranty', 
           'Warranty Expire', 'Warranty Expiry', '原廠保固到期', '原廠保固', '保固到期', '保固到期日', 'BC Warranty Expire'
-        ]);
+        ], YEARS_COLUMN_KEYWORDS);
 
       const installedDate = parseNormalizedDate(installedDateRaw);
       const customerWarrantyExpire = parseNormalizedDate(customerWarrantyRaw);
       const systemDate = parseNormalizedDate(systemDateRaw);
       const warrantyExpire = parseNormalizedDate(warrantyExpireRaw);
+      // 進貨日期與保固年數；有填年數時到期日以「基準日期 + 年數」為準
+      const importWarranty = readImportWarranty(row, parseNormalizedDate);
+      const expiries = resolveImportExpiries({
+        ...importWarranty, installed_date: installedDate,
+        warranty_expire: warrantyExpire, customer_warranty_expire: customerWarrantyExpire,
+      });
 
       // 解析出貨狀態：直接依據上傳 Excel/CSV 中 Status/狀態 欄位判定（預設為 ACTIVE）
       const rowStatusRaw = findColumnValue(row, ['Status', '狀態', '資產狀態', '出貨狀態', '設備狀態']);
@@ -501,9 +509,10 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
         location: asText(location),
         remarks: asText(remarks),
         installed_date: installedDate,
-        customer_warranty_expire: customerWarrantyExpire,
+        customer_warranty_expire: expiries.customer_warranty_expire,
         system_date: systemDate,
-        warranty_expire: warrantyExpire,
+        warranty_expire: expiries.warranty_expire,
+        ...importWarranty,
         itemStatus,
         status,
         skipReason,
@@ -748,7 +757,8 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
               customAttributes,
               'FOR_SALE',
               item.itemStatus || 'ACTIVE',
-              item.remarks || null
+              item.remarks || null,
+              ...warrantyInsertTail(item),
             ],
           });
 
@@ -1678,6 +1688,9 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
                         <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>客戶保固到期</th>
                         <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>系統日期</th>
                         <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>原廠保固到期</th>
+                        <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>進貨日期</th>
+                        <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>原廠保固(年)</th>
+                        <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>客戶保固(年)</th>
                         <th style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--text-muted)' }}>備註 (Remarks)</th>
                         {customFieldDefs.filter(f => customFieldMapping[f.id]).map(f => (
                           <th key={f.id} style={{ padding: '8px 12px', fontWeight: '700', color: f.color || 'var(--primary-color)', whiteSpace: 'nowrap' }}>
@@ -1847,6 +1860,7 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
                                 ['customer_warranty_expire', 'rawCustomerWarranty'],
                                 ['system_date', 'rawSystemDate'],
                                 ['warranty_expire', 'rawWarrantyExpire'],
+                                ['stock_date', 'rawStockDate'],
                               ].map(([field, rawField]) => (
                                 <td key={field} style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>
                                   {row[field] ? (
@@ -1854,6 +1868,23 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
                                   ) : row[rawField] ? (
                                     // 檔案裡有值卻解析不出日期：多半是格式沒被認出來，要讓人看得見
                                     <span style={{ color: '#ef4444', fontWeight: 700 }} title={`檔案內容「${row[rawField]}` + '」無法解析為日期，這一欄將留空'}>
+                                      ⚠️ {String(row[rawField])}
+                                    </span>
+                                  ) : (
+                                    <span style={{ color: 'var(--text-muted)' }}>-</span>
+                                  )}
+                                </td>
+                              ))}
+                              {[
+                                ['warranty_years', 'rawWarrantyYears', 'warrantyYearsInvalid'],
+                                ['customer_warranty_years', 'rawCustomerWarrantyYears', 'customerWarrantyYearsInvalid'],
+                              ].map(([field, rawField, invalidField]) => (
+                                <td key={field} style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>
+                                  {row[field] ? (
+                                    <span style={{ color: 'var(--text-main)' }}>{row[field]} 年</span>
+                                  ) : row[invalidField] ? (
+                                    // 只收 1~5 年：填錯的標出來，這一欄留空
+                                    <span style={{ color: '#ef4444', fontWeight: 700 }} title={`檔案內容「${row[rawField]}` + '」不是 1~5 年，這一欄將留空'}>
                                       ⚠️ {String(row[rawField])}
                                     </span>
                                   ) : (

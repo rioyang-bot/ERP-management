@@ -10,6 +10,8 @@
  * 真的要改內容，走編輯視窗才看得到改了什麼。
  */
 
+import { addYears } from './warranty';
+
 /** 可補齊的資產欄位。順序即是 fillEmptyAssetFieldsBySn 的參數順序 */
 export const FILLABLE_COLUMNS = [
   { key: 'client', label: '客戶' },
@@ -20,6 +22,19 @@ export const FILLABLE_COLUMNS = [
   { key: 'customer_warranty_expire', label: '客戶保固到期' },
   { key: 'system_date', label: '系統日期' },
   { key: 'warranty_expire', label: '原廠保固到期' },
+  { key: 'stock_date', label: '進貨日期' },
+  { key: 'warranty_years', label: '原廠保固（年）' },
+  { key: 'customer_warranty_years', label: '客戶保固（年）' },
+];
+
+/**
+ * 由年數算的保固到期：基準日期 + 年數 → 到期日。
+ * 補上基準日期或年數時，到期日跟著算 —— 既有的到期日若跟算出來的不同，
+ * 補下去就等於改掉它，所以這一組的基準日期與年數都不補。
+ */
+const WARRANTY_PAIRS = [
+  { base: 'stock_date', years: 'warranty_years', expire: 'warranty_expire' },
+  { base: 'installed_date', years: 'customer_warranty_years', expire: 'customer_warranty_expire' },
 ];
 
 /**
@@ -50,6 +65,41 @@ const asDateText = (v) => {
 };
 
 /**
+ * 資產欄位（不含自訂屬性）要補哪些。
+ * blocked：檔案有值、既有是空的，卻因為會改掉既有保固到期而不補的欄位
+ */
+function planFillColumns(existing, row) {
+  const columns = {};
+  const blocked = [];
+
+  FILLABLE_COLUMNS.forEach(({ key }) => {
+    const incoming = row[key];
+    if (isEmptyValue(incoming)) return;
+    // 既有值不是空的就跳過，絕不覆蓋
+    if (!isEmptyValue(existing[key])) return;
+    columns[key] = incoming;
+  });
+
+  WARRANTY_PAIRS.forEach(({ base, years, expire }) => {
+    const pick = (k) => (Object.prototype.hasOwnProperty.call(columns, k) ? columns[k] : existing[k]);
+    const computed = addYears(asDateText(pick(base)), pick(years));
+    if (!computed) return;
+    if (!isEmptyValue(existing[expire])) {
+      if (asDateText(existing[expire]) !== computed) {
+        [base, years].forEach((k) => {
+          if (Object.prototype.hasOwnProperty.call(columns, k)) { delete columns[k]; blocked.push(k); }
+        });
+      }
+      return;
+    }
+    // 到期日是空的：補上算出來的（檔案裡也有到期日時，以年數算的為準，與資料庫相同）
+    columns[expire] = computed;
+  });
+
+  return { columns, blocked };
+}
+
+/**
  * 算出某一列可以補進既有資產的內容。
  *
  * @param {object} existing 系統中既有的資產（含 custom_attributes）
@@ -62,17 +112,8 @@ const asDateText = (v) => {
 export function buildFillPlan(existing, row, { attributeLabels = {} } = {}) {
   if (!existing || !row) return null;
 
-  const columns = {};
-  const labels = [];
-
-  FILLABLE_COLUMNS.forEach(({ key, label }) => {
-    const incoming = row[key];
-    if (isEmptyValue(incoming)) return;
-    // 既有值不是空的就跳過，絕不覆蓋
-    if (!isEmptyValue(existing[key])) return;
-    columns[key] = incoming;
-    labels.push(label);
-  });
+  const { columns } = planFillColumns(existing, row);
+  const labels = FILLABLE_COLUMNS.filter(({ key }) => Object.prototype.hasOwnProperty.call(columns, key)).map(({ label }) => label);
 
   const existingAttrs = (existing.custom_attributes && typeof existing.custom_attributes === 'object')
     ? existing.custom_attributes
@@ -112,6 +153,9 @@ export function getKeptFieldLabels(existing, row) {
       || asDateText(existing[key]) === asDateText(row[key]);
     if (!same) kept.push(label);
   });
+  // 既有是空的、但補了會改掉既有保固到期的基準日期與年數，也算「保留原狀」
+  const { blocked } = planFillColumns(existing, row);
+  FILLABLE_COLUMNS.forEach(({ key, label }) => { if (blocked.includes(key)) kept.push(label); });
   return kept;
 }
 

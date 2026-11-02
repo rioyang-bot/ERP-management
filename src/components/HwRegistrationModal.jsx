@@ -6,6 +6,9 @@ import CardPickerModal from './CardPickerModal';
 import HwBatchImportModal from './HwBatchImportModal';
 import { normalizeMasterName } from '../utils/normalizeMasterData';
 import { validateName as validateAndSanitize } from '../utils/nameValidation';
+import WarrantyFields from '../components/common/WarrantyFields';
+import { EMPTY_WARRANTY_FORM, finalizeWarrantyFields, filledWarrantyFields } from '../utils/warranty';
+import { warrantyInsertTail } from '../utils/importWarranty';
 
 const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   const [brands, setBrands] = useState([]);
@@ -26,7 +29,8 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
 
   const [formData, setFormData] = useState({
     brand: '', type: '', model: '', specification: '', sn: '',
-    order_source: '', server_sn: '', project_name: '', ownership: 'FOR_SALE'
+    order_source: '', server_sn: '', project_name: '', ownership: 'FOR_SALE',
+    ...EMPTY_WARRANTY_FORM,
   });
 
   // 這次建檔中新輸入、但還沒真正建立的類型／廠牌／型號。
@@ -269,6 +273,8 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
 
       let successCount = 0;
       let failCount = 0;
+      // 有選保固年數的，到期日依進貨日期／安裝日期算好
+      const warranty = finalizeWarrantyFields(formData);
 
       for (const sn of snList) {
         const custom_attributes = {
@@ -279,10 +285,11 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
 
         const res = await window.electronAPI.namedQuery('insertAssetRecord', [
           itemMasterId, sn || null, '', '', '',
-          null, null, null, null, '', '',
+          warranty.installed_date || null, warranty.customer_warranty_expire || null, null, warranty.warranty_expire || null, '', '',
           custom_attributes, formData.ownership || 'FOR_SALE',
           'ACTIVE',
-          formData.remarks || null
+          formData.remarks || null,
+          ...warrantyInsertTail(warranty),
         ]);
 
         if (res.success) {
@@ -310,7 +317,7 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
             targetName: `${safeBrand} ${safeModel}`,
             summary: `新增硬體 (${safeBrand} ${safeModel} x${successCount})`,
             perSn: (sn) => `新增硬體 [${safeBrand} ${safeModel}] 序號: ${sn}（批次建檔）`,
-            details: { brand: safeBrand, type: safeType, model: safeModel, count: successCount, sns: snList },
+            details: { brand: safeBrand, type: safeType, model: safeModel, count: successCount, sns: snList, ...filledWarrantyFields(warranty) },
           }
         );
 
@@ -588,6 +595,14 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                 />
               </div>
             </div>
+            {/* 進貨日期、安裝日期與保固：有選年數時到期日自動算 */}
+            <WarrantyFields
+              value={formData}
+              onChange={(patch) => setFormData(prev => ({ ...prev, ...patch }))}
+              labelStyle={labelStyle}
+              inputStyle={inputStyle}
+              style={{ marginBottom: '16px' }}
+            />
           </form>
         </div>
 

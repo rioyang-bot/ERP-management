@@ -2,6 +2,9 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { getMatchingSpecs } from '../utils/matchingSpecs';
 import { Plus, Save, X, Monitor, User, MapPin, ListFilter, Server, FileSpreadsheet, Check, Layers } from 'lucide-react';
 import { logBulkCreate } from '../utils/auditLogger';
+import WarrantyFields from '../components/common/WarrantyFields';
+import { EMPTY_WARRANTY_FORM, finalizeWarrantyFields, filledWarrantyFields } from '../utils/warranty';
+import { warrantyInsertTail } from '../utils/importWarranty';
 import CardPickerModal from './CardPickerModal';
 import DeviceBatchImportModal from './DeviceBatchImportModal';
 import { normalizeMasterName } from '../utils/normalizeMasterData';
@@ -22,8 +25,8 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   const [_projects, setProjects] = useState([]);
   const [formData, setFormData] = useState({
     type: '', brand: '', model: '', sn: '', specification: '', client: '',
-    hostname: '', location: '', installed_date: '',
-    customer_warranty_expire: '', system_date: '', warranty_expire: '',
+    hostname: '', location: '', system_date: '',
+    ...EMPTY_WARRANTY_FORM,
     os: '', nic: '', custom_attributes: {}, ownership: 'FOR_SALE',
     contact_person: '', contact_phone: '', project_name: ''
   });
@@ -244,6 +247,8 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
       if (!masterId) throw new Error('建立物料主檔失敗');
 
       let successCount = 0;
+      // 有選保固年數的，到期日依進貨日期／安裝日期算好
+      const warranty = finalizeWarrantyFields(formData);
       const updatedCustomAttributes = {
         ...formData.custom_attributes,
         contact_person: formData.contact_person || '',
@@ -257,16 +262,17 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
           formData.client || null,
           formData.hostname || null,
           formData.location || null,
-          formData.installed_date || null,
-          formData.customer_warranty_expire || null,
+          warranty.installed_date || null,
+          warranty.customer_warranty_expire || null,
           formData.system_date || null,
-          formData.warranty_expire || null,
+          warranty.warranty_expire || null,
           formData.os || null,
           formData.nic || null,
           updatedCustomAttributes,
           formData.ownership || 'FOR_SALE',
           formData.status || 'ACTIVE',
-          formData.remarks || null
+          formData.remarks || null,
+          ...warrantyInsertTail(warranty),
         ]);
         if (res.success) {
           successCount++;
@@ -289,7 +295,7 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
           targetName: `${formData.brand} ${formData.model}`,
           summary: `新增設備 [${formData.brand} ${formData.model}] ${isBulkMode ? `批次建立 ${successCount} 筆` : `序號: ${formData.sn || '未指定'}`}`,
           perSn: (sn) => `新增設備 [${formData.brand} ${formData.model}] 序號: ${sn}（批次建檔）`,
-          details: { isBulkMode, count: successCount, brand: formData.brand, type: formData.type, model: formData.model, snList: isBulkMode ? snList : [formData.sn], client: formData.client, location: formData.location },
+          details: { isBulkMode, count: successCount, brand: formData.brand, type: formData.type, model: formData.model, snList: isBulkMode ? snList : [formData.sn], client: formData.client, location: formData.location, ...filledWarrantyFields(warranty) },
         }
       );
 
@@ -534,21 +540,21 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
               </div>
             </div>
 
-            {/* 放置地點與保固 */}
+            {/* 放置地點 */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '16px' }}>
               <div>
                 <label style={labelStyle}>放置地點 (Location)</label>
                 <input name="location" value={formData.location} onChange={handleChange} style={inputStyle} placeholder="例如：A棟 機房 2F" />
               </div>
-              <div>
-                <label style={labelStyle}>原廠保固到期日</label>
-                <input type="date" name="warranty_expire" value={formData.warranty_expire} onChange={handleChange} style={inputStyle} />
-              </div>
-              <div>
-                <label style={labelStyle}>客戶保固到期日</label>
-                <input type="date" name="customer_warranty_expire" value={formData.customer_warranty_expire} onChange={handleChange} style={inputStyle} />
-              </div>
             </div>
+            {/* 進貨日期、安裝日期與保固：有選年數時到期日自動算 */}
+            <WarrantyFields
+              value={formData}
+              onChange={(patch) => setFormData(prev => ({ ...prev, ...patch }))}
+              labelStyle={labelStyle}
+              inputStyle={inputStyle}
+              style={{ marginBottom: '16px' }}
+            />
           </form>
         </div>
 
