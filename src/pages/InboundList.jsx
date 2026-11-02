@@ -619,13 +619,30 @@ const InboundList = ({ isSplitMode = false }) => {
         editData.order_date || null
       ]);
       if (res.success) {
+        // 進貨日期改了：這張單入庫的設備／硬體，進貨日期跟著改（原廠保固到期一併重算）。
+        // 在列表上手動改過進貨日期的不動，見 syncAssetStockDateByInboundOrder
+        const oldDate = (selectedOrder.effective_date || selectedOrder.order_date || '').toString().slice(0, 10);
+        let syncedAssets = [];
+        if (editData.order_date && oldDate && editData.order_date !== oldDate) {
+          const syncRes = await window.electronAPI.namedQuery('syncAssetStockDateByInboundOrder', [selectedOrder.id, editData.order_date, oldDate]);
+          if (syncRes?.success) syncedAssets = syncRes.rows || [];
+          else alert('進貨單已儲存，但設備／硬體的進貨日期沒有跟著更新：' + (syncRes?.error || '未知錯誤'));
+        }
         logUpdate(
           'INBOUND',
           selectedOrder.order_no,
           selectedOrder.partner_name || '進貨單',
-          `修改進貨單 [${selectedOrder.order_no}] 進貨日期/發票/供應商/附件`,
-          { orderNo: selectedOrder.order_no, orderDate: editData.order_date, partnerId: editData.partner_id, invoiceNo: editData.invoice_no, attachmentsCount: editData.attachments.length }
+          `修改進貨單 [${selectedOrder.order_no}] 進貨日期/發票/供應商/附件${syncedAssets.length > 0 ? `；${syncedAssets.length} 筆設備／硬體的進貨日期跟著改為 ${editData.order_date}` : ''}`,
+          { orderNo: selectedOrder.order_no, orderDate: editData.order_date, partnerId: editData.partner_id, invoiceNo: editData.invoice_no, attachmentsCount: editData.attachments.length,
+            ...(syncedAssets.length > 0 ? { stockDateSyncedSns: syncedAssets.map(a => a.sn) } : {}) }
         );
+        // 每一台的履歷也要看得出進貨日期是跟著進貨單改的
+        for (const a of syncedAssets) {
+          await logUpdate(a.category_name === '設備' ? 'DEVICE' : 'HARDWARE', a.sn, `${a.brand || ''} ${a.model || ''}`.trim(),
+            `進貨日期跟著進貨單 [${selectedOrder.order_no}] 改為 ${editData.order_date}（原 ${oldDate}）`,
+            { sn: a.sn, orderNo: selectedOrder.order_no, stock_date: editData.order_date, origStockDate: oldDate,
+              warranty_expire: a.warranty_expire || null, warranty_years: a.warranty_years ?? null });
+        }
         alert('儲存成功！');
         setIsEditing(false);
         fetchRecords();

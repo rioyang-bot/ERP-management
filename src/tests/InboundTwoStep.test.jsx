@@ -39,11 +39,14 @@ describe('確認進貨的交易步驟', () => {
   it('設備／硬體每一個數量建一筆資產，訂單來源、備註從明細帶過去', () => {
     const assets = steps.filter((s) => s.queryName === 'insertInboundAssets');
     expect(assets.map((s) => s.params)).toEqual([
-      ['BC0101', 7, null, 'PO-2026-001', '展示機'],
-      [null, 8, null, null, null],
-      [null, 8, null, null, null],
+      ['BC0101', 7, null, 'PO-2026-001', '展示機', 21],
+      [null, 8, null, null, null, 21],
+      [null, 8, null, null, null, 21],
     ]);
     expect(queries.insertInboundAssets).toContain('remarks');
+    // 進貨日期取這張單的進貨日期（$6 進貨單 id）
+    expect(queries.insertInboundAssets).toContain('stock_date');
+    expect(queries.insertInboundAssets).toContain('FROM inbound_orders WHERE id = $6::integer');
   });
 
   it('耗材不建資產，但三項都加庫存', () => {

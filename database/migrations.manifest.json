@@ -253,6 +253,11 @@
       "file": "migration_user_signatures.sql",
       "type": "schema",
       "note": "個人簽名檔：簽核時使用自己帳號上傳的簽名"
+    },
+    {
+      "file": "migration_asset_stock_date_warranty_years.sql",
+      "type": "schema",
+      "note": "設備／硬體新增進貨日期、原廠保固(年)、客戶保固(年)；既有資產依進貨單補上進貨日期（只補空白）"
     }
   ]
 }
