@@ -124,6 +124,14 @@ export function finalizeWarrantyFields(item) {
   return f;
 }
 
+/** 新增設備／硬體表單的保固欄位初始值 */
+export const EMPTY_WARRANTY_FORM = Object.freeze(Object.fromEntries(WARRANTY_FIELDS.map(([k]) => [k, ''])));
+
+/** 新增時寫進事件紀錄的保固欄位：只列有填的 */
+export function filledWarrantyFields(fields) {
+  return Object.fromEntries(Object.entries(fields || {}).filter(([k, v]) => WARRANTY_FIELDS.some(([f]) => f === k) && v !== '' && v !== null && v !== undefined));
+}
+
 /** updateAssetWarrantyInfo 的參數 */
 export function warrantyInfoParams(fields, id) {
   const v = (x) => (x === '' || x === undefined ? null : x);

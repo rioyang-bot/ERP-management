@@ -529,7 +529,8 @@ describe('DeviceBatchImportModal 設備批次匯入檢核與建立測試', () =>
         expect.any(Object),
         'FOR_SALE',
         'ACTIVE',
-        null // remarks（此測試檔未提供備註欄）
+        null, // remarks（此測試檔未提供備註欄）
+        null, null, null, // 進貨日期、原廠保固(年)、客戶保固(年)：檔案沒有這幾欄
       ]);
 
       // 驗證第二筆
@@ -548,7 +549,8 @@ describe('DeviceBatchImportModal 設備批次匯入檢核與建立測試', () =>
         expect.any(Object),
         'FOR_SALE',
         'ACTIVE',
-        null // remarks（此測試檔未提供備註欄）
+        null, // remarks（此測試檔未提供備註欄）
+        null, null, null, // 進貨日期、原廠保固(年)、客戶保固(年)：檔案沒有這幾欄
       ]);
     });
   });

@@ -68,8 +68,8 @@ describe('資產備註欄位：批次匯入', () => {
     const container = await upload(DeviceBatchImportModal, makeFile('備註', '這台是備援機'));
     await userEvent.click(screen.getByText(/確認(批次)?匯入/i));
     await waitFor(() => expect(assetParams()).not.toBeNull());
-    // remarks 為最後一個參數
-    expect(assetParams().at(-1)).toBe('這台是備援機');
+    // remarks 為第 15 個參數（後面是進貨日期與兩種保固年數）
+    expect(assetParams()[14]).toBe('這台是備援機');
     expect(container).toBeTruthy();
   });
 
@@ -77,7 +77,7 @@ describe('資產備註欄位：批次匯入', () => {
     await upload(DeviceBatchImportModal, makeFile('Remarks', 'spare unit'));
     await userEvent.click(screen.getByText(/確認(批次)?匯入/i));
     await waitFor(() => expect(assetParams()).not.toBeNull());
-    expect(assetParams().at(-1)).toBe('spare unit');
+    expect(assetParams()[14]).toBe('spare unit');
   });
 
   it('設備匯入：未提供備註欄時應寫入 null，不應出錯', async () => {
@@ -89,20 +89,20 @@ describe('資產備註欄位：批次匯入', () => {
       { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
     await userEvent.click(screen.getByText(/確認(批次)?匯入/i));
     await waitFor(() => expect(assetParams()).not.toBeNull());
-    expect(assetParams().at(-1)).toBeNull();
+    expect(assetParams()[14]).toBeNull();
   });
 
   it('硬體匯入：「備註」應寫入 remarks', async () => {
     await upload(HwBatchImportModal, makeFile('備註', '客戶指定型號'));
     await userEvent.click(screen.getByText(/確認(批次)?匯入/i));
     await waitFor(() => expect(assetParams()).not.toBeNull());
-    expect(assetParams().at(-1)).toBe('客戶指定型號');
+    expect(assetParams()[14]).toBe('客戶指定型號');
   });
 
   it('備註為純數字時應存成文字，不受 Excel 數值型態影響', async () => {
     await upload(DeviceBatchImportModal, makeFile('備註', 20260115));
     await userEvent.click(screen.getByText(/確認(批次)?匯入/i));
     await waitFor(() => expect(assetParams()).not.toBeNull());
-    expect(assetParams().at(-1)).toBe('20260115');
+    expect(assetParams()[14]).toBe('20260115');
   });
 });

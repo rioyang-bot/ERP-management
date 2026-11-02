@@ -231,14 +231,17 @@ describe('補齊用的 SQL 本身就擋掉覆蓋', () => {
     });
   });
 
-  it('日期欄位以 COALESCE 保留既有值', () => {
-    ['installed_date', 'system_date', 'warranty_expire'].forEach((col) => {
+  it('日期與年數欄位以 COALESCE 保留既有值', () => {
+    ['installed_date', 'customer_warranty_expire', 'system_date', 'warranty_expire',
+      'stock_date', 'warranty_years', 'customer_warranty_years'].forEach((col) => {
       expect(sql).toContain(`${col} = COALESCE(${col},`);
     });
-    // 客戶保固到期：有選客戶保固(年) 就是「安裝日期 + 年數」，安裝日期這次才補上也照算；
-    // 已經有安裝日期的，算出來就是原本的值，不算覆蓋。沒選年數才照舊只補空的
-    expect(sql).toContain("COALESCE(customer_warranty_expire, $7::date)");
-    expect(sql).toContain('make_interval(years => customer_warranty_years::int)');
+  });
+
+  it('到期日是空的才由（補齊後的）基準日期 + 年數算，算不出來才用檔案裡的', () => {
+    expect(sql).toContain("make_interval(years => COALESCE(warranty_years, $11::smallint)::int))::date ELSE $9::date END)");
+    expect(sql).toContain("make_interval(years => COALESCE(customer_warranty_years, $12::smallint)::int))::date ELSE $7::date END)");
+    expect(sql).toContain("$13::jsonb");
   });
 
   it('自訂屬性以既有的為底再合併，不會整包換掉', () => {

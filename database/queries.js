@@ -849,6 +849,7 @@ export const queries = {
   fetchAssetsBySnListForFill: `
     SELECT a.id, a.sn, a.client, a.hostname, a.location, a.remarks,
            a.installed_date, a.customer_warranty_expire, a.system_date, a.warranty_expire,
+           a.stock_date, a.warranty_years, a.customer_warranty_years,
            a.status, a.ownership,
            COALESCE(a.custom_attributes, '{}'::jsonb) as custom_attributes,
            i.brand, i.type, i.model, i.specification, c.name as category_name
@@ -862,6 +863,9 @@ export const queries = {
   // 也不會被這次匯入蓋掉。
   // custom_attributes 以「既有的 || 這次要補的」合併，而要補的鍵值在前端
   // 已篩掉既有非空的鍵，因此不會動到原本就有內容的屬性。
+  // 保固到期一樣只補空的：空的才用（補齊後的）基準日期 + 年數算，算不出來才用檔案裡的到期日。
+  // 會算出跟既有到期日不同日期的基準日期／年數，前端就不會補（見 utils/assetFillImport.js）。
+  // $10 進貨日期、$11 原廠保固(年)、$12 客戶保固(年)、$13 自訂屬性
   fillEmptyAssetFieldsBySn: `
     UPDATE assets SET
       client = CASE WHEN COALESCE(TRIM(client), '') = '' THEN $2 ELSE client END,
@@ -869,10 +873,13 @@ export const queries = {
       location = CASE WHEN COALESCE(TRIM(location), '') = '' THEN $4 ELSE location END,
       remarks = CASE WHEN COALESCE(TRIM(remarks), '') = '' THEN $5 ELSE remarks END,
       installed_date = COALESCE(installed_date, $6::date),
-      customer_warranty_expire = ${WARRANTY_FROM_YEARS('COALESCE(installed_date, $6::date)', 'customer_warranty_years', 'COALESCE(customer_warranty_expire, $7::date)')},
+      customer_warranty_expire = COALESCE(customer_warranty_expire, ${WARRANTY_FROM_YEARS('COALESCE(installed_date, $6::date)', 'COALESCE(customer_warranty_years, $12::smallint)', '$7::date')}),
       system_date = COALESCE(system_date, $8::date),
-      warranty_expire = COALESCE(warranty_expire, $9::date),
-      custom_attributes = COALESCE(custom_attributes, '{}'::jsonb) || $10::jsonb,
+      warranty_expire = COALESCE(warranty_expire, ${WARRANTY_FROM_YEARS('COALESCE(stock_date, $10::date)', 'COALESCE(warranty_years, $11::smallint)', '$9::date')}),
+      stock_date = COALESCE(stock_date, $10::date),
+      warranty_years = COALESCE(warranty_years, $11::smallint),
+      customer_warranty_years = COALESCE(customer_warranty_years, $12::smallint),
+      custom_attributes = COALESCE(custom_attributes, '{}'::jsonb) || $13::jsonb,
       updated_at = CURRENT_TIMESTAMP
     WHERE id = $1
     RETURNING id, sn`,
@@ -1039,7 +1046,9 @@ export const queries = {
     ORDER BY c.name ASC, norm_brand ASC, norm_model ASC
   `,
   insertItemMaster: `INSERT INTO item_master (specification, type, brand, model, unit, category_id, purchase_price) VALUES ($1, UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g'))), UPPER(TRIM(REGEXP_REPLACE(COALESCE($3, ''), '[[:space:]]+', ' ', 'g'))), UPPER(TRIM(REGEXP_REPLACE(COALESCE($4, ''), '[[:space:]]+', ' ', 'g'))), $5, (SELECT id FROM categories WHERE name = $6), 0) RETURNING id`,
-  insertAssetRecord: `INSERT INTO assets (item_master_id, sn, client, hostname, location, installed_date, customer_warranty_expire, system_date, warranty_expire, os, nic, custom_attributes, ownership, status, remarks) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14, 'ACTIVE'), $15)`,
+  // $16 進貨日期、$17 原廠保固(年)、$18 客戶保固(年)：有選年數時到期日由這裡算，沒選就存 $9／$7 手填的。
+  // 只傳 15 個參數的呼叫端（例如 RMA 換貨）後三個會補成 null，行為不變
+  insertAssetRecord: `INSERT INTO assets (item_master_id, sn, client, hostname, location, installed_date, customer_warranty_expire, system_date, warranty_expire, os, nic, custom_attributes, ownership, status, remarks, stock_date, warranty_years, customer_warranty_years) VALUES ($1, $2, $3, $4, $5, $6, ${WARRANTY_FROM_YEARS('$6::date', '$18::smallint', '$7::date')}, $8, ${WARRANTY_FROM_YEARS('$16::date', '$17::smallint', '$9::date')}, $10, $11, $12, $13, COALESCE($14, 'ACTIVE'), $15, $16::date, $17::smallint, $18::smallint)`,
 
   // ConsumableList.jsx
   fetchConsumablesList: `SELECT v.*, i.id as id, i.stock_qty, i.lab_qty, COALESCE(i.lent_qty, 0) as lent_qty,

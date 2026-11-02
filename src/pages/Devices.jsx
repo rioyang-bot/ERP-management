@@ -7,6 +7,9 @@ import { addDictionaryEntry } from '../utils/masterDictionary';
 import DeviceBatchImportModal from '../components/DeviceBatchImportModal';
 import { normalizeMasterName } from '../utils/normalizeMasterData';
 import { validateName as validateAndSanitize } from '../utils/nameValidation';
+import WarrantyFields from '../components/common/WarrantyFields';
+import { EMPTY_WARRANTY_FORM, finalizeWarrantyFields, filledWarrantyFields } from '../utils/warranty';
+import { warrantyInsertTail } from '../utils/importWarranty';
 
 const Devices = ({ isSplitMode = false }) => {
   const navigate = useNavigate();
@@ -25,8 +28,8 @@ const Devices = ({ isSplitMode = false }) => {
   const [showProjectDropdown, setShowProjectDropdown] = useState(false);
   const [formData, setFormData] = useState({
     type: '', brand: '', model: '', sn: '', specification: '', client: '',
-    hostname: '', location: '', installed_date: '',
-    customer_warranty_expire: '', system_date: '', warranty_expire: '',
+    hostname: '', location: '', system_date: '',
+    ...EMPTY_WARRANTY_FORM,
     os: '', nic: '', custom_attributes: {}, ownership: 'FOR_SALE',
     contact_person: '', contact_phone: '', project_name: ''
   });
@@ -207,6 +210,8 @@ const Devices = ({ isSplitMode = false }) => {
       if (!masterId) throw new Error('建立物料主檔失敗');
 
       let successCount = 0;
+      // 有選保固年數的，到期日依進貨日期／安裝日期算好
+      const warranty = finalizeWarrantyFields(formData);
       const updatedCustomAttributes = {
         ...formData.custom_attributes,
         contact_person: formData.contact_person || '',
@@ -215,11 +220,12 @@ const Devices = ({ isSplitMode = false }) => {
       };
       for (const sn of snList) {
         const res = await window.electronAPI.namedQuery('insertAssetRecord', [
-          masterId, sn || null, formData.client, formData.hostname, formData.location, formData.installed_date || null,
-          formData.customer_warranty_expire || null, formData.system_date || null, formData.warranty_expire || null,
+          masterId, sn || null, formData.client, formData.hostname, formData.location, warranty.installed_date || null,
+          warranty.customer_warranty_expire || null, formData.system_date || null, warranty.warranty_expire || null,
           formData.os, formData.nic, updatedCustomAttributes, formData.ownership || 'FOR_SALE',
           formData.status || 'ACTIVE',
-          formData.remarks || null
+          formData.remarks || null,
+          ...warrantyInsertTail(warranty),
         ]);
         if (res.success) {
           successCount++;
@@ -239,7 +245,7 @@ const Devices = ({ isSplitMode = false }) => {
             targetName: `${formData.brand} ${formData.model}`,
             summary: `新增設備 [${formData.brand} ${formData.model}] ${isBulkMode ? `批次建立 ${successCount} 筆` : `序號: ${formData.sn || '未指定'}`}`,
             perSn: (sn) => `新增設備 [${formData.brand} ${formData.model}] 序號: ${sn}（批次建檔）`,
-            details: { isBulkMode, count: successCount, brand: formData.brand, type: formData.type, model: formData.model, snList: isBulkMode ? snList : [formData.sn], client: formData.client, location: formData.location },
+            details: { isBulkMode, count: successCount, brand: formData.brand, type: formData.type, model: formData.model, snList: isBulkMode ? snList : [formData.sn], client: formData.client, location: formData.location, ...filledWarrantyFields(warranty) },
           }
         );
       }
@@ -250,7 +256,7 @@ const Devices = ({ isSplitMode = false }) => {
       await Promise.all([fetchBrands(), fetchTypes()]);
       setFormData({
         sn: '', specification: '', type: '', brand: brands[0]?.name || '', model: '', client: '',
-        hostname: '', location: '', installed_date: '', customer_warranty_expire: '', system_date: '', warranty_expire: '',
+        hostname: '', location: '', system_date: '', ...EMPTY_WARRANTY_FORM,
         os: '', nic: '', custom_attributes: {},
         contact_person: '', contact_phone: '', project_name: ''
       });
@@ -531,6 +537,15 @@ const Devices = ({ isSplitMode = false }) => {
               </div>
               <div><label style={labelStyle}>放置位置 (Location)</label><input type="text" name="location" value={formData.location} onChange={handleChange} style={inputStyle} /></div>
             </div>
+
+            {/* 進貨日期、安裝日期與保固：有選年數時到期日自動算 */}
+            <WarrantyFields
+              value={formData}
+              onChange={(patch) => setFormData(prev => ({ ...prev, ...patch }))}
+              labelStyle={labelStyle}
+              inputStyle={inputStyle}
+              style={{ marginBottom: '16px' }}
+            />
 
 
             <div style={{ textAlign: 'right' }}><button onClick={handleAddAsset} style={{ ...inputStyle, width: '100%', backgroundColor: 'var(--primary-color)', color: '#fff', border: 'none', padding: '14px', fontWeight: '900', cursor: 'pointer', borderRadius: '12px', fontSize: '16px', boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)' }}><Save size={20} style={{ marginRight: '8px', verticalAlign: 'middle' }} /> {isBulkMode ? `開始多筆建檔 (${bulkSns.split('\n').filter(s => s.trim()).length} 筆)` : '儲存設備資料'}</button></div>
