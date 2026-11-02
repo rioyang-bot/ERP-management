@@ -12,10 +12,13 @@ import { WARRANTY_YEAR_OPTIONS, addYears } from '../../utils/warranty';
  * 有選年數、也有基準日期時到期日自動算、不能手改；沒選年數就照舊手動填。
  * 進貨日期由確認進貨、安裝日期由出貨自動寫入，兩者都可以在這裡再改。
  *
+ * showExtended：多一列一次延保 (1st EWS)、二次延保 (2nd EWS) 到期日（選填、手動填）。
+ * 目前只有設備／硬體列表的編輯視窗用到。
+ *
  * @param {object} value    編輯中的資產（用到 stock_date、installed_date、warranty_years…）
  * @param {(patch: object) => void} onChange 只傳有變的欄位
  */
-const WarrantyFields = ({ value, onChange, labelStyle, inputStyle, style }) => {
+const WarrantyFields = ({ value, onChange, labelStyle, inputStyle, style, showExtended = false }) => {
   const v = value || {};
   const hintStyle = { display: 'block', marginTop: '4px', fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)' };
 
@@ -70,6 +73,18 @@ const WarrantyFields = ({ value, onChange, labelStyle, inputStyle, style }) => {
       {yearsSelect('customer_warranty_years', '客戶保固(年)')}
       {expireInput('warranty_expire', '原廠保固到期 (Warranty Expire)', v.stock_date, v.warranty_years, '進貨日期')}
       {expireInput('customer_warranty_expire', '客戶保固到期 (Cust Warranty)', v.installed_date, v.customer_warranty_years, '安裝日期')}
+      {showExtended && (
+        <>
+          <label style={labelStyle}>
+            一次延保 (1st EWS)
+            <input type="date" value={v.ews1_expire || ''} onChange={(e) => onChange({ ews1_expire: e.target.value })} style={inputStyle} />
+          </label>
+          <label style={labelStyle}>
+            二次延保 (2nd EWS)
+            <input type="date" value={v.ews2_expire || ''} onChange={(e) => onChange({ ews2_expire: e.target.value })} style={inputStyle} />
+          </label>
+        </>
+      )}
     </div>
   );
 };

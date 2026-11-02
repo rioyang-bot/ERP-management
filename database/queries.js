@@ -1968,7 +1968,8 @@ export const queries = {
   updateMountedHardwareShippingDate: `UPDATE assets SET shipping_date = $1 WHERE custom_attributes->>'server_sn' = $2`,
   updateMountedHardwareInstalledAndShippingDate: `UPDATE assets SET installed_date = $1, shipping_date = $1, ${CUST_WARRANTY_ON_INSTALL('$1::date')} WHERE custom_attributes->>'server_sn' = $2`,
   updateAssetShippingDate: `UPDATE assets SET shipping_date = $1 WHERE id = $2`,
-  // 設備／硬體編輯視窗的日期與保固：進貨日期、安裝日期、兩種保固年數與到期日。
+  // 設備／硬體編輯視窗的日期與保固：進貨日期、安裝日期、兩種保固年數與到期日，
+  // 以及一次延保 ($8)、二次延保 ($9) 到期日。
   // 有選年數時到期日由這裡算（畫面只是預覽），沒選就存畫面上手動填的到期日。
   // 另外一支而不是併進 updateAssetDetails：那支 RMA 換貨也在用，參數個數不能動。
   updateAssetWarrantyInfo: `
@@ -1979,9 +1980,11 @@ export const queries = {
       warranty_expire = ${WARRANTY_FROM_YEARS('$1::date', '$3::smallint', '$4::date')},
       customer_warranty_years = $5::smallint,
       customer_warranty_expire = ${WARRANTY_FROM_YEARS('$2::date', '$5::smallint', '$6::date')},
+      ews1_expire = $8::date,
+      ews2_expire = $9::date,
       updated_at = CURRENT_TIMESTAMP
     WHERE id = $7::integer
-    RETURNING id, stock_date, installed_date, warranty_years, warranty_expire, customer_warranty_years, customer_warranty_expire`,
+    RETURNING id, stock_date, installed_date, warranty_years, warranty_expire, customer_warranty_years, customer_warranty_expire, ews1_expire, ews2_expire`,
   updateAssetShippingDateBySn: `UPDATE assets SET shipping_date = $1 WHERE sn = $2`,
   updateOutboundRequestStatus: `UPDATE outbound_requests SET status = $1 WHERE id = $2`,
   updateOutboundRequestReturned: `UPDATE outbound_requests SET status = 'RETURNED', actual_return_date = $2 WHERE id = $1`,

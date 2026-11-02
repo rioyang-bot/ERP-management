@@ -75,7 +75,7 @@ describe('到期日計算', () => {
       warranty_years: '3', warranty_expire: '2000-01-01',
       customer_warranty_years: '', customer_warranty_expire: '2030-05-05',
     });
-    expect(warrantyInfoParams(f, '7')).toEqual(['2026-10-01', '2026-10-20', 3, '2029-10-01', null, '2030-05-05', 7]);
+    expect(warrantyInfoParams(f, '7')).toEqual(['2026-10-01', '2026-10-20', 3, '2029-10-01', null, '2030-05-05', 7, null, null]);
   });
 
   it('異動寫成一句話', () => {
@@ -218,7 +218,7 @@ describe('設備列表', () => {
     fireEvent.click(screen.getByText(/儲存變更/));
 
     await waitFor(() => expect(calls('updateAssetWarrantyInfo')).toHaveLength(1));
-    expect(calls('updateAssetWarrantyInfo')[0][1]).toEqual(['2026-10-01', '2026-10-20', 3, '2029-10-01', 2, '2028-10-20', 1]);
+    expect(calls('updateAssetWarrantyInfo')[0][1]).toEqual(['2026-10-01', '2026-10-20', 3, '2029-10-01', 2, '2028-10-20', 1, null, null]);
     // updateAssetDetails 的安裝日期、客戶保固、原廠保固也是算好的值
     const p = calls('updateAssetDetails')[0][1];
     expect([p[4], p[5], p[7]]).toEqual(['2026-10-20', '2028-10-20', '2029-10-01']);
@@ -285,7 +285,7 @@ describe('硬體列表', () => {
     await userEvent.click(screen.getByRole('button', { name: '儲存變更' }));
 
     await waitFor(() => expect(calls('updateAssetWarrantyInfo')).toHaveLength(1));
-    expect(calls('updateAssetWarrantyInfo')[0][1]).toEqual(['2026-09-01', '2026-10-05', 1, '2027-09-01', 5, '2031-10-05', 88]);
+    expect(calls('updateAssetWarrantyInfo')[0][1]).toEqual(['2026-09-01', '2026-10-05', 1, '2027-09-01', 5, '2031-10-05', 88, null, null]);
 
     await waitFor(() => expect(auditLogs().some((l) => l.summary.startsWith('編輯硬體詳細資訊'))).toBe(true));
     const log = auditLogs().find((l) => l.summary.startsWith('編輯硬體詳細資訊'));
