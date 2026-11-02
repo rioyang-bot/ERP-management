@@ -17,8 +17,9 @@ import express from 'express';
 import crypto from 'crypto';
 import { writeAuditLog, clientIp } from './auditLog.js';
 
+// since：表單開始使用的月份（範本 v1.0 發布日期 115/06/01），之前的月份沒有這張表單，不列入待簽提醒
 export const FORMS = {
-  'S-408-02': { label: '設備攜出入單', query: 'fetchEquipmentMovements' },
+  'S-408-02': { label: '設備攜出入單', query: 'fetchEquipmentMovements', since: '2026-06' },
 };
 
 export const SIGNER_ROLES = {
@@ -61,6 +62,18 @@ const rocLabel = (period) => {
 };
 
 export const canSign = (user, role) => !!user?.menu_access?.[SIGNER_ROLES[role]?.permission];
+
+/** 從 since 到上個月（含）的每個月份；本月還沒結束，不算 */
+export const monthsToRemind = (since, now = new Date()) => {
+  const pad = (n) => String(n).padStart(2, '0');
+  const [sy, sm] = since.split('-').map(Number);
+  const out = [];
+  for (let y = sy, m = sm; y * 12 + m < now.getFullYear() * 12 + now.getMonth() + 1;) {
+    out.push(`${y}-${pad(m)}`);
+    if (m === 12) { y += 1; m = 1; } else { m += 1; }
+  }
+  return out;
+};
 
 /**
  * @param {import('pg').Pool} pool
@@ -150,6 +163,56 @@ export const createIsoSignatureRoutes = (pool, auth, namedQueries) => {
     } catch (error) {
       console.error('[IsoSignature] 刪除簽名檔失敗:', error.message);
       res.status(500).json({ success: false, error: '刪除簽名檔失敗。' });
+    }
+  });
+
+  // 待簽提醒（營運總覽）：上個月（含）以前、有設備進出、還沒簽完的月份。
+  // 「簽完」＝兩個角色都有簽、且簽核後資料沒有異動（與表單頁的判定相同）。
+  // 整段期間只查一次，再依月份分組算雜湊；分組後的順序與單月查詢相同，雜湊一致。
+  // 要放在 /:form/:period 之前，否則 pending 會被當成月份。
+  router.get('/:form/pending', auth.requireAuth, async (req, res) => {
+    const { form } = req.params;
+    const def = FORMS[form];
+    if (!def) return res.status(400).json({ success: false, error: '不支援的表單。' });
+    const months = monthsToRemind(def.since);
+    if (months.length === 0) return res.json({ success: true, months: [] });
+    try {
+      const [start] = periodRange(months[0]);
+      const [, end] = periodRange(months.at(-1));
+      const [moves, sigs] = await Promise.all([
+        pool.query(namedQueries[def.query], [start, end]),
+        pool.query(
+          `SELECT period, signer_role, user_name, content_hash FROM iso_form_signatures
+            WHERE form_code = $1 AND period >= $2 AND period <= $3`,
+          [form, months[0], months.at(-1)]
+        ),
+      ]);
+      const byMonth = new Map();
+      for (const r of moves.rows) {
+        const p = ymd(r.move_date).slice(0, 7);
+        if (!byMonth.has(p)) byMonth.set(p, []);
+        byMonth.get(p).push(r);
+      }
+      const signed = new Map(sigs.rows.map((s) => [`${String(s.period).trim()}|${s.signer_role}`, s]));
+      const pending = [];
+      for (const period of months) {
+        const rows = byMonth.get(period);
+        if (!rows?.length) continue; // 沒有設備進出的月份不用簽
+        const hash = contentHash(rows);
+        const roles = Object.entries(SIGNER_ROLES).map(([role, r]) => {
+          const s = signed.get(`${period}|${role}`);
+          const status = !s ? 'MISSING' : (s.content_hash === hash ? 'SIGNED' : 'STALE');
+          return { role, label: r.label, status, userName: s?.user_name || null };
+        });
+        if (roles.some((r) => r.status !== 'SIGNED')) {
+          pending.push({ period, label: rocLabel(period), rowCount: rows.length, roles });
+        }
+      }
+      // 最近的月份排前面
+      res.json({ success: true, months: pending.reverse() });
+    } catch (error) {
+      console.error('[IsoSignature] 讀取待簽月份失敗:', error.message);
+      res.status(500).json({ success: false, error: '讀取待簽月份失敗。' });
     }
   });
 

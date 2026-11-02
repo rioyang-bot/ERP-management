@@ -468,3 +468,48 @@
   font-size: 0.8rem;
   color: var(--text-muted);
 }
+
+/* 設備攜出入單待簽提醒 */
+.overview-iso-reminder {
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.08);
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin-bottom: 20px;
+}
+.overview-iso-reminder-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #b45309;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.overview-iso-reminder-title { font-weight: 800; font-size: 0.95rem; }
+.overview-iso-reminder-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.overview-iso-reminder-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  color: var(--text-main);
+  cursor: pointer;
+  font-size: 0.85rem;
+  flex-wrap: wrap;
+  text-align: left;
+}
+.overview-iso-reminder-item:hover { border-color: #f59e0b; }
+.overview-iso-reminder-month { font-weight: 800; }
+.overview-iso-reminder-count { color: var(--text-muted); }
+.overview-iso-reminder-roles { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.overview-iso-role {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.overview-iso-role-missing { background: rgba(239, 68, 68, 0.12); color: #dc2626; }
+.overview-iso-role-stale { background: rgba(245, 158, 11, 0.18); color: #b45309; }
