@@ -20,7 +20,8 @@ import {
   TrendingDown,
   Layers,
   FileText,
-  Wrench
+  Wrench,
+  ShieldCheck
 } from 'lucide-react';
 import './Overview.css';
 
@@ -51,6 +52,8 @@ const Overview = () => {
   const [activeLents, setActiveLents] = useState([]);
   const [activeRepairs, setActiveRepairs] = useState([]);
   const [lowStockConsumables, setLowStockConsumables] = useState([]);
+  // 設備攜出入單 (S-408-02) 待簽提醒：上個月（含）以前、有設備進出、還沒簽完的月份（伺服器判定）
+  const [isoPending, setIsoPending] = useState([]);
 
   // 篩選與搜尋
   const [docTab, setDocTab] = useState('ALL'); // 'ALL' | 'PO' | 'INBOUND' | 'OUTBOUND' | 'LENT' | 'REPAIR'
@@ -71,7 +74,8 @@ const Overview = () => {
         outboundsRes,
         lentsRes,
         consumablesRes,
-        repairsRes
+        repairsRes,
+        isoPendingRes
       ] = await Promise.all([
         window.electronAPI.namedQuery('fetchOverviewStats'),
         window.electronAPI.namedQuery('fetchOverviewPendingPurchases'),
@@ -79,7 +83,9 @@ const Overview = () => {
         window.electronAPI.namedQuery('fetchOverviewPendingOutbounds'),
         window.electronAPI.namedQuery('fetchOverviewActiveLents'),
         window.electronAPI.namedQuery('fetchOverviewLowStockConsumables'),
-        window.electronAPI.namedQuery('fetchOverviewActiveRepairs')
+        window.electronAPI.namedQuery('fetchOverviewActiveRepairs'),
+        // 讀不到提醒不影響總覽其他區塊
+        Promise.resolve(window.electronAPI.isoSignature?.('GET', 'S-408-02', 'pending')).catch(() => null)
       ]);
 
       if (statsRes.success && statsRes.rows.length > 0) {
@@ -91,6 +97,7 @@ const Overview = () => {
       if (lentsRes.success) setActiveLents(lentsRes.rows || []);
       if (consumablesRes.success) setLowStockConsumables(consumablesRes.rows || []);
       if (repairsRes?.success) setActiveRepairs(repairsRes.rows || []);
+      setIsoPending(isoPendingRes?.success && Array.isArray(isoPendingRes.months) ? isoPendingRes.months : []);
 
       setLastUpdated(new Date());
     } catch (err) {
@@ -294,6 +301,40 @@ const Overview = () => {
           </button>
         </div>
       </header>
+
+      {/* 設備攜出入單待簽提醒：只有還沒簽完的月份才出現，點月份直接開那個月的表單 */}
+      {isoPending.length > 0 && (
+        <section className="overview-iso-reminder" aria-label="設備攜出入單待簽提醒">
+          <div className="overview-iso-reminder-head">
+            <ShieldCheck size={20} />
+            <span className="overview-iso-reminder-title">設備攜出入單 (ISO 27001 S-408-02) 尚未完成簽核</span>
+            <span className="overview-count-pill">{isoPending.length} 個月份</span>
+          </div>
+          <div className="overview-iso-reminder-list">
+            {isoPending.map((m) => (
+              <button
+                key={m.period}
+                type="button"
+                className="overview-iso-reminder-item"
+                data-testid={`iso-pending-${m.period}`}
+                onClick={() => navigate(`/iso-equipment-form?month=${m.period}`)}
+                title={`前往 ${m.label} 設備攜出入單簽核`}
+              >
+                <span className="overview-iso-reminder-month">{m.label}</span>
+                <span className="overview-iso-reminder-count">{m.rowCount} 筆進出</span>
+                <span className="overview-iso-reminder-roles">
+                  {m.roles.filter((r) => r.status !== 'SIGNED').map((r) => (
+                    <span key={r.role} className={`overview-iso-role overview-iso-role-${r.status.toLowerCase()}`}>
+                      {r.status === 'STALE' ? `${r.label}需重簽` : `待${r.label}簽核`}
+                    </span>
+                  ))}
+                </span>
+                <ArrowRight size={14} />
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* 頂部 KPI 數據統計卡片 */}
       <div className="overview-kpi-grid">

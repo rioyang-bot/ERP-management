@@ -1,7 +1,7 @@
 import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import html2canvas from 'html2canvas';
 import { Download, ShieldCheck, ArrowDownToLine, ArrowUpFromLine, AlertCircle, ArrowLeft, PenLine, Undo2, AlertTriangle } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { RoleContext } from '../context/RoleContext';
 import SignaturePadModal from '../components/SignaturePadModal';
 import IsoEquipmentSheet, { SHEET_WIDTH, SHEET_HEIGHT } from '../components/IsoEquipmentSheet';
@@ -45,7 +45,12 @@ const smallBtn = { display: 'inline-flex', alignItems: 'center', gap: '5px', pad
 const IsoEquipmentForm = () => {
   const navigate = useNavigate();
   const { authUser } = useContext(RoleContext) || {};
-  const [month, setMonth] = useState(defaultMonth());
+  // 營運總覽的待簽提醒會帶 ?month=YYYY-MM 直接開那個月；沒帶或格式不對就開本月
+  const [searchParams] = useSearchParams();
+  const [month, setMonth] = useState(() => {
+    const m = searchParams.get('month');
+    return /^\d{4}-(0[1-9]|1[0-2])$/.test(m || '') ? m : defaultMonth();
+  });
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
