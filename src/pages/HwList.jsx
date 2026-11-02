@@ -935,7 +935,7 @@ const HwList = ({ isSplitMode = false }) => {
             <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('remarks') }}>備註</th>
             <th
               style={{ ...thStyle, textAlign: 'left', ...hideCol('warranty') }}
-              title="I 進貨日／P 安裝日／W 原廠保固到期（進貨日 + 原廠保固年數）／C 客戶保固到期（安裝日 + 客戶保固年數）。到期日後的（N年）是選的保固年數。圓形標記：綠底保＝保固內、黃底保＝90 天內到期、紅底過＝已過期；未填到期日不顯示標記。"
+              title="I 進貨日／P 安裝日／W 原廠保固到期（進貨日 + 原廠保固年數）／C 客戶保固到期（安裝日 + 客戶保固年數）／1st、2nd 一次、二次延保到期（有填才顯示）。到期日後的（N年）是選的保固年數。圓形標記：綠底保＝保固內、黃底保＝90 天內到期、紅底過＝已過期；未填到期日不顯示標記。"
             >
               保固資訊 (I/P/W/C)
             </th>
@@ -1422,6 +1422,7 @@ const HwList = ({ isSplitMode = false }) => {
                   onChange={(patch) => setEditItem(prev => ({ ...prev, ...patch }))}
                   labelStyle={editLabelStyle}
                   inputStyle={editInputStyle}
+                  showExtended
                 />
               </div>
 

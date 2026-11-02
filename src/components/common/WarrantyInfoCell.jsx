@@ -10,6 +10,7 @@ const yearsTag = (n) => (n ? <span style={{ color: 'var(--text-muted)' }}>({n}�
  *   I 進貨日期      P 安裝日期
  *   W 原廠保固到期   C 客戶保固到期
  *   S 系統日期（設備才有）
+ *   1st 一次延保    2nd 二次延保（有填才顯示這一列）
  *
  * 左邊是原廠保固（由進貨日期起算），右邊是客戶保固（由安裝日期起算）；
  * 到期日後面標出選的保固年數，沒選年數（手動填的到期日）就不標。
@@ -30,6 +31,20 @@ const WarrantyInfoCell = ({ item, showSystemDate = false }) => (
       {yearsTag(item.customer_warranty_years)}
       <WarrantyBadge expireDate={item.customer_warranty_expire} name="客戶保固" size={15} />
     </div>
+    {(item.ews1_expire || item.ews2_expire) && (
+      <>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <span style={{ color: '#0ea5e9', fontWeight: 'bold' }}>1st:</span>
+          {fmt(item.ews1_expire)}
+          <WarrantyBadge expireDate={item.ews1_expire} name="一次延保" size={15} />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <span style={{ color: '#0ea5e9', fontWeight: 'bold' }}>2nd:</span>
+          {fmt(item.ews2_expire)}
+          <WarrantyBadge expireDate={item.ews2_expire} name="二次延保" size={15} />
+        </div>
+      </>
+    )}
     {showSystemDate && (
       <div><span style={{ color: '#10b981', fontWeight: 'bold' }}>S:</span> {fmt(item.system_date)}</div>
     )}

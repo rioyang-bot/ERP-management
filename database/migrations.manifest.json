@@ -258,6 +258,11 @@
       "file": "migration_asset_stock_date_warranty_years.sql",
       "type": "schema",
       "note": "設備／硬體新增進貨日期、原廠保固(年)、客戶保固(年)；既有資產依進貨單補上進貨日期（只補空白）"
+    },
+    {
+      "file": "migration_asset_extended_warranty.sql",
+      "type": "schema",
+      "note": "設備／硬體新增一次延保 (1st EWS)、二次延保 (2nd EWS) 到期日"
     }
   ]
 }
