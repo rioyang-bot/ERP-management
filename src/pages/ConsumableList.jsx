@@ -13,7 +13,8 @@ import { usePageSize } from '../utils/usePageSize';
 import { useCardOrderByMode, useCardLayoutByMode } from '../hooks/useCardLayout';
 import { normalizeSlotLayout, moveCardToSlot, slotCount, SLOT_COLUMNS } from '../utils/cardSlots';
 import CardAggregationSelect from '../components/common/CardAggregationSelect';
-import { CONSUMABLE_AGGREGATION_MODES, getConsumableGroupField } from '../utils/cardAggregation';
+import { CONSUMABLE_AGGREGATION_MODES, getConsumableGroupField, getConsumableDrillField, consumableDrillValue, buildConsumableDrillCards } from '../utils/cardAggregation';
+import DrilldownCards from '../components/common/DrilldownCards';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 import CardAggregationLegend from '../components/CardAggregationLegend';
 
@@ -43,6 +44,14 @@ const ConsumableList = ({ isSplitMode = false }) => {
   });
   const groupField = getConsumableGroupField(aggregationMode);
   const groupLabel = aggregationMode === 'BRAND' ? '廠牌' : '類型';
+  // 點了卡片後在下面展開：依類型→各廠牌、依廠牌→各類型；selectedSub 是點了哪一張子卡片
+  const drillField = getConsumableDrillField(aggregationMode);
+  const drillLabel = aggregationMode === 'BRAND' ? '類型' : '廠牌';
+  // 子卡片的選取記下是哪張卡片底下的，換卡片或換聚合規則就自然失效
+  const [drillSel, setDrillSel] = useState({ parent: null, key: null });
+  const drillParent = `${aggregationMode}|${selectedType || ''}`;
+  const selectedSub = drillSel.parent === drillParent ? drillSel.key : null;
+  const setSelectedSub = (key) => setDrillSel({ parent: drillParent, key });
 
   const handleAggregationModeChange = (mode) => {
     setAggregationMode(mode);
@@ -293,6 +302,9 @@ const ConsumableList = ({ isSplitMode = false }) => {
     if (selectedType && (item[groupField] || '').trim() !== selectedType.trim()) {
       return false;
     }
+    if (selectedType && selectedSub && consumableDrillValue(item, drillField) !== selectedSub) {
+      return false;
+    }
 
     // 2. 關鍵字搜尋 (廠牌、型號、規格、類型)
     const searchTerms = searchTerm.toLowerCase().split(/\s+/).filter(t => t);
@@ -358,6 +370,14 @@ const ConsumableList = ({ isSplitMode = false }) => {
       }
     });
   };
+
+  const drillCards = selectedType
+    ? buildConsumableDrillCards(
+      items.filter((it) => (!typeFilter || (it.type || '').trim() === typeFilter.trim())
+        && (it[groupField] || '').trim() === selectedType.trim()),
+      drillField,
+    )
+    : [];
 
   const handleCardClick = (typeName) => {
     setSelectedType(prev => (prev === typeName ? null : typeName));
@@ -771,14 +791,28 @@ const ConsumableList = ({ isSplitMode = false }) => {
           </div>
         </div>
 
-        {renderStats()}
+        {/* 點了卡片：卡片區只列出它底下的子卡片（依類型→各廠牌、依廠牌→各類型），
+            不再同時顯示全部卡片，免得佔版面。返回上一層就回到原本的卡片 */}
+        {drillCards.length > 0 ? (
+          <div style={{ marginBottom: '16px', padding: '16px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '16px', border: '1px solid var(--border-color)' }}>
+            <DrilldownCards
+              parentTitle={selectedType}
+              childLabel={drillLabel}
+              cards={drillCards}
+              selectedKey={selectedSub}
+              onSelect={(key) => { setSelectedSub(key); setCurrentPage(1); }}
+              onBack={() => { setSelectedType(null); setCurrentPage(1); }}
+              unit="個"
+            />
+          </div>
+        ) : renderStats()}
 
         {/* 類型選取篩選提示列 */}
         {selectedType && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'var(--primary-bg)', border: '1px solid var(--primary-border)', padding: '10px 18px', borderRadius: '12px', marginBottom: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--primary-color)', fontWeight: 800, fontSize: '14px' }}>
               <Layers size={18} color="var(--primary-color)" />
-              目前鎖定{groupLabel}：<span style={{ color: 'var(--primary-color)', fontSize: '14px' }}>{selectedType}</span>
+              目前鎖定{groupLabel}：<span style={{ color: 'var(--primary-color)', fontSize: '14px' }}>{selectedType}{selectedSub ? ` › ${selectedSub}` : ''}</span>
               <span style={{ color: 'var(--text-muted)', fontSize: '12px', fontWeight: 500, marginLeft: '6px' }}>（共 {filteredItems.length} 項品項）</span>
             </div>
             <button 
