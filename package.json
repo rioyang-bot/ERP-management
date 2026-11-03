@@ -19,6 +19,7 @@
     "backup": "powershell -ExecutionPolicy Bypass -File ./backup.ps1",
     "backup:list": "powershell -ExecutionPolicy Bypass -File ./backup.ps1 -List",
     "backup:schedule": "powershell -ExecutionPolicy Bypass -File ./backup-schedule.ps1",
+    "backup:cloud": "powershell -ExecutionPolicy Bypass -File ./backup-schedule.ps1 -CloudStatus",
     "db:usage": "powershell -ExecutionPolicy Bypass -File ./db-usage.ps1",
     "migrate": "node scripts/migrate.mjs",
     "migrate:status": "node scripts/migrate.mjs --status",
