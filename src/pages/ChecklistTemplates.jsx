@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
-  ClipboardCheck, Plus, Trash2, Pencil, Check, X, Layers, ListChecks, Info, Tag, RefreshCw, GripVertical, Camera, BookmarkPlus, Copy, ImagePlus,
+  ClipboardCheck, Plus, Trash2, Pencil, Check, X, Layers, ListChecks, Info, Tag, RefreshCw, GripVertical, Camera, BookmarkPlus, Copy, ImagePlus, ClipboardPaste,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { logCreate, logDelete, logUpdate, getCurrentUser } from '../utils/auditLogger';
 import { resolveMediaUrl } from '../utils/media';
 import { screenPhotoFiles } from '../utils/assetPhotos';
+import { namePastedImage, imagesFromPasteEvent, readClipboardImages } from '../utils/clipboardImages';
 import { releaseUploads } from '../utils/uploadRelease';
 import { moveItem, buildOrderParam } from '../utils/reorderList';
 import { groupScopeLabel } from '../utils/checklistGroupScope';
@@ -27,6 +28,7 @@ import PhotoExampleLibrary from '../components/PhotoExampleLibrary';
  *                  常用的項目與說明存成「拍照項目範例」，新增時直接選取。
  *                  同一種設備拍出來都一樣的項目可以上傳一張「預設照片」：
  *                  設備還沒上傳自己的照片時就用它（見 utils/checklistDefaultPhoto.js）。
+ *                  預設照片也可以用貼上的：按「貼上」鈕，或點選預設照片那一列後按 Ctrl+V。
  *
  * 這裡改的是「範本」。新增主項目或主要檢查功能之後會立刻同步到所有符合的
  * 設備。刪除範本項目時，設備上還沒有任何紀錄（沒勾選、沒填內容、沒照片）的
@@ -93,6 +95,8 @@ const ChecklistTemplates = () => {
   // 拍照項目的預設照片：縮圖 { 存檔名: blob 網址 }、正在上傳哪一項
   const [defaultThumbs, setDefaultThumbs] = useState({});
   const [defaultPhotoBusy, setDefaultPhotoBusy] = useState(null);
+  // 點選了哪一項的預設照片列：之後按 Ctrl+V 就貼到這一項
+  const [pasteDefaultTarget, setPasteDefaultTarget] = useState(null);
   const defaultPhotoInputRef = useRef(null);
   const defaultPhotoTargetRef = useRef(null);
 
@@ -158,11 +162,7 @@ const ChecklistTemplates = () => {
   };
 
   /** 上傳（或更換）拍照項目的預設照片：設備還沒上傳自己的照片時使用 */
-  const handleDefaultPhotoFile = async (fileList) => {
-    const item = defaultPhotoTargetRef.current;
-    const file = [...(fileList || [])][0];
-    if (defaultPhotoInputRef.current) defaultPhotoInputRef.current.value = '';
-    if (!item || !file) return;
+  const saveDefaultPhoto = async (item, file) => {
     const { accepted, rejected } = screenPhotoFiles([file]);
     if (accepted.length === 0) {
       alert(`這個檔案不能當預設照片：${rejected[0]?.reason || '格式不符'}`);
@@ -193,7 +193,33 @@ const ChecklistTemplates = () => {
       alert(`預設照片上傳失敗：${e.message}`);
     } finally {
       setDefaultPhotoBusy(null);
-      defaultPhotoTargetRef.current = null;
+    }
+  };
+
+  const handleDefaultPhotoFile = async (fileList) => {
+    const item = defaultPhotoTargetRef.current;
+    const file = [...(fileList || [])][0];
+    if (defaultPhotoInputRef.current) defaultPhotoInputRef.current.value = '';
+    defaultPhotoTargetRef.current = null;
+    if (item && file) await saveDefaultPhoto(item, file);
+  };
+
+  /** 貼上的圖片當預設照片：只用第一張，依拍照項目與時間命名（剪貼簿的檔名幾乎都是 image.png） */
+  const pasteDefaultPhoto = (item, blobs) => {
+    if (!blobs || blobs.length === 0) {
+      alert('剪貼簿裡沒有圖片。請先複製一張圖片（例如截圖或在照片上按「複製」）再貼上。');
+      return;
+    }
+    setPasteDefaultTarget(null);
+    saveDefaultPhoto(item, namePastedImage(blobs[0], { itemName: `${item.name}_預設照片` }));
+  };
+
+  /** 「貼上」鈕：讀剪貼簿（瀏覽器第一次會詢問權限） */
+  const handlePasteDefaultButton = async (item) => {
+    try {
+      pasteDefaultPhoto(item, await readClipboardImages());
+    } catch (e) {
+      alert(e.message);
     }
   };
 
@@ -283,6 +309,26 @@ const ChecklistTemplates = () => {
   const detailItems = groupItems.filter((i) => i.kind === KIND_DETAIL).sort(bySortOrder);
   const photoItems = groupItems.filter((i) => i.kind === KIND_PHOTO).sort(bySortOrder);
   const itemsOfKind = { [KIND_MAIN]: mainItems, [KIND_DETAIL]: detailItems, [KIND_PHOTO]: photoItems };
+  // 只認目前主項目裡的拍照項目：切到別的主項目後，原本選的那一項不再接收 Ctrl+V
+  const pasteDefaultItem = photoItems.find((i) => i.id === pasteDefaultTarget) || null;
+
+  // 點選了某一項的預設照片列之後按 Ctrl+V。掛在 document 上：一般的元素不一定收得到 paste 事件。
+  // 游標在輸入框裡（例如正在改名稱、說明）時不攔截，照常貼上文字。
+  useEffect(() => {
+    if (!pasteDefaultItem || defaultPhotoBusy) return undefined;
+    const onPaste = (e) => {
+      const el = e.target;
+      if (el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName))) return;
+      const blobs = imagesFromPasteEvent(e);
+      if (blobs.length === 0) return;
+      e.preventDefault();
+      pasteDefaultPhoto(pasteDefaultItem, blobs);
+    };
+    document.addEventListener('paste', onPaste);
+    return () => document.removeEventListener('paste', onPaste);
+    // pasteDefaultPhoto 每次重繪都是新的函式，列進相依會一直重掛；它用到的值都在下面
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pasteDefaultItem, defaultPhotoBusy, selectedGroup]);
 
   // --- 主項目 ---
   const handleAddGroup = async (e) => {
@@ -717,7 +763,19 @@ const ChecklistTemplates = () => {
                     )}
                     {/* 預設照片：設備這一項還沒上傳自己的照片時使用 */}
                     {isPhoto && (
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px', flexWrap: 'wrap' }} data-testid={`default-photo-${item.id}`}>
+                      <span
+                        // 點選這一列後按 Ctrl+V，貼上的圖片就當這一項的預設照片；再點一次取消
+                        onClick={(e) => { if (!e.target.closest('button, a, input')) setPasteDefaultTarget(pasteDefaultItem?.id === item.id ? null : item.id); }}
+                        aria-selected={pasteDefaultItem?.id === item.id}
+                        title={pasteDefaultItem?.id === item.id ? '已選取：按 Ctrl+V 貼上預設照片' : '點選後可按 Ctrl+V 貼上預設照片'}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px', flexWrap: 'wrap', cursor: 'pointer',
+                          padding: '2px 4px', marginLeft: '-4px', borderRadius: '6px',
+                          outline: pasteDefaultItem?.id === item.id ? '2px solid #7c3aed' : 'none',
+                          backgroundColor: pasteDefaultItem?.id === item.id ? 'rgba(124, 58, 237, 0.08)' : 'transparent',
+                        }}
+                        data-testid={`default-photo-${item.id}`}
+                      >
                         {item.default_photo_file ? (
                           <>
                             {defaultThumbs[item.default_photo_file] ? (
@@ -746,6 +804,21 @@ const ChecklistTemplates = () => {
                           >
                             <ImagePlus size={12} /> {defaultPhotoBusy === item.id ? '上傳中…' : '預設照片'}
                           </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handlePasteDefaultButton(item)}
+                          disabled={defaultPhotoBusy === item.id}
+                          title="把剪貼簿裡的圖片當成預設照片"
+                          style={{ ...iconBtn('#7c3aed'), width: 'auto', padding: '2px 8px', fontSize: '11px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                          aria-label={`貼上 ${item.name} 的預設照片`}
+                        >
+                          <ClipboardPaste size={12} /> 貼上
+                        </button>
+                        {pasteDefaultItem?.id === item.id && (
+                          <span style={{ fontSize: '11px', fontWeight: 800, color: '#7c3aed', whiteSpace: 'nowrap' }} data-testid={`default-photo-paste-hint-${item.id}`}>
+                            按 Ctrl+V 貼上
+                          </span>
                         )}
                       </span>
                     )}

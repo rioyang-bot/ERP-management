@@ -18,6 +18,9 @@ import { queries } from '../../database/queries';
  * （electronAPI.releaseUploads）。伺服器確認沒有其他紀錄在用才清，見 server/uploadCleanup.js。
  * 系統管理另有清理工具，補清以前留下來的。
  */
+// 整頁畫面要先讀資料才畫得出來，整套測試一起跑時常超過預設的 1 秒
+const PAGE_LOAD = { timeout: 5000 };
+
 let calls;
 const called = (name) => calls.filter((c) => c.query === name);
 const auditLogs = () => called('insertAuditLog').map((c) => ({ module: c.params[4], summary: c.params[8] }));
@@ -138,7 +141,7 @@ describe('出機檢查表：更換／移除預設照片', () => {
 
   it('更換：換掉的那張交給伺服器清掉（別的主項目共用時伺服器會保留）', async () => {
     render(<MemoryRouter><ChecklistTemplates /></MemoryRouter>);
-    await userEvent.click(await screen.findByRole('button', { name: '更換 正面 的預設照片' }));
+    await userEvent.click(await screen.findByRole('button', { name: '更換 正面 的預設照片' }, PAGE_LOAD));
     const file = new File(['x'], '正面新.jpg', { type: 'image/jpeg' });
     fireEvent.change(screen.getByTestId('default-photo-input'), { target: { files: [file] } });
     await waitFor(() => expect(window.electronAPI.releaseUploads).toHaveBeenCalledWith(['front-default-1790.jpg']));
@@ -147,7 +150,7 @@ describe('出機檢查表：更換／移除預設照片', () => {
 
   it('移除：原本那張交給伺服器清掉', async () => {
     render(<MemoryRouter><ChecklistTemplates /></MemoryRouter>);
-    await userEvent.click(await screen.findByRole('button', { name: '移除 正面 的預設照片' }));
+    await userEvent.click(await screen.findByRole('button', { name: '移除 正面 的預設照片' }, PAGE_LOAD));
     await waitFor(() => expect(window.electronAPI.releaseUploads).toHaveBeenCalledWith(['front-default-1790.jpg']));
     expect(auditLogs()[0].summary).toBe('出機檢查表拍照項目 [正面]（主項目 [SecretHFT 出機檢查]）移除預設照片 [正面範例.jpg]');
   });
@@ -167,7 +170,7 @@ describe('出貨單：刪除簽收單', () => {
     });
     render(<BrowserRouter><DNList /></BrowserRouter>);
     fireEvent.click(await screen.findByTestId('dn-tab-history'));
-    const row = (await screen.findByText('DN-20260828-02')).closest('tr');
+    const row = (await screen.findByText('DN-20260828-02', {}, PAGE_LOAD)).closest('tr');
     fireEvent.click(within(row).getByTitle('查看詳情'));
     fireEvent.click(await screen.findByText('刪除檔案'));
     await waitFor(() => expect(window.electronAPI.releaseUploads).toHaveBeenCalledWith(['signed_kgi-1724912000.pdf']));
@@ -195,7 +198,7 @@ describe('進貨單：移除附件', () => {
 
   it('移除後按儲存：移掉的那份交給伺服器清掉，留下的不動', async () => {
     renderInboundHistory();
-    await userEvent.click(await screen.findByLabelText('編輯進貨單'));
+    await userEvent.click(await screen.findByLabelText('編輯進貨單', {}, PAGE_LOAD));
     await userEvent.click(await screen.findByLabelText('移除附件 進貨單.pdf'));
     await userEvent.click(screen.getByRole('button', { name: /儲存/ }));
     await waitFor(() => expect(called('updateInboundOrderHeader')).toHaveLength(1));
