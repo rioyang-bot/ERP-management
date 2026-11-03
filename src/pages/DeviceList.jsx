@@ -12,6 +12,8 @@ import { parseSearchQuery, matchesSearchQuery, SEARCH_PLACEHOLDER } from '../uti
 import { isItemRetired, getItemAggregationKey, aggregateCards, computeNewRetiredKeys, getCardTitle, showsModelSubtitle, getCardSearchText, ASSET_AGGREGATION_MODES } from '../utils/cardAggregation';
 import ColumnVisibilityModal from '../components/ColumnVisibilityModal';
 import CardAggregationLegend from '../components/CardAggregationLegend';
+import DrilldownCards from '../components/common/DrilldownCards';
+import { getAssetDrilldown, buildDrilldownCards, matchesDrilldown, getDrilldownParentTitle, describeDrilldownKey, assetDrillCard, TYPE_KEY_PREFIX } from '../utils/cardAggregation';
 import WarrantyInfoCell from '../components/common/WarrantyInfoCell';
 import WarrantyFields from '../components/common/WarrantyFields';
 import { isFullyOutOfWarranty, pickWarrantyFields, finalizeWarrantyFields, warrantyInfoParams, diffWarrantyFields, describeWarrantyChanges } from '../utils/warranty';
@@ -86,6 +88,13 @@ const DeviceList = ({ isSplitMode = false }) => {
   }, []);
 
   useEffect(() => { loadChecklistSummary(); }, [loadChecklistSummary]);
+
+  // 點了卡片後又點了它底下的哪一張子卡片。記下是哪張卡片底下的，
+  // 換卡片或換聚合規則就自然失效（不用 effect 去清）
+  const [drillSel, setDrillSel] = useState({ parent: null, key: null });
+  const drillParent = `${aggregationMode}|${selectedCardKey || ''}`;
+  const selectedSubKey = drillSel.parent === drillParent ? drillSel.key : null;
+  const setSelectedSubKey = (key) => setDrillSel({ parent: drillParent, key });
 
   const handleAggregationModeChange = (mode) => {
     setAggregationMode(mode);
@@ -598,6 +607,7 @@ const DeviceList = ({ isSplitMode = false }) => {
         const itemKey = getItemAggregationKey(item, aggregationMode);
         const itemRetired = isItemRetired(item, retiredKeys);
         if (itemKey !== targetKey || itemRetired !== isTargetRetired) return false;
+        if (!matchesDrilldown(item, aggregationMode, selectedSubKey)) return false;
       }
       const searchGroups = parseSearchQuery(searchTerm);
       if (searchGroups.length === 0) return true;
@@ -700,6 +710,35 @@ const DeviceList = ({ isSplitMode = false }) => {
 
       const activeMatches = Object.values(activeStatsMap).filter(filterCard);
       const retiredMatches = Object.values(retiredStatsMap).filter(filterCard);
+
+      // 點了卡片：卡片區只列出它底下的子卡片（依類型→廠牌、依廠牌→型號、依型號→規格），
+      // 不再同時顯示這張卡片與其他卡片，免得佔版面。返回上一層就回到原本的卡片
+      const drill = selectedCardKey ? getAssetDrilldown(aggregationMode) : null;
+      const parentStat = [...activeMatches, ...retiredMatches]
+        .find((st) => (st.isRetired ? `${st.key}:::RETIRED` : st.key) === selectedCardKey);
+      const drillEl = drill && parentStat ? (
+        <DrilldownCards
+          parentTitle={getDrilldownParentTitle(parentStat, aggregationMode)}
+          childLabel={drill.label}
+          cards={buildDrilldownCards(
+            items.filter((i) => getItemAggregationKey(i, aggregationMode) === parentStat.key
+              && isItemRetired(i, retiredKeys) === !!parentStat.isRetired),
+            aggregationMode,
+          ).map((st) => assetDrillCard(st, { withLab: false }))}
+          selectedKey={selectedSubKey}
+          onSelect={(key) => { setSelectedSubKey(key); setCurrentPage(1); }}
+          onBack={() => { setSelectedCardKey(null); setCurrentPage(1); }}
+          unit="台"
+        />
+      ) : null;
+
+      if (drillEl) {
+        return (
+          <div style={{ marginBottom: '24px', padding: '16px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '16px', border: '1px solid var(--border-color)' }}>
+            {drillEl}
+          </div>
+        );
+      }
 
       return (
         <div style={{ position: 'relative' }}>
@@ -1051,7 +1090,9 @@ const DeviceList = ({ isSplitMode = false }) => {
                     unit="台"
                     searchTerm={searchTerm}
                     brandFilter={brandFilter}
-                    cardLabel={selectedCardKey ? selectedCardKey.replace(':::RETIRED', '') : ''}
+                    cardLabel={selectedCardKey
+                      ? selectedCardKey.replace(':::RETIRED', '').replace(TYPE_KEY_PREFIX, '') + (selectedSubKey ? ` › ${describeDrilldownKey(selectedSubKey, aggregationMode)}` : '')
+                      : ''}
                   />
                   <div style={{ marginBottom: '16px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', minHeight: '300px', border: '1px solid var(--border-color)', borderRadius: '10px' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>

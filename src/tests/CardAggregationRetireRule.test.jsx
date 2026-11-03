@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import DeviceList from '../pages/DeviceList';
 import HwList from '../pages/HwList';
@@ -188,7 +188,7 @@ describe('卡片聚合規則與汰舊區聯動測試 (Card Aggregation & Retire 
     });
   });
 
-  it('DeviceList & HwList: 點選卡片時其他卡片會被隱藏，再點選同一張卡片才會出現全部卡片', async () => {
+  it('DeviceList: 依廠牌點選卡片時，卡片區只剩它底下的型號卡片；返回上一層才出現全部卡片', async () => {
     mockElectronAPI.namedQuery.mockImplementation((queryName) => {
       if (queryName === 'fetchAssetsList' || queryName === 'fetchAssetsListByBrand') {
         return Promise.resolve({ success: true, rows: mockDevices });
@@ -211,30 +211,19 @@ describe('卡片聚合規則與汰舊區聯動測試 (Card Aggregation & Retire 
       expect(screen.getByText('DELL')).toBeInTheDocument();
     });
 
-    // 點選 ASUS 卡片
-    const asusCard = screen.getByText('ASUS');
-    fireEvent.click(asusCard);
+    // 點選 ASUS 卡片：卡片區只列出 ASUS 的型號，DELL 與 ASUS 卡片本身都收起來
+    fireEvent.click(screen.getByText('ASUS'));
+    const drill = await screen.findByRole('region', { name: 'ASUS 的型號' });
+    expect(within(drill).getByText('RS720')).toBeInTheDocument();
+    expect(screen.queryByText('DELL')).toBeNull();
 
-    // 驗證：ASUS 卡片仍存在，但 DELL 卡片應被隱藏
+    // 返回上一層：全部卡片（ASUS 與 DELL）重新出現
+    fireEvent.click(within(drill).getByRole('button', { name: /返回上一層/ }));
     await waitFor(() => {
-      const dellEls = screen.queryAllByText((content, element) => {
-        return content && content.includes('DELL') && element.tagName !== 'BUTTON';
-      });
-      expect(screen.getAllByText(/ASUS/).length).toBeGreaterThan(0);
-      expect(dellEls.length).toBe(0);
+      expect(screen.getByText('ASUS')).toBeInTheDocument();
+      expect(screen.getByText('DELL')).toBeInTheDocument();
     });
-
-    // 再次點選 ASUS 卡片（點擊卡片頂部的 ASUS 文字）
-    fireEvent.click(screen.getAllByText(/ASUS/)[0]);
-
-    // 驗證：取消選取後，全部卡片（ASUS 與 DELL）重新出現
-    await waitFor(() => {
-      const dellEls = screen.queryAllByText((content, element) => {
-        return content && content.includes('DELL') && element.tagName !== 'BUTTON';
-      });
-      expect(screen.getAllByText(/ASUS/).length).toBeGreaterThan(0);
-      expect(dellEls.length).toBeGreaterThan(0);
-    });
+    expect(screen.queryByRole('region', { name: 'ASUS 的型號' })).toBeNull();
 
     unmount();
   });

@@ -222,3 +222,123 @@ export const CONSUMABLE_AGGREGATION_MODES = [
 
 /** 耗材卡片的欄位：依類型看 type，依廠牌看 brand */
 export const getConsumableGroupField = (mode) => (mode === 'BRAND' ? 'brand' : 'type');
+
+// ---------------------------------------------------------------------------
+// 點卡片往下展開（子卡片）
+//   依類型 → 點 SERVER，底下列出 SERVER 的各廠牌
+//   依廠牌 → 點 BLACKCORE，底下列出 BLACKCORE 的各型號
+//   依型號 → 點某型號，底下列出它的各規格
+//   依規格已是最細，不再展開
+// 子卡片只從這張卡片涵蓋的項目算，點了子卡片下方清單再縮小到那一組。
+// ---------------------------------------------------------------------------
+
+const ASSET_DRILLDOWN = {
+  TYPE: { mode: 'BRAND', label: '廠牌' },
+  BRAND: { mode: 'MODEL', label: '型號' },
+  MODEL: { mode: 'SPEC', label: '規格' },
+};
+
+/** 這個聚合規則點下去要展開成什麼；不能再展開時回傳 null */
+export const getAssetDrilldown = (mode) => ASSET_DRILLDOWN[mode] || null;
+
+/** 子卡片的標題：依類型展開看廠牌、依廠牌展開看型號、依型號展開看規格 */
+export function getDrilldownTitle(stat, parentMode) {
+  if (!stat) return '';
+  if (parentMode === 'TYPE') return stat.brand || '未知';
+  if (parentMode === 'BRAND') return stat.model || '未設定型號';
+  return stat.specification || '（未填規格）';
+}
+
+/** 子卡片的副標題：一個廠牌的型號可能分屬不同類型，標出類型才分得清 */
+export const getDrilldownSubtitle = (stat, parentMode) => (parentMode === 'BRAND' ? (stat?.type || '') : '');
+
+/**
+ * 算出子卡片。items 只放這張卡片涵蓋的項目（已經依汰舊與否分好），
+ * 所以這裡不再分汰舊，全部當成同一區。數量多的排前面，同數量依標題排。
+ */
+export function buildDrilldownCards(items = [], parentMode) {
+  const drill = getAssetDrilldown(parentMode);
+  if (!drill) return [];
+  const { activeStatsMap } = aggregateCards(items, drill.mode, []);
+  return Object.values(activeStatsMap)
+    .map((st) => ({ ...st, title: getDrilldownTitle(st, parentMode), subtitle: getDrilldownSubtitle(st, parentMode) }))
+    .sort((a, b) => (b.total - a.total) || a.title.localeCompare(b.title));
+}
+
+/** 展開區的標題用：依型號時只寫廠牌看不出是哪個型號，要連型號一起 */
+export function getDrilldownParentTitle(stat, mode) {
+  if (!stat) return '';
+  if (mode === 'MODEL') return `${stat.brand || '未知'} ${stat.model || '未設定型號'}`;
+  return getCardTitle(stat, mode);
+}
+
+/**
+ * 子卡片鍵值轉成看得懂的名稱（篩選結果的說明用）。
+ * 鍵值格式見 getItemAggregationKey：廠牌、「廠牌 - 類型 - 型號」、「廠牌 - 類型 - 型號 - 規格」
+ */
+export function describeDrilldownKey(subKey, parentMode) {
+  if (!subKey) return '';
+  const parts = String(subKey).split(' - ');
+  if (parentMode === 'TYPE') return subKey;
+  if (parentMode === 'BRAND') return parts[2] || subKey;
+  return parts.slice(3).join(' - ') || '（未填規格）';
+}
+
+/** 這一筆是否屬於某張子卡片 */
+export const matchesDrilldown = (item, parentMode, subKey) => {
+  const drill = getAssetDrilldown(parentMode);
+  return !drill || !subKey || getItemAggregationKey(item, drill.mode) === subKey;
+};
+
+/** 耗材的子卡片欄位：依類型展開看廠牌、依廠牌展開看類型 */
+export const getConsumableDrillField = (mode) => (mode === 'BRAND' ? 'type' : 'brand');
+
+/** 設備／硬體子卡片的統計欄位；硬體多一欄 LAB（已掛載、尚未出貨） */
+export const assetDrillCard = (st, { withLab = false } = {}) => ({
+  key: st.key,
+  title: st.title,
+  subtitle: st.subtitle,
+  total: st.total,
+  stats: [
+    { label: '在庫', value: st.active, color: '#16a34a' },
+    ...(withLab ? [{ label: 'LAB', value: st.lab || 0, color: '#8b5cf6', title: '已掛載於設備、尚未出貨；不計入在庫' }] : []),
+    { label: '出貨', value: st.shipped, color: '#3b82f6' },
+    { label: '借出', value: st.lent || 0, color: '#d97706' },
+    { label: '維修', value: st.repair, color: '#ef4444' },
+    { label: '報廢', value: st.scrapped, color: 'var(--text-subtle)' },
+  ],
+});
+
+/** 耗材子卡片的名稱；沒填的與卡片分組用同一套名稱 */
+export const consumableDrillValue = (item, field) =>
+  String(item?.[field] || (field === 'brand' ? '未知廠牌' : '未分類')).trim();
+
+/**
+ * 耗材的子卡片：items 只放這張卡片涵蓋的品項。
+ * 數量是在席 + 借測（與卡片的「總計」相同），多的排前面
+ */
+export function buildConsumableDrillCards(items = [], field) {
+  const map = {};
+  items.forEach((it) => {
+    const key = consumableDrillValue(it, field);
+    if (!map[key]) map[key] = { key, models: new Set(), stock: 0, lab: 0, lent: 0 };
+    const c = map[key];
+    if (it.model) c.models.add(it.model);
+    c.stock += Number(it.stock_qty || 0);
+    c.lab += Number(it.lab_qty || 0);
+    c.lent += Number(it.lent_qty || 0);
+  });
+  return Object.values(map)
+    .map((c) => ({
+      key: c.key,
+      title: c.key,
+      subtitle: `${c.models.size} 款型號`,
+      total: c.stock + c.lab,
+      stats: [
+        { label: '在席', value: c.stock, color: 'var(--primary-color)' },
+        { label: '借測', value: c.lab, color: '#a855f7' },
+        { label: '借出', value: c.lent, color: c.lent > 0 ? '#d97706' : 'var(--text-subtle)' },
+      ],
+    }))
+    .sort((a, b) => (b.total - a.total) || a.title.localeCompare(b.title));
+}
