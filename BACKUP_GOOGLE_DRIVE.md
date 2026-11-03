@@ -47,7 +47,24 @@ winget install Rclone.Rclone
 
 裝好後重新開一個 PowerShell 視窗，`rclone version` 有出現版本就可以了。
 
-### 4. 在伺服器設定 Google Drive 遠端（erp-gdrive）
+### 4. 建立公司自己的 Google 用戶端 ID
+
+rclone 內建共用的 Google 用戶端 ID 在 2026 年停用，要用公司自己的。
+
+1. 用公司帳號登入 <https://console.cloud.google.com>，從上方專案選單新增專案，例如 `ERP Backup`（機構選公司網域）。
+2. 「API 和服務 → 程式庫」搜尋 **Google Drive API**，按「啟用」。
+3. 「Google Auth Platform」（OAuth 同意畫面）按「開始」：
+   - 應用程式名稱 `ERP Backup`、支援電子郵件填自己的信箱
+   - 目標對象選 **內部（Internal）**
+   - 聯絡資訊填自己的信箱，建立
+4. 「用戶端 → 建立用戶端」：類型選 **電腦版應用程式（Desktop app）**，名稱例如 `rclone`，建立。
+5. 把顯示的 **用戶端 ID** 與 **用戶端密鑰** 存進密碼管理器，下一步要用。
+
+> 目標對象一定要選「內部」：只有公司帳號能用、不必送 Google 審核，授權也不會過期。
+> 選「外部」在測試狀態下授權每 7 天失效，備份會一直中斷。
+> 沒有「內部」可選或沒有權限建立專案，請 Workspace 管理員開放或代為建立。
+
+### 5. 在伺服器設定 Google Drive 遠端（erp-gdrive）
 
 在伺服器上執行 `rclone config`，依序回答：
 
@@ -56,10 +73,12 @@ winget install Rclone.Rclone
 | `n/s/q>` | `n`（新增） |
 | `name>` | `erp-gdrive` |
 | `Storage>` | `drive`（Google Drive） |
-| `client_id>`、`client_secret>` | 直接按 Enter 留空 |
+| `client_id>` | 第 4 步的用戶端 ID |
+| `client_secret>` | 第 4 步的用戶端密鑰 |
 | `scope>` | `1`（完整存取，共用雲端硬碟需要） |
 | `service_account_file>` | 直接按 Enter 留空 |
 | `Edit advanced config?` | `n` |
+| `Continue using the shared client_id anyway?`（有填用戶端 ID 就不會問） | `n` |
 | `Use web browser to automatically authenticate?` | `n` |
 
 接著畫面會印出一行 `rclone authorize "drive" "……"`：
@@ -68,9 +87,8 @@ winget install Rclone.Rclone
 2. 瀏覽器會開啟 Google 登入，用第 1 步那個公司帳號登入並允許。
 3. PowerShell 會印出一段 `{"access_token": ...}` 的文字，整段複製，貼回伺服器的 `config_token>`。
 
-> 如果 Google 顯示「已封鎖這個應用程式」，代表公司 Workspace 限制了第三方應用程式。
-> 請 Workspace 管理員到「安全性 → API 控制項」允許 rclone，或建立公司內部用的 OAuth 用戶端，
-> 再把用戶端 ID、密鑰填進上面的 `client_id`、`client_secret`。
+> 如果 Google 顯示「已封鎖這個應用程式」，代表公司 Workspace 限制了應用程式存取，
+> 請 Workspace 管理員到「安全性 → API 控制項」把第 4 步建立的用戶端設為信任。
 
 接著回答：
 
@@ -80,7 +98,7 @@ winget install Rclone.Rclone
 | 選擇共用雲端硬碟 | 選第 1 步建立的 **ERP 備份** |
 | `Keep this "erp-gdrive" remote?` | `y` |
 
-### 5. 在伺服器設定加密遠端（erp-backup）
+### 6. 在伺服器設定加密遠端（erp-backup）
 
 一樣執行 `rclone config`：
 
@@ -107,7 +125,7 @@ winget install Rclone.Rclone
 chmod 600 /root/.config/rclone/rclone.conf
 ```
 
-### 6. 部署並試傳
+### 7. 部署並試傳
 
 在本機專案資料夾執行：
 
@@ -163,7 +181,7 @@ rclone copy erp-backup:uploads /opt/erp-management/uploads
 已經從伺服器刪掉的檔案在 `erp-backup:uploads-removed/日期/`，可以先用 `rclone ls erp-backup:uploads-removed` 找。
 
 **伺服器整台壞掉、換新機器時**：在新機器裝好 rclone，把密碼管理器裡存的 `rclone.conf` 放回 `/root/.config/rclone/rclone.conf`。
-如果只存了兩組密碼，就照第 4、5 步重新設定；第 5 步的密碼改選 `y`（自己輸入），輸入原本那兩組。
+如果只存了兩組密碼，就照第 5、6 步重新設定；第 6 步的密碼改選 `y`（自己輸入），輸入原本那兩組。
 
 ## 重新授權
 
@@ -173,4 +191,4 @@ rclone copy erp-backup:uploads /opt/erp-management/uploads
 rclone config reconnect erp-gdrive:
 ```
 
-照第 4 步的方式，在自己電腦執行它印出的 `rclone authorize` 那一行重新登入。換成另一個帳號也可以，只要那個帳號是共用雲端硬碟的成員。加密遠端 `erp-backup` 不用動。
+照第 5 步的方式，在自己電腦執行它印出的 `rclone authorize` 那一行重新登入。換成另一個帳號也可以，只要那個帳號是共用雲端硬碟的成員。加密遠端 `erp-backup` 不用動。
