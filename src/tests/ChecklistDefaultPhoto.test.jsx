@@ -29,6 +29,9 @@ const PHOTO_ITEMS = [
 ];
 const OWN_PHOTO = { id: 31, asset_id: 7, file_name: 'front-own.jpg', original_name: '正面.jpg', mime_type: 'image/jpeg', file_size: 1024, uploaded_by_name: '楊先生', checklist_item_id: 501 };
 
+// 範本頁要先讀主項目與項目才畫得出來，整套測試一起跑時常超過預設的 1 秒
+const PAGE_LOAD = { timeout: 5000 };
+
 let calls;
 const called = (name) => calls.filter((c) => c.query === name);
 const auditLogs = () => called('insertAuditLog').map((c) => ({ module: c.params[4], targetId: c.params[6], summary: c.params[8], details: c.params[9] }));
@@ -173,7 +176,7 @@ describe('範本維護頁：設定預設照片', () => {
 
   it('上傳預設照片：存檔、寫入範本、記事件', async () => {
     render(<MemoryRouter><ChecklistTemplates /></MemoryRouter>);
-    const btn = await screen.findByRole('button', { name: '上傳 背板標示 的預設照片' });
+    const btn = await screen.findByRole('button', { name: '上傳 背板標示 的預設照片' }, PAGE_LOAD);
     await userEvent.click(btn);
     fireEvent.change(screen.getByTestId('default-photo-input'), { target: { files: [imageFile('背板.jpg')] } });
 
@@ -190,7 +193,7 @@ describe('範本維護頁：設定預設照片', () => {
 
   it('更換：事件紀錄寫出換掉了哪一張', async () => {
     render(<MemoryRouter><ChecklistTemplates /></MemoryRouter>);
-    await userEvent.click(await screen.findByRole('button', { name: '更換 正面 的預設照片' }));
+    await userEvent.click(await screen.findByRole('button', { name: '更換 正面 的預設照片' }, PAGE_LOAD));
     fireEvent.change(screen.getByTestId('default-photo-input'), { target: { files: [imageFile('正面新.jpg')] } });
     await waitFor(() => expect(auditLogs()).toHaveLength(1));
     expect(auditLogs()[0].summary).toBe('出機檢查表拍照項目 [正面]（主項目 [SecretHFT 出機檢查]）更換預設照片：正面範例.jpg → 正面新.jpg');
@@ -198,18 +201,98 @@ describe('範本維護頁：設定預設照片', () => {
 
   it('移除預設照片並記事件', async () => {
     render(<MemoryRouter><ChecklistTemplates /></MemoryRouter>);
-    await userEvent.click(await screen.findByRole('button', { name: '移除 正面 的預設照片' }));
+    await userEvent.click(await screen.findByRole('button', { name: '移除 正面 的預設照片' }, PAGE_LOAD));
     await waitFor(() => expect(called('clearChecklistItemDefaultPhoto')[0]?.params).toEqual([62]));
     await waitFor(() => expect(auditLogs()).toHaveLength(1));
     expect(auditLogs()[0].summary).toBe('出機檢查表拍照項目 [正面]（主項目 [SecretHFT 出機檢查]）移除預設照片 [正面範例.jpg]');
-    expect(await screen.findByRole('button', { name: '上傳 正面 的預設照片' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: '上傳 正面 的預設照片' }, PAGE_LOAD)).toBeInTheDocument();
   });
 
   it('不是圖片：不上傳', async () => {
     render(<MemoryRouter><ChecklistTemplates /></MemoryRouter>);
-    await userEvent.click(await screen.findByRole('button', { name: '上傳 背板標示 的預設照片' }));
+    await userEvent.click(await screen.findByRole('button', { name: '上傳 背板標示 的預設照片' }, PAGE_LOAD));
     fireEvent.change(screen.getByTestId('default-photo-input'), { target: { files: [new File(['x'], 'a.txt', { type: 'text/plain' })] } });
     await waitFor(() => expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('不能當預設照片')));
     expect(window.electronAPI.saveFile).not.toHaveBeenCalled();
+  });
+
+  // 預設照片也能用貼上的：「貼上」鈕讀剪貼簿，或點選預設照片那一列後按 Ctrl+V
+  const pasteImage = (target = document) => {
+    const blob = new File(['x'], 'image.png', { type: 'image/png' });
+    fireEvent.paste(target, { clipboardData: { items: [{ kind: 'file', type: 'image/png', getAsFile: () => blob }], files: [blob] } });
+  };
+  const savedName = () => window.electronAPI.saveFile.mock.calls[0]?.[0];
+
+  it('「貼上」鈕：剪貼簿的圖片當預設照片，依拍照項目重新命名並記事件', async () => {
+    const blob = new Blob(['x'], { type: 'image/png' });
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { read: async () => [{ types: ['image/png'], getType: async () => blob }] },
+    });
+    render(<MemoryRouter><ChecklistTemplates /></MemoryRouter>);
+    await userEvent.click(await screen.findByRole('button', { name: '貼上 背板標示 的預設照片' }, PAGE_LOAD));
+    await waitFor(() => expect(called('setChecklistItemDefaultPhoto')).toHaveLength(1));
+    // 剪貼簿的檔名都是 image.png：改成「項目_預設照片_時間」
+    expect(savedName()).toMatch(/^背板標示_預設照片_\d{8}-\d{6}\.png$/);
+    expect(called('setChecklistItemDefaultPhoto')[0].params.at(-1)).toBe(61);
+    await waitFor(() => expect(auditLogs()).toHaveLength(1));
+    expect(auditLogs()[0].summary).toMatch(/^出機檢查表拍照項目 \[背板標示\]（主項目 \[SecretHFT 出機檢查\]）設定預設照片 \[背板標示_預設照片_\d{8}-\d{6}\.png\]$/);
+  });
+
+  it('已經有預設照片：貼上就是更換，事件紀錄寫出換掉了哪一張', async () => {
+    const blob = new Blob(['x'], { type: 'image/png' });
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { read: async () => [{ types: ['image/png'], getType: async () => blob }] },
+    });
+    render(<MemoryRouter><ChecklistTemplates /></MemoryRouter>);
+    await userEvent.click(await screen.findByRole('button', { name: '貼上 正面 的預設照片' }, PAGE_LOAD));
+    await waitFor(() => expect(auditLogs()).toHaveLength(1));
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('確定要更換「正面」的預設照片嗎'));
+    expect(auditLogs()[0].summary).toMatch(/更換預設照片：正面範例\.jpg → 正面_預設照片_\d{8}-\d{6}\.png$/);
+  });
+
+  it('剪貼簿裡沒有圖片就說明，不上傳', async () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { read: async () => [{ types: ['text/plain'], getType: async () => new Blob(['hi']) }] },
+    });
+    render(<MemoryRouter><ChecklistTemplates /></MemoryRouter>);
+    await userEvent.click(await screen.findByRole('button', { name: '貼上 背板標示 的預設照片' }, PAGE_LOAD));
+    await waitFor(() => expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('剪貼簿裡沒有圖片')));
+    expect(window.electronAPI.saveFile).not.toHaveBeenCalled();
+  });
+
+  it('點選預設照片那一列後按 Ctrl+V：貼到那一項，貼完取消選取', async () => {
+    render(<MemoryRouter><ChecklistTemplates /></MemoryRouter>);
+    const row = await screen.findByTestId('default-photo-61', {}, PAGE_LOAD);
+    // 還沒點選：Ctrl+V 不做事
+    pasteImage();
+    expect(window.electronAPI.saveFile).not.toHaveBeenCalled();
+
+    await userEvent.click(row);
+    expect(row).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('default-photo-paste-hint-61')).toHaveTextContent('按 Ctrl+V 貼上');
+    pasteImage();
+    await waitFor(() => expect(called('setChecklistItemDefaultPhoto')).toHaveLength(1));
+    expect(called('setChecklistItemDefaultPhoto')[0].params.at(-1)).toBe(61);
+    expect(savedName()).toMatch(/^背板標示_預設照片_/);
+    await waitFor(() => expect(screen.getByTestId('default-photo-61')).toHaveAttribute('aria-selected', 'false'));
+  });
+
+  it('再點一次取消選取；游標在輸入框裡時照常貼上文字', async () => {
+    render(<MemoryRouter><ChecklistTemplates /></MemoryRouter>);
+    const row = await screen.findByTestId('default-photo-61', {}, PAGE_LOAD);
+    await userEvent.click(row);
+    await userEvent.click(row);
+    expect(row).toHaveAttribute('aria-selected', 'false');
+
+    await userEvent.click(row);
+    const input = document.createElement('input');
+    input.setAttribute('aria-label', '其他輸入框');
+    document.body.appendChild(input);
+    pasteImage(input);
+    expect(window.electronAPI.saveFile).not.toHaveBeenCalled();
+    input.remove();
   });
 });
