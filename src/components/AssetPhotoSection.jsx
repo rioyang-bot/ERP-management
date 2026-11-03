@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Camera, Upload, Trash2, Download, Loader2, CheckCircle2, Circle, ClipboardPaste, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Camera, Upload, Trash2, Download, Loader2, CheckCircle2, Circle, ClipboardPaste } from 'lucide-react';
 import { logUpdate, getCurrentUser } from '../utils/auditLogger';
 import { resolveMediaUrl, downloadMedia } from '../utils/media';
 import { screenPhotoFiles, formatFileSize } from '../utils/assetPhotos';
 import { namePastedImage, imagesFromPasteEvent, readClipboardImages } from '../utils/clipboardImages';
 import { usesDefaultPhoto, defaultPhotoOf, DEFAULT_PHOTO_LABEL } from '../utils/checklistDefaultPhoto';
 import { releaseUploads } from '../utils/uploadRelease';
+import PhotoPreviewModal from './common/PhotoPreviewModal';
 
 /**
  * 設備主機照片
@@ -206,18 +207,6 @@ const AssetPhotoSection = ({ device, card, photoItems = [], onChanged, canRemove
   useEffect(() => {
     if (pasteTarget && pasteTarget !== 'OTHER' && !photoItems.some((i) => i.id === pasteTarget)) setPasteTarget(null);
   }, [photoItems, pasteTarget]);
-
-  // 預覽時：Esc 關閉、左右鍵切換同一組的上一張／下一張
-  useEffect(() => {
-    if (!preview) return undefined;
-    const onKey = (e) => {
-      if (e.key === 'Escape') { e.stopPropagation(); setPreview(null); }
-      else if (e.key === 'ArrowLeft') setPreview((pv) => (pv && pv.index > 0 ? { ...pv, index: pv.index - 1 } : pv));
-      else if (e.key === 'ArrowRight') setPreview((pv) => (pv && pv.index < pv.list.length - 1 ? { ...pv, index: pv.index + 1 } : pv));
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, [preview]);
 
   const openPreview = (photo, group, title) => {
     const list = group && group.length ? group : [photo];
@@ -541,53 +530,18 @@ const AssetPhotoSection = ({ device, card, photoItems = [], onChanged, canRemove
           )}
         </>
       )}
-      {/* 照片預覽：點縮圖先看大圖，按「下載」才存檔 */}
-      {preview && preview.list[preview.index] && (() => {
-        const photo = preview.list[preview.index];
-        const navBtn = { position: 'absolute', top: '50%', transform: 'translateY(-50%)', width: '44px', height: '44px', borderRadius: '50%', border: 'none', backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' };
-        const barBtn = { display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '7px 14px', borderRadius: '8px', border: 'none', fontWeight: 800, fontSize: '13px', cursor: 'pointer' };
-        return (
-          <div
-            role="dialog"
-            aria-label="照片預覽"
-            onClick={(e) => { if (e.target === e.currentTarget) setPreview(null); }}
-            style={{ position: 'fixed', inset: 0, zIndex: 2000, backgroundColor: 'rgba(0, 0, 0, 0.82)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '16px', gap: '12px' }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', width: 'min(92vw, 1100px)', color: '#fff' }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                {preview.title && <div style={{ fontSize: '12px', opacity: 0.75 }}>{preview.title}</div>}
-                <div style={{ fontSize: '14px', fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={photo.original_name}>
-                  {photo.original_name}
-                  {preview.list.length > 1 && <span style={{ marginLeft: '8px', fontWeight: 600, opacity: 0.75 }}>{preview.index + 1} / {preview.list.length}</span>}
-                </div>
-              </div>
-              <button type="button" onClick={() => handleDownload(photo)} style={{ ...barBtn, backgroundColor: '#2563eb', color: '#fff' }} data-testid="photo-preview-download">
-                <Download size={15} /> 下載
-              </button>
-              <button type="button" onClick={() => setPreview(null)} style={{ ...barBtn, backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#fff' }} aria-label="關閉預覽">
-                <X size={15} /> 關閉
-              </button>
-            </div>
-            <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 'min(92vw, 1100px)', height: '78vh' }}>
-              {thumbs[photo.id] ? (
-                <img src={thumbs[photo.id]} alt={photo.original_name} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '6px', boxShadow: '0 10px 40px rgba(0, 0, 0, 0.5)' }} />
-              ) : (
-                <span style={{ color: '#fff', fontSize: '13px' }}>載入中…</span>
-              )}
-              {preview.index > 0 && (
-                <button type="button" onClick={() => setPreview({ ...preview, index: preview.index - 1 })} style={{ ...navBtn, left: '8px' }} aria-label="上一張">
-                  <ChevronLeft size={26} />
-                </button>
-              )}
-              {preview.index < preview.list.length - 1 && (
-                <button type="button" onClick={() => setPreview({ ...preview, index: preview.index + 1 })} style={{ ...navBtn, right: '8px' }} aria-label="下一張">
-                  <ChevronRight size={26} />
-                </button>
-              )}
-            </div>
-          </div>
-        );
-      })()}
+      {/* 照片預覽：點縮圖先看大圖，按「下載」才存檔；Esc 關閉、左右鍵切換同一組 */}
+      {preview && (
+        <PhotoPreviewModal
+          list={preview.list}
+          index={preview.index}
+          title={preview.title}
+          srcOf={(p) => thumbs[p.id]}
+          onIndexChange={(i) => setPreview((pv) => (pv ? { ...pv, index: i } : pv))}
+          onClose={() => setPreview(null)}
+          onDownload={handleDownload}
+        />
+      )}
     </section>
   );
 };

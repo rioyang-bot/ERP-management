@@ -4,7 +4,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { logCreate, logDelete, logUpdate, getCurrentUser } from '../utils/auditLogger';
-import { resolveMediaUrl } from '../utils/media';
+import { resolveMediaUrl, downloadMedia } from '../utils/media';
 import { screenPhotoFiles } from '../utils/assetPhotos';
 import { namePastedImage, imagesFromPasteEvent, readClipboardImages } from '../utils/clipboardImages';
 import { releaseUploads } from '../utils/uploadRelease';
@@ -12,6 +12,7 @@ import { moveItem, buildOrderParam } from '../utils/reorderList';
 import { groupScopeLabel } from '../utils/checklistGroupScope';
 import { sameScope, validateGroupCopy, buildGroupCopySteps } from '../utils/checklistGroupCopy';
 import PhotoExampleLibrary from '../components/PhotoExampleLibrary';
+import PhotoPreviewModal from '../components/common/PhotoPreviewModal';
 
 /**
  * 出機檢查表範本 (Pre-delivery Checklist Templates)
@@ -97,6 +98,8 @@ const ChecklistTemplates = () => {
   const [defaultPhotoBusy, setDefaultPhotoBusy] = useState(null);
   // 點選了哪一項的預設照片列：之後按 Ctrl+V 就貼到這一項
   const [pasteDefaultTarget, setPasteDefaultTarget] = useState(null);
+  // 點預設照片的縮圖看大圖：{ photo, title }
+  const [defaultPreview, setDefaultPreview] = useState(null);
   const defaultPhotoInputRef = useRef(null);
   const defaultPhotoTargetRef = useRef(null);
 
@@ -212,6 +215,17 @@ const ChecklistTemplates = () => {
     }
     setPasteDefaultTarget(null);
     saveDefaultPhoto(item, namePastedImage(blobs[0], { itemName: `${item.name}_預設照片` }));
+  };
+
+  /** 點縮圖看預設照片的大圖；預覽裡可以下載 */
+  const openDefaultPreview = (item) => setDefaultPreview({
+    photo: { id: `default-${item.id}`, file_name: item.default_photo_file, original_name: item.default_photo_name || item.default_photo_file },
+    title: `${selectedGroup?.name ? `${selectedGroup.name} · ` : ''}${item.name} 的預設照片`,
+  });
+
+  const handleDownloadDefaultPhoto = async (photo) => {
+    const res = await downloadMedia(photo.file_name, photo.original_name);
+    if (!res.success) alert(`下載失敗：${res.error}`);
   };
 
   /** 「貼上」鈕：讀剪貼簿（瀏覽器第一次會詢問權限） */
@@ -778,11 +792,20 @@ const ChecklistTemplates = () => {
                       >
                         {item.default_photo_file ? (
                           <>
-                            {defaultThumbs[item.default_photo_file] ? (
-                              <img src={defaultThumbs[item.default_photo_file]} alt={`${item.name} 的預設照片`} style={{ width: '48px', height: '36px', objectFit: 'cover', borderRadius: '4px', border: '1px solid var(--border-color)' }} />
-                            ) : (
-                              <span style={{ width: '48px', height: '36px', borderRadius: '4px', border: '1px solid var(--border-color)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Camera size={12} color="var(--text-subtle)" /></span>
-                            )}
+                            {/* 點縮圖看大圖 */}
+                            <button
+                              type="button"
+                              onClick={() => openDefaultPreview(item)}
+                              title={`點擊預覽 ${item.default_photo_name || ''}`}
+                              aria-label={`預覽 ${item.name} 的預設照片`}
+                              style={{ padding: 0, border: 'none', background: 'none', cursor: 'zoom-in', display: 'inline-flex', flexShrink: 0 }}
+                            >
+                              {defaultThumbs[item.default_photo_file] ? (
+                                <img src={defaultThumbs[item.default_photo_file]} alt={`${item.name} 的預設照片`} style={{ width: '48px', height: '36px', objectFit: 'cover', borderRadius: '4px', border: '1px solid var(--border-color)', display: 'block' }} />
+                              ) : (
+                                <span style={{ width: '48px', height: '36px', borderRadius: '4px', border: '1px solid var(--border-color)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Camera size={12} color="var(--text-subtle)" /></span>
+                              )}
+                            </button>
                             <span style={{ fontSize: '11px', fontWeight: 700, color: '#7c3aed', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '160px' }} title={item.default_photo_name || ''}>
                               預設照片：{item.default_photo_name}
                             </span>
@@ -847,6 +870,17 @@ const ChecklistTemplates = () => {
 
   return (
     <div style={{ padding: '24px', minHeight: '100%' }}>
+      {defaultPreview && (
+        <PhotoPreviewModal
+          list={[defaultPreview.photo]}
+          index={0}
+          title={defaultPreview.title}
+          srcOf={(photo) => defaultThumbs[photo.file_name]}
+          onIndexChange={() => {}}
+          onClose={() => setDefaultPreview(null)}
+          onDownload={handleDownloadDefaultPhoto}
+        />
+      )}
       <input
         ref={defaultPhotoInputRef}
         type="file"

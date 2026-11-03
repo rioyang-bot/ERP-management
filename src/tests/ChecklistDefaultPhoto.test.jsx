@@ -295,4 +295,45 @@ describe('範本維護頁：設定預設照片', () => {
     expect(window.electronAPI.saveFile).not.toHaveBeenCalled();
     input.remove();
   });
+
+  // 點預設照片的縮圖看大圖（與設備主機照片同一個預覽視窗）
+  it('點縮圖開預覽：標題寫出主項目與拍照項目，顯示原本的檔名；點縮圖不會選取貼上', async () => {
+    render(<MemoryRouter><ChecklistTemplates /></MemoryRouter>);
+    const thumb = await screen.findByRole('button', { name: '預覽 正面 的預設照片' }, PAGE_LOAD);
+    await userEvent.click(thumb);
+    const dialog = screen.getByRole('dialog', { name: '照片預覽' });
+    expect(within(dialog).getByText('SecretHFT 出機檢查 · 正面 的預設照片')).toBeInTheDocument();
+    expect(within(dialog).getByText('正面範例.jpg')).toBeInTheDocument();
+    await waitFor(() => expect(within(dialog).getByRole('img', { name: '正面範例.jpg' })).toHaveAttribute('src', 'blob:fake'));
+    // 只有一張：沒有上一張／下一張
+    expect(within(dialog).queryByRole('button', { name: '下一張' })).toBeNull();
+    expect(screen.getByTestId('default-photo-62')).toHaveAttribute('aria-selected', 'false');
+  });
+
+  it('預覽裡可以下載；Esc 或「關閉」關掉預覽', async () => {
+    const downloads = [];
+    const realClick = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function stub() { downloads.push(this.download); };
+    try {
+      render(<MemoryRouter><ChecklistTemplates /></MemoryRouter>);
+      await userEvent.click(await screen.findByRole('button', { name: '預覽 正面 的預設照片' }, PAGE_LOAD));
+      await userEvent.click(screen.getByTestId('photo-preview-download'));
+      await waitFor(() => expect(downloads).toEqual(['正面範例.jpg']));
+      expect(window.electronAPI.loadMedia).toHaveBeenCalledWith('front-default.jpg');
+
+      await userEvent.keyboard('{Escape}');
+      expect(screen.queryByRole('dialog', { name: '照片預覽' })).toBeNull();
+      await userEvent.click(screen.getByRole('button', { name: '預覽 正面 的預設照片' }));
+      await userEvent.click(screen.getByRole('button', { name: '關閉預覽' }));
+      expect(screen.queryByRole('dialog', { name: '照片預覽' })).toBeNull();
+    } finally {
+      HTMLAnchorElement.prototype.click = realClick;
+    }
+  });
+
+  it('沒有預設照片的項目沒有預覽', async () => {
+    render(<MemoryRouter><ChecklistTemplates /></MemoryRouter>);
+    await screen.findByRole('button', { name: '上傳 背板標示 的預設照片' }, PAGE_LOAD);
+    expect(screen.queryByRole('button', { name: '預覽 背板標示 的預設照片' })).toBeNull();
+  });
 });
