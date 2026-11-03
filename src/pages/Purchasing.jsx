@@ -4,6 +4,7 @@ import PurchaseItemSelectModal from '../components/PurchaseItemSelectModal';
 import { RoleContext } from '../context/RoleContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { logCreate, logUpdate } from '../utils/auditLogger';
+import { releaseUploads, removedAttachmentFiles } from '../utils/uploadRelease';
 
 const ProcurementRegistration = ({ editMode = false, isModalMode = false, initOrderNo = null, onClose = null, isSplitMode = false }) => {
   const { authUser } = useContext(RoleContext);
@@ -364,6 +365,8 @@ const ProcurementRegistration = ({ editMode = false, isModalMode = false, initOr
            `修改採購單 [${initOrderNo}] 共 ${items.length} 個品項`,
            { orderNo: initOrderNo, itemsCount: items.length, items: items.map(i => ({ model: i.model, brand: i.brand, qty: i.quantity })), remarks }
          );
+         // 這次移除的附件，伺服器上的檔案一併清掉
+         releaseUploads(removedAttachmentFiles(existRes.rows[0]?.attachments, attachments));
          alert('採購單修改成功！');
          if (onClose) onClose();
       } else {
@@ -435,8 +438,10 @@ const ProcurementRegistration = ({ editMode = false, isModalMode = false, initOr
 
   const removeAttachment = (index) => {
     const newAtt = [...attachments];
-    newAtt.splice(index, 1);
+    const [removed] = newAtt.splice(index, 1);
     setAttachments(newAtt);
+    // 還沒存進採購單的附件，移除就清掉；原本就在單據上的伺服器會保留，儲存後再清
+    if (removed?.fileName) releaseUploads([removed.fileName]);
   };
 
   const getMediaSrc = (fileName) => {

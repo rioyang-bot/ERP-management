@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { ArrowDownToLine, Search, Filter, Eye, RefreshCw, AlertCircle, Trash2, Calendar, Hash, FileText, Plus, Edit2, Save, X, Clock, FileCheck, CheckCircle, Paperclip, FileSpreadsheet } from 'lucide-react';
 import { buildInboundSheet, downloadSheet } from '../utils/detailExcel';
 import { logUpdate, logDelete, logSnChange, logStatusChange } from '../utils/auditLogger';
+import { releaseUploads, removedAttachmentFiles } from '../utils/uploadRelease';
 import InboundRegistrationModal from '../components/InboundRegistrationModal';
 import { usePageSize } from '../utils/usePageSize';
 import { buildSnRenameSteps, validateSnRename, summariseSnRename } from '../utils/snRename';
@@ -158,8 +159,10 @@ const InboundList = ({ isSplitMode = false }) => {
 
   const removeAttachment = (index) => {
     const newAtt = [...editData.attachments];
-    newAtt.splice(index, 1);
+    const [removed] = newAtt.splice(index, 1);
     setEditData(prev => ({ ...prev, attachments: newAtt }));
+    // 這次編輯才上傳、還沒儲存的附件，移除就清掉；原本就在單據上的伺服器會保留，儲存後再清
+    if (removed?.fileName) releaseUploads([removed.fileName]);
   };
 
   const getMediaSrc = (fileName) => {
@@ -643,6 +646,8 @@ const InboundList = ({ isSplitMode = false }) => {
             { sn: a.sn, orderNo: selectedOrder.order_no, stock_date: editData.order_date, origStockDate: oldDate,
               warranty_expire: a.warranty_expire || null, warranty_years: a.warranty_years ?? null });
         }
+        // 這次移除的附件，伺服器上的檔案一併清掉
+        releaseUploads(removedAttachmentFiles(selectedOrder.attachments, editData.attachments));
         alert('儲存成功！');
         setIsEditing(false);
         fetchRecords();

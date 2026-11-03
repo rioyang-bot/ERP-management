@@ -5,6 +5,7 @@ import { resolveMediaUrl, downloadMedia } from '../utils/media';
 import { screenPhotoFiles, formatFileSize } from '../utils/assetPhotos';
 import { namePastedImage, imagesFromPasteEvent, readClipboardImages } from '../utils/clipboardImages';
 import { usesDefaultPhoto, defaultPhotoOf, DEFAULT_PHOTO_LABEL } from '../utils/checklistDefaultPhoto';
+import { releaseUploads } from '../utils/uploadRelease';
 
 /**
  * 設備主機照片
@@ -237,6 +238,8 @@ const AssetPhotoSection = ({ device, card, photoItems = [], onChanged, canRemove
       await logUpdate('DEVICE', deviceSn || assetId, deviceSn,
         `設備 [${deviceSn || assetId}] 刪除主機照片 [${photo.original_name}]`,
         { sn: deviceSn, file: photo.original_name });
+      // 紀錄刪了，伺服器上的檔案也一併清掉
+      releaseUploads([photo.file_name]);
       setThumbs((prev) => { const n = { ...prev }; delete n[photo.id]; return n; });
       await loadPhotos();
       if (onChanged) onChanged();
