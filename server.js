@@ -14,6 +14,8 @@ import { createAuthRoutes } from './server/authRoutes.js';
 import { createPreferenceRoutes } from './server/preferenceRoutes.js';
 import { createIsoSignatureRoutes } from './server/isoSignatureRoutes.js';
 import { createStockAdjustRoutes } from './server/stockAdjustRoutes.js';
+import { createUploadRoutes } from './server/uploadRoutes.js';
+import { purgeTrash, TRASH_DIR_NAME } from './server/uploadCleanup.js';
 import { prepareQueryParams } from './server/queryParams.js';
 import { runTransaction } from './server/transaction.js';
 import { ensureMonthlyBalances } from './server/monthlyBalance.js';
@@ -276,8 +278,17 @@ const runMonthlyBalance = () =>
 runMonthlyBalance();
 setInterval(runMonthlyBalance, 3600 * 1000).unref?.();
 
-// 上傳檔案需登入後才能取用
+// 上傳檔案需登入後才能取用；回收區（清掉的檔案，見 server/uploadCleanup.js）不開放
+app.use(`/uploads/${TRASH_DIR_NAME}`, (req, res) => res.status(404).end());
 app.use('/uploads', auth.requireAuth, express.static(uploadsDir));
+
+// 回收區超過保留天數的檔案真正刪除：啟動時一次，之後每小時一次
+const runPurgeTrash = () =>
+  purgeTrash(uploadsDir)
+    .then((purged) => { if (purged.length > 0) console.log(`[Uploads] 回收區已刪除: ${purged.join(', ')}`); })
+    .catch((e) => console.error('[Uploads] 回收區清理失敗:', e.message));
+runPurgeTrash();
+setInterval(runPurgeTrash, 3600 * 1000).unref?.();
 
 // Named Query API
 app.post('/api/namedQuery', auth.requireAuth, async (req, res) => {
@@ -324,6 +335,9 @@ app.use('/api/iso-signatures', createIsoSignatureRoutes(pool, auth, namedQueries
 
 // 耗材盤點調整（只調整 Stock）：要有「可盤點調整」權限，伺服器自己檢查，見 server/stockAdjustRoutes.js
 app.use('/api/stock-adjustments', createStockAdjustRoutes(pool, auth));
+
+// 上傳檔案的釋放與清理（刪掉照片、換掉簽收單後清掉舊檔；系統管理的清理工具），見 server/uploadRoutes.js
+app.use('/api/uploads', createUploadRoutes(pool, auth, uploadsDir));
 
 
 const uploadSingle = upload.single('file');

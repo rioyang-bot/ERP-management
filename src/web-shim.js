@@ -37,6 +37,21 @@ const authFetch = async (url, options = {}) => {
   return response;
 };
 
+/** /api/uploads 底下的呼叫：失敗一律回 { success: false, error } */
+const uploadsApi = async (subPath, { method = 'GET', body } = {}) => {
+  try {
+    const response = await authFetch(`${API_BASE}/api/uploads${subPath}`, {
+      method,
+      ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}),
+    });
+    const data = await response.json();
+    if (!response.ok) return { success: false, error: data.error || `HTTP ${response.status}` };
+    return data;
+  } catch (error) {
+    return { success: false, error: error.message || '連線至後端 API 發生異常' };
+  }
+};
+
 if (!window.electronAPI) {
   window.electronAPI = {
     namedQuery: async (queryName, params = []) => {
@@ -252,7 +267,12 @@ if (!window.electronAPI) {
       } catch (error) {
         return { success: false, error: error.message };
       }
-    }
+    },
+
+    // 上傳檔案的釋放與清理，見 server/uploadRoutes.js
+    releaseUploads: (files) => uploadsApi('/release', { method: 'POST', body: { files } }),
+    scanOrphanUploads: () => uploadsApi('/orphans'),
+    trashOrphanUploads: (files) => uploadsApi('/orphans/delete', { method: 'POST', body: { files } }),
   };
 }
 

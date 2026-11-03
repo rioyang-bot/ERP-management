@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Trash2, Save, FileText, ShoppingBag, Layers, AlertCircle, ArrowDownToLine } from 'lucide-react';
 import InboundItemSelectModal from '../components/InboundItemSelectModal';
 import { logCreate, getCurrentUser } from '../utils/auditLogger';
+import { releaseUploads } from '../utils/uploadRelease';
 import { parseSnLines, validateSnBatch } from '../utils/snBatch';
 
 const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) => {
@@ -263,8 +264,10 @@ const Inbound = ({ isSplitMode = false, isModalMode = false, onClose = null }) =
 
   const removeAttachment = (index) => {
     const newAtt = [...attachments];
-    newAtt.splice(index, 1);
+    const [removed] = newAtt.splice(index, 1);
     setAttachments(newAtt);
+    // 還沒存進單據的附件，移除就清掉伺服器上的檔案
+    if (removed?.fileName) releaseUploads([removed.fileName]);
   };
 
   const getMediaSrc = (fileName) => {

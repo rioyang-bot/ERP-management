@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { logCreate, logDelete, logUpdate, getCurrentUser } from '../utils/auditLogger';
 import { resolveMediaUrl } from '../utils/media';
 import { screenPhotoFiles } from '../utils/assetPhotos';
+import { releaseUploads } from '../utils/uploadRelease';
 import { moveItem, buildOrderParam } from '../utils/reorderList';
 import { groupScopeLabel } from '../utils/checklistGroupScope';
 import { sameScope, validateGroupCopy, buildGroupCopySteps } from '../utils/checklistGroupCopy';
@@ -185,6 +186,8 @@ const ChecklistTemplates = () => {
       await logUpdate('SETTING', item.id, item.name,
         `出機檢查表拍照項目 [${item.name}]（主項目 [${selectedGroup?.name || ''}]）${prev ? `更換預設照片：${prev} → ${file.name}` : `設定預設照片 [${file.name}]`}`,
         { group: selectedGroup?.name || null, item: item.name, defaultPhoto: file.name, prevDefaultPhoto: prev || null });
+      // 換掉的那張：沒有其他主項目共用（複製主項目會共用同一個檔案）就清掉
+      if (row.prev_photo_file && row.prev_photo_file !== saved.fileName) releaseUploads([row.prev_photo_file]);
       await reloadItems();
     } catch (e) {
       alert(`預設照片上傳失敗：${e.message}`);
@@ -205,6 +208,7 @@ const ChecklistTemplates = () => {
       await logUpdate('SETTING', item.id, item.name,
         `出機檢查表拍照項目 [${item.name}]（主項目 [${selectedGroup?.name || ''}]）移除預設照片 [${row.prev_photo_name || ''}]`,
         { group: selectedGroup?.name || null, item: item.name, prevDefaultPhoto: row.prev_photo_name || null });
+      if (row.prev_photo_file) releaseUploads([row.prev_photo_file]);
       await reloadItems();
     } catch (e) {
       alert(`移除預設照片失敗：${e.message}`);

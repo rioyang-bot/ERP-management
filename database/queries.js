@@ -614,23 +614,25 @@ export const queries = {
     RETURNING id, name, kind, description`,
   updateChecklistItemName: `UPDATE checklist_items SET name = TRIM($1) WHERE id = $2 RETURNING id`,
   // 拍照項目的預設照片：設備上這一項還沒上傳照片時使用（見 migration_checklist_default_photo.sql）。
-  // 只有拍照項目能設。回傳原本的檔名，事件紀錄才寫得出換掉了哪一張
+  // 只有拍照項目能設。回傳原本的檔名，事件紀錄才寫得出換掉了哪一張；
+  // prev_photo_file 是原本的存檔名，換掉後交給伺服器清掉（見 utils/uploadRelease.js）
   setChecklistItemDefaultPhoto: `
-    WITH old AS (SELECT id, default_photo_name FROM checklist_items WHERE id = $6::integer)
+    WITH old AS (SELECT id, default_photo_name, default_photo_file FROM checklist_items WHERE id = $6::integer)
     UPDATE checklist_items i SET
       default_photo_file = $1, default_photo_name = $2, default_photo_mime = $3,
       default_photo_size = $4::bigint, default_photo_by = $5, default_photo_at = CURRENT_TIMESTAMP
     FROM old
     WHERE i.id = old.id AND i.kind = 'PHOTO'
-    RETURNING i.id, i.name, i.group_id, i.default_photo_file, i.default_photo_name, old.default_photo_name AS prev_photo_name`,
+    RETURNING i.id, i.name, i.group_id, i.default_photo_file, i.default_photo_name,
+              old.default_photo_name AS prev_photo_name, old.default_photo_file AS prev_photo_file`,
   clearChecklistItemDefaultPhoto: `
-    WITH old AS (SELECT id, default_photo_name FROM checklist_items WHERE id = $1::integer)
+    WITH old AS (SELECT id, default_photo_name, default_photo_file FROM checklist_items WHERE id = $1::integer)
     UPDATE checklist_items i SET
       default_photo_file = NULL, default_photo_name = NULL, default_photo_mime = NULL,
       default_photo_size = NULL, default_photo_by = NULL, default_photo_at = NULL
     FROM old
     WHERE i.id = old.id AND i.kind = 'PHOTO'
-    RETURNING i.id, i.name, i.group_id, old.default_photo_name AS prev_photo_name`,
+    RETURNING i.id, i.name, i.group_id, old.default_photo_name AS prev_photo_name, old.default_photo_file AS prev_photo_file`,
   updateChecklistItemDescription: `
     UPDATE checklist_items SET description = NULLIF(TRIM(COALESCE($1, '')), '')
     WHERE id = $2 RETURNING id, description`,

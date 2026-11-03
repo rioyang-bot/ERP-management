@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { toLocalYmd, addDays, daysBetween, extensionBase, minExtensionDate, validateExtension } from '../utils/lentReturnDate';
 import { logStatusChange, logUpdate, logDelete } from '../utils/auditLogger';
+import { releaseUploads } from '../utils/uploadRelease';
 import { createHwSyncTracker, createBackToStockTracker } from '../utils/mountedHwSync';
 import { returnLendOrder } from '../utils/lendReturn';
 import LentOrderPrintModal from '../components/LentOrderPrintModal';
@@ -151,6 +152,8 @@ const LentList = () => {
 
       const updateRes = await window.electronAPI.namedQuery('updateOutboundSignedDoc', [saveRes.fileName, file.name, dn.id]);
       if (!updateRes.success) throw new Error(updateRes.error || '資料庫更新失敗');
+      // 換掉的那份簽收單，伺服器上的檔案一併清掉
+      if (dn.signed_doc_url && dn.signed_doc_url !== saveRes.fileName) releaseUploads([dn.signed_doc_url]);
 
       logUpdate(
         'LENT',
@@ -184,6 +187,7 @@ const LentList = () => {
     try {
       const res = await window.electronAPI.namedQuery('removeOutboundSignedDoc', [dn.id]);
       if (!res.success) throw new Error(res.error || '刪除失敗');
+      if (dn.signed_doc_url) releaseUploads([dn.signed_doc_url]);
 
       logDelete(
         'LENT',

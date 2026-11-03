@@ -3,6 +3,7 @@ import { RoleContext } from '../context/RoleContext';
 import { validatePassword } from '../utils/auth';
 import { Shield, User, Settings as SettingsIcon, CheckSquare, Square, X, Save, Key, Lock, Trash2, Power, GitMerge, RefreshCw, Database, CheckCircle2 } from 'lucide-react';
 import { logCreate, logUpdate, logDelete, logStatusChange, logEvent, ACTION_TYPES } from '../utils/auditLogger';
+import UploadCleanupPanel from '../components/UploadCleanupPanel';
 
 const MENU_OPTIONS = [
   { id: 'overview', label: '營運總覽 (Overview)' },
@@ -687,6 +688,9 @@ const Settings = () => {
           </div>
         )}
       </div>
+
+      {/* 清理沒有使用的上傳檔案：伺服器只讓管理員呼叫，其他人不顯示 */}
+      {authUser?.role === 'ADMIN' && <UploadCleanupPanel />}
 
       {/* 權限設定 Modal */}
       {showPermissionModal && editingUser && (
