@@ -14,6 +14,8 @@
  *   細項紀錄：項目與內容兩欄，沒有勾選欄
  */
 
+import { isPhotoItemDone, usesDefaultPhoto, DEFAULT_PHOTO_LABEL } from './checklistDefaultPhoto';
+
 /** 表頭固定要出現的欄位，順序即是印出來的順序（由左至右、由上而下） */
 export const SHEET_FIELDS = [
   { key: 'type', label: '類型' },
@@ -175,7 +177,7 @@ export function buildChecklistSheet(device, items = []) {
   // 拍照項目：列出該拍的照片與已上傳張數，照片本身不印
   const photoRows = all.filter((r) => r.kind === 'PHOTO');
   const photoHtml = photoRows.length === 0 ? '' : `
-      <div class="section-title">拍照項目（共 ${photoRows.length} 項，已上傳 ${photoRows.filter((r) => Number(r.photo_count) > 0).length} 項）</div>
+      <div class="section-title">拍照項目（共 ${photoRows.length} 項，已上傳 ${photoRows.filter((r) => isPhotoItemDone(r)).length} 項）</div>
 
       <table class="detail-table">
         <thead>
@@ -190,7 +192,7 @@ export function buildChecklistSheet(device, items = []) {
           <tr>
             <td class="col-seq">${idx + 1}</td>
             <td class="col-name">${escapeHtml(row.item_name)}${row.description ? `<div class="photo-desc">${escapeHtml(row.description)}</div>` : ''}</td>
-            <td>${Number(row.photo_count) > 0 ? `☑ 已上傳 ${Number(row.photo_count)} 張` : '☐ 尚未上傳'}</td>
+            <td>${Number(row.photo_count) > 0 ? `☑ 已上傳 ${Number(row.photo_count)} 張` : (usesDefaultPhoto(row) ? `☑ 使用${DEFAULT_PHOTO_LABEL}` : '☐ 尚未上傳')}</td>
           </tr>`).join('')}
         </tbody>
       </table>`;

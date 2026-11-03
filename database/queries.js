@@ -586,9 +586,12 @@ export const queries = {
   // 複製主項目：把來源主項目底下的所有項目（主要檢查功能、細項、拍照項目，
   // 含拍攝說明與順序）照搬到新的主項目。在資料庫裡直接搬，內容一字不差，
   // 不經過前端也不會被參數過濾改到。新主項目由同一個交易的前一步建立。
+  // 拍照項目的預設照片一併帶過去（同一個檔案，不另外複製）。
   copyChecklistItems: `
-    INSERT INTO checklist_items (group_id, kind, name, sort_order, description, auto_apply)
-    SELECT $1::integer, kind, name, sort_order, description, auto_apply
+    INSERT INTO checklist_items (group_id, kind, name, sort_order, description, auto_apply,
+      default_photo_file, default_photo_name, default_photo_mime, default_photo_size, default_photo_by, default_photo_at)
+    SELECT $1::integer, kind, name, sort_order, description, auto_apply,
+      default_photo_file, default_photo_name, default_photo_mime, default_photo_size, default_photo_by, default_photo_at
     FROM checklist_items
     WHERE group_id = $2::integer
     ORDER BY kind, sort_order, id
@@ -610,6 +613,24 @@ export const queries = {
     VALUES ($1, $2, TRIM($3), COALESCE($4, 0), NULLIF(TRIM(COALESCE($5, '')), ''))
     RETURNING id, name, kind, description`,
   updateChecklistItemName: `UPDATE checklist_items SET name = TRIM($1) WHERE id = $2 RETURNING id`,
+  // 拍照項目的預設照片：設備上這一項還沒上傳照片時使用（見 migration_checklist_default_photo.sql）。
+  // 只有拍照項目能設。回傳原本的檔名，事件紀錄才寫得出換掉了哪一張
+  setChecklistItemDefaultPhoto: `
+    WITH old AS (SELECT id, default_photo_name FROM checklist_items WHERE id = $6::integer)
+    UPDATE checklist_items i SET
+      default_photo_file = $1, default_photo_name = $2, default_photo_mime = $3,
+      default_photo_size = $4::bigint, default_photo_by = $5, default_photo_at = CURRENT_TIMESTAMP
+    FROM old
+    WHERE i.id = old.id AND i.kind = 'PHOTO'
+    RETURNING i.id, i.name, i.group_id, i.default_photo_file, i.default_photo_name, old.default_photo_name AS prev_photo_name`,
+  clearChecklistItemDefaultPhoto: `
+    WITH old AS (SELECT id, default_photo_name FROM checklist_items WHERE id = $1::integer)
+    UPDATE checklist_items i SET
+      default_photo_file = NULL, default_photo_name = NULL, default_photo_mime = NULL,
+      default_photo_size = NULL, default_photo_by = NULL, default_photo_at = NULL
+    FROM old
+    WHERE i.id = old.id AND i.kind = 'PHOTO'
+    RETURNING i.id, i.name, i.group_id, old.default_photo_name AS prev_photo_name`,
   updateChecklistItemDescription: `
     UPDATE checklist_items SET description = NULLIF(TRIM(COALESCE($1, '')), '')
     WHERE id = $2 RETURNING id, description`,
@@ -675,10 +696,13 @@ export const queries = {
 
   // --- 設備實際套用的檢查表 ---
   // photo_count：拍照項目已經上傳了幾張，有照片就算完成
+  // default_photo_*：範本上的預設照片；這一項沒有照片時使用，也算完成
   fetchAssetChecklist: `
     SELECT c.*,
-           (SELECT COUNT(*)::int FROM asset_photos p WHERE p.checklist_item_id = c.id) AS photo_count
+           (SELECT COUNT(*)::int FROM asset_photos p WHERE p.checklist_item_id = c.id) AS photo_count,
+           t.default_photo_file, t.default_photo_name, t.default_photo_size, t.default_photo_by
     FROM asset_checklist_items c
+    LEFT JOIN checklist_items t ON t.id = c.source_item_id AND c.kind = 'PHOTO'
     WHERE c.asset_id = $1
     ORDER BY c.sort_order ASC, c.id ASC
   `,
@@ -687,7 +711,7 @@ export const queries = {
   // 也只有這支會失敗，不會整個設備列表讀不出來。
   //
   //   total / done              檢查：主要檢查功能（勾選才算）+ 細項（有填內容才算）
-  //   photo_total / photo_done  拍照項目：有照片才算
+  //   photo_total / photo_done  拍照項目：有照片才算；範本設了預設照片的也算
   //   photo_count               這台設備上傳的照片總數（含不屬於任何拍照項目的其他照片）
   // 沒有任何檢查項目、但有上傳照片的設備也要列出來，因此照片另外彙總再合併。
   fetchAssetChecklistSummary: `
@@ -701,7 +725,9 @@ export const queries = {
              COUNT(*) FILTER (WHERE c.kind = 'PHOTO')::int AS photo_total,
              COUNT(*) FILTER (
                WHERE c.kind = 'PHOTO'
-                 AND EXISTS (SELECT 1 FROM asset_photos p WHERE p.checklist_item_id = c.id)
+                 AND (EXISTS (SELECT 1 FROM asset_photos p WHERE p.checklist_item_id = c.id)
+                      OR EXISTS (SELECT 1 FROM checklist_items t
+                                 WHERE t.id = c.source_item_id AND t.default_photo_file IS NOT NULL))
              )::int AS photo_done
       FROM asset_checklist_items c
       GROUP BY c.asset_id

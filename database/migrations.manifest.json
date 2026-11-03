@@ -263,6 +263,11 @@
       "file": "migration_asset_extended_warranty.sql",
       "type": "schema",
       "note": "設備／硬體新增一次延保 (1st EWS)、二次延保 (2nd EWS) 到期日"
+    },
+    {
+      "file": "migration_checklist_default_photo.sql",
+      "type": "schema",
+      "note": "出機檢查表拍照項目可設定預設照片；設備還沒上傳時使用預設照片"
     }
   ]
 }

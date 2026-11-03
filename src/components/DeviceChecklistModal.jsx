@@ -6,6 +6,7 @@ import { logUpdate } from '../utils/auditLogger';
 import DeviceChecklistPrintModal from './DeviceChecklistPrintModal';
 import ChecklistWordButton from './ChecklistWordButton';
 import AssetPhotoSection from './AssetPhotoSection';
+import { isPhotoItemDone } from '../utils/checklistDefaultPhoto';
 import { groupMatchLevel, pickDefaultGroup } from '../utils/checklistGroupScope';
 
 /**
@@ -313,9 +314,9 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
   const filledDetails = applied.filter((a) => a.kind === KIND_DETAIL && (a.content || '').trim()).length;
   const checkTotal = autoCount + applied.filter((a) => a.kind === KIND_DETAIL).length;
   const checkDone = doneCount + filledDetails;
-  // 拍照項目有照片就算完成，與勾選分開計算
+  // 拍照項目有照片就算完成（範本有預設照片的也算），與勾選分開計算
   const photoRows = applied.filter((a) => a.kind === KIND_PHOTO);
-  const photoDoneCount = photoRows.filter((a) => Number(a.photo_count) > 0).length;
+  const photoDoneCount = photoRows.filter((a) => isPhotoItemDone(a)).length;
 
   if (!isOpen || !device) return null;
 

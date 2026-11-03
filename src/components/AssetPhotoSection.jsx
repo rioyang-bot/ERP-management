@@ -4,6 +4,7 @@ import { logUpdate, getCurrentUser } from '../utils/auditLogger';
 import { resolveMediaUrl, downloadMedia } from '../utils/media';
 import { screenPhotoFiles, formatFileSize } from '../utils/assetPhotos';
 import { namePastedImage, imagesFromPasteEvent, readClipboardImages } from '../utils/clipboardImages';
+import { usesDefaultPhoto, defaultPhotoOf, DEFAULT_PHOTO_LABEL } from '../utils/checklistDefaultPhoto';
 
 /**
  * 設備主機照片
@@ -15,6 +16,9 @@ import { namePastedImage, imagesFromPasteEvent, readClipboardImages } from '../u
  * 每一項各自上傳，人員才知道該拍哪些、拍漏了哪些。有照片就算完成。
  * 範本寫了拍攝說明的，直接顯示在該項底下，照著拍就不會拍錯角度。
  * 不屬於任何拍照項目的照片（包含先前上傳的）列在「其他照片」。
+ *
+ * 範本的拍照項目設了預設照片、這台還沒上傳自己的照片時，顯示預設照片並標明
+ * 「預設照片」，也算完成；預設照片在這裡不能刪，要改去範本（見 utils/checklistDefaultPhoto.js）。
  *
  * 也可以用貼上的：點選拍照項目那一列後按 Ctrl+V，或按「貼上」鈕（見 utils/clipboardImages.js）。
  *
@@ -68,8 +72,13 @@ const AssetPhotoSection = ({ device, card, photoItems = [], onChanged, canRemove
   // 縮圖逐張取回。失敗的那張就不顯示縮圖，仍然可以下載與刪除。
   useEffect(() => {
     let cancelled = false;
+    // 還沒上傳自己照片、要用預設照片的項目，縮圖一併取回
+    // 自己的照片張數取兩者大的：照片還沒讀回來前，以檢查表帶來的 photo_count 為準
+    const defaults = photoItems
+      .filter((i) => usesDefaultPhoto(i, Math.max(photos.filter((p) => p.checklist_item_id === i.id).length, Number(i.photo_count || 0))))
+      .map(defaultPhotoOf);
     (async () => {
-      for (const photo of photos) {
+      for (const photo of [...photos, ...defaults]) {
         if (thumbs[photo.id]) continue;
         const resolved = await resolveMediaUrl(photo.file_name);
         if (cancelled) {
@@ -85,7 +94,7 @@ const AssetPhotoSection = ({ device, card, photoItems = [], onChanged, canRemove
     return () => { cancelled = true; };
     // thumbs 不列入相依：它在迴圈裡被更新，列進去會無限重跑
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [photos]);
+  }, [photos, photoItems]);
 
   useEffect(() => () => {
     objectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
@@ -96,7 +105,10 @@ const AssetPhotoSection = ({ device, card, photoItems = [], onChanged, canRemove
   const photosOf = (itemId) => photos.filter((p) => p.checklist_item_id === itemId);
   // 沒有對應到（或對應的拍照項目已經不在這台設備上）的都算其他照片
   const otherPhotos = photos.filter((p) => !p.checklist_item_id || !itemIds.has(p.checklist_item_id));
-  const doneItems = photoItems.filter((i) => photosOf(i.id).length > 0).length;
+  // 自己沒有照片時用範本的預設照片，也算完成
+  // 自己的照片張數取兩者大的：照片還沒讀回來前，以檢查表帶來的 photo_count 為準
+  const defaultFor = (item) => (usesDefaultPhoto(item, Math.max(photosOf(item.id).length, Number(item.photo_count || 0))) ? defaultPhotoOf(item) : null);
+  const doneItems = photoItems.filter((i) => photosOf(i.id).length > 0 || defaultFor(i)).length;
 
   const handlePick = () => fileInputRef.current?.click();
   const handlePickForItem = (item) => {
@@ -252,10 +264,18 @@ const AssetPhotoSection = ({ device, card, photoItems = [], onChanged, canRemove
       key={photo.id}
       style={{
         width: compact ? '96px' : '132px', border: '1px solid var(--border-color)', borderRadius: compact ? '8px' : '10px',
-        overflow: 'hidden', backgroundColor: 'var(--bg-surface)',
+        overflow: 'hidden', backgroundColor: 'var(--bg-surface)', position: 'relative',
       }}
       data-testid={`asset-photo-${photo.id}`}
     >
+      {photo.isDefault && (
+        <span
+          title="範本設定的預設照片：這台還沒上傳自己的照片。上傳後就改用自己的"
+          style={{ position: 'absolute', top: '3px', left: '3px', zIndex: 1, fontSize: '9px', fontWeight: 800, color: '#fff', backgroundColor: 'rgba(124, 58, 237, 0.9)', padding: '1px 5px', borderRadius: '4px', pointerEvents: 'none' }}
+        >
+          {DEFAULT_PHOTO_LABEL}
+        </span>
+      )}
       <button
         type="button"
         onClick={() => openPreview(photo, group, groupTitle)}
@@ -302,6 +322,7 @@ const AssetPhotoSection = ({ device, card, photoItems = [], onChanged, canRemove
         >
           <Download size={compact ? 12 : 14} />
         </button>
+        {!photo.isDefault && (
         <button
           type="button"
           onClick={() => handleDelete(photo)}
@@ -312,6 +333,7 @@ const AssetPhotoSection = ({ device, card, photoItems = [], onChanged, canRemove
         >
           <Trash2 size={compact ? 12 : 14} />
         </button>
+        )}
       </div>
     </div>
   );
@@ -395,7 +417,8 @@ const AssetPhotoSection = ({ device, card, photoItems = [], onChanged, canRemove
             <div style={{ marginTop: '10px', border: '1px solid var(--border-color)', borderRadius: '10px', overflow: 'hidden' }}>
               {photoItems.map((item, idx) => {
                 const list = photosOf(item.id);
-                const done = list.length > 0;
+                const def = defaultFor(item);
+                const done = list.length > 0 || !!def;
                 const selected = pasteTarget === item.id;
                 return (
                   <div
@@ -437,7 +460,7 @@ const AssetPhotoSection = ({ device, card, photoItems = [], onChanged, canRemove
                         </span>
                       ) : (
                         <span style={{ fontSize: '11px', fontWeight: 800, color: done ? '#10b981' : '#f59e0b', whiteSpace: 'nowrap' }}>
-                          {done ? `已上傳 ${list.length} 張` : '尚未上傳'}
+                          {list.length > 0 ? `已上傳 ${list.length} 張` : (def ? `使用${DEFAULT_PHOTO_LABEL}` : '尚未上傳')}
                         </span>
                       )}
                       <button
@@ -474,6 +497,11 @@ const AssetPhotoSection = ({ device, card, photoItems = [], onChanged, canRemove
                     {list.length > 0 && (
                       <div style={{ margin: '6px 0 2px 23px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                         {list.map((p) => renderPhoto(p, true, list, item.item_name))}
+                      </div>
+                    )}
+                    {def && (
+                      <div style={{ margin: '6px 0 2px 23px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                        {renderPhoto(def, true, [def], `${item.item_name}（${DEFAULT_PHOTO_LABEL}）`)}
                       </div>
                     )}
                   </div>

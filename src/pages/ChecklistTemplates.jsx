@@ -1,9 +1,11 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
-  ClipboardCheck, Plus, Trash2, Pencil, Check, X, Layers, ListChecks, Info, Tag, RefreshCw, GripVertical, Camera, BookmarkPlus, Copy,
+  ClipboardCheck, Plus, Trash2, Pencil, Check, X, Layers, ListChecks, Info, Tag, RefreshCw, GripVertical, Camera, BookmarkPlus, Copy, ImagePlus,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { logCreate, logDelete, logUpdate } from '../utils/auditLogger';
+import { logCreate, logDelete, logUpdate, getCurrentUser } from '../utils/auditLogger';
+import { resolveMediaUrl } from '../utils/media';
+import { screenPhotoFiles } from '../utils/assetPhotos';
 import { moveItem, buildOrderParam } from '../utils/reorderList';
 import { groupScopeLabel } from '../utils/checklistGroupScope';
 import { sameScope, validateGroupCopy, buildGroupCopySteps } from '../utils/checklistGroupCopy';
@@ -22,6 +24,8 @@ import PhotoExampleLibrary from '../components/PhotoExampleLibrary';
  *                  在設備的主機照片區逐項上傳，有照片就算完成。
  *                  可附上拍攝說明，設備上每一項底下直接顯示；
  *                  常用的項目與說明存成「拍照項目範例」，新增時直接選取。
+ *                  同一種設備拍出來都一樣的項目可以上傳一張「預設照片」：
+ *                  設備還沒上傳自己的照片時就用它（見 utils/checklistDefaultPhoto.js）。
  *
  * 這裡改的是「範本」。新增主項目或主要檢查功能之後會立刻同步到所有符合的
  * 設備。刪除範本項目時，設備上還沒有任何紀錄（沒勾選、沒填內容、沒照片）的
@@ -85,6 +89,11 @@ const ChecklistTemplates = () => {
   // 拖曳排序中的項目
   const [draggingItem, setDraggingItem] = useState(null); // { id, kind }
   const [dragOverId, setDragOverId] = useState(null);
+  // 拍照項目的預設照片：縮圖 { 存檔名: blob 網址 }、正在上傳哪一項
+  const [defaultThumbs, setDefaultThumbs] = useState({});
+  const [defaultPhotoBusy, setDefaultPhotoBusy] = useState(null);
+  const defaultPhotoInputRef = useRef(null);
+  const defaultPhotoTargetRef = useRef(null);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -118,6 +127,91 @@ const ChecklistTemplates = () => {
   }, []);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // 預設照片的縮圖：/uploads 要帶驗證標頭，img 不會帶，所以走 blob 網址（與設備照片相同）
+  useEffect(() => {
+    let cancelled = false;
+    const files = [...new Set(items.filter((i) => i.kind === KIND_PHOTO && i.default_photo_file).map((i) => i.default_photo_file))];
+    (async () => {
+      for (const file of files) {
+        if (defaultThumbs[file]) continue;
+        const resolved = await resolveMediaUrl(file);
+        if (cancelled) return;
+        if (resolved.url) setDefaultThumbs((prev) => ({ ...prev, [file]: resolved.url }));
+      }
+    })();
+    return () => { cancelled = true; };
+    // defaultThumbs 不列入相依：迴圈裡會更新它
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items]);
+
+  /** 只重讀項目，不讓整頁回到載入中 */
+  const reloadItems = async () => {
+    const res = await window.electronAPI.namedQuery('fetchChecklistItems');
+    if (res.success) setItems(res.rows || []);
+  };
+
+  const handlePickDefaultPhoto = (item) => {
+    defaultPhotoTargetRef.current = item;
+    defaultPhotoInputRef.current?.click();
+  };
+
+  /** 上傳（或更換）拍照項目的預設照片：設備還沒上傳自己的照片時使用 */
+  const handleDefaultPhotoFile = async (fileList) => {
+    const item = defaultPhotoTargetRef.current;
+    const file = [...(fileList || [])][0];
+    if (defaultPhotoInputRef.current) defaultPhotoInputRef.current.value = '';
+    if (!item || !file) return;
+    const { accepted, rejected } = screenPhotoFiles([file]);
+    if (accepted.length === 0) {
+      alert(`這個檔案不能當預設照片：${rejected[0]?.reason || '格式不符'}`);
+      return;
+    }
+    const replacing = !!item.default_photo_file;
+    if (!window.confirm(`確定要${replacing ? '更換' : '設定'}「${item.name}」的預設照片嗎？\n\n`
+      + `這個主項目套用到的設備，這一項還沒上傳自己的照片時，都會使用這張照片，並算已完成。`)) return;
+
+    setDefaultPhotoBusy(item.id);
+    try {
+      const saved = await window.electronAPI.saveFile(file.name, await file.arrayBuffer());
+      if (!saved.success) throw new Error(saved.error || '檔案儲存失敗');
+      const user = getCurrentUser();
+      const res = await window.electronAPI.namedQuery('setChecklistItemDefaultPhoto', [
+        saved.fileName, file.name, file.type, file.size, user.name || null, item.id,
+      ]);
+      const row = res.success ? res.rows?.[0] : null;
+      if (!row) throw new Error(res.error || '找不到這個拍照項目');
+      const prev = row.prev_photo_name;
+      await logUpdate('SETTING', item.id, item.name,
+        `出機檢查表拍照項目 [${item.name}]（主項目 [${selectedGroup?.name || ''}]）${prev ? `更換預設照片：${prev} → ${file.name}` : `設定預設照片 [${file.name}]`}`,
+        { group: selectedGroup?.name || null, item: item.name, defaultPhoto: file.name, prevDefaultPhoto: prev || null });
+      await reloadItems();
+    } catch (e) {
+      alert(`預設照片上傳失敗：${e.message}`);
+    } finally {
+      setDefaultPhotoBusy(null);
+      defaultPhotoTargetRef.current = null;
+    }
+  };
+
+  /** 移除預設照片：還沒上傳自己照片的設備，這一項回到「尚未上傳」 */
+  const handleClearDefaultPhoto = async (item) => {
+    if (!window.confirm(`確定要移除「${item.name}」的預設照片嗎？\n\n還沒上傳自己照片的設備，這一項會變回「尚未上傳」。`)) return;
+    setDefaultPhotoBusy(item.id);
+    try {
+      const res = await window.electronAPI.namedQuery('clearChecklistItemDefaultPhoto', [item.id]);
+      const row = res.success ? res.rows?.[0] : null;
+      if (!row) throw new Error(res.error || '找不到這個拍照項目');
+      await logUpdate('SETTING', item.id, item.name,
+        `出機檢查表拍照項目 [${item.name}]（主項目 [${selectedGroup?.name || ''}]）移除預設照片 [${row.prev_photo_name || ''}]`,
+        { group: selectedGroup?.name || null, item: item.name, prevDefaultPhoto: row.prev_photo_name || null });
+      await reloadItems();
+    } catch (e) {
+      alert(`移除預設照片失敗：${e.message}`);
+    } finally {
+      setDefaultPhotoBusy(null);
+    }
+  };
   useEffect(() => { fetchPhotoExamples(); }, [fetchPhotoExamples]);
 
   const loadModels = useCallback(async (brand) => {
@@ -617,6 +711,40 @@ const ChecklistTemplates = () => {
                         {item.description}
                       </span>
                     )}
+                    {/* 預設照片：設備這一項還沒上傳自己的照片時使用 */}
+                    {isPhoto && (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px', flexWrap: 'wrap' }} data-testid={`default-photo-${item.id}`}>
+                        {item.default_photo_file ? (
+                          <>
+                            {defaultThumbs[item.default_photo_file] ? (
+                              <img src={defaultThumbs[item.default_photo_file]} alt={`${item.name} 的預設照片`} style={{ width: '48px', height: '36px', objectFit: 'cover', borderRadius: '4px', border: '1px solid var(--border-color)' }} />
+                            ) : (
+                              <span style={{ width: '48px', height: '36px', borderRadius: '4px', border: '1px solid var(--border-color)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Camera size={12} color="var(--text-subtle)" /></span>
+                            )}
+                            <span style={{ fontSize: '11px', fontWeight: 700, color: '#7c3aed', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '160px' }} title={item.default_photo_name || ''}>
+                              預設照片：{item.default_photo_name}
+                            </span>
+                            <button type="button" onClick={() => handlePickDefaultPhoto(item)} disabled={defaultPhotoBusy === item.id} style={{ ...iconBtn('#7c3aed'), width: 'auto', padding: '2px 8px', fontSize: '11px', fontWeight: 700 }} aria-label={`更換 ${item.name} 的預設照片`}>
+                              更換
+                            </button>
+                            <button type="button" onClick={() => handleClearDefaultPhoto(item)} disabled={defaultPhotoBusy === item.id} style={{ ...iconBtn('#ef4444'), width: 'auto', padding: '2px 8px', fontSize: '11px', fontWeight: 700 }} aria-label={`移除 ${item.name} 的預設照片`}>
+                              移除
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handlePickDefaultPhoto(item)}
+                            disabled={defaultPhotoBusy === item.id}
+                            title="同一種設備拍出來都一樣的項目，可以放一張預設照片：設備還沒上傳自己的照片時就用它"
+                            style={{ ...iconBtn('#7c3aed'), width: 'auto', padding: '2px 8px', fontSize: '11px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                            aria-label={`上傳 ${item.name} 的預設照片`}
+                          >
+                            <ImagePlus size={12} /> {defaultPhotoBusy === item.id ? '上傳中…' : '預設照片'}
+                          </button>
+                        )}
+                      </span>
+                    )}
                   </span>
                   {isPhoto && (
                     <button type="button" onClick={() => handleSaveAsExample(item)} style={iconBtn('#ea580c')} title="存成拍照項目範例" aria-label={`把 ${item.name} 存成範例`}><BookmarkPlus size={13} /></button>
@@ -642,6 +770,14 @@ const ChecklistTemplates = () => {
 
   return (
     <div style={{ padding: '24px', minHeight: '100%' }}>
+      <input
+        ref={defaultPhotoInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: 'none' }}
+        onChange={(e) => handleDefaultPhotoFile(e.target.files)}
+        data-testid="default-photo-input"
+      />
       {/* 頁首 */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px', marginBottom: '20px' }}>
         <div>
