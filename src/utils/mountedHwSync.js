@@ -45,11 +45,20 @@ export function createHwSyncTracker() {
 }
 
 /**
- * 歸還、撤銷借出：單據上列的設備／硬體改回在庫，掛在設備上的硬體跟著。
+ * 歸還、撤銷借出、撤銷出貨：單據上列的設備／硬體改回在庫，掛在設備上的硬體跟著。
  * 交易完成後設備與硬體各記一筆 —— 先前只有借用單本身記一筆，
  * 設備歷程上看得到借出，卻看不到它回來了。
+ *
+ * @param {object} [opts]
+ * @param {string|null} [opts.revertShipDate] 撤銷出貨時給這張出貨單的出貨日期：只改「目前還是已出貨」的，
+ *        並清掉這次出貨寫入的安裝／出貨日期（設備與它上面的硬體），見 revertShippedAssetBySn。
+ *        這時搭載硬體的同步不放在各品項裡，要在所有品項之後呼叫 syncSteps()：
+ *        出貨單常把設備和它上面的硬體都列出來，設備先改回在庫、硬體跟著變在庫，
+ *        輪到硬體自己那一列時就不是「已出貨」而被擋下
  */
-export function createBackToStockTracker() {
+export function createBackToStockTracker({ revertShipDate } = {}) {
+  const revertingShipment = revertShipDate !== undefined;
+  const pendingSync = [];
   const hwSync = createHwSyncTracker();
   const assets = [];
   return {
@@ -57,6 +66,19 @@ export function createBackToStockTracker() {
     steps(item) {
       const id = `back-${assets.length}`;
       assets.push({ id, sn: String(item.sn ?? '').trim(), module: item.category_name === '硬體' ? 'HARDWARE' : 'DEVICE' });
+      if (revertingShipment) {
+        pendingSync.push(item.sn);
+        return [
+          {
+            id,
+            queryName: 'revertShippedAssetBySn',
+            params: [item.sn, revertShipDate],
+            expectRows: 1,
+            errorMessage: `序號 [${item.sn}] 目前不是「已出貨」（可能已經維修、換貨或歸還），無法撤銷出貨。`,
+          },
+          { queryName: 'revertMountedHardwareShipDates', params: [revertShipDate, item.sn] },
+        ];
+      }
       return [
         {
           id,
@@ -67,6 +89,10 @@ export function createBackToStockTracker() {
         },
         hwSync.step(item.sn),
       ];
+    },
+    /** 撤銷出貨：所有品項都改回在庫之後，搭載硬體再跟著各自的設備 */
+    syncSteps() {
+      return pendingSync.splice(0).map((sn) => hwSync.step(sn));
     },
     async log(results = {}, note = '', details = {}) {
       // 單據上也列了的硬體，可能已經先跟著它的設備改回在庫，
