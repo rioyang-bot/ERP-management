@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Truck } from 'lucide-react';
 import Outbound from '../pages/Outbound';
+import { toLocalYmd } from '../utils/lentReturnDate';
 
 const OutboundRegistrationModal = ({ isOpen, onClose, onSuccess, editingDn = null }) => {
   const isEditing = !!editingDn;
@@ -12,7 +13,8 @@ const OutboundRegistrationModal = ({ isOpen, onClose, onSuccess, editingDn = nul
     if (isEditing) return;
     const fetchNext = async () => {
       try {
-        const dStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
+        // 本地的今天：toISOString() 在台灣早上 8 點前會是前一天
+        const dStr = toLocalYmd(new Date()).replace(/-/g, '');
         const prefix = `DN-${dStr}-`;
         const countRes = await window.electronAPI.namedQuery('countOutboundRequests', [prefix]);
         if (countRes.success && countRes.rows.length > 0) {
