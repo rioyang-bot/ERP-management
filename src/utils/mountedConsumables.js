@@ -68,6 +68,22 @@ export const shipMountedSteps = (row, requestNo) => [
   },
 ];
 
+/** 撤銷出貨（出貨單退回待出貨）：上面的反向，回到 LAB 並重新掛回原來那台設備 */
+export const shipRevertMountedSteps = (row, requestNo) => [
+  {
+    queryName: 'updateLabQtyOnOutboundRevert',
+    params: [row.quantity, row.item_id],
+    expectRows: 1,
+    errorMessage: `回補耗材 [${nameOf(row)}] 失敗，查無此品項。`,
+  },
+  {
+    queryName: 'insertLabAssignment',
+    params: [row.item_id, row.lab_asset_id, row.quantity, `出貨單 ${requestNo} 撤銷出貨，掛回設備`],
+    expectRows: 1,
+    errorMessage: `耗材 [${nameOf(row)}] 掛回設備 [${row.lab_device_sn || ''}] 失敗。`,
+  },
+];
+
 /** 隨設備借出：LAB 減、借出中加，並從那台設備上扣掉 */
 export const lendOutMountedSteps = (row, requestNo) => [
   {

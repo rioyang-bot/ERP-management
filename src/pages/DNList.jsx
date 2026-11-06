@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   FileText, Search, Filter, Eye, RefreshCw, AlertCircle, Trash2, Calendar, 
-  Printer, Paperclip, Upload, FileCheck, ExternalLink, X, Pencil, Clock, CheckCircle, Repeat, FileSpreadsheet
+  Printer, Paperclip, Upload, FileCheck, ExternalLink, X, Pencil, Clock, CheckCircle, Repeat, FileSpreadsheet, RotateCcw
 } from 'lucide-react';
 import { buildDnSheet, downloadSheet } from '../utils/detailExcel';
 import { fixDnLocation } from '../utils/dnLocationFix';
@@ -9,11 +9,12 @@ import { fixDnEndUser, serialItems } from '../utils/dnEndUserFix';
 import ExchangeOrderList from '../components/ExchangeOrderList';
 import { logStatusChange, logDelete, logUpdate } from '../utils/auditLogger';
 import { releaseUploads } from '../utils/uploadRelease';
-import { createHwSyncTracker } from '../utils/mountedHwSync';
+import { createHwSyncTracker, createBackToStockTracker } from '../utils/mountedHwSync';
+import { toLocalYmd } from '../utils/lentReturnDate';
 import DeliveryReceiptPrintModal from '../components/DeliveryReceiptPrintModal';
 import OutboundRegistrationModal from '../components/OutboundRegistrationModal';
 import { usePageSize } from '../utils/usePageSize';
-import { isMountedRow, findMountedMismatches, shipMountedSteps } from '../utils/mountedConsumables';
+import { isMountedRow, findMountedMismatches, shipMountedSteps, shipRevertMountedSteps } from '../utils/mountedConsumables';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 import DetailModalHeader from '../components/detail/DetailModalHeader';
 
@@ -272,6 +273,80 @@ const DNList = ({ isSplitMode = false }) => {
     }
   };
 
+  // 撤銷出貨：把「已出貨」退回「待出貨」，以便修改內容後再確認出貨。
+  //
+  // 是「確認出貨」的反向：設備／硬體回到在庫（掛在上面的硬體跟著），耗材加回庫存，
+  // 隨設備出貨的掛載耗材回到 LAB 並掛回原來那台設備。這次出貨寫入的安裝日期、
+  // 出貨日期與自動算出的客戶保固到期一併清掉（見 revertShippedAssetBySn）。
+  // 只撤銷還是「已出貨」的資產：之後已經維修、換貨或歸還的，整張單擋下不動。
+  const [revertModal, setRevertModal] = useState({ show: false, dn: null });
+  const [isReverting, setIsReverting] = useState(false);
+
+  const executeRevertShipment = async () => {
+    const dn = revertModal.dn;
+    if (!dn || isReverting) return;
+    setIsReverting(true);
+    try {
+      const res = await window.electronAPI.namedQuery('fetchDNItems', [dn.id]);
+      if (!res.success) throw new Error('讀取明細失敗');
+      const items = res.rows || [];
+
+      const steps = [];
+      const back = createBackToStockTracker({ revertShipDate: toLocalYmd(dn.shipping_date) });
+      for (const item of items) {
+        if (isMountedRow(item)) {
+          steps.push(...shipRevertMountedSteps(item, dn.request_no));
+        } else if (item.category_name === '耗材') {
+          steps.push({
+            queryName: 'updateStockQtyOnOutboundRevert',
+            params: [item.quantity, item.item_id],
+            expectRows: 1,
+            errorMessage: `回補耗材 [${item.brand} ${item.model}] 庫存失敗，查無此品項。`,
+          });
+        } else if ((item.category_name === '硬體' || item.category_name === '設備') && item.sn) {
+          steps.push(...back.steps(item));
+        }
+      }
+      // 所有品項都改回在庫之後，搭載硬體再跟著各自的設備
+      steps.push(...back.syncSteps());
+      steps.push({
+        queryName: 'updateOutboundRequestStatus',
+        params: ['PENDING', dn.id],
+        expectRows: 1,
+        errorMessage: '變更出貨單狀態失敗。',
+      });
+
+      const txRes = await window.electronAPI.runTransaction(steps);
+      if (!txRes.success) {
+        throw new Error((txRes.error || '撤銷出貨失敗。') + '\n\n所有變更已全部退回，庫存與單據狀態維持原樣。');
+      }
+
+      await back.log(txRes.results, `撤銷出貨：出貨單 [${dn.request_no}] 退回待出貨，回到在庫`,
+        { dnNumber: dn.request_no, revert: true });
+
+      await logStatusChange(
+        'OUTBOUND',
+        dn.request_no,
+        dn.customer || '出貨單',
+        'SHIPPED',
+        'PENDING',
+        `撤銷出貨：出貨單 [${dn.request_no}] 退回待出貨，庫存與資產狀態已還原 (共 ${items.length} 項品項)`,
+        { dnId: dn.id, dnNumber: dn.request_no, customer: dn.customer, itemsCount: items.length,
+          items: items.map((i) => ({ model: i.model, brand: i.brand, sn: i.sn, qty: i.quantity })) }
+      );
+
+      alert('已撤銷出貨，單據退回「待出貨」，庫存與資產狀態已還原。\n\n可以在「已建立 (待確認)」頁籤修改內容後再確認出貨。');
+      setRevertModal({ show: false, dn: null });
+      setActiveTab('PENDING');
+      fetchRecords();
+    } catch (err) {
+      console.error('Revert shipment error:', err);
+      alert('撤銷出貨時發生錯誤：\n' + err.message);
+    } finally {
+      setIsReverting(false);
+    }
+  };
+
   const handleConfirmDelivery = async () => {
     if (!selectedDN || !dnItems.length) return;
     if (!window.confirm(`確認要將出貨單 [${selectedDN.request_no}] 狀態設定為已出貨並扣除庫存嗎？`)) return;
@@ -320,7 +395,8 @@ const DNList = ({ isSplitMode = false }) => {
       const steps = [];
       // 搭載硬體跟著設備的那幾步具名，交易完成後才記得到是哪些硬體（見 utils/mountedHwSync.js）
       const hwSync = createHwSyncTracker();
-      const shipDate = selectedDN.shipping_date || new Date().toISOString().split('T')[0];
+      // 本地的今天：toISOString() 在台灣早上 8 點前會是前一天
+      const shipDate = toLocalYmd(selectedDN.shipping_date) || toLocalYmd(new Date());
       for (const item of dnItems) {
         if (isMountedRow(item)) {
           // 隨設備出貨的掛載耗材：從 LAB 扣，並從那台設備上扣掉
@@ -739,6 +815,16 @@ const DNList = ({ isSplitMode = false }) => {
                       >
                         <Eye size={16} />
                       </button>
+                      {dn.status === 'SHIPPED' && (
+                        <button
+                          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', padding: 0, backgroundColor: 'rgba(245, 158, 11, 0.12)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.35)', borderRadius: '6px', cursor: 'pointer', flexShrink: 0 }}
+                          title="撤銷出貨（退回待出貨以便修改）"
+                          aria-label="撤銷出貨"
+                          onClick={() => setRevertModal({ show: true, dn })}
+                        >
+                          <RotateCcw size={16} />
+                        </button>
+                      )}
                       {dn.status === 'PENDING' && (
                         <button
                           style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', padding: 0, backgroundColor: 'rgba(245, 158, 11, 0.12)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.25)', borderRadius: '6px', cursor: 'pointer', flexShrink: 0 }}
@@ -1051,6 +1137,46 @@ const DNList = ({ isSplitMode = false }) => {
                   <CheckCircle size={16} /> {isConfirming ? '處理中...' : '確認出貨'}
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 撤銷出貨確認 Modal */}
+      {revertModal.show && revertModal.dn && (
+        <div className="modal-overlay" style={{ zIndex: 9999 }}>
+          <div className="modal-content" role="dialog" aria-label="撤銷出貨" style={{ width: '480px', maxWidth: '95vw', padding: '24px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '16px' }}>
+            <h3 style={{ marginTop: 0, color: '#f59e0b' }}>撤銷出貨</h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: 1.8 }}>
+              將出貨單 <strong style={{ color: 'var(--primary-color)' }}>{revertModal.dn.request_no}</strong> 退回「待出貨」，
+              以便修改內容後再確認出貨。設備與硬體會恢復為在庫、耗材數量會加回庫存，
+              這次出貨寫入的安裝日期與出貨日期也會清掉。
+            </p>
+            <div style={{
+              padding: '12px 14px', borderRadius: '8px', margin: '14px 0',
+              backgroundColor: 'rgba(245, 158, 11, 0.10)', border: '1px solid rgba(245, 158, 11, 0.35)',
+              fontSize: '13px', color: 'var(--text-main)', lineHeight: 1.8,
+            }}>
+              撤銷代表<b>這次出貨沒有發生</b>（例如按錯或內容要改）。如果貨已經真的送到客戶那邊、只是後來退回，
+              請改用換貨或維修的流程，不要撤銷。
+            </div>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setRevertModal({ show: false, dn: null })}
+                disabled={isReverting}
+                style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-main)', cursor: 'pointer' }}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={executeRevertShipment}
+                disabled={isReverting}
+                style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', backgroundColor: '#f59e0b', color: 'white', fontWeight: 600, cursor: isReverting ? 'not-allowed' : 'pointer' }}
+              >
+                {isReverting ? '處理中...' : '確定撤銷'}
+              </button>
             </div>
           </div>
         </div>

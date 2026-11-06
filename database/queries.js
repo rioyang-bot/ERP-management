@@ -1142,6 +1142,10 @@ export const queries = {
   updateLabQtyOnOutbound: `
     UPDATE item_master SET lab_qty = lab_qty - $1::int
     WHERE id = $2 AND COALESCE(lab_qty, 0) >= $1::int RETURNING id`,
+  // 撤銷出貨：隨設備出貨的掛載耗材回到 LAB（並重新掛回那台設備）
+  updateLabQtyOnOutboundRevert: `
+    UPDATE item_master SET lab_qty = COALESCE(lab_qty, 0) + $1::int
+    WHERE id = $2 RETURNING id`,
   // 隨設備借出：LAB 減、借出中加；歸還時回到 LAB（並重新掛回那台設備）
   updateLabQtyOnLendOut: `
     UPDATE item_master SET lab_qty = lab_qty - $1::int, lent_qty = COALESCE(lent_qty, 0) + $1::int
@@ -1980,6 +1984,8 @@ export const queries = {
   // 加上 RETURNING id：namedQuery 只回 { success, rows }，沒有 rowCount。
   // 沒有 RETURNING 的話，庫存不足被 WHERE 擋掉時仍會回報成功，等於默默沒扣到。
   updateStockQtyOnOutbound: `UPDATE item_master SET stock_qty = stock_qty - $1 WHERE id = $2 AND stock_qty >= $1 RETURNING id`,
+  // 撤銷出貨：扣掉的庫存加回來
+  updateStockQtyOnOutboundRevert: `UPDATE item_master SET stock_qty = COALESCE(stock_qty, 0) + $1 WHERE id = $2 RETURNING id`,
   // 借用單確認借出：扣庫存的同時記為借出在外，歸還時才知道要加回多少
   updateStockQtyOnLendOut: `UPDATE item_master SET stock_qty = stock_qty - $1, lent_qty = COALESCE(lent_qty, 0) + $1 WHERE id = $2 AND stock_qty >= $1 RETURNING id`,
   // 借用單登記歸還：數量回到庫存。lent_qty 以 GREATEST 夾住下限，
@@ -1995,6 +2001,28 @@ export const queries = {
   updateAssetStatusLocationAndInstalledDateBySn: `UPDATE assets SET status = $1, location = $2, installed_date = $3, shipping_date = $3, ${CUST_WARRANTY_ON_INSTALL('$3::date')} WHERE sn = $4`,
   updateMountedHardwareShippingDate: `UPDATE assets SET shipping_date = $1 WHERE custom_attributes->>'server_sn' = $2`,
   updateMountedHardwareInstalledAndShippingDate: `UPDATE assets SET installed_date = $1, shipping_date = $1, ${CUST_WARRANTY_ON_INSTALL('$1::date')} WHERE custom_attributes->>'server_sn' = $2`,
+  // 撤銷出貨（出貨單退回待出貨）：上面兩支的反向。
+  // 只撤銷「目前還是已出貨」的資產：之後若已維修、換貨或歸還，0 筆異動，交易以 expectRows 擋下。
+  // 安裝日期、出貨日期是這次出貨寫的（等於出貨日期 $2）才清掉；客戶保固到期是依安裝日期
+  // 自動算的（有填客戶保固年）才一併清掉，手動填的保留。出貨前原本的值沒有留，無法還原。
+  // SET 裡讀到的都是改之前的值；回傳改之前的狀態給事件紀錄用
+  revertShippedAssetBySn: `
+    UPDATE assets a SET status = 'ACTIVE', location = '',
+      installed_date = CASE WHEN a.installed_date = $2::date THEN NULL ELSE a.installed_date END,
+      shipping_date = CASE WHEN a.shipping_date = $2::date THEN NULL ELSE a.shipping_date END,
+      customer_warranty_expire = CASE WHEN a.customer_warranty_years IS NOT NULL AND a.installed_date = $2::date
+                                      THEN NULL ELSE a.customer_warranty_expire END,
+      updated_at = CURRENT_TIMESTAMP
+    FROM assets prev
+    WHERE prev.id = a.id AND a.sn = $1 AND a.status = 'SHIPPED'
+    RETURNING a.id, a.sn, prev.status AS old_status`,
+  revertMountedHardwareShipDates: `
+    UPDATE assets SET
+      installed_date = CASE WHEN installed_date = $1::date THEN NULL ELSE installed_date END,
+      shipping_date = CASE WHEN shipping_date = $1::date THEN NULL ELSE shipping_date END,
+      customer_warranty_expire = CASE WHEN customer_warranty_years IS NOT NULL AND installed_date = $1::date
+                                      THEN NULL ELSE customer_warranty_expire END
+    WHERE custom_attributes->>'server_sn' = $2`,
   updateAssetShippingDate: `UPDATE assets SET shipping_date = $1 WHERE id = $2`,
   // 設備／硬體編輯視窗的日期與保固：進貨日期、安裝日期、兩種保固年數與到期日，
   // 以及一次延保 ($8)、二次延保 ($9) 到期日。
