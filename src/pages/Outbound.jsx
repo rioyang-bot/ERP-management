@@ -7,6 +7,7 @@ import DeliveryReceiptPrintModal from '../components/DeliveryReceiptPrintModal';
 import { toReceiptItems } from '../utils/deliveryReceiptItems';
 import { mountedLabel } from '../utils/mountedConsumables';
 import AssetPickerModal from '../components/AssetPickerModal';
+import { toLocalYmd } from '../utils/lentReturnDate';
 import './Outbound.css';
 
 /**
@@ -14,7 +15,12 @@ import './Outbound.css';
  *
  * 傳入 editingDn 即進入編輯模式：載入該張「已建立 (待出貨)」的單據供修改，
  * 存檔時更新原單而不是新建，也不會動到使用者手上還沒送出的草稿。
+ *
+ * 出貨日期：新增時每次打開都是今天（仍可手動改）。草稿的其他欄位照樣帶回來，
+ * 只有日期不沿用——草稿可能是好幾天前存的。今天一律取本地日期：
+ * toISOString() 是世界標準時間，台灣早上 8 點前會變成前一天。
  */
+const todayYmd = () => toLocalYmd(new Date());
 const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null, editingDn = null }) => {
   const { authUser } = useContext(RoleContext) || {};
   const navigate = useNavigate();
@@ -27,17 +33,18 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null, ed
         customer: editingDn.customer || '',
         contact_info: editingDn.contact_info || '',
         location: editingDn.location || '',
-        date: editingDn.shipping_date ? String(editingDn.shipping_date).split('T')[0] : new Date().toISOString().split('T')[0],
+        date: toLocalYmd(editingDn.shipping_date) || todayYmd(),
         project_name: editingDn.project_name || '',
         end_user: editingDn.end_user || ''
       };
     }
     const saved = localStorage.getItem('dn_draft_header');
-    return saved ? JSON.parse(saved) : {
+    // 草稿的日期不沿用：一律從今天開始
+    return saved ? { ...JSON.parse(saved), date: todayYmd() } : {
       customer: '',
       contact_info: '',
       location: '',
-      date: new Date().toISOString().split('T')[0],
+      date: todayYmd(),
       project_name: '',
       end_user: ''
     };
@@ -79,7 +86,7 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null, ed
   // 取得下一個 D/N 單號預覽
   const fetchNextDnNo = async (targetDate) => {
     try {
-      const dateStr = (targetDate || new Date().toISOString().split('T')[0]).replace(/-/g, '');
+      const dateStr = (targetDate || todayYmd()).replace(/-/g, '');
       const prefix = `DN-${dateStr}-`;
       const countRes = await window.electronAPI.namedQuery('countOutboundRequests', [prefix]);
       const nextNum = (parseInt(countRes?.rows?.[0]?.count, 10) || 1).toString().padStart(2, '0');
@@ -129,7 +136,7 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null, ed
       try { await window.electronAPI.namedQuery('migrateOutboundProjectName'); } catch { /* 欄位已存在就略過，這是相容舊資料庫用的 */ }
 
       if (!isEditing) {
-        const initialDate = header.date || new Date().toISOString().split('T')[0];
+        const initialDate = header.date || todayYmd();
         fetchNextDnNo(initialDate).then(no => {
           if (no) setDnNo(no);
         });
@@ -578,7 +585,7 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null, ed
             customer: '',
             contact_info: '',
             location: '',
-            date: new Date().toISOString().split('T')[0],
+            date: todayYmd(),
             project_name: '',
             end_user: ''
           });
