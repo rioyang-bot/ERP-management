@@ -7,7 +7,7 @@ import { RoleContext } from '../context/RoleContext';
 import { normalizeSlotLayout, moveCardToSlot, slotCount } from '../utils/cardSlots';
 
 /**
- * 耗材列表的卡片換位置：跟設備、硬體列表一樣，每列 6 格、可以拖到任何一格（包括空格）。
+ * 耗材列表的卡片換位置：跟設備、硬體列表一樣，可以拖到任何一格（包括空格）。一列幾格依寬度（見 CardColumns.test.jsx）。
  * 先前只能拖到別張卡片上互換順序，放不到空位。
  */
 describe('cardSlots', () => {

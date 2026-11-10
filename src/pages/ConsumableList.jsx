@@ -9,9 +9,10 @@ import ConsumableBatchImportModal from '../components/ConsumableBatchImportModal
 import ConsumableCustomTagsModal from '../components/ConsumableCustomTagsModal';
 import { useSearchTags } from '../hooks/useSearchTags';
 import { logUpdate, logDelete } from '../utils/auditLogger';
+import { useCardColumns } from '../utils/useCardColumns';
 import { usePageSize } from '../utils/usePageSize';
 import { useCardOrderByMode, useCardLayoutByMode } from '../hooks/useCardLayout';
-import { normalizeSlotLayout, moveCardToSlot, slotCount, SLOT_COLUMNS } from '../utils/cardSlots';
+import { normalizeSlotLayout, moveCardToSlot, slotCount } from '../utils/cardSlots';
 import CardAggregationSelect from '../components/common/CardAggregationSelect';
 import { CONSUMABLE_AGGREGATION_MODES, getConsumableGroupField, getConsumableDrillField, consumableDrillValue, buildConsumableDrillCards } from '../utils/cardAggregation';
 import DrilldownCards from '../components/common/DrilldownCards';
@@ -24,6 +25,8 @@ const modalOverlayStyle = { position: 'fixed', inset: 0, backgroundColor: 'var(-
 const modalContentStyle = { backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-main)', width: '60vw', maxWidth: '95vw', padding: '32px', borderRadius: '16px', boxShadow: 'var(--modal-shadow)' };
 
 const ConsumableList = ({ isSplitMode = false }) => {
+  // 卡片區一列幾張：依卡片區寬度決定，最多 6 張（見 utils/useCardColumns.js）
+  const [cardGridRef, cardColumns] = useCardColumns();
   const navigate = useNavigate();
   // 盤點調整要有「可盤點調整」權限（伺服器也會檢查，這裡只決定要不要顯示選項）
   const { authUser } = useContext(RoleContext) || {};
@@ -561,14 +564,14 @@ const ConsumableList = ({ isSplitMode = false }) => {
       );
     };
 
-    const gridStyle = { display: 'grid', gridTemplateColumns: `repeat(${SLOT_COLUMNS}, minmax(0, 1fr))`, gap: '12px', padding: '16px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '16px', border: '1px solid var(--border-color)' };
+    const gridStyle = { display: 'grid', gridTemplateColumns: `repeat(${cardColumns}, minmax(0, 1fr))`, gap: '12px', padding: '16px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '16px', border: '1px solid var(--border-color)' };
 
     // 搜尋中：只列符合的卡片，不能拖曳
     if (terms.length > 0) {
       return (
         <div style={{ marginBottom: '24px' }}>
           {displayKeys.length > 0 && (
-            <div style={gridStyle}>
+            <div ref={cardGridRef} data-card-columns={cardColumns} style={gridStyle}>
               {displayKeys.map((key) => statsMap[key] && <div key={key}>{renderCard(statsMap[key], false, false)}</div>)}
             </div>
           )}
@@ -577,11 +580,11 @@ const ConsumableList = ({ isSplitMode = false }) => {
       );
     }
 
-    // 每列 6 格，拖曳時每一格都可以放（空格顯示虛線框），並多一列空位可以往下放
-    const slots = Array.from({ length: slotCount(slotLayout, !!draggingCardKey) });
+    // 每列 cardColumns 格（依寬度 2～6），拖曳時每一格都可以放（空格顯示虛線框），並多一列空位可以往下放
+    const slots = Array.from({ length: slotCount(slotLayout, !!draggingCardKey, cardColumns) });
     return (
       <div style={{ marginBottom: '24px' }}>
-        <div style={gridStyle} data-testid="consumable-card-grid">
+        <div ref={cardGridRef} data-card-columns={cardColumns} style={gridStyle} data-testid="consumable-card-grid">
           {slots.map((_, idx) => {
             const st = statsMap[slotLayout[idx]];
             return (
