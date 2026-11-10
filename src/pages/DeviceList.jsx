@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Search, Columns3, Edit2, X, Save, MoreHorizontal, MoreVertical, MapPin, User, Trash2, CheckCircle, ShoppingBag, Wrench, ShieldAlert, Cpu, Archive, RotateCcw, Server, Send, History, Building2, RefreshCw, Plus, ClipboardCheck } from 'lucide-react';
+import { Search, Columns3, Edit2, X, Save, MoreHorizontal, MoreVertical, MapPin, User, Trash2, CheckCircle, ShoppingBag, Wrench, ShieldAlert, Cpu, Archive, RotateCcw, Server, Send, History, Building2, RefreshCw, Plus, ClipboardCheck, Package } from 'lucide-react';
 import ItemLedgerModal from '../components/ItemLedgerModal';
 import DeviceRegistrationModal from '../components/DeviceRegistrationModal';
 import RmaReplacementModal from '../components/RmaReplacementModal';
@@ -25,7 +25,7 @@ import CardAggregationSelect from '../components/common/CardAggregationSelect';
 import { useCardLayoutByMode } from '../hooks/useCardLayout';
 import DeviceChecklistModal from '../components/DeviceChecklistModal';
 import MountedConsumablesSection from '../components/MountedConsumablesSection';
-import { groupMountedHwByType, UNREGISTERED } from '../utils/mountedHwGroups';
+import { groupMountedHwByType, groupMountedConsumablesByType, UNREGISTERED } from '../utils/mountedHwGroups';
 import { sameAssetNo, checkDuplicateAssetNo } from '../utils/assetNo';
 
 // 設備列表的欄位清單：id 對應表格的每一欄，always 代表不可隱藏
@@ -34,7 +34,7 @@ const DEVICE_COLUMNS = [
   { id: 'sn', label: '序號 (SN)' },
   { id: 'project', label: '專案編號/名稱 (Project)' },
   { id: 'hostname', label: '主機名稱' },
-  { id: 'components', label: '搭載硬體' },
+  { id: 'components', label: '搭載硬體/耗材' },
   { id: 'client', label: '客戶 / End-user' },
   { id: 'location', label: '位置' },
   { id: 'remarks', label: '備註' },
@@ -148,6 +148,7 @@ const DeviceList = ({ isSplitMode = false }) => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [confirmModal, setConfirmModal] = useState({ show: false, msg: '', onConfirm: null });
   const [expandedItems, setExpandedItems] = useState({}); // 控制摺疊狀態
+  const [expandedConsumables, setExpandedConsumables] = useState({}); // 掛載耗材的摺疊狀態
 // 控制 LAB 耗材摺疊
   const [ledgerItem, setLedgerItem] = useState(null); // 品項履歷 Modal
   const [rmaAsset, setRmaAsset] = useState(null); // 原廠換新 RMA Modal
@@ -1105,7 +1106,7 @@ const DeviceList = ({ isSplitMode = false }) => {
                           <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('sn') }}>序號 (SN)</th>
                           <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('project') }}>專案編號/名稱 (Project)</th>
                           <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('hostname') }}>主機名稱</th>
-                          <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('components') }}>搭載硬體</th>
+                          <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('components') }}>搭載硬體/耗材</th>
                           <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('client') }}>客戶 / End-user</th>
                           <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('location') }}>位置</th>
                           <th style={{ ...thStyle, textAlign: 'left' , ...hideCol('remarks') }}>備註</th>
@@ -1218,14 +1219,51 @@ const DeviceList = ({ isSplitMode = false }) => {
                                     <span style={{ color: 'var(--text-subtle)', fontSize: '11px' }}>-</span>
                                   )
                                 )}
-                                {/* 掛載的耗材（在 LAB、記在這台設備上），出貨時一併帶入 */}
+                                {/* 掛載的耗材（在 LAB、記在這台設備上），出貨時一併帶入。
+                                    跟搭載硬體一樣：先只顯示件數，點了才展開，一個類型一行 */}
                                 {item.lab_consumables && item.lab_consumables.length > 0 && (
-                                  <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '2px' }} data-testid={`device-mounted-consumables-${item.id}`}>
-                                    {item.lab_consumables.map((mc, idx) => (
-                                      <div key={idx} style={{ fontSize: '10px', color: '#7c3aed', fontWeight: 700 }} title="掛載在這台設備上的耗材（LAB），出貨時一併帶入">
-                                        耗材 {mc.brand} {mc.model} × {mc.quantity}
+                                  <div style={{ marginTop: item.components && item.components.length > 0 ? '4px' : 0 }}>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setExpandedConsumables(prev => ({ ...prev, [item.id]: !prev[item.id] }));
+                                      }}
+                                      title="掛載在這台設備上的耗材（LAB），出貨時一併帶入"
+                                      style={{
+                                        fontSize: '10px',
+                                        color: '#7c3aed',
+                                        backgroundColor: 'rgba(124, 58, 237, 0.12)',
+                                        border: '1px solid rgba(124, 58, 237, 0.3)',
+                                        borderRadius: '4px',
+                                        padding: '2px 6px',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        fontWeight: 'bold',
+                                        outline: 'none'
+                                      }}
+                                    >
+                                      <Package size={10} /> 搭載耗材 ({item.lab_consumables.reduce((sum, mc) => sum + (Number(mc.quantity) || 0), 0)})
+                                    </button>
+                                    {expandedConsumables[item.id] && (
+                                      <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '3px', paddingLeft: '4px', borderLeft: '2px solid #7c3aed' }} data-testid={`device-mounted-consumables-${item.id}`}>
+                                        {groupMountedConsumablesByType(item.lab_consumables).map(({ type, total, items }) => (
+                                          <div key={type} style={{ display: 'flex', alignItems: 'baseline', gap: '6px', fontSize: '10px' }} data-testid={`device-mounted-consumables-${item.id}-${type}`}>
+                                            <b style={{ flexShrink: 0, color: 'var(--text-main)', whiteSpace: 'nowrap' }}>
+                                              {type} ×{total}
+                                            </b>
+                                            {/* 同類型有好幾種時一種一行、對齊在第一個底下 */}
+                                            <span style={{ display: 'flex', flexDirection: 'column', gap: '1px', color: 'var(--text-main)', fontWeight: 'normal' }}>
+                                              {items.map((mc, idx) => (
+                                                // 一種耗材一行不折行：名稱被切成好幾行很難看，欄位寬一點沒關係
+                                                <span key={idx} style={{ whiteSpace: 'nowrap' }}>{[mc.brand, mc.model].filter(Boolean).join(' ')} ×{mc.quantity}</span>
+                                              ))}
+                                            </span>
+                                          </div>
+                                        ))}
                                       </div>
-                                    ))}
+                                    )}
                                   </div>
                                 )}
                               </td>

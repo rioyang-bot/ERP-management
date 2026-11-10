@@ -159,7 +159,7 @@ export const queries = {
                AND TRIM(LOWER(ex.sn)) = TRIM(LOWER(elem))
            )
        ) comp) as components,
-      (SELECT json_agg(json_build_object('specification', im.specification, 'brand', im.brand, 'model', im.model, 'quantity', la.sum_qty))
+      (SELECT json_agg(json_build_object('type', im.type, 'specification', im.specification, 'brand', im.brand, 'model', im.model, 'quantity', la.sum_qty))
        FROM (SELECT item_master_id, asset_id, SUM(quantity) as sum_qty FROM item_lab_assignments GROUP BY item_master_id, asset_id) la 
        JOIN item_master im ON la.item_master_id = im.id 
        WHERE la.asset_id = a.id AND la.sum_qty > 0) as lab_consumables
@@ -201,7 +201,7 @@ export const queries = {
                AND TRIM(LOWER(ex.sn)) = TRIM(LOWER(elem))
            )
        ) comp) as components,
-      (SELECT json_agg(json_build_object('specification', im.specification, 'brand', im.brand, 'model', im.model, 'quantity', la.sum_qty))
+      (SELECT json_agg(json_build_object('type', im.type, 'specification', im.specification, 'brand', im.brand, 'model', im.model, 'quantity', la.sum_qty))
        FROM (SELECT item_master_id, asset_id, SUM(quantity) as sum_qty FROM item_lab_assignments GROUP BY item_master_id, asset_id) la 
        JOIN item_master im ON la.item_master_id = im.id 
        WHERE la.asset_id = a.id AND la.sum_qty > 0) as lab_consumables
