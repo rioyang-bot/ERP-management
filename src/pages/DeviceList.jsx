@@ -5,6 +5,7 @@ import ItemLedgerModal from '../components/ItemLedgerModal';
 import DeviceRegistrationModal from '../components/DeviceRegistrationModal';
 import RmaReplacementModal from '../components/RmaReplacementModal';
 import { logUpdate, logDelete, logStatusChange, logSnChange, logMountChange, logMountedHwStatusSync } from '../utils/auditLogger';
+import { useCardColumns } from '../utils/useCardColumns';
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 import FilterResultSummary from '../components/common/FilterResultSummary';
@@ -44,6 +45,8 @@ const DEVICE_COLUMNS = [
 ];
 
 const DeviceList = ({ isSplitMode = false }) => {
+  // 卡片區一列幾張：依卡片區寬度決定，最多 6 張（見 utils/useCardColumns.js）
+  const [cardGridRef, cardColumns] = useCardColumns();
   const [items, setItems] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
@@ -831,12 +834,12 @@ const DeviceList = ({ isSplitMode = false }) => {
 
     // 3. 根據清理後的佈局計算實際需要的行數
     const maxOccupiedIdx = Object.keys(currentLayoutMap).reduce((max, current) => Math.max(max, parseInt(current)), -1);
-    const rows = Math.max(1, Math.ceil((maxOccupiedIdx + 1) / 6) + (draggingCardKey ? 1 : 0));
-    const SLOTS_COUNT = rows * 6;
+    const rows = Math.max(1, Math.ceil((maxOccupiedIdx + 1) / cardColumns) + (draggingCardKey ? 1 : 0));
+    const SLOTS_COUNT = rows * cardColumns;
     const slots = Array.from({ length: SLOTS_COUNT });
 
     return (
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '12px', marginBottom: '24px', padding: '16px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '16px', border: '1px solid var(--border-color)' }}>
+      <div ref={cardGridRef} data-card-columns={cardColumns} style={{ display: 'grid', gridTemplateColumns: `repeat(${cardColumns}, minmax(0, 1fr))`, gap: '12px', marginBottom: '24px', padding: '16px', backgroundColor: 'var(--bg-surface-subtle)', borderRadius: '16px', border: '1px solid var(--border-color)' }}>
         {slots.map((_, idx) => {
           const cardKey = currentLayoutMap[idx];
           const st = activeStatsMap[cardKey];
