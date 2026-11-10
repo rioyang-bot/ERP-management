@@ -397,6 +397,8 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
         borderRadius: '20px',
         width: '95vw',
         maxWidth: '680px',
+        // 最高不超過畫面（扣掉外框內距），內容多時中間捲動，不會被切掉
+        maxHeight: 'calc(100vh - 40px)',
         boxShadow: 'var(--modal-shadow)',
         overflow: 'hidden',
         color: 'var(--text-main)',
@@ -409,7 +411,8 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
           justifyContent: 'space-between',
           alignItems: 'center',
           padding: '20px 24px',
-          borderBottom: '1px solid var(--border-color)'
+          borderBottom: '1px solid var(--border-color)',
+          flexShrink: 0
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{
@@ -447,8 +450,9 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
           </button>
         </div>
 
-        {/* Modal 內容 */}
-        <form onSubmit={handleSubmit} style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {/* Modal 內容：中間可捲動，底部按鈕固定在下面 */}
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+          <div data-testid="repair-action-body" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', overflowY: 'auto', flex: 1, minHeight: 0 }}>
           {error && (
             <div style={{
               padding: '10px 14px',
@@ -822,14 +826,16 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
             </div>
           )}
 
-          {/* 底部按鈕 */}
-          <div style={{
+          </div>
+
+          {/* 底部按鈕：固定在視窗下方，不跟著內容捲走 */}
+          <div data-testid="repair-action-footer" style={{
             display: 'flex',
             justifyContent: 'flex-end',
             gap: '12px',
-            marginTop: '8px',
-            paddingTop: '16px',
-            borderTop: '1px solid var(--border-color)'
+            padding: '16px 24px',
+            borderTop: '1px solid var(--border-color)',
+            flexShrink: 0
           }}>
             <button
               type="button"
