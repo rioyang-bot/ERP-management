@@ -32,3 +32,24 @@ export function groupMountedHwByType(sns = [], findHw = () => null) {
     .sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b, 'zh-Hant'))
     .map(([type, items]) => ({ type, items }));
 }
+
+/**
+ * 設備列表的「搭載硬體/耗材」：掛載耗材也跟搭載硬體一樣依類型分組，一個類型一行。
+ * 同類型的數量加總寫在類型後面，底下一種耗材一行（廠牌 型號 ×數量）。
+ * 排序與搭載硬體相同：依類型名稱，沒有類型的放「未分類」。
+ *
+ * @param {{ type?: string, brand?: string, model?: string, quantity?: number }[]} consumables
+ * @returns {{ type: string, total: number, items: object[] }[]}
+ */
+export function groupMountedConsumablesByType(consumables = []) {
+  const groups = new Map();
+  for (const mc of consumables || []) {
+    const type = String(mc?.type || '').trim() || UNTYPED;
+    if (!groups.has(type)) groups.set(type, []);
+    groups.get(type).push(mc);
+  }
+  const rank = (t) => (t === UNTYPED ? 1 : 0);
+  return [...groups.entries()]
+    .sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b, 'zh-Hant'))
+    .map(([type, items]) => ({ type, total: items.reduce((sum, mc) => sum + (Number(mc.quantity) || 0), 0), items }));
+}
