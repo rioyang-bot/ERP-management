@@ -5,6 +5,7 @@ import ItemLedgerModal from '../components/ItemLedgerModal';
 import HwRegistrationModal from '../components/HwRegistrationModal';
 import RmaReplacementModal from '../components/RmaReplacementModal';
 import { logUpdate, logDelete, logStatusChange, logSnChange, logMountChange } from '../utils/auditLogger';
+import { actionMenuPosition, isScrollInsideMenu } from '../utils/actionMenuPosition';
 import { useCardColumns } from '../utils/useCardColumns';
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
@@ -91,7 +92,9 @@ const HwList = ({ isSplitMode = false }) => {
         setMenuPosition(null);
       }
     };
-    const handleScroll = () => {
+    const handleScroll = (e) => {
+      // 選單太長、在選單裡捲動時不要關掉
+      if (isScrollInsideMenu(e)) return;
       if (activeMenuId) {
         setActiveMenuId(null);
         setMenuPosition(null);
@@ -1118,14 +1121,9 @@ const HwList = ({ isSplitMode = false }) => {
                         setMenuPosition(null);
                       } else {
                         const rect = e.currentTarget.getBoundingClientRect();
-                        const menuHeight = 360;
-                        const isUpward = rect.bottom + menuHeight > window.innerHeight && rect.top > menuHeight;
+                        // 依按鈕上下實際剩的空間決定往上或往下開，放不下就在選單裡捲動（見 utils/actionMenuPosition.js）
                         setActiveMenuId(nic.id);
-                        setMenuPosition({
-                          top: isUpward ? rect.top - 4 : rect.bottom + 4,
-                          right: window.innerWidth - rect.right,
-                          isUpward
-                        });
+                        setMenuPosition(actionMenuPosition(rect, { preferredHeight: 400 }));
                       }
                     }} 
                     style={{ border: 'none', background: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
@@ -1150,7 +1148,7 @@ const HwList = ({ isSplitMode = false }) => {
                         display: 'flex', 
                         flexDirection: 'column', 
                         gap: '4px',
-                        maxHeight: '80vh',
+                        maxHeight: `${menuPosition.maxHeight}px`,
                         overflowY: 'auto'
                       }}
                     >

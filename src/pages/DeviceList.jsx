@@ -5,6 +5,7 @@ import ItemLedgerModal from '../components/ItemLedgerModal';
 import DeviceRegistrationModal from '../components/DeviceRegistrationModal';
 import RmaReplacementModal from '../components/RmaReplacementModal';
 import { logUpdate, logDelete, logStatusChange, logSnChange, logMountChange, logMountedHwStatusSync } from '../utils/auditLogger';
+import { actionMenuPosition, isScrollInsideMenu } from '../utils/actionMenuPosition';
 import { useCardColumns } from '../utils/useCardColumns';
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
@@ -121,7 +122,9 @@ const DeviceList = ({ isSplitMode = false }) => {
         setMenuPosition(null);
       }
     };
-    const handleScroll = () => {
+    const handleScroll = (e) => {
+      // 選單太長、在選單裡捲動時不要關掉
+      if (isScrollInsideMenu(e)) return;
       if (activeMenuId) {
         setActiveMenuId(null);
         setMenuPosition(null);
@@ -1390,14 +1393,9 @@ const DeviceList = ({ isSplitMode = false }) => {
                                       setMenuPosition(null);
                                     } else {
                                       const rect = e.currentTarget.getBoundingClientRect();
-                                      const menuHeight = 360;
-                                      const isUpward = rect.bottom + menuHeight > window.innerHeight && rect.top > menuHeight;
+                                      // 依按鈕上下實際剩的空間決定往上或往下開，放不下就在選單裡捲動（見 utils/actionMenuPosition.js）
                                       setActiveMenuId(item.id);
-                                      setMenuPosition({
-                                        top: isUpward ? rect.top - 4 : rect.bottom + 4,
-                                        right: window.innerWidth - rect.right,
-                                        isUpward
-                                      });
+                                      setMenuPosition(actionMenuPosition(rect, { preferredHeight: 520 }));
                                     }
                                   }} 
                                   style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
@@ -1422,7 +1420,7 @@ const DeviceList = ({ isSplitMode = false }) => {
                                       display: 'flex', 
                                       flexDirection: 'column', 
                                       gap: '4px',
-                                      maxHeight: '80vh',
+                                      maxHeight: `${menuPosition.maxHeight}px`,
                                       overflowY: 'auto'
                                     }}
                                   >
