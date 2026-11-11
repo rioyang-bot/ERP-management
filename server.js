@@ -13,6 +13,7 @@ import { createAuth } from './server/auth.js';
 import { createAuthRoutes } from './server/authRoutes.js';
 import { createPreferenceRoutes } from './server/preferenceRoutes.js';
 import { createIsoSignatureRoutes } from './server/isoSignatureRoutes.js';
+import { createIsoPeriodicCheckRoutes } from './server/isoPeriodicCheckRoutes.js';
 import { createStockAdjustRoutes } from './server/stockAdjustRoutes.js';
 import { createUploadRoutes } from './server/uploadRoutes.js';
 import { purgeTrash, TRASH_DIR_NAME } from './server/uploadCleanup.js';
@@ -332,6 +333,9 @@ app.use('/api/preferences', createPreferenceRoutes(pool, auth));
 
 // ISO 表單線上簽核（設備攜出入單）：簽的人取自連線階段，不能代簽
 app.use('/api/iso-signatures', createIsoSignatureRoutes(pool, auth, namedQueries));
+
+// ISO 定期檢查紀錄（S-409-01 備份檢查、S-409-02 日誌審查）：檢查人員取自連線階段，不能代填，見 server/isoPeriodicCheckRoutes.js
+app.use('/api/iso-checks', createIsoPeriodicCheckRoutes(pool, auth));
 
 // 耗材盤點調整（只調整 Stock）：要有「可盤點調整」權限，伺服器自己檢查，見 server/stockAdjustRoutes.js
 app.use('/api/stock-adjustments', createStockAdjustRoutes(pool, auth));

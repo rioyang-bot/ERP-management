@@ -513,3 +513,56 @@
 }
 .overview-iso-role-missing { background: rgba(239, 68, 68, 0.12); color: #dc2626; }
 .overview-iso-role-stale { background: rgba(245, 158, 11, 0.18); color: #b45309; }
+
+/* ISO 定期檢查（S-409-01 備份檢查、S-409-02 日誌審查）：平常是細的狀態列，超過兩週未做變成醒目的紅色提醒 */
+.overview-iso-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.overview-iso-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.07);
+  color: #10b981;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+.overview-iso-check:hover { border-color: #10b981; }
+.overview-iso-check-title { font-weight: 800; }
+.overview-iso-check-date { color: var(--text-main); font-weight: 600; }
+.overview-iso-check-arrow { margin-left: auto; }
+.overview-iso-check-overdue {
+  padding: 14px 18px;
+  border: 2px solid #dc2626;
+  background: rgba(220, 38, 38, 0.1);
+  color: #dc2626;
+  font-size: 0.95rem;
+  box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.12);
+}
+.overview-iso-check-overdue:hover { border-color: #b91c1c; }
+.overview-iso-check-alert {
+  font-size: 0.8rem;
+  font-weight: 800;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #dc2626;
+  color: #fff;
+  animation: overview-iso-check-pulse 1.6s ease-in-out infinite;
+}
+@keyframes overview-iso-check-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .overview-iso-check-alert { animation: none; }
+}

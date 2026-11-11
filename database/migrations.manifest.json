@@ -268,6 +268,11 @@
       "file": "migration_checklist_default_photo.sql",
       "type": "schema",
       "note": "出機檢查表拍照項目可設定預設照片；設備還沒上傳時使用預設照片"
+    },
+    {
+      "file": "migration_iso_periodic_checks.sql",
+      "type": "schema",
+      "note": "ISO 27001 定期檢查紀錄（S-409-01 備份檢查紀錄表、S-409-02 日誌審查紀錄表）：每次檢查一筆，檢查人員取自登入帳號"
     }
   ]
 }

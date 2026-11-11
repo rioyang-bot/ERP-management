@@ -21,9 +21,14 @@ import {
   Layers,
   FileText,
   Wrench,
-  ShieldCheck
+  ShieldCheck,
+  ScrollText,
+  DatabaseBackup
 } from 'lucide-react';
 import './Overview.css';
+import { ISO_CHECK_FORMS, ISO_CHECK_FORM_CODES, reviewStatus, formatRocDate, daysAgoText, REVIEW_INTERVAL_DAYS } from '../utils/isoPeriodicCheck';
+
+const ISO_CHECK_ICONS = { 'S-409-01': DatabaseBackup, 'S-409-02': ScrollText };
 
 const Overview = () => {
   const navigate = useNavigate();
@@ -54,6 +59,8 @@ const Overview = () => {
   const [lowStockConsumables, setLowStockConsumables] = useState([]);
   // 設備攜出入單 (S-408-02) 待簽提醒：上個月（含）以前、有設備進出、還沒簽完的月份（伺服器判定）
   const [isoPending, setIsoPending] = useState([]);
+  // ISO 定期檢查（S-409-01 備份檢查、S-409-02 日誌審查）每張表最後一次：{ [form]: { lastDate, reviewerName } }；讀不到是 null（不顯示）
+  const [isoChecks, setIsoChecks] = useState(null);
 
   // 篩選與搜尋
   const [docTab, setDocTab] = useState('ALL'); // 'ALL' | 'PO' | 'INBOUND' | 'OUTBOUND' | 'LENT' | 'REPAIR'
@@ -75,7 +82,8 @@ const Overview = () => {
         lentsRes,
         consumablesRes,
         repairsRes,
-        isoPendingRes
+        isoPendingRes,
+        isoChecksRes
       ] = await Promise.all([
         window.electronAPI.namedQuery('fetchOverviewStats'),
         window.electronAPI.namedQuery('fetchOverviewPendingPurchases'),
@@ -85,7 +93,8 @@ const Overview = () => {
         window.electronAPI.namedQuery('fetchOverviewLowStockConsumables'),
         window.electronAPI.namedQuery('fetchOverviewActiveRepairs'),
         // 讀不到提醒不影響總覽其他區塊
-        Promise.resolve(window.electronAPI.isoSignature?.('GET', 'S-408-02', 'pending')).catch(() => null)
+        Promise.resolve(window.electronAPI.isoSignature?.('GET', 'S-408-02', 'pending')).catch(() => null),
+        Promise.resolve(window.electronAPI.isoCheck?.('GET', 'latest')).catch(() => null)
       ]);
 
       if (statsRes.success && statsRes.rows.length > 0) {
@@ -98,6 +107,7 @@ const Overview = () => {
       if (consumablesRes.success) setLowStockConsumables(consumablesRes.rows || []);
       if (repairsRes?.success) setActiveRepairs(repairsRes.rows || []);
       setIsoPending(isoPendingRes?.success && Array.isArray(isoPendingRes.months) ? isoPendingRes.months : []);
+      setIsoChecks(isoChecksRes?.success && isoChecksRes.forms ? isoChecksRes.forms : null);
 
       setLastUpdated(new Date());
     } catch (err) {
@@ -333,6 +343,41 @@ const Overview = () => {
               </button>
             ))}
           </div>
+        </section>
+      )}
+
+      {/* ISO 定期檢查（備份檢查、日誌審查）：一律顯示最後日期；超過兩週（或從沒做過）就變成醒目的紅色提醒 */}
+      {isoChecks && (
+        <section className="overview-iso-checks" aria-label="ISO 定期檢查">
+          {ISO_CHECK_FORM_CODES.map((code) => {
+            const def = ISO_CHECK_FORMS[code];
+            const info = isoChecks[code] || {};
+            const st = reviewStatus(info.lastDate || null);
+            const Icon = st.overdue ? AlertTriangle : ISO_CHECK_ICONS[code];
+            return (
+              <button
+                key={code}
+                type="button"
+                className={`overview-iso-check${st.overdue ? ' overview-iso-check-overdue' : ''}`}
+                data-testid={`overview-iso-check-${code}`}
+                data-overdue={st.overdue ? 'true' : 'false'}
+                onClick={() => navigate(def.path)}
+                title={`前往${def.docName}`}
+              >
+                <Icon size={st.overdue ? 20 : 18} />
+                <span className="overview-iso-check-title">{def.docName} (ISO 27001 {code})</span>
+                <span className="overview-iso-check-date">
+                  {st.lastDate
+                    ? `最後${def.verb}：${formatRocDate(st.lastDate)}（${daysAgoText(st.days)}）${info.reviewerName ? `・${info.reviewerName}` : ''}`
+                    : `還沒有任何${def.verb}紀錄`}
+                </span>
+                {st.overdue && (
+                  <span className="overview-iso-check-alert">{st.lastDate ? `已超過 ${REVIEW_INTERVAL_DAYS} 天未${def.verb}，請盡快${def.verb}` : `請進行第一次${def.verb}`}</span>
+                )}
+                <ArrowRight size={14} className="overview-iso-check-arrow" />
+              </button>
+            );
+          })}
         </section>
       )}
 
