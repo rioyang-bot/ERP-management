@@ -25,6 +25,9 @@
 #   - db/        資料庫備份，保留規則與伺服器相同（每日 30 天、每月 13 個月）
 #   - uploads/   與伺服器同步，每天只傳新增或變動的檔案；回收區 _deleted 不傳
 #   - uploads-removed/日期/  伺服器上已經刪掉的檔案移到這裡，保留 90 天
+#   - config/    設定檔：.env（資料庫密碼等）與 SSL 憑證。這兩樣不在 GitHub 上，
+#                伺服器整台壞掉時主程式可以從 GitHub 重新部署，但它們只能從這裡找回
+#   - config-history/日期/  設定檔有改過時，舊版移到這裡，保留 13 個月
 #   還沒設定 erp-backup: 時只做本機備份，不算失敗。
 #   雲端上傳失敗不影響本機備份，但這次執行會回報失敗，紀錄寫在 backup.log。
 # =============================================================================
@@ -41,6 +44,9 @@ KEEP_DAILY_DAYS=30
 KEEP_MONTHLY_DAYS=400
 CLOUD_REMOTE="erp-backup:"
 KEEP_CLOUD_REMOVED_DAYS=90
+KEEP_CLOUD_CONFIG_DAYS=400
+ENV_FILE="$BASE_DIR/.env"
+SSL_DIR="$BASE_DIR/ssl"
 LOCK_FILE="${ERP_LOCK_FILE:-/var/lock/erp-backup.lock}"
 # 用於辨識這條排程，重複安裝時靠它找出舊的並移除
 MARKER="erp-daily-backup"
@@ -55,7 +61,64 @@ cloud_configured() {
     command -v rclone > /dev/null 2>&1 && rclone listremotes 2>/dev/null | grep -qx "$CLOUD_REMOTE"
 }
 
-# 把資料庫備份與 uploads 傳到 Google Drive；任何一步失敗都繼續做完其他步，最後回報
+# 讀 .env 裡某個設定的值（只讀文字，不執行 .env 的內容）
+env_value() {
+    [ -r "$ENV_FILE" ] || return 0
+    grep -E "^[[:space:]]*(export[[:space:]]+)?$1[[:space:]]*=" "$ENV_FILE" | tail -1 \
+        | sed -E 's/^[^=]*=[[:space:]]*//; s/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'"'"'(.*)'"'"'$/\1/' || true
+}
+
+# 把要備份的設定檔複製到暫存資料夾 $1：
+#   env/.env       伺服器的 .env
+#   ssl/           $BASE_DIR/ssl 整個資料夾（伺服器預設讀這裡的憑證）
+#   ssl-custom/    .env 用 SSL_KEY_PATH 等指定、不在 ssl 資料夾裡的憑證
+# 回傳 1 表示有檔案讀不到（其他的照樣準備）
+stage_config_files() {
+    local dest="$1" failed=0
+    if [ -f "$ENV_FILE" ]; then
+        mkdir -p "$dest/env"
+        cp -p "$ENV_FILE" "$dest/env/.env" || failed=1
+    fi
+    if [ -d "$SSL_DIR" ]; then
+        mkdir -p "$dest/ssl"
+        cp -pR "$SSL_DIR/." "$dest/ssl/" || failed=1
+    fi
+    local key p real
+    for key in SSL_KEY_PATH SSL_CERT_PATH SSL_CA_PATH; do
+        p="$(env_value "$key")"
+        [ -n "$p" ] || continue
+        # 相對路徑以程式目錄為準（伺服器在 $BASE_DIR 底下啟動）
+        case "$p" in /*) ;; *) p="$BASE_DIR/$p" ;; esac
+        if [ ! -f "$p" ]; then
+            log "雲端備份：找不到 .env 指定的 $key（$p）" >&2
+            failed=1
+            continue
+        fi
+        real="$(readlink -f "$p")"
+        # 已經在 ssl 資料夾裡的不用重複放
+        case "$real" in "$(readlink -f "$SSL_DIR" 2>/dev/null || echo "$SSL_DIR")"/*) continue ;; esac
+        mkdir -p "$dest/ssl-custom"
+        cp -pL "$p" "$dest/ssl-custom/$(basename "$p")" || failed=1
+    done
+    return $failed
+}
+
+# 雲端上以日期命名（YYYYMMDD-HHMMSS）的資料夾，超過 $2 天的整個刪除
+# （不能用 --min-age：移過去的檔案保留原本的修改時間，舊檔一移過去就會被刪）
+purge_dated_dirs() {
+    local remote_dir="$1" days="$2" cutoff dir failed=0
+    cutoff="$(date -d "-${days} days" +%Y%m%d-%H%M%S)"
+    while IFS= read -r dir; do
+        dir="${dir%/}"
+        if [[ "$dir" =~ ^[0-9]{8}-[0-9]{6}$ ]] && [[ "$dir" < "$cutoff" ]]; then
+            rclone purge "${CLOUD_REMOTE}$remote_dir/$dir" 2>&1 | tail -3 || failed=1
+            log "雲端備份：已刪除超過 ${days} 天的 $remote_dir/$dir"
+        fi
+    done < <(rclone lsf --dirs-only "${CLOUD_REMOTE}$remote_dir" 2>/dev/null || true)
+    return $failed
+}
+
+# 把資料庫備份、uploads 與設定檔傳到 Google Drive；任何一步失敗都繼續做完其他步，最後回報
 cloud_upload() {
     if ! command -v rclone > /dev/null 2>&1; then
         log "雲端備份：伺服器沒有安裝 rclone，略過（設定方式見 BACKUP_GOOGLE_DRIVE.md）"
@@ -90,19 +153,29 @@ cloud_upload() {
             log "雲端備份：uploads 同步失敗" >&2
             failed=1
         fi
-        # uploads-removed 底下的資料夾以日期命名，超過保留天數的整個刪除
-        # （不能用 --min-age：移過去的檔案保留原本的修改時間，舊照片一移過去就會被刪）
-        local cutoff
-        cutoff="$(date -d "-${KEEP_CLOUD_REMOVED_DAYS} days" +%Y%m%d-%H%M%S)"
-        local dir
-        while IFS= read -r dir; do
-            dir="${dir%/}"
-            if [[ "$dir" =~ ^[0-9]{8}-[0-9]{6}$ ]] && [[ "$dir" < "$cutoff" ]]; then
-                rclone purge "${CLOUD_REMOTE}uploads-removed/$dir" 2>&1 | tail -3 || failed=1
-                log "雲端備份：已刪除超過 ${KEEP_CLOUD_REMOVED_DAYS} 天的 uploads-removed/$dir"
-            fi
-        done < <(rclone lsf --dirs-only "${CLOUD_REMOTE}uploads-removed" 2>/dev/null || true)
+        purge_dated_dirs uploads-removed "$KEEP_CLOUD_REMOVED_DAYS" || failed=1
     fi
+
+    # 設定檔（.env、SSL 憑證）：先複製到只有自己讀得到的暫存資料夾，再同步到 config/；
+    # 改過的舊版移到 config-history/日期/
+    local staging
+    staging="$(mktemp -d)"
+    chmod 700 "$staging"
+    stage_config_files "$staging" || failed=1
+    if [ -n "$(ls -A "$staging")" ]; then
+        log "雲端備份：同步設定檔（.env、SSL 憑證）"
+        if ! rclone sync "$staging" "${CLOUD_REMOTE}config" \
+                --backup-dir "${CLOUD_REMOTE}config-history/$stamp" "${opts[@]}" 2>&1 | tail -3; then
+            log "雲端備份：設定檔同步失敗" >&2
+            failed=1
+        fi
+        purge_dated_dirs config-history "$KEEP_CLOUD_CONFIG_DAYS" || failed=1
+    else
+        # 一個都沒有時不同步，免得把雲端上的設定檔當成已刪除
+        log "雲端備份：找不到 .env 與 SSL 憑證，設定檔略過" >&2
+        failed=1
+    fi
+    rm -rf "$staging"
 
     if [ "$failed" -ne 0 ]; then
         log "雲端備份：有步驟失敗，請查看上方訊息" >&2
@@ -161,10 +234,13 @@ if [ "${1:-}" = "--cloud-status" ]; then
     echo "資料庫備份（新到舊，最多 10 份）："
     rclone lsl "${CLOUD_REMOTE}db" 2>/dev/null | sort -k2,3r | head -10 || echo "（尚無）"
     echo
-    for d in db uploads uploads-removed; do
+    for d in db uploads uploads-removed config config-history; do
         echo "$d：$(rclone size "${CLOUD_REMOTE}$d" 2>/dev/null | tr '
 ' ' ' || echo '（尚無）')"
     done
+    echo
+    echo "設定檔（只列檔名）："
+    rclone lsl "${CLOUD_REMOTE}config" 2>/dev/null || echo "（尚無）"
     echo
     echo "最近的雲端備份紀錄："
     grep "雲端備份" "$LOG_FILE" 2>/dev/null | tail -10 || echo "（尚無執行紀錄）"
