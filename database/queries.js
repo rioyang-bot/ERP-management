@@ -1517,6 +1517,11 @@ export const queries = {
       p.name as partner_name,
       u.full_name as creator_name,
       (SELECT COUNT(*) FROM inbound_items ii WHERE ii.inbound_order_id = io.id) as item_count,
+           -- 明細的類型／廠牌／型號／規格／序號，列表上用品項搜尋找單號（utils/itemSearch.js）
+           (SELECT COALESCE(json_agg(json_build_object('type', im.type, 'brand', im.brand, 'model', im.model,
+                     'spec', im.specification, 'sn', x.sn, 'qty', x.quantity) ORDER BY x.id), '[]'::json)
+            FROM inbound_items x LEFT JOIN item_master im ON im.id = x.item_id
+            WHERE x.inbound_order_id = io.id) AS item_lines,
       (SELECT pr.project_name FROM inbound_items ii
        JOIN purchase_records pr ON ii.purchase_record_id = pr.id
        WHERE ii.inbound_order_id = io.id AND pr.project_name IS NOT NULL LIMIT 1) as project_name
@@ -1928,6 +1933,11 @@ export const queries = {
   fetchDNList: `
     SELECT r.*, u.full_name as creator_name, 
            (SELECT COUNT(*) FROM outbound_items WHERE request_id = r.id) as item_count,
+           -- 明細的類型／廠牌／型號／規格／序號，列表上用品項搜尋找單號（utils/itemSearch.js）
+           (SELECT COALESCE(json_agg(json_build_object('type', im.type, 'brand', im.brand, 'model', im.model,
+                     'spec', im.specification, 'sn', x.sn, 'qty', x.quantity) ORDER BY x.id), '[]'::json)
+            FROM outbound_items x LEFT JOIN item_master im ON im.id = x.item_id
+            WHERE x.request_id = r.id) AS item_lines,
            COALESCE(r.project_name, 
              (SELECT a.custom_attributes->>'project_name' 
               FROM outbound_items oi 

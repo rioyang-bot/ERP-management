@@ -16,6 +16,8 @@ import OutboundRegistrationModal from '../components/OutboundRegistrationModal';
 import { usePageSize } from '../utils/usePageSize';
 import { isMountedRow, findMountedMismatches, shipMountedSteps, shipRevertMountedSteps } from '../utils/mountedConsumables';
 import PageSizeSelector from '../components/common/PageSizeSelector';
+import MatchedItemsHint from '../components/common/MatchedItemsHint';
+import { matchingItems } from '../utils/itemSearch';
 import DetailModalHeader from '../components/detail/DetailModalHeader';
 
 const DNList = ({ isSplitMode = false }) => {
@@ -37,7 +39,8 @@ const DNList = ({ isSplitMode = false }) => {
   const searchOptions = [
     { value: 'all', label: '全部欄位' },
     { value: 'request_no', label: 'D/N 單號' },
-    { value: 'customer', label: '客戶名稱' }
+    { value: 'customer', label: '客戶名稱' },
+    { value: 'items', label: '品項（類型/廠牌/型號/序號）' }
   ];
 
   const [dnRecords, setDnRecords] = useState([]);
@@ -494,7 +497,10 @@ const DNList = ({ isSplitMode = false }) => {
     if (searchField === 'all') {
       matchSearch = (dn.request_no || '').toLowerCase().includes(search) ||
              (dn.customer || '').toLowerCase().includes(search) ||
-             (dn.signed_doc_name || '').toLowerCase().includes(search);
+             (dn.signed_doc_name || '').toLowerCase().includes(search) ||
+             (!!search && matchingItems(dn.item_lines, search).length > 0);
+    } else if (searchField === 'items') {
+      matchSearch = !search || matchingItems(dn.item_lines, search).length > 0;
     } else if (searchField === 'request_no') {
       matchSearch = (dn.request_no || '').toLowerCase().includes(search);
     } else if (searchField === 'customer') {
@@ -748,6 +754,10 @@ const DNList = ({ isSplitMode = false }) => {
                   </td>
                   <td style={{ padding: '12px' }}>
                     <span style={{ fontWeight: 700, color: 'var(--primary-color)' }}>{dn.item_count}</span> 項
+                    {/* 用品項搜尋時，標出這張單上是哪些品項符合 */}
+                    {(searchField === 'all' || searchField === 'items') && (
+                      <MatchedItemsHint items={matchingItems(dn.item_lines, searchTerm)} testId={`dn-matched-items-${dn.id}`} />
+                    )}
                   </td>
                   <td style={{ padding: '12px', color: 'var(--text-muted)', fontSize: '0.9rem' }}>{dn.creator_name || '系統'}</td>
                   <td style={{ padding: '12px' }}>

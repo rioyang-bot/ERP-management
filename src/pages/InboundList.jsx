@@ -13,6 +13,8 @@ import {
   isDraftOrder, buildInboundConfirmSteps, findSnConflicts, collectAssetSns,
 } from '../utils/inboundEdit';
 import PageSizeSelector from '../components/common/PageSizeSelector';
+import MatchedItemsHint from '../components/common/MatchedItemsHint';
+import { matchingItems } from '../utils/itemSearch';
 import DetailModalHeader from '../components/detail/DetailModalHeader';
 import ItemFieldFixModal from '../components/ItemFieldFixModal';
 import { distinctFieldValues } from '../utils/itemFieldFix';
@@ -31,7 +33,8 @@ const InboundList = ({ isSplitMode = false }) => {
     { value: 'all', label: '全部欄位' },
     { value: 'order_no', label: '進貨單號' },
     { value: 'partner', label: '供應商' },
-    { value: 'invoice_no', label: '發票號碼' }
+    { value: 'invoice_no', label: '發票號碼' },
+    { value: 'items', label: '品項（類型/廠牌/型號/序號）' }
   ];
 
   const [inboundRecords, setInboundRecords] = useState([]);
@@ -689,7 +692,10 @@ const InboundList = ({ isSplitMode = false }) => {
     if (!search) {
       matchSearch = true;
     } else if (searchField === 'all') {
-      matchSearch = orderNo.includes(search) || partner.includes(search) || invoice.includes(search);
+      matchSearch = orderNo.includes(search) || partner.includes(search) || invoice.includes(search) ||
+        matchingItems(order.item_lines, search).length > 0;
+    } else if (searchField === 'items') {
+      matchSearch = matchingItems(order.item_lines, search).length > 0;
     } else if (searchField === 'order_no') {
       matchSearch = orderNo.includes(search);
     } else if (searchField === 'partner') {
@@ -910,6 +916,10 @@ const InboundList = ({ isSplitMode = false }) => {
                       <span style={{ display: 'inline-block', minWidth: '28px', textAlign: 'center', padding: '2px 8px', borderRadius: '10px', backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-main)', fontWeight: 700, fontSize: '0.85rem' }}>
                         {Number(order.item_count) || 0}
                       </span>
+                      {/* 用品項搜尋時，標出這張單上是哪些品項符合 */}
+                      {(searchField === 'all' || searchField === 'items') && (
+                        <MatchedItemsHint items={matchingItems(order.item_lines, searchTerm)} testId={`inbound-matched-items-${order.id}`} />
+                      )}
                     </td>
                     {/* 舊單據沒有記錄建立者，回填不了，顯示為 － */}
                     <td style={{ padding: '12px', color: order.creator_name ? 'var(--text-muted)' : 'var(--text-subtle)', fontSize: '0.9rem', whiteSpace: 'nowrap' }}>
