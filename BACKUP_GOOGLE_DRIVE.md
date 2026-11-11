@@ -1,7 +1,7 @@
 # 備份到 Google Drive
 
 每天凌晨的自動備份（`npm run backup:schedule` 安裝的排程）在伺服器上備份完資料庫後，
-會接著把**資料庫備份**與**照片、簽收單、附件（uploads）**加密後傳到公司 Google Workspace 的共用雲端硬碟。
+會接著把**資料庫備份**、**照片、簽收單、附件（uploads）**與**設定檔（.env、SSL 憑證）**加密後傳到公司 Google Workspace 的共用雲端硬碟。
 
 - 用 [rclone](https://rclone.org/) 上傳，經過 rclone 的加密（crypt）：Google Drive 上看到的檔名與內容都是亂碼，
   就算 Google 帳號外洩，別人拿到的也是打不開的檔案。
@@ -15,8 +15,13 @@
 | `db/` | 資料庫備份（每日排程、部署前、手動備份都會傳） | 每日備份 30 天；每月 1 號的備份 13 個月（與伺服器相同） |
 | `uploads/` | 與伺服器的 uploads 同步；每天只傳新增或變動的檔案 | 跟伺服器一致 |
 | `uploads-removed/日期/` | 伺服器上已經刪掉的檔案（例如用清理工具清掉的） | 90 天 |
+| `config/` | 設定檔：`env/.env`（資料庫密碼等）、`ssl/`（`/opt/erp-management/ssl` 整個資料夾）、`ssl-custom/`（`.env` 用 `SSL_KEY_PATH` 等指定在別處的憑證） | 最新版 |
+| `config-history/日期/` | 設定檔改過時的舊版 | 13 個月 |
 
 伺服器的回收區 `uploads/_deleted` 不會上傳。
+
+主程式不另外備份：原始碼在 GitHub 上，可以重新部署。`.env` 與 SSL 憑證刻意不放 GitHub，所以放在這裡。
+`rclone.conf` 不上傳：它是解開雲端備份的鑰匙，要另外存在密碼管理器。
 
 ## 一次性設定
 
@@ -180,8 +185,21 @@ rclone copy erp-backup:uploads /opt/erp-management/uploads
 
 已經從伺服器刪掉的檔案在 `erp-backup:uploads-removed/日期/`，可以先用 `rclone ls erp-backup:uploads-removed` 找。
 
+**設定檔**（.env、SSL 憑證；先下載到暫存資料夾，確認後再放回去）：
+
+```bash
+rclone copy erp-backup:config /tmp/erp-config
+ls -laR /tmp/erp-config
+cp -p /tmp/erp-config/env/.env /opt/erp-management/.env
+cp -pR /tmp/erp-config/ssl/. /opt/erp-management/ssl/
+rm -rf /tmp/erp-config
+```
+
+`ssl-custom/` 裡的檔案放回 `.env` 的 `SSL_KEY_PATH` 等指定的位置。要找改之前的版本，用 `rclone ls erp-backup:config-history`。
+
 **伺服器整台壞掉、換新機器時**：在新機器裝好 rclone，把密碼管理器裡存的 `rclone.conf` 放回 `/root/.config/rclone/rclone.conf`。
 如果只存了兩組密碼，就照第 5、6 步重新設定；第 6 步的密碼改選 `y`（自己輸入），輸入原本那兩組。
+接著依上面的順序還原設定檔、從 GitHub 部署主程式、還原資料庫與照片。
 
 ## 重新授權
 
