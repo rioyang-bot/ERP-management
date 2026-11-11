@@ -1363,6 +1363,11 @@ const HwList = ({ isSplitMode = false }) => {
                 <label style={editLabelStyle}>客戶名稱
                   <select value={editItem.client || ''} onChange={(e) => setEditItem({ ...editItem, client: e.target.value })} style={editInputStyle}>
                     <option value="">-- 未設定 --</option>
+                    {/* 以前直接打字輸入的客戶名稱（例如 METECH）不在客戶清單裡：
+                        沒有這個選項的話下拉會顯示成空白，選「不指定」也不算變更，就清不掉 */}
+                    {editItem.client && !customers.includes(editItem.client) && (
+                      <option value={editItem.client}>{editItem.client}（不在客戶清單）</option>
+                    )}
                     {customers.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </label>

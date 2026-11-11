@@ -1936,7 +1936,12 @@ const DeviceList = ({ isSplitMode = false }) => {
                     }} 
                     style={editInputStyle}
                   >
-                    <option value="">請選擇</option>
+                    <option value="">請選擇（不指定客戶）</option>
+                    {/* 以前直接打字輸入的客戶名稱（例如 METECH）不在客戶清單裡：
+                        沒有這個選項的話下拉會顯示成空白，選「不指定」也不算變更，就清不掉 */}
+                    {editItem.client && !customers.some(c => c.name === editItem.client) && (
+                      <option value={editItem.client}>{editItem.client}（不在客戶清單）</option>
+                    )}
                     {Array.from(new Set(customers.map(c => c.name))).map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
