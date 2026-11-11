@@ -5,6 +5,7 @@ import { logCreate } from '../utils/auditLogger';
 import CardPickerModal from './CardPickerModal';
 import ConsumableBatchImportModal from './ConsumableBatchImportModal';
 import { normalizeMasterName } from '../utils/normalizeMasterData';
+import { optionsMatching } from '../utils/cascadeOptions';
 import { validateName as validateAndSanitize } from '../utils/nameValidation';
 
 const ConsumableRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
@@ -27,6 +28,9 @@ const ConsumableRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   // 因此先暫存在這裡讓使用者選得到；按下儲存建立卡片後就會自然出現在清單中。
   // 取消建檔則什麼都不會留下。
   const [showCardPicker, setShowCardPicker] = useState(false);
+  // 既有卡片：選了廠牌，類型只列出這個廠牌底下有的；再選類型，型號只列出這個組合有的
+  //（見 utils/cascadeOptions.js）。fetchTypes / fetchModels 是 useCallback，用 ref 讀
+  const cardsRef = useRef([]);
 
   // 從既有卡片一次帶入類型／廠牌／型號。
   // 耗材的「型號/規格」在畫面上是同一欄（model），另有一個規格欄位 spec。
@@ -67,7 +71,8 @@ const ConsumableRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
     if (!brandName) { setTypes([]); return { typeNames: [], nextType: '' }; }
     const res = await window.electronAPI.namedQuery('fetchConsumableTypes', []);
     if (res.success) {
-      const typeNames = withPending(res.rows.map(r => r.name), 'types');
+      const typeNames = optionsMatching(withPending(res.rows.map(r => r.name), 'types'), cardsRef.current, 'type',
+        { brand: brandName }, pendingRef.current.types);
       setTypes(typeNames);
       const nextType = typeNames.includes(currentType) ? currentType : (typeNames[0] || '');
       setFormData(prev => ({ ...prev, type: nextType }));
@@ -80,7 +85,8 @@ const ConsumableRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
     if (!brandName || !typeName) { setModels([]); return { modelNames: [] }; }
     const res = await window.electronAPI.namedQuery('fetchConsumableModelsByBrand', [brandName]);
     if (res.success) {
-      const modelNames = withPending(res.rows.map(r => r.name), 'models');
+      const modelNames = optionsMatching(withPending(res.rows.map(r => r.name), 'models'), cardsRef.current, 'model',
+        { brand: brandName, type: typeName }, pendingRef.current.models);
       setModels(modelNames);
       setFormData(prev => ({ ...prev, model: modelNames.includes(prev.model) ? prev.model : (modelNames[0] || '') }));
       return { modelNames };
@@ -89,6 +95,9 @@ const ConsumableRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   }, []);
 
   const fetchBrands = useCallback(async () => {
+    // 先載入既有卡片，預設帶出的類型／型號才會依廠牌縮小
+    const cardsRes = await window.electronAPI.namedQuery('fetchExistingCards', ['耗材']);
+    cardsRef.current = cardsRes?.success ? (cardsRes.rows || []) : [];
     const res = await window.electronAPI.namedQuery('fetchConsumableBrands');
     if (res.success) {
       setBrands(brandRowsWithPending(res.rows));
@@ -114,6 +123,8 @@ const ConsumableRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
     if (!name || !formData.brand) return;
     setPending(prev => ({ ...prev, types: [...new Set([...prev.types, name])] }));
     setTypes(prev => (prev.includes(name) ? prev : [...prev, name]));
+    // 新類型還沒有卡片，型號改回這個廠牌的完整清單
+    await fetchModels(formData.brand, name);
     {
       setFormData(prev => ({ ...prev, type: name }));
       setNewTypeName('');
@@ -132,6 +143,10 @@ const ConsumableRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
       setNewBrandName('');
       setShowAddBrand(false);
     }
+    // 新廠牌還沒有卡片：類型改回完整清單，型號只剩這次新增的
+    const { nextType } = await fetchTypes(name, formData.type);
+    if (nextType) await fetchModels(name, nextType);
+    else setModels([]);
   };
 
   const handleAddModel = async () => {
@@ -152,7 +167,7 @@ const ConsumableRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
     if (name === 'brand') {
-      const { nextType } = await fetchTypes(value);
+      const { nextType } = await fetchTypes(value, formData.type);
       if (nextType) await fetchModels(value, nextType);
       else setModels([]);
     } else if (name === 'type') {

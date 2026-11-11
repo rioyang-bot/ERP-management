@@ -8,6 +8,7 @@ import { warrantyInsertTail } from '../utils/importWarranty';
 import CardPickerModal from './CardPickerModal';
 import DeviceBatchImportModal from './DeviceBatchImportModal';
 import { normalizeMasterName } from '../utils/normalizeMasterData';
+import { optionsMatching } from '../utils/cascadeOptions';
 import { validateName as validateAndSanitize } from '../utils/nameValidation';
 
 const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
@@ -42,6 +43,9 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   // 既有卡片。規格的建議清單要依目前選的類型／廠牌／型號縮小範圍，
   // 因此整份留著，不先壓成規格清單。
   const [existingCards, setExistingCards] = useState([]);
+  // fetchModels 是 useCallback（不隨卡片重建），用 ref 讀到最新的卡片
+  const cardsRef = useRef(existingCards);
+  cardsRef.current = existingCards;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -68,7 +72,7 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
     // 否則 select 會因為沒有對應的 option 而顯示空白。
     setTypes(prev => (prev.includes(card.type) ? prev : [...prev, card.type]));
     setBrands(prev => (prev.some(b => b.name === card.brand) ? prev : [...prev, { id: 'card-' + card.brand, name: card.brand }]));
-    await fetchModels(card.brand);
+    await fetchModels(card.brand, card.type);
     setModels(prev => (prev.includes(card.model) ? prev : [...prev, card.model]));
     setFormData(prev => ({
       ...prev,
@@ -83,17 +87,25 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
   const pendingRef = useRef(pending);
   pendingRef.current = pending;
 
+  // 選了類型：廠牌只列出這個類型底下已有卡片的（見 utils/cascadeOptions.js）
+  const visibleBrands = useMemo(() => {
+    const names = optionsMatching(brands.map(b => b.name), existingCards, 'brand', { type: formData.type }, pending.brands);
+    return brands.filter(b => names.includes(b.name));
+  }, [brands, existingCards, formData.type, pending.brands]);
+
   /** 把暫存值併進查詢結果，重複的不重覆列出 */
   const withPending = (names, kind) => {
     const extra = pendingRef.current[kind].filter((x) => !names.includes(x));
     return [...names, ...extra];
   };
 
-  const fetchModels = useCallback(async (brandName) => {
+  // 型號：這個廠牌底下的；有選類型時再縮小到這個類型＋廠牌已有卡片的
+  const fetchModels = useCallback(async (brandName, typeName = '') => {
     if (!brandName) { setModels([]); return { modelNames: [] }; }
     const res = await window.electronAPI.namedQuery('fetchModelsByBrand', [brandName]);
     if (res.success) {
-      const modelNames = withPending(res.rows.map(r => r.name), 'models');
+      const modelNames = optionsMatching(withPending(res.rows.map(r => r.name), 'models'), cardsRef.current, 'model',
+        { brand: brandName, type: typeName }, pendingRef.current.models);
       setModels(modelNames);
       setFormData(prev => ({ ...prev, model: modelNames.includes(prev.model) ? prev.model : (modelNames[0] || '') }));
       return { modelNames };
@@ -115,6 +127,10 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
     return { typeNames: [] };
   }, []);
 
+  // 開啟時還沒選廠牌就預設帶第一個。用 ref 讀目前的廠牌，不放進相依：
+  // 否則換類型把廠牌清掉時，fetchBrands 重建、effect 重跑，又會自動帶回第一個廠牌
+  const brandRef = useRef(formData.brand);
+  brandRef.current = formData.brand;
   const fetchBrands = useCallback(async () => {
     const res = await window.electronAPI.namedQuery('fetchDeviceBrands');
     if (res.success) {
@@ -125,13 +141,13 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
           .map((n) => ({ id: 'pending-' + n, name: n })),
       ];
       setBrands(brandRows);
-      if (!formData.brand && res.rows.length > 0) {
+      if (!brandRef.current && res.rows.length > 0) {
         const initialBrand = res.rows[0].name;
         setFormData(prev => ({ ...prev, brand: initialBrand }));
         await fetchModels(initialBrand);
       }
     }
-  }, [formData.brand, fetchModels]);
+  }, [fetchModels]);
 
   const fetchCustomers = useCallback(async () => {
     const res = await window.electronAPI.namedQuery('fetchCustomers');
@@ -166,6 +182,8 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
     setPending(prev => ({ ...prev, types: [...new Set([...prev.types, name])] }));
     setTypes(prev => (prev.includes(name) ? prev : [...prev, name]));
     setFormData(prev => ({ ...prev, type: name }));
+    // 新類型還沒有卡片，型號改回這個廠牌的完整清單
+    if (formData.brand) fetchModels(formData.brand, name);
     setNewTypeName(''); setShowAddType(false);
   };
 
@@ -196,7 +214,16 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
     if (name === 'brand') {
-      await fetchModels(value);
+      await fetchModels(value, formData.type);
+    } else if (name === 'type') {
+      // 換了類型：原本選的廠牌不在這個類型底下就清掉，免得選錯
+      const allowed = optionsMatching(brands.map(b => b.name), existingCards, 'brand', { type: value }, pending.brands);
+      if (formData.brand && !allowed.includes(formData.brand)) {
+        setFormData(prev => ({ ...prev, brand: '', model: '' }));
+        setModels([]);
+      } else if (formData.brand) {
+        await fetchModels(formData.brand, value);
+      }
     } else if (name === 'client') {
       const matches = customers.filter(c => c.name === value);
       if (matches.length === 1) {
@@ -421,7 +448,7 @@ const DeviceRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <select id="dev-reg-brand" name="brand" value={formData.brand} onChange={handleChange} style={inputStyle} required>
                     <option value="">選擇廠牌</option>
-                    {brands.map(b => <option key={b.name} value={b.name}>{b.name}</option>)}
+                    {visibleBrands.map(b => <option key={b.name} value={b.name}>{b.name}</option>)}
                   </select>
                   <button type="button" onClick={() => setShowAddBrand(!showAddBrand)} style={iconButtonStyle} title="新增廠牌"><Plus size={16} /></button>
                 </div>
