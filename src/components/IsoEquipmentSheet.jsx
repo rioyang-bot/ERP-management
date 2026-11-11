@@ -1,5 +1,5 @@
 import React from 'react';
-import logoUrl from '../assets/iso-dreamjet-logo.png';
+import IsoSheetHeader, { KAI, FONT, INK } from './IsoSheetHeader';
 import { FORM_META, SIGN_ROLES, rocYear, rocDateOf } from '../utils/isoEquipmentForm';
 
 /** A4 橫式，96 dpi 的像素大小；下載 PDF 時以這個大小拍照 */
@@ -16,21 +16,6 @@ const COLS = [
   { key: 'vendor', label: '供應商/客戶', w: 2410, align: 'left' },
 ];
 const TOTAL_W = COLS.reduce((s, c) => s + c.w, 0);
-
-/**
- * LOGO：範本裡是同一張圖裁切後顯示（a:srcRect，左 10.459%、上 25.587%、右 29.155%、下 37.245%），
- * 這裡照同樣比例裁，高度 52px
- */
-const LOGO = { natW: 1256, natH: 837, l: 0.10459, t: 0.25587, r: 0.29155, b: 0.37245, height: 52 };
-const logoBox = (() => {
-  const fullH = LOGO.height / (1 - LOGO.t - LOGO.b);
-  const fullW = fullH * (LOGO.natW / LOGO.natH);
-  return { boxW: fullW * (1 - LOGO.l - LOGO.r), fullW, fullH, left: -fullW * LOGO.l, top: -fullH * LOGO.t };
-})();
-
-const KAI ='"DFKai-SB", "標楷體", "BiauKai", "Kaiti TC", "KaiTi", serif';
-const FONT = `"Times New Roman", ${KAI}`;
-const INK = '#000000';
 
 const Box = ({ checked, label }) => (
   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', whiteSpace: 'nowrap' }}>
@@ -82,19 +67,7 @@ const IsoEquipmentSheet = React.forwardRef(({ year, month, rows, page, pageCount
     }}
   >
     {/* 頁首 */}
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `3px solid ${INK}`, paddingBottom: '6px', fontSize: '15px', lineHeight: 1.5 }}>
-      <div style={{ fontFamily: FONT, flex: 1 }}>
-        <div>文件編號：{FORM_META.docNo}</div>
-        <div>文件名稱：{FORM_META.docName}</div>
-      </div>
-      <div style={{ position: 'relative', width: `${logoBox.boxW}px`, height: `${LOGO.height}px`, overflow: 'hidden', flex: 'none' }}>
-        <img src={logoUrl} alt="LOGO" style={{ position: 'absolute', left: `${logoBox.left}px`, top: `${logoBox.top}px`, width: `${logoBox.fullW}px`, height: `${logoBox.fullH}px`, maxWidth: 'none' }} />
-      </div>
-      <div style={{ flex: 1, textAlign: 'right' }}>
-        <div>發布日期：{FORM_META.publishDate}</div>
-        <div>版次：{FORM_META.version}</div>
-      </div>
-    </div>
+    <IsoSheetHeader meta={FORM_META} />
 
     <div style={{ textAlign: 'center', fontFamily: KAI, fontSize: '24px', letterSpacing: '2px', margin: '8px 0 0' }}>{FORM_META.docName}</div>
     <div style={{ textAlign: 'right', fontFamily: FONT, fontSize: '19px', fontWeight: 700, color: '#ff0000', margin: '0 0 6px' }}>
@@ -107,7 +80,8 @@ const IsoEquipmentSheet = React.forwardRef(({ year, month, rows, page, pageCount
       <thead>
         <tr>
           {COLS.map((c) => (
-            <th key={c.key} style={{ height: '40px', border: `1px solid ${INK}`, backgroundColor: '#D9D9D9', fontFamily: KAI, fontWeight: 400, fontSize: '17px', letterSpacing: '2px' }}>{c.label}</th>
+            // 系統的深色模式會把 th 字色改淺（表頭在預覽與 PDF 上會看不清楚），表單上一律用黑色
+            <th key={c.key} style={{ height: '40px', border: `1px solid ${INK}`, backgroundColor: '#D9D9D9', color: INK, fontFamily: KAI, fontWeight: 400, fontSize: '17px', letterSpacing: '2px' }}>{c.label}</th>
           ))}
         </tr>
       </thead>

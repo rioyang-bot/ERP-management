@@ -131,6 +131,24 @@ if (!window.electronAPI) {
       }
     },
 
+    // ISO 定期檢查紀錄（S-409-01 備份檢查、S-409-02 日誌審查）：檢查人員由伺服器取自登入帳號，見 server/isoPeriodicCheckRoutes.js
+    //   isoCheck('GET', 'latest') 每張表最後一次、isoCheck('GET', form) 全部、
+    //   isoCheck('POST', form, null, body)、isoCheck('PUT', form, id, body)、isoCheck('DELETE', form, id)
+    isoCheck: async (method, form, id, body) => {
+      try {
+        const url = [`${API_BASE}/api/iso-checks`, form, id].filter((s) => s !== undefined && s !== null && s !== '').map((s, i) => (i ? encodeURIComponent(s) : s)).join('/');
+        const response = await authFetch(url, {
+          method,
+          headers: body ? { 'Content-Type': 'application/json' } : undefined,
+          body: body ? JSON.stringify(body) : undefined,
+        });
+        const data = await response.json();
+        return response.ok ? data : { ...data, success: false, status: response.status, error: data.error || `HTTP ${response.status}` };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+
     // 耗材盤點調整（只調整 Stock）：權限由伺服器檢查，見 server/stockAdjustRoutes.js
     //   數量已被別人異動時回 status 409 與 currentStock
     stockAdjust: async (body) => {
