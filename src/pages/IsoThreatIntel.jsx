@@ -1,8 +1,9 @@
 import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { Radar, ArrowLeft, Upload, Download, Trash2, PenLine, Undo2, AlertCircle, AlertTriangle, CheckCircle2, FileText, Clock } from 'lucide-react';
+import { Radar, ArrowLeft, Upload, Download, Trash2, PenLine, Undo2, AlertCircle, AlertTriangle, CheckCircle2, FileText, Clock, List, Eye } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { RoleContext } from '../context/RoleContext';
 import SignaturePadModal from '../components/SignaturePadModal';
+import IsoThreatIntelSheet from '../components/IsoThreatIntelSheet';
 import {
   FORM_CODE, FORM_META, REMIND_FROM_DAY, MAX_FILE_BYTES, LEVEL_STYLE,
   currentPeriod, previousPeriod, rocMonthLabel, monthStatus, fileToBase64, formatSize, formatRocDate, formatRocDateTime,
@@ -77,7 +78,11 @@ const IsoThreatIntel = () => {
   const [signing, setSigning] = useState(false);
   const [mySignature, setMySignature] = useState(null);
   const [managingMine, setManagingMine] = useState(false);
+  const [view, setView] = useState('list'); // list 逐列內容；sheet 檢視表單
+  const [sheet, setSheet] = useState({ layout: null, error: '' });
+  const [sheetScale, setSheetScale] = useState(1);
   const fileRef = useRef(null);
+  const sheetBoxRef = useRef(null);
 
   const validPeriod = PERIOD_RE.test(period);
 
@@ -94,6 +99,33 @@ const IsoThreatIntel = () => {
   }, [period, validPeriod]);
 
   useEffect(() => { load(); }, [load]);
+
+  // 檢視表單：開啟時讀一次版面；換了檔案（替換）再讀
+  const sheetId = checklist && view === 'sheet' ? checklist.id : null;
+  const sheetVersion = checklist?.uploadedAt;
+  useEffect(() => {
+    if (!sheetId) return undefined;
+    let cancelled = false;
+    setSheet({ layout: null, error: '' });
+    window.electronAPI.isoThreatIntel('GET', [sheetId, 'preview']).then((res) => {
+      if (cancelled) return;
+      setSheet(res?.success ? { layout: res.layout, error: '' } : { layout: null, error: res?.error || '讀取失敗' });
+    });
+    return () => { cancelled = true; };
+  }, [sheetId, sheetVersion]);
+
+  // 檢視表單縮放到放得進畫面寬度
+  useEffect(() => {
+    const el = sheetBoxRef.current;
+    const pageWidth = sheet.layout ? sheet.layout.page.width / 15 : 0;
+    if (!el || !pageWidth || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(([entry]) => {
+      const w = entry.contentRect.width;
+      if (w > 0) setSheetScale(Math.min(1, (w - 4) / pageWidth));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [sheet.layout, view]);
 
   useEffect(() => {
     window.electronAPI.isoSignature?.('GET', 'me', 'signature').then((res) => {
@@ -312,7 +344,33 @@ const IsoThreatIntel = () => {
               </button>
             </div>
 
-            <div aria-label="檢核項目" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {/* 逐列內容／檢視表單（照 Word 檔版面，簽了就帶簽名） */}
+            <div role="tablist" aria-label="顯示方式" style={{ display: 'inline-flex', gap: '4px', padding: '3px', marginBottom: '10px', borderRadius: '9px', backgroundColor: 'var(--bg-surface-subtle)', border: '1px solid var(--border-color)' }}>
+              {[{ key: 'list', label: '逐列內容', icon: <List size={13} /> }, { key: 'sheet', label: '檢視表單', icon: <Eye size={13} /> }].map(({ key, label, icon }) => (
+                <button key={key} type="button" role="tab" aria-selected={view === key} onClick={() => setView(key)}
+                  style={{ ...smallBtn, border: 'none', backgroundColor: view === key ? '#2b579a' : 'transparent', color: view === key ? '#fff' : 'var(--text-main)' }}>
+                  {icon} {label}
+                </button>
+              ))}
+            </div>
+
+            {view === 'sheet' && (
+              <div ref={sheetBoxRef} aria-label="檢核表檢視" data-testid="threat-intel-sheet" style={{ overflow: 'hidden' }}>
+                {sheet.error && <div role="alert" style={{ fontSize: '13px', color: '#ef4444' }}>檢視失敗：{sheet.error}</div>}
+                {!sheet.layout && !sheet.error && <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>讀取版面中...</div>}
+                {sheet.layout && (
+                  <div style={{ zoom: sheetScale }}>
+                    <IsoThreatIntelSheet layout={sheet.layout}
+                      signature={checklist.signedByName ? { png: checklist.signaturePng, signedAt: checklist.signedAt } : null} />
+                  </div>
+                )}
+                <div style={{ fontSize: '11px', color: 'var(--text-subtle)', marginTop: '8px' }}>
+                  照上傳的 Word 檔版面顯示；檢核項目很長時，換頁位置可能跟 Word 不同，正式文件請以下載的 Word 檔為準。
+                </div>
+              </div>
+            )}
+
+            <div aria-label="檢核項目" style={{ display: view === 'list' ? 'flex' : 'none', flexDirection: 'column', gap: '10px' }}>
               {rows.map((r) => (
                 <div key={r.no} data-testid={`threat-row-${r.no}`}
                   style={{ padding: '12px 14px', borderRadius: '10px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)' }}>

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import JSZip from 'jszip';
-import { parseChecklistDocx, signChecklistDocx, rocToYmd, rocDateText, ChecklistFormatError } from '../../server/threatIntelDocx.js';
-import { buildChecklistDocx, fixtureRow, fixtureDocumentXml, pngDataUrl, DEFAULT_ROWS } from './threatIntelFixture.js';
+import { parseChecklistDocx, signChecklistDocx, previewChecklistDocx, rocToYmd, rocDateText, ChecklistFormatError } from '../../server/threatIntelDocx.js';
+import { buildChecklistDocx, fixtureRow, fixtureDocumentXml, pngDataUrl, DEFAULT_ROWS, SIGNER_LINE } from './threatIntelFixture.js';
 
 /**
  * S-413-02 威脅情資自我檢核表的 Word 檔
@@ -89,6 +89,49 @@ describe('威脅情資自我檢核表 Word 檔', () => {
     expect(line).toContain('<w:drawing>');
     expect(line).toContain('日期：115年11月12日');
     expect(await zip.file('[Content_Types].xml').async('string')).toContain('<Default Extension="png" ContentType="image/png"/>');
+  });
+
+  it('檢視用的版面：頁首（編號、名稱、發布日期、版次、標題、LOGO 與裁切）、頁尾、內文依原順序、簽章那一行、分頁、紙張大小', async () => {
+    const layout = await previewChecklistDocx(await buildChecklistDocx({ withHeader: true }));
+    expect(layout.header).toMatchObject({ docNo: 'S-413-02', docName: '威脅情資自我檢核表', publishDate: '115/06/01', version: 'v1.0', title: '威脅情資自我檢核表' });
+    expect(layout.header.logo.dataUrl).toMatch(/^data:image\/png;base64,/);
+    expect(layout.header.logo.widthIn).toBeCloseTo(1.375, 3);
+    expect(layout.header.logo.crop).toEqual({ l: 0.1, t: 0.2, r: 0.3, b: 0.4 });
+    expect(layout.footer).toEqual(['機密等級：內部使用']); // 頁碼略過
+    expect(layout.page).toEqual({ width: 16838, height: 11906, margin: { top: 1134, right: 993, bottom: 1134, left: 1440 } });
+    expect(layout.hasSignerLine).toBe(true);
+
+    expect(layout.blocks.map((b) => (b.type === 'table' ? `table${b.rows.length}` : b.signer ? 'signer' : b.runs.map((r) => r.text).join('')))).toEqual(['table4', 'signer', '附件、威脅情資來源', 'table2']);
+    const [main, signer] = layout.blocks;
+    expect(main.widths).toEqual([1781, 2777, 6626, 1701, 1701]);
+    // 檢核項目每段一個段落；CVE 的不分行連字號還原；字級（半點）
+    expect(main.rows[1][2].paras.map((p) => p.runs.map((r) => r.text).join(''))).toEqual(['【Windows 11】', '微軟釋出115年10月份安全性更新', '已遭利用：CVE-2026-96951']);
+    expect(main.rows[1][0].paras[0]).toMatchObject({ align: 'center', runs: [{ text: '115/11/01', bold: false, color: null, size: 24 }] });
+    expect(signer).toMatchObject({ align: 'right', signer: true, runs: [{ text: SIGNER_LINE }] });
+  });
+
+  it('檢視用的版面：文字顏色、粗體、合併儲存格、底色、分頁', async () => {
+    const tc = (inner, tcPr = '') => `<w:tc><w:tcPr>${tcPr}</w:tcPr>${inner}</w:tc>`;
+    const p = (runs, pPr = '') => `<w:p><w:pPr>${pPr}</w:pPr>${runs}</w:p>`;
+    const r = (text, rPr = '') => `<w:r><w:rPr>${rPr}</w:rPr><w:t>${text}</w:t></w:r>`;
+    const doc = `<?xml version="1.0"?><w:document xmlns:w="w"><w:body>`
+      + `<w:tbl><w:tblGrid><w:gridCol w:w="100"/><w:gridCol w:w="200"/></w:tblGrid>`
+      + `<w:tr>${tc(p(r('檢核日期')), '<w:shd w:val="clear" w:fill="D9D9D9"/>')}${tc(p(r('檢核項目')), '<w:shd w:val="clear" w:fill="FFFFFF"/>')}</w:tr>`
+      + `<w:tr>${tc(p(r('115/11/01')), '<w:vMerge w:val="restart"/><w:vAlign w:val="center"/>')}${tc(p(r('危險等級', '<w:b/><w:color w:val="7A0019"/>') + r('：高', '<w:b w:val="0"/>')))}</w:tr>`
+      + `<w:tr>${tc('<w:p/>', '<w:vMerge/>')}${tc(p(r('全寬', ''), '<w:jc w:val="both"/>'), '<w:gridSpan w:val="2"/>')}</w:tr>`
+      + `</w:tbl>${p('<w:r><w:br w:type="page"/></w:r>')}${p(r('第二頁'))}${p('')}</w:body></w:document>`;
+    const layout = await previewChecklistDocx(await buildChecklistDocx({ documentXml: doc }));
+    expect(layout.header).toBeNull();
+    const [table, brk, second] = layout.blocks;
+    expect(layout.blocks).toHaveLength(3); // 空段落略過
+    expect(table.rows[0].map((c) => c.fill)).toEqual(['#d9d9d9', null]); // 白色不算底色
+    expect(table.rows[1][0]).toMatchObject({ vMerge: 'restart', vAlign: 'center' });
+    expect(table.rows[1][1].paras[0].runs).toEqual([{ text: '危險等級', bold: true, color: '#7a0019', size: null }, { text: '：高', bold: false, color: null, size: null }]);
+    expect(table.rows[2][0].vMerge).toBe('continue');
+    expect(table.rows[2][1]).toMatchObject({ span: 2, paras: [{ align: 'both' }] });
+    expect(brk).toMatchObject({ type: 'p', pageBreak: true, runs: [] });
+    expect(second.runs[0].text).toBe('第二頁');
+    expect(layout.hasSignerLine).toBe(false);
   });
 
   it('還沒簽核：內容照原檔（不加圖檔）', async () => {

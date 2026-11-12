@@ -40,11 +40,18 @@ const APPENDIX = '<w:p><w:r><w:t>附件、威脅情資來源</w:t></w:r></w:p><w
 
 /** document.xml：legacy＝舊格式（有檢核人欄、沒有簽章那一行） */
 export const fixtureDocumentXml = (rowsXml, { legacy = false } = {}) => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ${W}><w:body>`
-  + `<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="1781"/></w:tblGrid>${headerRow(legacy)}${rowsXml}</w:tbl>`
+  + `<w:tbl><w:tblPr/><w:tblGrid>${[1781, 2777, 6626, 1701, 1701, ...(legacy ? [1701] : [])].map((w) => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>${headerRow(legacy)}${rowsXml}</w:tbl>`
   + `${legacy ? '' : signerParagraph()}${APPENDIX}<w:sectPr/></w:body></w:document>`;
 
-/** 做一份 .docx（Buffer） */
-export const buildChecklistDocx = async ({ rows = DEFAULT_ROWS, rowsXml, documentXml, legacy = false, withPngType = true } = {}) => {
+/** 頁首：文件編號／文件名稱｜LOGO（裁切）／發布日期｜版次，下面是標題；頁尾：頁碼與機密等級 */
+const HEADER_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:hdr ${W} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><w:tbl><w:tblGrid><w:gridCol w:w="5996"/><w:gridCol w:w="244"/><w:gridCol w:w="8077"/></w:tblGrid>`
+  + `<w:tr>${cell(para('文件編號：S-413-02'))}${cell(para(''))}${cell('<w:p><w:r><w:drawing><wp:anchor><wp:extent cx="1257300" cy="514985"/><a:graphic><a:graphicData><pic:pic xmlns:pic="p"><pic:blipFill><a:blip r:embed="rId1"/><a:srcRect l="10000" t="20000" r="30000" b="40000"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r><w:r><w:t>發布日期：115/06/01</w:t></w:r></w:p>')}</w:tr>`
+  + `<w:tr>${cell(para('文件名稱：威脅情資自我檢核表'))}${cell(para(''))}${cell(para('版次：v1.0'))}</w:tr></w:tbl>`
+  + `${para('威脅情資自我檢核表')}</w:hdr>`;
+const FOOTER_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr ${W}>${para('1')}${para('機密等級：內部使用')}</w:ftr>`;
+
+/** 做一份 .docx（Buffer）；withHeader＝加上頁首（含 LOGO）與頁尾 */
+export const buildChecklistDocx = async ({ rows = DEFAULT_ROWS, rowsXml, documentXml, legacy = false, withPngType = true, withHeader = false } = {}) => {
   const zip = new JSZip();
   zip.file('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
     + `${withPngType ? '<Default Extension="png" ContentType="image/png"/>' : ''}<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>`
@@ -52,6 +59,12 @@ export const buildChecklistDocx = async ({ rows = DEFAULT_ROWS, rowsXml, documen
   zip.file('_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>');
   zip.file('word/_rels/document.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>');
   zip.file('word/document.xml', documentXml || fixtureDocumentXml(rowsXml ?? rows.map((r) => fixtureRow(r, { legacy })).join(''), { legacy }));
+  if (withHeader) {
+    zip.file('word/header1.xml', HEADER_XML);
+    zip.file('word/_rels/header1.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/></Relationships>');
+    zip.file('word/media/image1.png', Buffer.from(pngDataUrl(40, 20).split(',')[1], 'base64'));
+    zip.file('word/footer1.xml', FOOTER_XML);
+  }
   return zip.generateAsync({ type: 'nodebuffer' });
 };
 

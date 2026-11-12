@@ -290,6 +290,17 @@ describe('威脅情資自我檢核表 API', () => {
     expect((await call(pool, 'get', '/:id/download', makeReq(USERS.other, { id: 999 }))).statusCode).toBe(404);
   });
 
+  it('檢視：回原檔的版面（簽名由頁面帶入，版面不含簽名）；找不到 404', async () => {
+    const { pool, checklist } = await seeded();
+    await sign(pool, USERS.staff, checklist.id);
+    const res = await call(pool, 'get', '/:id/preview', makeReq(USERS.other, { id: checklist.id }));
+    expect(res.body.success).toBe(true);
+    expect(res.body.layout.hasSignerLine).toBe(true);
+    expect(res.body.layout.blocks.find((b) => b.signer).runs[0].text).toContain('＿');
+    expect(res.body.layout.blocks.filter((b) => b.type === 'table')).toHaveLength(2);
+    expect((await call(pool, 'get', '/:id/preview', makeReq(USERS.other, { id: 999 }))).statusCode).toBe(404);
+  });
+
   it('小工具：檔名去掉路徑與不合法字元、一律 .docx；上傳太大擋下；刪除與撤銷權限', () => {
     expect(safeFileName('C:\\Users\\x\\S-413-02<報告>.DOCX')).toBe('S-413-02報告.docx');
     expect(safeFileName('../../etc/passwd.docx')).toBe('passwd.docx');

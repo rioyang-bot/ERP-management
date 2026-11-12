@@ -264,3 +264,141 @@ export const signChecklistDocx = async (buffer, { signaturePng = null, signedDat
   }
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
 };
+
+// ----------------------------------------------------------------------------
+// 檢視：把原檔的版面讀成 JSON，讓網頁照著畫（不用另外裝 Word 檔預覽套件）
+// ----------------------------------------------------------------------------
+
+const attr = (xml, re) => (xml.match(re) || [])[1];
+const isOn = (rPr, tag) => {
+  const m = rPr.match(new RegExp(`<w:${tag}(?: w:val="([^"]*)")?/>`));
+  return !!m && !['0', 'false', 'off'].includes(m[1]);
+};
+
+/** 段落：對齊、各段文字的粗體、顏色、字級（半點）；有沒有分頁 */
+const paragraphOf = (p) => {
+  const pPr = (p.match(/<w:pPr>[\s\S]*?<\/w:pPr>/) || [''])[0];
+  const runs = [];
+  for (const r of p.match(/<w:r(?:\s[^>]*)?>[\s\S]*?<\/w:r>/g) || []) {
+    const text = paragraphText(r.replace(/<w:br w:type="page"\/>/g, ''));
+    if (!text) continue;
+    const rPr = (r.match(/<w:rPr>[\s\S]*?<\/w:rPr>/) || [''])[0];
+    const color = attr(rPr, /<w:color w:val="([0-9A-Fa-f]{6})"/);
+    const run = { text, bold: isOn(rPr, 'b'), color: color ? `#${color.toLowerCase()}` : null, size: Number(attr(rPr, /<w:sz w:val="(\d+)"/)) || null };
+    const last = runs.at(-1);
+    if (last && last.bold === run.bold && last.color === run.color && last.size === run.size) last.text += run.text;
+    else runs.push(run);
+  }
+  return {
+    align: attr(pPr, /<w:jc w:val="([a-z]+)"/) || 'left',
+    runs,
+    pageBreak: /<w:br w:type="page"\/>/.test(p) || /<w:pageBreakBefore\/>/.test(pPr),
+  };
+};
+
+/** 表格：欄寬（twips）、各列各格的段落、合併（gridSpan、vMerge）與底色 */
+const tableOf = (xml, tbl) => {
+  const widths = [...xml.slice(tbl.start, tbl.end).matchAll(/<w:gridCol w:w="(\d+)"/g)].map((m) => Number(m[1]));
+  const rows = topLevel(xml, 'w:tr', tbl.start + 1, tbl.end - 1).map((tr) => topLevel(xml, 'w:tc', tr.start + 1, tr.end - 1).map((tc) => {
+    const c = xml.slice(tc.start, tc.end);
+    const tcPr = (c.match(/<w:tcPr>[\s\S]*?<\/w:tcPr>/) || [''])[0];
+    const fill = attr(tcPr, /<w:shd [^>]*w:fill="([0-9A-Fa-f]{6})"/);
+    return {
+      span: Number(attr(tcPr, /<w:gridSpan w:val="(\d+)"/)) || 1,
+      vMerge: /<w:vMerge w:val="restart"\/>/.test(tcPr) ? 'restart' : /<w:vMerge\/>/.test(tcPr) ? 'continue' : null,
+      fill: fill && fill.toUpperCase() !== 'FFFFFF' ? `#${fill.toLowerCase()}` : null,
+      vAlign: attr(tcPr, /<w:vAlign w:val="([a-z]+)"/) || 'top',
+      paras: topLevel(xml, 'w:p', tc.start + 1, tc.end - 1).map((p) => paragraphOf(xml.slice(p.start, p.end))),
+    };
+  }));
+  return { widths, rows };
+};
+
+const MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif' };
+
+/** 頁首：文件編號、文件名稱、發布日期、版次、標題、LOGO（data: 網址與大小） */
+const readHeader = async (zip) => {
+  const files = Object.keys(zip.files).filter((f) => /^word\/header\d*\.xml$/.test(f));
+  for (const f of files) {
+    const xml = await zip.file(f).async('string');
+    const cells = [];
+    for (const tbl of topLevel(xml, 'w:tbl')) {
+      for (const tr of topLevel(xml, 'w:tr', tbl.start + 1, tbl.end - 1)) {
+        for (const tc of topLevel(xml, 'w:tc', tr.start + 1, tr.end - 1)) cells.push(cellText(xml, tc));
+      }
+    }
+    const field = (label) => {
+      const hit = cells.find((t) => t.includes(label));
+      return hit ? hit.slice(hit.indexOf(label) + label.length).trim() : '';
+    };
+    const docNo = field('文件編號：');
+    if (!docNo && !field('文件名稱：')) continue;
+    const title = topLevel(xml, 'w:p').map((p) => paragraphText(xml.slice(p.start, p.end)).trim()).filter(Boolean).join('');
+    let logo = null;
+    const relId = attr(xml, /<a:blip r:embed="([^"]+)"/);
+    const extent = xml.match(/<wp:extent cx="(\d+)" cy="(\d+)"\/>/);
+    if (relId) {
+      const rels = await zip.file(f.replace('word/', 'word/_rels/') + '.rels')?.async('string');
+      const target = rels && attr(rels, new RegExp(`Id="${relId}"[^>]*Target="([^"]+)"`));
+      const media = target && zip.file(`word/${target.replace(/^\.?\//, '')}`);
+      const ext = target ? target.split('.').pop().toLowerCase() : '';
+      if (media && MIME[ext]) {
+        // srcRect：Word 裡圖片的裁切（各邊裁掉的比例，單位 1/1000 %）
+        const crop = xml.match(/<a:srcRect([^>]*)\/>/)?.[1] || '';
+        const side = (k) => (Number(attr(crop, new RegExp(` ${k}="(-?\\d+)"`))) || 0) / 100000;
+        logo = {
+          dataUrl: `data:${MIME[ext]};base64,${await media.async('base64')}`,
+          widthIn: extent ? Number(extent[1]) / EMU_PER_INCH : 1.3,
+          heightIn: extent ? Number(extent[2]) / EMU_PER_INCH : 0.55,
+          crop: { l: side('l'), t: side('t'), r: side('r'), b: side('b') },
+        };
+      }
+    }
+    return { docNo, docName: field('文件名稱：'), publishDate: field('發布日期：'), version: field('版次：'), title, logo };
+  }
+  return null;
+};
+
+/** 頁尾的文字（例如「機密等級：內部使用」，頁碼欄位略過） */
+const readFooter = async (zip) => {
+  const texts = [];
+  for (const f of Object.keys(zip.files).filter((x) => /^word\/footer\d*\.xml$/.test(x))) {
+    const xml = await zip.file(f).async('string');
+    for (const p of topLevel(xml, 'w:p')) {
+      const t = paragraphText(xml.slice(p.start, p.end)).trim();
+      if (t && !/^\d+$/.test(t) && !texts.includes(t)) texts.push(t);
+    }
+  }
+  return texts;
+};
+
+/**
+ * 檢視用的版面：頁首、頁尾、內文（段落與表格依原順序；檢核人簽章那一段標 signer）
+ * 頁面大小與邊界取自原檔（twips），沒有就用 A4 橫式
+ */
+export const previewChecklistDocx = async (buffer) => {
+  const { zip, xml } = await loadZip(buffer);
+  const signer = findSignerLine(xml);
+  const bodyStart = Math.max(0, xml.indexOf('<w:body>'));
+  const blocks = [
+    ...topLevel(xml, 'w:p', bodyStart).map((p) => ({ at: p.start, type: 'p', ...paragraphOf(xml.slice(p.start, p.end)), signer: !!signer && p.start === signer.start })),
+    ...topLevel(xml, 'w:tbl', bodyStart).map((t) => ({ at: t.start, type: 'table', ...tableOf(xml, t) })),
+  ].sort((a, b) => a.at - b.at)
+    .map(({ at: _at, ...b }) => b)
+    // 沒有字的空段落只留分頁
+    .filter((b) => b.type === 'table' || b.runs.length > 0 || b.pageBreak);
+  const sect = (xml.match(/<w:sectPr[\s\S]*?<\/w:sectPr>/) || [''])[0];
+  const pgSz = sect.match(/<w:pgSz w:w="(\d+)" w:h="(\d+)"/);
+  const mar = (k, d) => Number(attr(sect, new RegExp(`<w:pgMar[^>]* w:${k}="(\\d+)"`))) || d;
+  return {
+    page: {
+      width: pgSz ? Number(pgSz[1]) : 16838,
+      height: pgSz ? Number(pgSz[2]) : 11906,
+      margin: { top: mar('top', 1134), right: mar('right', 993), bottom: mar('bottom', 1134), left: mar('left', 1440) },
+    },
+    header: await readHeader(zip),
+    footer: await readFooter(zip),
+    blocks,
+    hasSignerLine: !!signer,
+  };
+};

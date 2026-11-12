@@ -58,6 +58,26 @@ export const LEVEL_STYLE = {
   none: { border: 'var(--border-color)', bg: 'var(--bg-surface-subtle)', color: 'var(--text-main)' },
 };
 
+/** 簽核時間 → 115年11月12日（依本機時區的日期） */
+export const rocDateText = (ts) => {
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${rocYear(d.getFullYear())}年${pad(d.getMonth() + 1)}月${pad(d.getDate())}日`;
+};
+
+/**
+ * 「檢核人（簽章）：＿＿＿　　　日期：＿＿＿年＿＿月＿＿日」拆成簽名前、簽名後的文字
+ * 跟下載的 Word 檔一樣（server/threatIntelDocx.js）：簽名放在底線的位置，日期填簽核日期
+ */
+export const signerLineParts = (text, signedAt) => {
+  const s = String(text || '');
+  const i = s.search(/[＿_]/);
+  if (i < 0) return { label: s, after: '' };
+  const after = s.slice(i).replace(/^[＿_]+/, '');
+  const m = after.match(/^(\s*)(日期[：:])/);
+  return { label: s.slice(0, i), after: m ? `${m[1]}${m[2]}${rocDateText(signedAt)}` : after };
+};
+
 /** 讀檔成 base64（不含 data: 前綴） */
 export const fileToBase64 = (file) => new Promise((resolve, reject) => {
   const reader = new FileReader();
