@@ -1,0 +1,16 @@
+/*
+ * ISO 表單（設備攜出入單、機房檢查表、備份檢查／日誌審查紀錄表）的紙張
+ *
+ * 全域的 `thead tr { background-color: var(--table-header-bg) !important }`（index.css）
+ * 會把表頭列塗成系統的表頭色（深色模式是深藍）；行內樣式蓋不過 !important，
+ * 下載 PDF（html2canvas）時這個底色還會畫到表頭格子上。紙張上的列一律不帶底色、字用黑色。
+ */
+.iso-equipment-sheet thead tr,
+.iso-equipment-sheet tbody tr,
+.iso-periodic-check-sheet thead tr,
+.iso-periodic-check-sheet tbody tr,
+.iso-room-check-sheet thead tr,
+.iso-room-check-sheet tbody tr {
+  background-color: transparent !important;
+  color: #000000 !important;
+}

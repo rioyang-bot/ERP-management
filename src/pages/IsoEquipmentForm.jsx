@@ -1,9 +1,8 @@
-import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import html2canvas from 'html2canvas';
-import { Download, ShieldCheck, ArrowDownToLine, ArrowUpFromLine, AlertCircle, ArrowLeft, PenLine, Undo2, AlertTriangle } from 'lucide-react';
+import { Download, ShieldCheck, ArrowDownToLine, ArrowUpFromLine, AlertCircle, ArrowLeft } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { RoleContext } from '../context/RoleContext';
-import SignaturePadModal from '../components/SignaturePadModal';
+import IsoSignoffPanel from '../components/IsoSignoffPanel';
 import IsoEquipmentSheet, { SHEET_WIDTH, SHEET_HEIGHT } from '../components/IsoEquipmentSheet';
 import { toFormRows, monthRange, rocYear, paginate, formFileName, SIGN_ROLES } from '../utils/isoEquipmentForm';
 import { buildImagePdf, dataUrlToBytes } from '../utils/imagePdf';
@@ -16,13 +15,6 @@ const defaultMonth = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 };
 
-const formatSignedAt = (ts) => {
-  const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return '';
-  const p = (n) => String(n).padStart(2, '0');
-  return `${rocYear(d.getFullYear())}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-};
-
 /** 等圖片（LOGO、簽名）與字型都載好再拍照，否則 PDF 上會缺；一張最多等 5 秒，不會卡住 */
 const waitForAssets = async (root) => {
   await Promise.all([...root.querySelectorAll('img')].map((img) => (img.complete ? null
@@ -31,8 +23,6 @@ const waitForAssets = async (root) => {
 };
 
 const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-
-const smallBtn = { display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '6px 12px', borderRadius: '7px', fontWeight: 700, fontSize: '12px', cursor: 'pointer' };
 
 /**
  * 報表中心：ISO 27001「S-408-02 設備攜出入單」依月份預覽並下載 PDF（見 utils/isoEquipmentForm.js）
@@ -44,7 +34,6 @@ const smallBtn = { display: 'inline-flex', alignItems: 'center', gap: '5px', pad
  */
 const IsoEquipmentForm = () => {
   const navigate = useNavigate();
-  const { authUser } = useContext(RoleContext) || {};
   // 營運總覽的待簽提醒會帶 ?month=YYYY-MM 直接開那個月；沒帶或格式不對就開本月
   const [searchParams] = useSearchParams();
   const [month, setMonth] = useState(() => {
@@ -55,11 +44,8 @@ const IsoEquipmentForm = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [exporting, setExporting] = useState(false);
-  const [sign, setSign] = useState({ signatures: {}, permissions: {} });
-  const [signError, setSignError] = useState('');
-  const [signingRole, setSigningRole] = useState(null);
-  const [mySignature, setMySignature] = useState(null);
-  const [managingMine, setManagingMine] = useState(false);
+  // 有效的簽名（簽核區讀到後通知；簽核後資料有異動的不算）
+  const [validSignatures, setValidSignatures] = useState({});
   const [renderForPdf, setRenderForPdf] = useState(false);
   const [scale, setScale] = useState(1);
   const previewRef = useRef(null);
@@ -91,32 +77,6 @@ const IsoEquipmentForm = () => {
     return () => { cancelled = true; };
   }, [y, m]);
 
-  const loadSignatures = useCallback(async () => {
-    if (!y || !m || !window.electronAPI.isoSignature) return;
-    const res = await window.electronAPI.isoSignature('GET', FORM_CODE, month);
-    if (res?.success) {
-      setSign({ signatures: res.signatures || {}, permissions: res.permissions || {} });
-      setSignError('');
-    } else {
-      setSign({ signatures: {}, permissions: {} });
-      setSignError(res?.error || '讀取簽核狀態失敗');
-    }
-  }, [y, m, month]);
-
-  useEffect(() => { loadSignatures(); }, [loadSignatures]);
-
-  // 自己帳號的簽名檔（簽核時可以直接用）
-  useEffect(() => {
-    if (!window.electronAPI.isoSignature) return;
-    window.electronAPI.isoSignature('GET', 'me', 'signature').then((res) => {
-      if (res?.success) setMySignature(res.signaturePng || null);
-    });
-  }, []);
-
-  /** 表單上只印有效的簽名（簽核後資料有異動的不印） */
-  const validSignatures = Object.fromEntries(Object.entries(sign.signatures)
-    .filter(([, s]) => s && !s.stale)
-    .map(([role, s]) => [role, { png: s.signaturePng, signedAt: s.signedAt }]));
   const pages = paginate(rows);
 
   const renderSheets = () => pages.map((pageRows, i) => (
@@ -153,63 +113,8 @@ const IsoEquipmentForm = () => {
     }
   };
 
-  const saveMySignature = async (png) => {
-    const res = await window.electronAPI.isoSignature('PUT', 'me', 'signature', undefined, { signature: png });
-    if (!res?.success) throw new Error(res?.error || '儲存簽名檔失敗');
-    setMySignature(png);
-  };
-
-  /** 簽核：body 是 { useSaved: true }（用自己帳號的簽名檔）或 { signature }（這次手寫／上傳的） */
-  const submitSign = async (body) => {
-    const res = await window.electronAPI.isoSignature('POST', FORM_CODE, month, signingRole, body);
-    if (!res?.success) {
-      alert('簽核失敗：' + (res?.error || '未知錯誤'));
-      return;
-    }
-    setSigningRole(null);
-    await loadSignatures();
-  };
-
-  const handleSign = async (png, { saveAsMine } = {}) => {
-    if (saveAsMine) {
-      try { await saveMySignature(png); } catch (err) { alert(err.message); return; }
-    }
-    await submitSign({ signature: png });
-  };
-
-  const handleSaveMine = async (png) => {
-    try {
-      await saveMySignature(png);
-      setManagingMine(false);
-    } catch (err) {
-      alert(err.message);
-    }
-  };
-
-  const handleDeleteMine = async () => {
-    if (!window.confirm('確定要刪除我的簽名檔嗎？已經簽核過的月份不受影響。')) return;
-    const res = await window.electronAPI.isoSignature('DELETE', 'me', 'signature');
-    if (!res?.success) { alert('刪除失敗：' + (res?.error || '未知錯誤')); return; }
-    setMySignature(null);
-    setManagingMine(false);
-  };
-
-  const handleRevoke = async (def) => {
-    const s = sign.signatures[def.role];
-    if (!window.confirm(`確定要撤銷 ${rocYear(y)}年${String(m).padStart(2, '0')}月 的${def.label}簽核（${s?.userName}）嗎？`)) return;
-    const res = await window.electronAPI.isoSignature('DELETE', FORM_CODE, month, def.role);
-    if (!res?.success) {
-      alert('撤銷失敗：' + (res?.error || '未知錯誤'));
-      return;
-    }
-    await loadSignatures();
-  };
-
   const outCount = rows.filter((r) => r.direction === 'OUT').length;
   const inCount = rows.filter((r) => r.direction === 'IN').length;
-  const signingDef = SIGN_ROLES.find((d) => d.role === signingRole);
-  const canSignAny = SIGN_ROLES.some((d) => sign.permissions[d.role]?.canSign);
-  const signerName = authUser?.full_name || authUser?.username || '';
 
   return (
     <div className="page-container">
@@ -250,63 +155,7 @@ const IsoEquipmentForm = () => {
         )}
 
         {/* 線上簽核：每個月機房管理員、權責主管各簽一次，用自己帳號的簽名檔 */}
-        {canSignAny && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px', fontSize: '12px', color: 'var(--text-muted)' }}>
-            <span>我的簽名檔：{mySignature ? '已設定' : '尚未設定'}</span>
-            <button type="button" onClick={() => setManagingMine(true)}
-              style={{ ...smallBtn, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-main)' }}>
-              <PenLine size={13} /> {mySignature ? '管理我的簽名檔' : '設定我的簽名檔'}
-            </button>
-          </div>
-        )}
-        <div aria-label="線上簽核" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px', marginBottom: '14px' }}>
-          {SIGN_ROLES.map((def) => {
-            const s = sign.signatures[def.role];
-            const perm = sign.permissions[def.role] || {};
-            return (
-              <div key={def.role} data-testid={`iso-sign-${def.role}`}
-                style={{ padding: '12px 14px', borderRadius: '10px', border: `1px solid ${s?.stale ? '#f59e0b' : 'var(--border-color)'}`, backgroundColor: 'var(--bg-surface-subtle)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                  <span style={{ fontWeight: 800, fontSize: '13px', color: 'var(--text-main)' }}>{def.label}</span>
-                  {s && !s.stale && <span style={{ fontSize: '11px', fontWeight: 800, color: '#10b981' }}>已簽核</span>}
-                  {!s && <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-subtle)' }}>尚未簽核</span>}
-                </div>
-                {s && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <img src={s.signaturePng} alt={`${def.label}簽名`} style={{ height: '54px', width: '162px', objectFit: 'contain', backgroundColor: '#fff', borderRadius: '6px', border: '1px solid var(--border-color)' }} />
-                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
-                      <div style={{ fontWeight: 700, color: 'var(--text-main)' }}>{s.userName}</div>
-                      <div>{formatSignedAt(s.signedAt)}</div>
-                    </div>
-                  </div>
-                )}
-                {s?.stale && (
-                  <div role="status" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 700, color: '#d97706' }}>
-                    <AlertTriangle size={14} /> 簽核後資料有異動，請重新簽核（表單上不會印這個簽名）
-                  </div>
-                )}
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  {perm.canSign && (!s || s.stale) && (
-                    <button type="button" onClick={() => setSigningRole(def.role)} disabled={loading}
-                      style={{ ...smallBtn, border: 'none', backgroundColor: '#ea580c', color: '#fff' }}>
-                      <PenLine size={13} /> {s ? `重新簽核（${def.label}）` : `簽核（${def.label}）`}
-                    </button>
-                  )}
-                  {perm.canRevoke && s && (
-                    <button type="button" onClick={() => handleRevoke(def)}
-                      style={{ ...smallBtn, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-main)' }}>
-                      <Undo2 size={13} /> 撤銷{def.label}簽核
-                    </button>
-                  )}
-                  {!perm.canSign && !s && (
-                    <span style={{ fontSize: '11px', color: 'var(--text-subtle)' }}>由指定的帳號登入簽核（系統管理 → 權限設定）</span>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        {signError && <div role="alert" style={{ fontSize: '12px', color: '#ef4444', marginBottom: '10px' }}>簽核狀態：{signError}</div>}
+        <IsoSignoffPanel formCode={FORM_CODE} formLabel="設備攜出入單" period={month} roles={SIGN_ROLES} disabled={loading} onSignaturesChange={setValidSignatures} />
 
         {/* 預覽：跟 PDF 一樣的 A4 橫式頁面，依畫面寬度縮小 */}
         <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '8px' }}>
@@ -326,28 +175,6 @@ const IsoEquipmentForm = () => {
         <div ref={pdfRef} aria-hidden="true" style={{ position: 'fixed', left: '-20000px', top: 0, width: `${SHEET_WIDTH}px`, pointerEvents: 'none' }}>
           {renderSheets()}
         </div>
-      )}
-
-      {signingDef && (
-        <SignaturePadModal
-          title={`${rocYear(y)}年${String(m).padStart(2, '0')}月 設備攜出入單 — ${signingDef.label}簽核`}
-          signerName={signerName}
-          savedSignature={mySignature}
-          onUseSaved={() => submitSign({ useSaved: true })}
-          onConfirm={handleSign}
-          onClose={() => setSigningRole(null)}
-        />
-      )}
-      {managingMine && (
-        <SignaturePadModal
-          mode="manage"
-          title="我的簽名檔"
-          signerName={signerName}
-          savedSignature={mySignature}
-          onConfirm={handleSaveMine}
-          onDeleteSaved={handleDeleteMine}
-          onClose={() => setManagingMine(false)}
-        />
       )}
     </div>
   );

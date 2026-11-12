@@ -23,12 +23,20 @@ import {
   Wrench,
   ShieldCheck,
   ScrollText,
-  DatabaseBackup
+  DatabaseBackup,
+  Server
 } from 'lucide-react';
 import './Overview.css';
 import { ISO_CHECK_FORMS, ISO_CHECK_FORM_CODES, reviewStatus, formatRocDate, daysAgoText, REVIEW_INTERVAL_DAYS } from '../utils/isoPeriodicCheck';
+import { FORM_META as ROOM_CHECK_META, FORM_CODE as ROOM_CHECK_CODE, PATH as ROOM_CHECK_PATH, CHECK_INTERVAL_DAYS as ROOM_CHECK_INTERVAL, roomCheckStatus } from '../utils/isoRoomCheck';
 
 const ISO_CHECK_ICONS = { 'S-409-01': DatabaseBackup, 'S-409-02': ScrollText };
+
+/** 每月線上簽核的 ISO 表單：待簽提醒（unit：每個月份旁邊顯示的資料筆數單位） */
+const ISO_SIGN_FORMS = [
+  { code: 'S-408-02', label: '設備攜出入單', path: '/iso-equipment-form', unit: '筆進出' },
+  { code: 'S-408-03', label: '機房檢查表', path: '/iso-room-check', unit: '週紀錄' },
+];
 
 const Overview = () => {
   const navigate = useNavigate();
@@ -57,10 +65,12 @@ const Overview = () => {
   const [activeLents, setActiveLents] = useState([]);
   const [activeRepairs, setActiveRepairs] = useState([]);
   const [lowStockConsumables, setLowStockConsumables] = useState([]);
-  // 設備攜出入單 (S-408-02) 待簽提醒：上個月（含）以前、有設備進出、還沒簽完的月份（伺服器判定）
-  const [isoPending, setIsoPending] = useState([]);
+  // ISO 表單待簽提醒（設備攜出入單、機房檢查表）：上個月（含）以前、有資料、還沒簽完的月份（伺服器判定）；{ [form]: months[] }
+  const [isoPending, setIsoPending] = useState({});
   // ISO 定期檢查（S-409-01 備份檢查、S-409-02 日誌審查）每張表最後一次：{ [form]: { lastDate, reviewerName } }；讀不到是 null（不顯示）
   const [isoChecks, setIsoChecks] = useState(null);
+  // 機房檢查表 (S-408-03) 最後一次：{ lastDate, lastTime, userName }；讀不到是 null（不顯示）
+  const [roomCheck, setRoomCheck] = useState(null);
 
   // 篩選與搜尋
   const [docTab, setDocTab] = useState('ALL'); // 'ALL' | 'PO' | 'INBOUND' | 'OUTBOUND' | 'LENT' | 'REPAIR'
@@ -82,8 +92,9 @@ const Overview = () => {
         lentsRes,
         consumablesRes,
         repairsRes,
-        isoPendingRes,
-        isoChecksRes
+        isoChecksRes,
+        roomCheckRes,
+        ...isoPendingRes
       ] = await Promise.all([
         window.electronAPI.namedQuery('fetchOverviewStats'),
         window.electronAPI.namedQuery('fetchOverviewPendingPurchases'),
@@ -93,8 +104,9 @@ const Overview = () => {
         window.electronAPI.namedQuery('fetchOverviewLowStockConsumables'),
         window.electronAPI.namedQuery('fetchOverviewActiveRepairs'),
         // 讀不到提醒不影響總覽其他區塊
-        Promise.resolve(window.electronAPI.isoSignature?.('GET', 'S-408-02', 'pending')).catch(() => null),
-        Promise.resolve(window.electronAPI.isoCheck?.('GET', 'latest')).catch(() => null)
+        Promise.resolve(window.electronAPI.isoCheck?.('GET', 'latest')).catch(() => null),
+        Promise.resolve(window.electronAPI.isoRoomCheck?.('GET', 'latest')).catch(() => null),
+        ...ISO_SIGN_FORMS.map((f) => Promise.resolve(window.electronAPI.isoSignature?.('GET', f.code, 'pending')).catch(() => null))
       ]);
 
       if (statsRes.success && statsRes.rows.length > 0) {
@@ -106,8 +118,12 @@ const Overview = () => {
       if (lentsRes.success) setActiveLents(lentsRes.rows || []);
       if (consumablesRes.success) setLowStockConsumables(consumablesRes.rows || []);
       if (repairsRes?.success) setActiveRepairs(repairsRes.rows || []);
-      setIsoPending(isoPendingRes?.success && Array.isArray(isoPendingRes.months) ? isoPendingRes.months : []);
+      setIsoPending(Object.fromEntries(ISO_SIGN_FORMS.map((f, i) => {
+        const r = isoPendingRes[i];
+        return [f.code, r?.success && Array.isArray(r.months) ? r.months : []];
+      })));
       setIsoChecks(isoChecksRes?.success && isoChecksRes.forms ? isoChecksRes.forms : null);
+      setRoomCheck(roomCheckRes?.success ? roomCheckRes : null);
 
       setLastUpdated(new Date());
     } catch (err) {
@@ -312,67 +328,82 @@ const Overview = () => {
         </div>
       </header>
 
-      {/* 設備攜出入單待簽提醒：只有還沒簽完的月份才出現，點月份直接開那個月的表單 */}
-      {isoPending.length > 0 && (
-        <section className="overview-iso-reminder" aria-label="設備攜出入單待簽提醒">
-          <div className="overview-iso-reminder-head">
-            <ShieldCheck size={20} />
-            <span className="overview-iso-reminder-title">設備攜出入單 (ISO 27001 S-408-02) 尚未完成簽核</span>
-            <span className="overview-count-pill">{isoPending.length} 個月份</span>
-          </div>
-          <div className="overview-iso-reminder-list">
-            {isoPending.map((m) => (
-              <button
-                key={m.period}
-                type="button"
-                className="overview-iso-reminder-item"
-                data-testid={`iso-pending-${m.period}`}
-                onClick={() => navigate(`/iso-equipment-form?month=${m.period}`)}
-                title={`前往 ${m.label} 設備攜出入單簽核`}
-              >
-                <span className="overview-iso-reminder-month">{m.label}</span>
-                <span className="overview-iso-reminder-count">{m.rowCount} 筆進出</span>
-                <span className="overview-iso-reminder-roles">
-                  {m.roles.filter((r) => r.status !== 'SIGNED').map((r) => (
-                    <span key={r.role} className={`overview-iso-role overview-iso-role-${r.status.toLowerCase()}`}>
-                      {r.status === 'STALE' ? `${r.label}需重簽` : `待${r.label}簽核`}
-                    </span>
-                  ))}
-                </span>
-                <ArrowRight size={14} />
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
+      {/* ISO 表單待簽提醒（設備攜出入單、機房檢查表）：只有還沒簽完的月份才出現，點月份直接開那個月的表單 */}
+      {ISO_SIGN_FORMS.map((f) => {
+        const months = isoPending[f.code] || [];
+        if (months.length === 0) return null;
+        return (
+          <section key={f.code} className="overview-iso-reminder" aria-label={`${f.label}待簽提醒`}>
+            <div className="overview-iso-reminder-head">
+              <ShieldCheck size={20} />
+              <span className="overview-iso-reminder-title">{f.label} (ISO 27001 {f.code}) 尚未完成簽核</span>
+              <span className="overview-count-pill">{months.length} 個月份</span>
+            </div>
+            <div className="overview-iso-reminder-list">
+              {months.map((m) => (
+                <button
+                  key={m.period}
+                  type="button"
+                  className="overview-iso-reminder-item"
+                  data-testid={`iso-pending-${f.code}-${m.period}`}
+                  onClick={() => navigate(`${f.path}?month=${m.period}`)}
+                  title={`前往 ${m.label} ${f.label}簽核`}
+                >
+                  <span className="overview-iso-reminder-month">{m.label}</span>
+                  <span className="overview-iso-reminder-count">{m.rowCount} {f.unit}</span>
+                  <span className="overview-iso-reminder-roles">
+                    {m.roles.filter((r) => r.status !== 'SIGNED').map((r) => (
+                      <span key={r.role} className={`overview-iso-role overview-iso-role-${r.status.toLowerCase()}`}>
+                        {r.status === 'STALE' ? `${r.label}需重簽` : `待${r.label}簽核`}
+                      </span>
+                    ))}
+                  </span>
+                  <ArrowRight size={14} />
+                </button>
+              ))}
+            </div>
+          </section>
+        );
+      })}
 
-      {/* ISO 定期檢查（備份檢查、日誌審查）：一律顯示最後日期；超過兩週（或從沒做過）就變成醒目的紅色提醒 */}
-      {isoChecks && (
+      {/* ISO 定期檢查（機房檢查每週、備份檢查與日誌審查每兩週）：一律顯示最後日期；超過期限（或從沒做過）就變成醒目的紅色提醒 */}
+      {(isoChecks || roomCheck) && (
         <section className="overview-iso-checks" aria-label="ISO 定期檢查">
-          {ISO_CHECK_FORM_CODES.map((code) => {
-            const def = ISO_CHECK_FORMS[code];
-            const info = isoChecks[code] || {};
-            const st = reviewStatus(info.lastDate || null);
-            const Icon = st.overdue ? AlertTriangle : ISO_CHECK_ICONS[code];
+          {[
+            ...(roomCheck ? [{
+              code: ROOM_CHECK_CODE, docName: ROOM_CHECK_META.docName, verb: '檢查', path: ROOM_CHECK_PATH, Icon: Server,
+              interval: ROOM_CHECK_INTERVAL, st: roomCheckStatus(roomCheck.lastDate || null),
+              when: roomCheck.lastTime, who: roomCheck.userName,
+            }] : []),
+            ...(isoChecks ? ISO_CHECK_FORM_CODES.map((code) => {
+              const def = ISO_CHECK_FORMS[code];
+              const info = isoChecks[code] || {};
+              return {
+                code, docName: def.docName, verb: def.verb, path: def.path, Icon: ISO_CHECK_ICONS[code],
+                interval: REVIEW_INTERVAL_DAYS, st: reviewStatus(info.lastDate || null), when: null, who: info.reviewerName,
+              };
+            }) : []),
+          ].map((c) => {
+            const Icon = c.st.overdue ? AlertTriangle : c.Icon;
             return (
               <button
-                key={code}
+                key={c.code}
                 type="button"
-                className={`overview-iso-check${st.overdue ? ' overview-iso-check-overdue' : ''}`}
-                data-testid={`overview-iso-check-${code}`}
-                data-overdue={st.overdue ? 'true' : 'false'}
-                onClick={() => navigate(def.path)}
-                title={`前往${def.docName}`}
+                className={`overview-iso-check${c.st.overdue ? ' overview-iso-check-overdue' : ''}`}
+                data-testid={`overview-iso-check-${c.code}`}
+                data-overdue={c.st.overdue ? 'true' : 'false'}
+                onClick={() => navigate(c.path)}
+                title={`前往${c.docName}`}
               >
-                <Icon size={st.overdue ? 20 : 18} />
-                <span className="overview-iso-check-title">{def.docName} (ISO 27001 {code})</span>
+                <Icon size={c.st.overdue ? 20 : 18} />
+                <span className="overview-iso-check-title">{c.docName} (ISO 27001 {c.code})</span>
                 <span className="overview-iso-check-date">
-                  {st.lastDate
-                    ? `最後${def.verb}：${formatRocDate(st.lastDate)}（${daysAgoText(st.days)}）${info.reviewerName ? `・${info.reviewerName}` : ''}`
-                    : `還沒有任何${def.verb}紀錄`}
+                  {c.st.lastDate
+                    ? `最後${c.verb}：${formatRocDate(c.st.lastDate)}${c.when ? ` ${c.when}` : ''}（${daysAgoText(c.st.days)}）${c.who ? `・${c.who}` : ''}`
+                    : `還沒有任何${c.verb}紀錄`}
                 </span>
-                {st.overdue && (
-                  <span className="overview-iso-check-alert">{st.lastDate ? `已超過 ${REVIEW_INTERVAL_DAYS} 天未${def.verb}，請盡快${def.verb}` : `請進行第一次${def.verb}`}</span>
+                {c.st.overdue && (
+                  <span className="overview-iso-check-alert">{c.st.lastDate ? `已超過 ${c.interval} 天未${c.verb}，請盡快${c.verb}` : `請進行第一次${c.verb}`}</span>
                 )}
                 <ArrowRight size={14} className="overview-iso-check-arrow" />
               </button>

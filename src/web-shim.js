@@ -149,6 +149,24 @@ if (!window.electronAPI) {
       }
     },
 
+    // ISO 27001 S-408-03 機房檢查表：填寫人由伺服器取自登入帳號，見 server/isoRoomCheckRoutes.js
+    //   isoRoomCheck('GET', 'latest') 最後一次、isoRoomCheck('GET', 'YYYY-MM') 這個月、
+    //   isoRoomCheck('POST', null, body)、isoRoomCheck('PUT', id, body)、isoRoomCheck('DELETE', id)
+    isoRoomCheck: async (method, target, body) => {
+      try {
+        const url = [`${API_BASE}/api/iso-room-checks`, target].filter((s) => s !== undefined && s !== null && s !== '').map((s, i) => (i ? encodeURIComponent(s) : s)).join('/');
+        const response = await authFetch(url, {
+          method,
+          headers: body ? { 'Content-Type': 'application/json' } : undefined,
+          body: body ? JSON.stringify(body) : undefined,
+        });
+        const data = await response.json();
+        return response.ok ? data : { ...data, success: false, status: response.status, error: data.error || `HTTP ${response.status}` };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+
     // 耗材盤點調整（只調整 Stock）：權限由伺服器檢查，見 server/stockAdjustRoutes.js
     //   數量已被別人異動時回 status 409 與 currentStock
     stockAdjust: async (body) => {
