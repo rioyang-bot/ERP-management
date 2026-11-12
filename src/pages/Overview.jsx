@@ -24,11 +24,13 @@ import {
   ShieldCheck,
   ScrollText,
   DatabaseBackup,
-  Server
+  Server,
+  Radar
 } from 'lucide-react';
 import './Overview.css';
 import { ISO_CHECK_FORMS, ISO_CHECK_FORM_CODES, reviewStatus, formatRocDate, daysAgoText, REVIEW_INTERVAL_DAYS } from '../utils/isoPeriodicCheck';
 import { FORM_META as ROOM_CHECK_META, FORM_CODE as ROOM_CHECK_CODE, PATH as ROOM_CHECK_PATH, CHECK_INTERVAL_DAYS as ROOM_CHECK_INTERVAL, roomCheckStatus } from '../utils/isoRoomCheck';
+import { FORM_META as THREAT_META, FORM_CODE as THREAT_CODE, PATH as THREAT_PATH, monthStatus as threatMonthStatus, rocMonthLabel as threatMonthLabel, formatRocDateTime } from '../utils/isoThreatIntel';
 
 const ISO_CHECK_ICONS = { 'S-409-01': DatabaseBackup, 'S-409-02': ScrollText };
 
@@ -71,6 +73,8 @@ const Overview = () => {
   const [isoChecks, setIsoChecks] = useState(null);
   // 機房檢查表 (S-408-03) 最後一次：{ lastDate, lastTime, userName }；讀不到是 null（不顯示）
   const [roomCheck, setRoomCheck] = useState(null);
+  // 威脅情資自我檢核表 (S-413-02) 最新一份：{ latest: { period, uploadedAt, uploadedByName, myPendingRows, ... } | null }；讀不到是 null（不顯示）
+  const [threatIntel, setThreatIntel] = useState(null);
 
   // 篩選與搜尋
   const [docTab, setDocTab] = useState('ALL'); // 'ALL' | 'PO' | 'INBOUND' | 'OUTBOUND' | 'LENT' | 'REPAIR'
@@ -94,6 +98,7 @@ const Overview = () => {
         repairsRes,
         isoChecksRes,
         roomCheckRes,
+        threatIntelRes,
         ...isoPendingRes
       ] = await Promise.all([
         window.electronAPI.namedQuery('fetchOverviewStats'),
@@ -106,6 +111,7 @@ const Overview = () => {
         // 讀不到提醒不影響總覽其他區塊
         Promise.resolve(window.electronAPI.isoCheck?.('GET', 'latest')).catch(() => null),
         Promise.resolve(window.electronAPI.isoRoomCheck?.('GET', 'latest')).catch(() => null),
+        Promise.resolve(window.electronAPI.isoThreatIntel?.('GET', 'latest')).catch(() => null),
         ...ISO_SIGN_FORMS.map((f) => Promise.resolve(window.electronAPI.isoSignature?.('GET', f.code, 'pending')).catch(() => null))
       ]);
 
@@ -124,6 +130,7 @@ const Overview = () => {
       })));
       setIsoChecks(isoChecksRes?.success && isoChecksRes.forms ? isoChecksRes.forms : null);
       setRoomCheck(roomCheckRes?.success ? roomCheckRes : null);
+      setThreatIntel(threatIntelRes?.success ? threatIntelRes : null);
 
       setLastUpdated(new Date());
     } catch (err) {
@@ -366,8 +373,8 @@ const Overview = () => {
         );
       })}
 
-      {/* ISO 定期檢查（機房檢查每週、備份檢查與日誌審查每兩週）：一律顯示最後日期；超過期限（或從沒做過）就變成醒目的紅色提醒 */}
-      {(isoChecks || roomCheck) && (
+      {/* ISO 定期檢查（機房檢查每週、備份檢查與日誌審查每兩週、威脅情資檢核表每月上傳）：一律顯示最後日期；超過期限（或從沒做過）就變成醒目的紅色提醒 */}
+      {(isoChecks || roomCheck || threatIntel) && (
         <section className="overview-iso-checks" aria-label="ISO 定期檢查">
           {[
             ...(roomCheck ? [{
@@ -383,28 +390,48 @@ const Overview = () => {
                 interval: REVIEW_INTERVAL_DAYS, st: reviewStatus(info.lastDate || null), when: null, who: info.reviewerName,
               };
             }) : []),
+            // 威脅情資自我檢核表：2 日起本月還沒上傳＝紅色、已上傳沒簽＝黃色、有人簽＝當月結案
+            ...(threatIntel ? [(() => {
+              const l = threatIntel.latest;
+              const ms = threatMonthStatus(l);
+              const month = `本月（${threatMonthLabel(ms.period)}）`;
+              const dateText = {
+                MISSING: l ? `本月尚未上傳（最近一份：${threatMonthLabel(l.period)}）` : '還沒有上傳過檢核表',
+                WAITING: `${month}的檢核表今天要上傳`,
+                UNSIGNED: `本月已上傳：${formatRocDateTime(l?.uploadedAt)}・${l?.uploadedByName}`,
+                CLOSED: `本月已結案：檢核人 ${l?.signedByName}（${formatRocDateTime(l?.signedAt)}）`,
+              }[ms.state];
+              return {
+                code: THREAT_CODE, docName: THREAT_META.docName, path: THREAT_PATH, Icon: Radar,
+                st: { overdue: ms.level === 'red' }, warning: ms.level === 'yellow', dateText,
+                alertText: `${month}的檢核表尚未上傳，請盡快上傳`,
+                warningText: '已上傳，尚未簽核，請檢核人簽名',
+              };
+            })()] : []),
           ].map((c) => {
-            const Icon = c.st.overdue ? AlertTriangle : c.Icon;
+            const Icon = c.st.overdue || c.warning ? AlertTriangle : c.Icon;
             return (
               <button
                 key={c.code}
                 type="button"
-                className={`overview-iso-check${c.st.overdue ? ' overview-iso-check-overdue' : ''}`}
+                className={`overview-iso-check${c.st.overdue ? ' overview-iso-check-overdue' : c.warning ? ' overview-iso-check-warning' : ''}`}
                 data-testid={`overview-iso-check-${c.code}`}
                 data-overdue={c.st.overdue ? 'true' : 'false'}
+                data-warning={c.warning ? 'true' : 'false'}
                 onClick={() => navigate(c.path)}
                 title={`前往${c.docName}`}
               >
                 <Icon size={c.st.overdue ? 20 : 18} />
                 <span className="overview-iso-check-title">{c.docName} (ISO 27001 {c.code})</span>
                 <span className="overview-iso-check-date">
-                  {c.st.lastDate
+                  {c.dateText ?? (c.st.lastDate
                     ? `最後${c.verb}：${formatRocDate(c.st.lastDate)}${c.when ? ` ${c.when}` : ''}（${daysAgoText(c.st.days)}）${c.who ? `・${c.who}` : ''}`
-                    : `還沒有任何${c.verb}紀錄`}
+                    : `還沒有任何${c.verb}紀錄`)}
                 </span>
                 {c.st.overdue && (
-                  <span className="overview-iso-check-alert">{c.st.lastDate ? `已超過 ${c.interval} 天未${c.verb}，請盡快${c.verb}` : `請進行第一次${c.verb}`}</span>
+                  <span className="overview-iso-check-alert">{c.alertText ?? (c.st.lastDate ? `已超過 ${c.interval} 天未${c.verb}，請盡快${c.verb}` : `請進行第一次${c.verb}`)}</span>
                 )}
+                {c.warning && <span className="overview-iso-check-alert overview-iso-check-alert-warning">{c.warningText}</span>}
                 <ArrowRight size={14} className="overview-iso-check-arrow" />
               </button>
             );

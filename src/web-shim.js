@@ -167,6 +167,40 @@ if (!window.electronAPI) {
       }
     },
 
+    // ISO 27001 S-413-02 威脅情資自我檢核表：上傳者、檢核人由伺服器取自連線階段，見 server/isoThreatIntelRoutes.js
+    //   isoThreatIntel('GET', 'latest') 最新一份、isoThreatIntel('GET', 'YYYY-MM') 這個月、
+    //   isoThreatIntel('POST', null, { fileName, fileBase64, replace? }) 上傳、isoThreatIntel('DELETE', id)、
+    //   isoThreatIntel('POST', [id, 'sign'], { signature | useSaved }) 檢核人簽核、isoThreatIntel('DELETE', [id, 'sign']) 撤銷
+    isoThreatIntel: async (method, target, body) => {
+      try {
+        const segs = (Array.isArray(target) ? target : [target]).filter((s) => s !== undefined && s !== null && s !== '');
+        const url = [`${API_BASE}/api/iso-threat-intel`, ...segs.map((s) => encodeURIComponent(s))].join('/');
+        const response = await authFetch(url, {
+          method,
+          headers: body ? { 'Content-Type': 'application/json' } : undefined,
+          body: body ? JSON.stringify(body) : undefined,
+        });
+        const data = await response.json();
+        return response.ok ? data : { ...data, success: false, status: response.status, error: data.error || `HTTP ${response.status}` };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+
+    // 下載簽名填回「檢核人」欄的威脅情資自我檢核表（Word 檔）
+    isoThreatIntelDownload: async (id) => {
+      try {
+        const response = await authFetch(`${API_BASE}/api/iso-threat-intel/${encodeURIComponent(id)}/download`);
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          return { success: false, error: data.error || `HTTP ${response.status}` };
+        }
+        return { success: true, blob: await response.blob() };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+
     // 耗材盤點調整（只調整 Stock）：權限由伺服器檢查，見 server/stockAdjustRoutes.js
     //   數量已被別人異動時回 status 409 與 currentStock
     stockAdjust: async (body) => {

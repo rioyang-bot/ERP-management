@@ -16,7 +16,8 @@ import {
   FileText,
   ScrollText,
   DatabaseBackup,
-  Server
+  Server,
+  Radar
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import './Reports.css';
@@ -131,6 +132,19 @@ const Reports = () => {
       desc: '每週檢查一次機房並新增一筆：日期時間、溫度、溼度，監視設備、門禁管理、設備管理、機房環境勾選正常或異常，有異常寫說明與處理方式。每月由檢查人、單位主管線上簽核，依月份照公司的 S-408-03 格式下載 PDF；超過 7 天未檢查時營運總覽會醒目提醒。',
       tags: ['ISO 27001', '每週檢查', '溫溼度', '線上簽核', 'PDF'],
       path: '/iso-room-check'
+    },
+    {
+      id: 'iso-threat-intel',
+      title: '威脅情資自我檢核表 (ISO 27001 S-413-02)',
+      category: 'AUDIT',
+      categoryLabel: '歷史稽核',
+      icon: <Radar size={28} />,
+      iconBg: 'linear-gradient(135deg, #be123c, #881337)',
+      status: 'ACTIVE',
+      statusText: '已上線',
+      desc: '每月 1 日上傳威脅情資自我檢核表（Word 檔，任何帳號都能上傳），檢核人線上簽一次就算當月結案；下載的 Word 檔會把簽名與日期填進「檢核人（簽章）」。每月 2 日起本月還沒上傳時營運總覽紅色提醒，已上傳未簽核黃色提醒。',
+      tags: ['ISO 27001', '每月上傳', 'Word', '線上簽核'],
+      path: '/iso-threat-intel'
     },
     {
       id: 'iso-backup-check',
