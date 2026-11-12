@@ -273,6 +273,11 @@
       "file": "migration_iso_periodic_checks.sql",
       "type": "schema",
       "note": "ISO 27001 定期檢查紀錄（S-409-01 備份檢查紀錄表、S-409-02 日誌審查紀錄表）：每次檢查一筆，檢查人員取自登入帳號"
+    },
+    {
+      "file": "migration_iso_room_checks.sql",
+      "type": "schema",
+      "note": "ISO 27001 S-408-03 機房檢查表：每週一筆（日期時間、溫溼度、四項勾選、異常說明與處理方式）；簽核角色新增檢查人"
     }
   ]
 }

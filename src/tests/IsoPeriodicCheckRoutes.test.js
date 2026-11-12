@@ -76,7 +76,7 @@ describe('ISO 定期檢查 API', () => {
 
   it('資料表的 migration 列在清單裡；伺服器有掛上路由；前後端表單定義一致', () => {
     const { migrations } = JSON.parse(fs.readFileSync('database/migrations.manifest.json', 'utf8'));
-    expect(migrations.at(-1)).toMatchObject({ file: 'migration_iso_periodic_checks.sql', type: 'schema' });
+    expect(migrations.find((m) => m.file === 'migration_iso_periodic_checks.sql')).toMatchObject({ type: 'schema' });
     const sql = fs.readFileSync('database/migration_iso_periodic_checks.sql', 'utf8');
     expect(sql).toContain('CREATE TABLE IF NOT EXISTS iso_periodic_checks');
     expect(sql).toContain('form_code VARCHAR(20) NOT NULL');

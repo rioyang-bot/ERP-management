@@ -35,7 +35,7 @@ beforeEach(() => {
   window.electronAPI = {
     namedQuery: vi.fn(() => Promise.resolve({ success: true, rows: [] })),
     isoSignature: vi.fn((method, form, period) => {
-      if (period === 'pending') return Promise.resolve(pendingResult);
+      if (period === 'pending') return Promise.resolve(form === 'S-408-02' ? pendingResult : { success: true, months: [] });
       return Promise.resolve({ success: true, signatures: {}, permissions: {}, rowCount: 0 });
     }),
   };
@@ -67,13 +67,13 @@ describe('營運總覽：設備攜出入單待簽提醒', () => {
     expect(box).toHaveTextContent('設備攜出入單 (ISO 27001 S-408-02) 尚未完成簽核');
     expect(box).toHaveTextContent('2 個月份');
 
-    const oct = within(box).getByTestId('iso-pending-2026-10');
+    const oct = within(box).getByTestId('iso-pending-S-408-02-2026-10');
     expect(oct).toHaveTextContent('115年10月');
     expect(oct).toHaveTextContent('22 筆進出');
     expect(oct).toHaveTextContent('待機房管理員簽核');
     expect(oct).toHaveTextContent('待權責主管簽核');
 
-    const sep = within(box).getByTestId('iso-pending-2026-09');
+    const sep = within(box).getByTestId('iso-pending-S-408-02-2026-09');
     expect(sep).toHaveTextContent('權責主管需重簽');
     expect(sep).not.toHaveTextContent('機房管理員');
 
@@ -83,7 +83,7 @@ describe('營運總覽：設備攜出入單待簽提醒', () => {
 
   it('點月份直接開那個月的設備攜出入單', async () => {
     show();
-    fireEvent.click(await screen.findByTestId('iso-pending-2026-09'));
+    fireEvent.click(await screen.findByTestId('iso-pending-S-408-02-2026-09'));
     expect(await screen.findByTestId('where')).toHaveTextContent('/iso-equipment-form?month=2026-09');
     await waitFor(() => expect(window.electronAPI.namedQuery).toHaveBeenCalledWith('fetchEquipmentMovements', ['2026-09-01', '2026-10-01']));
     await waitFor(() => expect(window.electronAPI.isoSignature).toHaveBeenCalledWith('GET', 'S-408-02', '2026-09'));

@@ -1,5 +1,6 @@
 import React from 'react';
 import logoUrl from '../assets/iso-dreamjet-logo.png';
+import './IsoSheet.css';
 
 /** ISO 表單（A4 橫式）共用的字型與墨色 */
 export const KAI = '"DFKai-SB", "標楷體", "BiauKai", "Kaiti TC", "KaiTi", serif';

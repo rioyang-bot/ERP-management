@@ -15,7 +15,8 @@ import {
   ClipboardCheck,
   FileText,
   ScrollText,
-  DatabaseBackup
+  DatabaseBackup,
+  Server
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import './Reports.css';
@@ -117,6 +118,19 @@ const Reports = () => {
       desc: '依月份把設備的進貨、出貨、借出、歸還、換貨與維修進出照公司的 S-408-02 設備攜出入單格式預覽並下載 PDF；一台設備一列並列出序號，只列設備。每月由機房管理員、權責主管線上手寫簽核，簽名印在每頁頁尾。',
       tags: ['ISO 27001', '依月份匯出', 'PDF', '攜出／攜入', '線上簽核'],
       path: '/iso-equipment-form'
+    },
+    {
+      id: 'iso-room-check',
+      title: '機房檢查表 (ISO 27001 S-408-03)',
+      category: 'AUDIT',
+      categoryLabel: '歷史稽核',
+      icon: <Server size={28} />,
+      iconBg: 'linear-gradient(135deg, #7c3aed, #5b21b6)',
+      status: 'ACTIVE',
+      statusText: '已上線',
+      desc: '每週檢查一次機房並新增一筆：日期時間、溫度、溼度，監視設備、門禁管理、設備管理、機房環境勾選正常或異常，有異常寫說明與處理方式。每月由檢查人、單位主管線上簽核，依月份照公司的 S-408-03 格式下載 PDF；超過 7 天未檢查時營運總覽會醒目提醒。',
+      tags: ['ISO 27001', '每週檢查', '溫溼度', '線上簽核', 'PDF'],
+      path: '/iso-room-check'
     },
     {
       id: 'iso-backup-check',
