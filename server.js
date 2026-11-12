@@ -15,6 +15,7 @@ import { createPreferenceRoutes } from './server/preferenceRoutes.js';
 import { createIsoSignatureRoutes } from './server/isoSignatureRoutes.js';
 import { createIsoPeriodicCheckRoutes } from './server/isoPeriodicCheckRoutes.js';
 import { createIsoRoomCheckRoutes } from './server/isoRoomCheckRoutes.js';
+import { createIsoThreatIntelRoutes } from './server/isoThreatIntelRoutes.js';
 import { createStockAdjustRoutes } from './server/stockAdjustRoutes.js';
 import { createUploadRoutes } from './server/uploadRoutes.js';
 import { purgeTrash, TRASH_DIR_NAME } from './server/uploadCleanup.js';
@@ -340,6 +341,9 @@ app.use('/api/iso-checks', createIsoPeriodicCheckRoutes(pool, auth));
 
 // ISO 27001 S-408-03 機房檢查表：每週一筆，填寫人取自連線階段，見 server/isoRoomCheckRoutes.js
 app.use('/api/iso-room-checks', createIsoRoomCheckRoutes(pool, auth));
+
+// ISO 27001 S-413-02 威脅情資自我檢核表：每月上傳 Word 檔、員工逐列簽名，下載時簽名填回原檔，見 server/isoThreatIntelRoutes.js
+app.use('/api/iso-threat-intel', createIsoThreatIntelRoutes(pool, auth));
 
 // 耗材盤點調整（只調整 Stock）：要有「可盤點調整」權限，伺服器自己檢查，見 server/stockAdjustRoutes.js
 app.use('/api/stock-adjustments', createStockAdjustRoutes(pool, auth));

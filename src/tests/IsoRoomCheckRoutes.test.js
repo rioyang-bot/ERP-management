@@ -95,7 +95,7 @@ describe('機房檢查表 API', () => {
 
   it('migration 列在清單裡（含簽核角色多一個檢查人）；伺服器有掛上路由；前後端項目定義一致', () => {
     const { migrations } = JSON.parse(fs.readFileSync('database/migrations.manifest.json', 'utf8'));
-    expect(migrations.at(-1)).toMatchObject({ file: 'migration_iso_room_checks.sql', type: 'schema' });
+    expect(migrations.find((m) => m.file === 'migration_iso_room_checks.sql')).toMatchObject({ type: 'schema' });
     const sql = fs.readFileSync('database/migration_iso_room_checks.sql', 'utf8');
     expect(sql).toContain('CREATE TABLE IF NOT EXISTS iso_room_checks');
     expect(sql).toContain('UNIQUE (period, week_no)');

@@ -559,6 +559,18 @@
   color: #fff;
   animation: overview-iso-check-pulse 1.6s ease-in-out infinite;
 }
+/* 黃色提醒（例如威脅情資檢核表已上傳、還沒簽核）：比紅色低一級，不閃 */
+.overview-iso-check-warning {
+  padding: 12px 18px;
+  border: 2px solid #d97706;
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+}
+.overview-iso-check-warning:hover { border-color: #b45309; }
+.overview-iso-check-alert.overview-iso-check-alert-warning {
+  background: #d97706;
+  animation: none;
+}
 @keyframes overview-iso-check-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.55; }

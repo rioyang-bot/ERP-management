@@ -19,6 +19,7 @@ import ChecklistTemplates from './pages/ChecklistTemplates';
 import IsoEquipmentForm from './pages/IsoEquipmentForm';
 import IsoPeriodicCheck from './pages/IsoPeriodicCheck';
 import IsoRoomCheck from './pages/IsoRoomCheck';
+import IsoThreatIntel from './pages/IsoThreatIntel';
 import PJReport from './pages/PJReport';
 import FlowHistory from './pages/FlowHistory';
 import EventLogs from './pages/EventLogs';
@@ -95,6 +96,7 @@ function App() {
               <Route path="iso-backup-check" element={<IsoPeriodicCheck key="S-409-01" formCode="S-409-01" />} />
               <Route path="iso-log-review" element={<IsoPeriodicCheck key="S-409-02" formCode="S-409-02" />} />
               <Route path="iso-room-check" element={<IsoRoomCheck />} />
+              <Route path="iso-threat-intel" element={<IsoThreatIntel />} />
               <Route path="pj-report" element={<PJReport />} />
               <Route path="process-flow" element={<ProcessFlow />} />
               <Route path="flow-history" element={<FlowHistory />} />
