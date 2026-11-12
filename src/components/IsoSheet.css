@@ -1,5 +1,5 @@
 /*
- * ISO 表單（設備攜出入單、機房檢查表、備份檢查／日誌審查紀錄表）的紙張
+ * ISO 表單（設備攜出入單、機房檢查表、備份檢查／日誌審查紀錄表、威脅情資自我檢核表）的紙張
  *
  * 全域的 `thead tr { background-color: var(--table-header-bg) !important }`（index.css）
  * 會把表頭列塗成系統的表頭色（深色模式是深藍）；行內樣式蓋不過 !important，
@@ -10,7 +10,18 @@
 .iso-periodic-check-sheet thead tr,
 .iso-periodic-check-sheet tbody tr,
 .iso-room-check-sheet thead tr,
-.iso-room-check-sheet tbody tr {
+.iso-room-check-sheet tbody tr,
+.iso-threat-intel-sheet thead tr,
+.iso-threat-intel-sheet tbody tr {
   background-color: transparent !important;
   color: #000000 !important;
+}
+
+/*
+ * 威脅情資自我檢核表的檢視：全域的 * { font-family } 會把每個字都換成系統字型，
+ * 紙張裡照 Word 檔用標楷體（沒有就用其他楷書／明體）
+ */
+.iso-threat-intel-sheet,
+.iso-threat-intel-sheet * {
+  font-family: "標楷體", "DFKai-SB", "BiauKai", "Kaiti TC", "Times New Roman", serif !important;
 }

@@ -18,7 +18,7 @@
 import express from 'express';
 import crypto from 'crypto';
 import { writeAuditLog, clientIp } from './auditLog.js';
-import { parseChecklistDocx, signChecklistDocx, ChecklistFormatError } from './threatIntelDocx.js';
+import { parseChecklistDocx, signChecklistDocx, previewChecklistDocx, ChecklistFormatError } from './threatIntelDocx.js';
 
 export const FORM_CODE = 'S-413-02';
 export const FORM_LABEL = '威脅情資自我檢核表';
@@ -150,6 +150,18 @@ export const createIsoThreatIntelRoutes = (pool, auth, { now = () => new Date() 
     } catch (error) {
       console.error('[IsoThreatIntel] 下載失敗:', error.message);
       return res.status(500).json({ success: false, error: '產生檢核表失敗。' });
+    }
+  });
+
+  // 檢視：原檔的版面（頁首、內文、附件、頁尾），網頁照著畫；簽名由頁面帶入
+  router.get('/:id/preview', auth.requireAuth, async (req, res) => {
+    try {
+      const row = await loadById(req, res, 'id, file_data');
+      if (!row) return undefined;
+      return res.json({ success: true, layout: await previewChecklistDocx(row.file_data) });
+    } catch (error) {
+      console.error('[IsoThreatIntel] 檢視失敗:', error.message);
+      return res.status(500).json({ success: false, error: '讀取檢核表版面失敗。' });
     }
   });
 

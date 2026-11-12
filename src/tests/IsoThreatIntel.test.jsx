@@ -6,7 +6,7 @@ import { RoleContext } from '../context/RoleContext';
 import IsoThreatIntel from '../pages/IsoThreatIntel';
 import Overview from '../pages/Overview';
 import Reports from '../pages/Reports';
-import { monthStatus, previousPeriod, rocMonthLabel } from '../utils/isoThreatIntel';
+import { monthStatus, previousPeriod, rocMonthLabel, signerLineParts } from '../utils/isoThreatIntel';
 
 /**
  * ISO 27001 S-413-02 威脅情資自我檢核表
@@ -27,6 +27,29 @@ const UNSIGNED = {
   uploadedByName: '楊資安', uploadedAt: '2026-11-01T01:00:00Z', signedByName: null, signedAt: null, signaturePng: null, rows: ROWS, canDelete: false, canRevoke: false,
 };
 const SIGNED = { ...UNSIGNED, signedByName: '王小明', signedAt: '2026-11-02T02:00:00Z', signaturePng: PNG, canRevoke: true };
+const run = (text, extra = {}) => ({ text, bold: false, color: null, size: 24, ...extra });
+const cellOf = (...lines) => ({ span: 1, vMerge: null, fill: null, vAlign: 'center', paras: lines.map((l) => ({ align: 'left', runs: [run(l)], pageBreak: false })) });
+/** 伺服器讀出的版面（server/threatIntelDocx.js 的 previewChecklistDocx） */
+const LAYOUT = {
+  page: { width: 16838, height: 11906, margin: { top: 1134, right: 993, bottom: 1134, left: 1440 } },
+  header: { docNo: 'S-413-02', docName: '威脅情資自我檢核表', publishDate: '115/06/01', version: 'v1.0', title: '威脅情資自我檢核表', logo: { dataUrl: PNG, widthIn: 1.3, heightIn: 0.55, crop: { l: 0.1, t: 0.2, r: 0.3, b: 0.4 } } },
+  footer: ['機密等級：內部使用'],
+  hasSignerLine: true,
+  blocks: [
+    { type: 'table', widths: [1781, 2777, 6626, 1701, 1701], rows: [
+      ['檢核日期', '情資來源', '檢核項目', '適用/不適用', '更新/不更新'].map((t) => ({ ...cellOf(t), fill: '#d9d9d9' })),
+      [cellOf('115/11/01'), cellOf('國家資通安全研究院'), { ...cellOf('微軟釋出115年10月份安全性更新'), paras: [{ align: 'left', pageBreak: false, runs: [run('【Windows 11】', { bold: true })] }, { align: 'left', pageBreak: false, runs: [run('危險等級：超高風險', { color: '#7a0019' })] }] }, cellOf('■適用', '□不適用'), cellOf('■更新', '□不更新')],
+    ] },
+    { type: 'p', align: 'right', pageBreak: false, signer: true, runs: [run('檢核人（簽章）：＿＿＿＿＿＿　　　日期：＿＿＿年＿＿月＿＿日')] },
+    { type: 'p', align: 'both', pageBreak: true, signer: false, runs: [] },
+    { type: 'p', align: 'left', pageBreak: false, signer: false, runs: [run('附件、威脅情資來源')] },
+    { type: 'table', widths: [1828, 3827, 8653], rows: [
+      [cellOf('類型'), cellOf('情資來源'), cellOf('連結')],
+      [{ ...cellOf('系統漏洞'), vMerge: 'restart' }, cellOf('NICS'), cellOf('https://www.nics.nat.gov.tw/')],
+      [{ ...cellOf(''), vMerge: 'continue' }, cellOf('Cisco Talos'), cellOf('https://www.talosintelligence.com/')],
+    ] },
+  ],
+};
 const latestOf = (c) => (c ? { period: c.period, uploadedAt: c.uploadedAt, uploadedByName: c.uploadedByName, signedByName: c.signedByName, signedAt: c.signedAt } : null);
 
 let state;
@@ -47,6 +70,7 @@ beforeEach(() => {
       return { success: true, signatures: {}, permissions: {} };
     }),
     isoThreatIntel: vi.fn(async (method, target) => {
+      if (method === 'GET' && Array.isArray(target) && target[1] === 'preview') return { success: true, layout: LAYOUT };
       if (method === 'GET' && target === 'latest') return { success: true, latest: state.latest !== undefined ? state.latest : latestOf(state.checklist) };
       if (method === 'GET') return { success: true, checklist: target === state.checklist?.period ? state.checklist : null };
       return { success: true };
@@ -81,6 +105,13 @@ describe('工具函式', () => {
     expect(monthStatus({ ...nov, signedByName: '王小明' }, new Date(2026, 10, 20))).toEqual({ period: '2026-11', state: 'CLOSED', level: 'green' });
     // 1 日就上傳了但還沒簽：黃色
     expect(monthStatus(nov, new Date(2026, 10, 1))).toMatchObject({ level: 'yellow' });
+  });
+
+  it('簽章那一行：簽名放在底線的位置、日期填簽核日期；沒有底線就照原文字', () => {
+    const at = new Date(2026, 10, 12, 17, 9).toISOString();
+    expect(signerLineParts('檢核人（簽章）：＿＿＿＿＿　　　日期：＿＿＿年＿＿月＿＿日', at)).toEqual({ label: '檢核人（簽章）：', after: '　　　日期：115年11月12日' });
+    expect(signerLineParts('檢核人：____ 備註', at)).toEqual({ label: '檢核人：', after: ' 備註' });
+    expect(signerLineParts('檢核人', at)).toEqual({ label: '檢核人', after: '' });
   });
 
   it('月份', () => {
@@ -192,6 +223,39 @@ describe('威脅情資自我檢核表頁面', () => {
     expect(status).toHaveTextContent('請盡快上傳');
     expect(screen.getByTestId('threat-intel-empty')).toHaveTextContent('115年11月的威脅情資自我檢核表還沒上傳');
     expect(screen.getByRole('button', { name: /上傳檢核表/ })).toBeInTheDocument();
+  });
+
+  it('檢視表單：照 Word 版面畫出頁首、檢核表、簽章那一行、附件；簽了就放簽名與日期', async () => {
+    state.checklist = SIGNED;
+    renderPage();
+    fireEvent.click(await screen.findByRole('tab', { name: /檢視表單/ }));
+    const page1 = await screen.findByTestId('threat-sheet-page-1');
+    expect(apiCalls('GET').some(([, t]) => Array.isArray(t) && t[0] === 5 && t[1] === 'preview')).toBe(true);
+    expect(page1).toHaveTextContent('文件編號：S-413-02');
+    expect(page1).toHaveTextContent('發布日期：115/06/01');
+    expect(within(page1).getByAltText('LOGO')).toBeInTheDocument();
+    expect(page1).toHaveTextContent('【Windows 11】');
+    expect(page1).toHaveTextContent('機密等級：內部使用');
+    const line = page1.querySelector('[data-signer-line]');
+    expect(line).toHaveAttribute('data-signer-line', 'signed');
+    expect(within(line).getByAltText('檢核人簽名')).toHaveAttribute('src', PNG);
+    expect(line).toHaveTextContent('檢核人（簽章）：');
+    expect(line).toHaveTextContent('日期：115年11月02日');
+    expect(line).not.toHaveTextContent('＿');
+    // 分頁後的附件在第 2 頁
+    expect(screen.getByTestId('threat-sheet-page-2')).toHaveTextContent('附件、威脅情資來源');
+    // 逐列內容收起來
+    expect(screen.getByLabelText('檢核項目')).not.toBeVisible();
+  });
+
+  it('檢視表單：還沒簽就照原檔的底線', async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole('tab', { name: /檢視表單/ }));
+    const page1 = await screen.findByTestId('threat-sheet-page-1');
+    const line = page1.querySelector('[data-signer-line]');
+    expect(line).toHaveAttribute('data-signer-line', 'unsigned');
+    expect(line).toHaveTextContent('日期：＿＿＿年＿＿月＿＿日');
+    expect(within(page1).queryByAltText('檢核人簽名')).toBeNull();
   });
 
   it('網址帶 ?month= 直接開那個月', async () => {
