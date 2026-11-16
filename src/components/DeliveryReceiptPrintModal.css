@@ -217,10 +217,14 @@
   text-align: left;
 }
 
+/* 用 max-height/max-width + auto 讓 <img> 本身維持原始比例。
+   不可用固定 height + object-fit：html2canvas 不支援 object-fit，下載圖檔時 Logo 會被拉伸變形。 */
 .dr-logo-img {
-  height: 52px;
+  width: auto;
+  height: auto;
+  max-height: 52px;
   max-width: 180px;
-  object-fit: contain;
+  flex-shrink: 0;
 }
 
 .dr-company-title {

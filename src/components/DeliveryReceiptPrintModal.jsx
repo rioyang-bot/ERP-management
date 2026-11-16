@@ -371,9 +371,11 @@ const DeliveryReceiptPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
               text-align: left;
             }
             .dr-logo-img {
-              height: 48px;
+              width: auto;
+              height: auto;
+              max-height: 48px;
               max-width: 160px;
-              object-fit: contain;
+              flex-shrink: 0;
             }
             .dr-company-title {
               display: flex;
