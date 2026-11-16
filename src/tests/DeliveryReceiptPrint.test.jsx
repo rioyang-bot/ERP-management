@@ -105,6 +105,45 @@ describe('DeliveryReceiptPrintModal 交貨簽收單列印與預覽測試', () =>
     expect(screen.getAllByText('竣喆國際有限公司').length).toBeGreaterThanOrEqual(1);
   });
 
+  // 案名欄的值（「案　　名：」標籤旁的 span）
+  const projectNameValue = (container) => {
+    const row = [...container.querySelectorAll('.dr-meta-row')]
+      .find((r) => r.querySelector('.dr-meta-label')?.textContent.startsWith('案'));
+    return row?.querySelector('.dr-meta-value')?.textContent;
+  };
+
+  it.each([
+    ['空字串', ''],
+    ['只有空白', '   '],
+    ['null', null],
+    ['未提供', undefined],
+  ])('沒有專案（project_name 為%s）時案名留空白，不填預設文字也不顯示 --', (_label, projectName) => {
+    const { container } = render(
+      <DeliveryReceiptPrintModal
+        isOpen={true}
+        onClose={vi.fn()}
+        dnData={{ ...mockDnData, project_name: projectName }}
+        items={mockItems}
+      />
+    );
+
+    expect(projectNameValue(container)).toBe('');
+    expect(screen.queryByText('專案設備')).not.toBeInTheDocument();
+  });
+
+  it('舊資料的專案名稱帶「案名：」前綴時只顯示名稱本身', () => {
+    const { container } = render(
+      <DeliveryReceiptPrintModal
+        isOpen={true}
+        onClose={vi.fn()}
+        dnData={{ ...mockDnData, project_name: '案名：機房擴建' }}
+        items={mockItems}
+      />
+    );
+
+    expect(projectNameValue(container)).toBe('機房擴建');
+  });
+
   it('設備品項應自動抓取系統日期 (起始日) 與客戶保固到期日 (到期日)，硬體與耗材則留空', () => {
     const { container } = render(
       <DeliveryReceiptPrintModal

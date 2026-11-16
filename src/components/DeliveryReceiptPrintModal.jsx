@@ -80,8 +80,8 @@ const DeliveryReceiptPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
     const cust = dnData.customer || '';
     setCustomerName(cust);
 
-    // 尋找關聯專案名稱
-    const proj = dnData.project_name || dnData.remarks || '專案設備';
+    // 案名取自出貨單的專案名稱；沒有專案時留空白（不填預設文字），需要時可在編輯模式手動補上
+    const proj = String(dnData.project_name || '').trim();
     setProjectName(proj.startsWith('案名：') ? proj.replace('案名：', '').trim() : proj);
 
     // 2. 設定民國年
@@ -698,7 +698,7 @@ const DeliveryReceiptPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
                   className="dr-meta-input" 
                 />
               ) : (
-                <span className="dr-meta-value">{projectName || '--'}</span>
+                <span className="dr-meta-value">{projectName}</span>
               )}
             </div>
             <div className="dr-meta-row">
