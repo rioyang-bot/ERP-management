@@ -34,6 +34,25 @@ const getMinguoDateParts = (dateStr) => {
   return { year: String(year), month, day };
 };
 
+// 上次選的公司範本，存在伺服器的個人偏好設定（跟著登入帳號走，換電腦也沿用）
+const RECEIPT_PRESET_PREF_KEY ='deliveryReceipt:companyPreset';
+
+const readSavedPreset = async () => {
+  try {
+    const res = await window.electronAPI?.getUserPreference?.(RECEIPT_PRESET_PREF_KEY);
+    return res?.success && typeof res.value === 'string' ? res.value : null;
+  } catch {
+    return null; // 讀不到就用預設範本
+  }
+};
+
+const saveSelectedPreset = (presetKey) => {
+  try {
+    Promise.resolve(window.electronAPI?.setUserPreference?.(RECEIPT_PRESET_PREF_KEY, presetKey))
+      .catch(() => { /* 存不進去不影響列印 */ });
+  } catch { /* 存不進去不影響列印 */ }
+};
+
 const DeliveryReceiptPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
   const [isEditMode, setIsEditMode] = useState(false);
   const [presetsMap, setPresetsMap] = useState(() => getCompanyPresets());
@@ -165,14 +184,16 @@ const DeliveryReceiptPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
     setTableRows(parsedRows);
   }, [isOpen, dnData, items]);
 
-  // 開啟時從伺服器讀取最新範本（所有人共用），並套用目前選的那一個
+  // 開啟時從伺服器讀取最新範本（所有人共用），並套用這位使用者上次選的那一個
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
-    loadCompanyPresets().then((allPresets) => {
+    Promise.all([loadCompanyPresets(), readSavedPreset()]).then(([allPresets, savedKey]) => {
       if (cancelled) return;
       setPresetsMap(allPresets);
-      const key = allPresets[selectedPreset] ? selectedPreset : (allPresets.PRESET_B ? 'PRESET_B' : Object.keys(allPresets)[0]);
+      // 上次選的範本若已被刪除，退回版本 B
+      const key = [savedKey, selectedPreset, 'PRESET_B'].find((k) => k && allPresets[k])
+        || Object.keys(allPresets)[0];
       setSelectedPreset(key);
       const preset = allPresets[key];
       if (preset) {
@@ -187,6 +208,7 @@ const DeliveryReceiptPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
   // 切換公司預設
   const handlePresetChange = (presetKey) => {
     setSelectedPreset(presetKey);
+    saveSelectedPreset(presetKey);
     const preset = presetsMap[presetKey];
     if (preset) {
       setCurrentLogo(preset.logo);
@@ -201,6 +223,8 @@ const DeliveryReceiptPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
     setPresetsMap(allPresets);
     const targetId = newActiveId && allPresets[newActiveId] ? newActiveId : (allPresets[selectedPreset] ? selectedPreset : 'PRESET_B');
     setSelectedPreset(targetId);
+    // 在範本管理新增或編輯後選定的範本，下次打開也沿用
+    if (newActiveId && allPresets[newActiveId]) saveSelectedPreset(newActiveId);
     const activePreset = allPresets[targetId];
     if (activePreset) {
       setCurrentLogo(activePreset.logo);
