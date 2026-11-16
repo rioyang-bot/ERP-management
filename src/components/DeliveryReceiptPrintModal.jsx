@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Printer, Download, X, Edit3, Check, RefreshCw, Building, Image as ImageIcon, Plus, Trash2, Loader2, Settings } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { getCompanyPresets, loadCompanyPresets, DEFAULT_BUILTIN_PRESETS } from '../utils/companyPresets';
+import { PRESET_PREF_KEYS, readPresetPreference, savePresetPreference } from '../utils/presetPreference';
 import CompanyPresetModal from './CompanyPresetModal';
 import logoImg from '../assets/logo.png';
 import './DeliveryReceiptPrintModal.css';
@@ -35,23 +36,8 @@ const getMinguoDateParts = (dateStr) => {
 };
 
 // 上次選的公司範本，存在伺服器的個人偏好設定（跟著登入帳號走，換電腦也沿用）
-const RECEIPT_PRESET_PREF_KEY ='deliveryReceipt:companyPreset';
-
-const readSavedPreset = async () => {
-  try {
-    const res = await window.electronAPI?.getUserPreference?.(RECEIPT_PRESET_PREF_KEY);
-    return res?.success && typeof res.value === 'string' ? res.value : null;
-  } catch {
-    return null; // 讀不到就用預設範本
-  }
-};
-
-const saveSelectedPreset = (presetKey) => {
-  try {
-    Promise.resolve(window.electronAPI?.setUserPreference?.(RECEIPT_PRESET_PREF_KEY, presetKey))
-      .catch(() => { /* 存不進去不影響列印 */ });
-  } catch { /* 存不進去不影響列印 */ }
-};
+const readSavedPreset = () => readPresetPreference(PRESET_PREF_KEYS.deliveryReceipt);
+const saveSelectedPreset = (presetKey) => savePresetPreference(PRESET_PREF_KEYS.deliveryReceipt, presetKey);
 
 const DeliveryReceiptPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
   const [isEditMode, setIsEditMode] = useState(false);

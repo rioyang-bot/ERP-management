@@ -4,6 +4,7 @@ import { logUpdate } from '../utils/auditLogger';
 import { toDraft, fromDraft, sameForm, changedFields, FIELD_LABELS } from '../utils/lentPrintDraft';
 import html2canvas from 'html2canvas';
 import { getCompanyPresets, loadCompanyPresets, DEFAULT_BUILTIN_PRESETS } from '../utils/companyPresets';
+import { PRESET_PREF_KEYS, readPresetPreference, savePresetPreference } from '../utils/presetPreference';
 import CompanyPresetModal from './CompanyPresetModal';
 import logoImg from '../assets/logo.png';
 import './LentOrderPrintModal.css';
@@ -89,6 +90,8 @@ const LentOrderPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
   const [isEditMode, setIsEditMode] = useState(false);
   const [presetsMap, setPresetsMap] = useState(() => getCompanyPresets());
   const [selectedPreset, setSelectedPreset] = useState('PRESET_A');
+  // 這位使用者上次選的範本：沒有存過修改的借貨申請單、以及「還原預設」都用它
+  const rememberedPresetRef = useRef('PRESET_A');
   const [isPresetModalOpen, setIsPresetModalOpen] = useState(false);
   const [headerLayout, setHeaderLayout] = useState('STANDARD'); // 'STANDARD' | 'LEFT_COMPACT' | 'CENTER_ROW' | 'CENTERED' | 'REVERSE'
 
@@ -182,19 +185,25 @@ const LentOrderPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
 
     (async () => {
       const api = window.electronAPI;
-      const [presets, customers, draftRes] = await Promise.all([
+      const [presets, customers, draftRes, savedPresetKey] = await Promise.all([
         loadCompanyPresets(),
         api?.namedQuery ? api.namedQuery('fetchCustomers').catch((err) => { console.error('Load customer details error:', err); return null; }) : null,
         api?.namedQuery && dnData.id ? api.namedQuery('fetchLentPrintDraft', [dnData.id]).catch(() => null) : null,
+        readPresetPreference(PRESET_PREF_KEYS.lentOrder),
       ]);
       if (cancelled) return;
       setPresetsMap(presets);
 
+      // 預設範本用這位使用者上次選的；已被刪除或沒選過則用版本 A
+      const remembered = savedPresetKey && presets[savedPresetKey] ? savedPresetKey : 'PRESET_A';
+      rememberedPresetRef.current = remembered;
+
       // 客戶主檔補足聯絡人、電話與地址（fetchCustomers 回傳的欄位叫 contact）
       const matched = customers?.success ? (customers.rows || []).find((c) => c.name === base.custCompany) : null;
-      const preset = presets[base.selectedPreset] || presets.PRESET_A;
+      const preset = presets[remembered] || presets.PRESET_A;
       const defaults = {
         ...base,
+        selectedPreset: remembered,
         headerRightText: preset?.headerRight || '',
         custPerson: matched?.contact || base.custPerson,
         custPhone: matched?.phone || base.custPhone,
@@ -246,8 +255,10 @@ const LentOrderPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
           `借貨申請單 [${dnData.request_no}] 還原為預設內容`, { dnId: dnData.id, dnNumber: dnData.request_no });
       }
       const presets = getCompanyPresets();
-      const base = buildDefaultForm(dnData, items);
-      const form = { ...base, headerRightText: presets[base.selectedPreset]?.headerRight || '' };
+      // 還原成預設內容，範本則回到這位使用者上次選的
+      const remembered = presets[rememberedPresetRef.current] ? rememberedPresetRef.current : 'PRESET_A';
+      const base = { ...buildDefaultForm(dnData, items), selectedPreset: remembered };
+      const form = { ...base, headerRightText: presets[remembered]?.headerRight || '' };
       applyForm(form, presets);
       setSavedForm(form);
       setHasSavedDraft(false);
@@ -284,6 +295,8 @@ const LentOrderPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
   // 切換公司範本
   const handlePresetChange = (presetKey) => {
     setSelectedPreset(presetKey);
+    rememberedPresetRef.current = presetKey;
+    savePresetPreference(PRESET_PREF_KEYS.lentOrder, presetKey);
     // 換範本只換頁首與公司資訊，已選的經銷商不受影響
     const preset = presetsMap[presetKey];
     if (preset) {
@@ -299,6 +312,11 @@ const LentOrderPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
     setPresetsMap(allPresets);
     const targetId = newActiveId && allPresets[newActiveId] ? newActiveId : (allPresets[selectedPreset] ? selectedPreset : 'PRESET_A');
     setSelectedPreset(targetId);
+    // 在範本管理新增或編輯後選定的範本，下次打開也沿用
+    if (newActiveId && allPresets[newActiveId]) {
+      rememberedPresetRef.current = newActiveId;
+      savePresetPreference(PRESET_PREF_KEYS.lentOrder, newActiveId);
+    }
     const activePreset = allPresets[targetId];
     if (activePreset) {
       setLogoCustom(false);
