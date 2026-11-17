@@ -16,6 +16,7 @@
  */
 
 import { logCreate, logUpdate, logStatusChange, logFieldChanges, diffFields, describeChanges } from './auditLogger';
+import { snapshotAssets, logAssetFieldChanges } from './assetFieldSnapshot';
 import { toLocalYmd } from './lentReturnDate';
 import { createHwSyncTracker } from './mountedHwSync';
 
@@ -164,6 +165,26 @@ export function buildExchangeSteps({ exNo, dnNo, customer, location: rawLocation
 }
 
 /**
+ * 換出／換回設備上搭載的硬體：交易前先讀一次目前的客戶、地點、專案、日期。
+ *
+ * 換出時硬體跟著帶入客戶、地點與日期（exchangeShipMounted），換回時清掉客戶與專案
+ * （swapClearMountedOnBroken，維修換貨也共用），兩支都只回傳 id，看不出原本的值。
+ * 因此交易前後各讀一次逐台比對（與確認出貨、借出同一套，見 utils/assetFieldSnapshot.js）。
+ * 設備本身不放進來：它的欄位由 exchangeShipAsset／exchangeReturnAsset 回傳的舊值另外記，
+ * 放進來會重複記一次。讀不到回傳 null，只是少記這一段，不擋換貨。
+ */
+export async function snapshotExchangeMounted({ inLines = [], outLines = [] } = {}) {
+  const sns = [...inLines, ...outLines]
+    .filter((l) => l.kind === 'ASSET' && String(l.sn ?? '').trim())
+    .map((l) => String(l.sn).trim());
+  const before = await snapshotAssets(sns);
+  if (!before) return null;
+  const own = new Set(sns.map((s) => s.toUpperCase()));
+  const rows = new Map([...before.rows].filter(([key]) => !own.has(key)));
+  return rows.size ? { sns: before.sns, rows } : null;
+}
+
+/**
  * 交易完成後寫事件紀錄。
  *   - 換貨單、出貨單各一筆
  *   - 換回的每一項各一筆（履歷上的「客戶換貨退回」）：耗材帶 itemMasterId 接回品項；
@@ -172,8 +193,10 @@ export function buildExchangeSteps({ exNo, dnNo, customer, location: rawLocation
  *   - 換回時清空的客戶、地點、End-user、專案、出貨日期，寫在換回那一筆（變更前 → 變更後）
  *   換出的狀態不另外記：出貨單明細在履歷上就是那一筆「出貨發貨」；
  *   只有帶入的客戶、地點與日期每台另記一筆「變更前 → 變更後」
+ *   - 搭載在換出／換回設備上的硬體：客戶、地點、專案、日期每支各記一筆「變更前 → 變更後」
+ *     （mountedBefore 為交易前 snapshotExchangeMounted 讀的那一份）
  */
-export async function logExchange({ exNo, dnNo, customer, date, reason, inLines, outLines, results = {}, hwIn }) {
+export async function logExchange({ exNo, dnNo, customer, date, reason, inLines, outLines, results = {}, hwIn, mountedBefore = null }) {
   const base = { exchangeNo: exNo, dnNumber: dnNo };
   await logCreate('EXCHANGE', exNo, customer,
     `建立換貨單 [${exNo}]，客戶 [${customer}]：換回 ${listText(inLines)}；換出 ${listText(outLines)}（出貨單 ${dnNo}）`,
@@ -214,6 +237,11 @@ export async function logExchange({ exNo, dnNo, customer, date, reason, inLines,
       diffFields(oldValues(row), row, EXCHANGE_OUT_FIELDS),
       { ...base, sn: l.sn, assetSideEffect: true });
   }
+
+  // 搭載的硬體跟著設備換出（帶入客戶、地點、日期）或換回（清掉客戶、專案）
+  await logAssetFieldChanges(mountedBefore,
+    `換貨單 [${exNo}]（客戶 [${customer}]）搭載硬體跟著設備異動`,
+    { ...base, mountedSync: true });
 }
 
 const ymd = (v) => toLocalYmd(v) || '';

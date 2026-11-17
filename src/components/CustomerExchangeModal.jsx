@@ -4,7 +4,7 @@ import {
   ArrowDownToLine, ArrowUpFromLine, MessageSquare,
 } from 'lucide-react';
 import { getCurrentUser } from '../utils/auditLogger';
-import { validateExchange, buildExchangeSteps, logExchange, lineLabel } from '../utils/customerExchange';
+import { validateExchange, buildExchangeSteps, logExchange, lineLabel, snapshotExchangeMounted } from '../utils/customerExchange';
 import '../pages/Outbound.css';
 
 const today = () => new Date().toISOString().split('T')[0];
@@ -181,10 +181,12 @@ const CustomerExchangeModal = ({ isOpen, onClose, onSuccess }) => {
       const { steps, hwIn } = buildExchangeSteps({
         exNo: finalExNo, dnNo, customer: customer.name, location: location.trim(), contact, date, reason, remarks, userId, inLines, outLines,
       });
+      // 搭載硬體被改寫前的值（客戶、地點、專案、日期），換貨完成後逐支記「變更前 → 變更後」
+      const mountedBefore = await snapshotExchangeMounted({ inLines, outLines });
       const res = await window.electronAPI.runTransaction(steps);
       if (!res.success) throw new Error(res.error || '換貨失敗');
 
-      await logExchange({ exNo: finalExNo, dnNo, customer: customer.name, date, reason, inLines, outLines, results: res.results, hwIn });
+      await logExchange({ exNo: finalExNo, dnNo, customer: customer.name, date, reason, inLines, outLines, results: res.results, hwIn, mountedBefore });
       window.dispatchEvent(new CustomEvent('db-update'));
       alert(`✅ 換貨完成！\n\n換貨單 [${finalExNo}] 已建立，換回的品項已回到在庫。\n`
         + `出貨單 [${dnNo}] 已建立（已出貨），可到「已出貨」頁籤列印交貨簽收單。`);
