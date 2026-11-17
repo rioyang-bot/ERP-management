@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useContext } from 'react';
 import { RoleContext } from '../context/RoleContext';
 import { validatePassword } from '../utils/auth';
 import { Shield, User, Settings as SettingsIcon, CheckSquare, Square, X, Save, Key, Lock, Trash2, Power, GitMerge, RefreshCw, Database, CheckCircle2 } from 'lucide-react';
-import { logCreate, logUpdate, logDelete, logStatusChange, logEvent, ACTION_TYPES } from '../utils/auditLogger';
+import { logCreate, logUpdate, logDelete, logStatusChange, logEvent, ACTION_TYPES, diffFields, describeChanges } from '../utils/auditLogger';
 import UploadCleanupPanel from '../components/UploadCleanupPanel';
 
 const MENU_OPTIONS = [
@@ -32,6 +32,51 @@ const SIGN_OPTIONS = [
 // 同樣不跟著選單權限走，管理員也要勾了才能調整。
 const STOCK_ADJUST_OPTION = { id: 'stockAdjust', label: '可盤點調整' };
 
+/**
+ * 帳號的選單權限 → 權限視窗裡看到的樣子：相容舊格式 Key，並對齊目前列表模組；
+ * 管理員的選單權限一律全開。開視窗與事件紀錄比對「變更前」都用這一份，
+ * 舊格式 Key 才不會被當成有變動。
+ */
+const normalizeMenuAccess = (user) => {
+  const rawAccess = user?.menu_access || {};
+  const access = {
+    ...rawAccess,
+    overview: rawAccess.overview ?? true,
+    inboundList: rawAccess.inboundList ?? rawAccess.inbound ?? false,
+    dnList: rawAccess.dnList ?? rawAccess.outbound ?? false,
+    lentList: rawAccess.lentList ?? rawAccess.outbound ?? false,
+    repairList: rawAccess.repairList ?? (rawAccess.outbound || rawAccess.assets) ?? false,
+    assetList: rawAccess.assetList ?? rawAccess.assets ?? false,
+    'nic-list': rawAccess['nic-list'] ?? rawAccess['nic-registration'] ?? false,
+    'consumable-list': rawAccess['consumable-list'] ?? rawAccess.consumableList ?? rawAccess.consumables ?? false,
+    procurementList: rawAccess.procurementList ?? rawAccess.purchasing ?? false,
+  };
+  if (user?.role === 'ADMIN') {
+    MENU_OPTIONS.forEach(opt => {
+      access[opt.id] = true;
+    });
+  }
+  return access;
+};
+
+/** 權限視窗裡的每一個勾選項目（事件紀錄逐項記「有權限 → 無權限」，標籤與畫面一致） */
+const PERMISSION_FIELDS = [
+  ...MENU_OPTIONS,
+  ...SIGN_OPTIONS.map((o) => ({ id: o.id, label: `可簽（${o.label}）` })),
+  STOCK_ADJUST_OPTION,
+].map((o) => ({ key: o.id, label: o.label, format: (v) => (v ? '有權限' : '無權限') }));
+
+/** 密碼原則的每一個欄位（事件紀錄逐項記變更前 → 變更後） */
+const onOff = (v) => (v ? '啟用' : '停用');
+const POLICY_FIELDS = [
+  { key: 'enabled', label: '啟用複雜密碼檢查', format: onOff },
+  { key: 'minLength', label: '最少字元長度' },
+  { key: 'requireUppercase', label: '必須包含大寫英文字母', format: onOff },
+  { key: 'requireLowercase', label: '必須包含小寫英文字母', format: onOff },
+  { key: 'requireNumber', label: '必須包含數字', format: onOff },
+  { key: 'requireSpecialChar', label: '必須包含特殊符號', format: onOff },
+];
+
 const Settings = () => {
   const { authUser, setAuthUser } = useContext(RoleContext);
 
@@ -54,6 +99,8 @@ const Settings = () => {
   const defaultPolicy = { enabled: false, minLength: 8, requireUppercase: true, requireLowercase: true, requireNumber: true, requireSpecialChar: true };
   const [passwordPolicy, setPasswordPolicy] = useState(defaultPolicy);
   const [isSavingPolicy, setIsSavingPolicy] = useState(false);
+  // 最後一次從資料庫讀到（或存進去）的密碼原則：事件紀錄的「變更前」
+  const [savedPolicy, setSavedPolicy] = useState(defaultPolicy);
 
   // 品項主檔大小寫整併狀態 (Master Merger State)
   const [duplicateMasters, setDuplicateMasters] = useState([]);
@@ -65,6 +112,7 @@ const Settings = () => {
     const res = await window.electronAPI.namedQuery('getSystemSetting', ['password_policy']);
     if (res.success && res.rows.length > 0) {
       setPasswordPolicy(res.rows[0].value || defaultPolicy);
+      setSavedPolicy(res.rows[0].value || defaultPolicy);
     }
   }, []);
 
@@ -216,37 +264,32 @@ const Settings = () => {
   const handleDeleteUser = async (id, username) => {
     if (username === 'METECH') return alert('系統管理員帳號不可刪除'); 
     if (window.confirm(`確定要永久刪除帳號 [${username}] 嗎？此動作無法復原。`)) {
+      // 刪除前的帳號內容留在事件紀錄裡，刪掉之後還查得到這個帳號原本是什麼角色、有哪些權限
+      const u = users.find(item => item.id === id);
+      const access = u ? normalizeMenuAccess(u) : {};
+      const granted = PERMISSION_FIELDS.filter((f) => access[f.key]).map((f) => f.label);
       const res = await window.electronAPI.namedQuery('deleteUser', [id]);
       if (res.success) {
-        logDelete('USER', username, '使用者帳號', `刪除使用者帳號 [${username}]`, { id, username });
+        logDelete('USER', username, '使用者帳號',
+          `刪除使用者帳號 [${username}]`
+          + (u ? `（姓名：${u.full_name || '（空白）'}；角色：${u.role}；狀態：${u.is_active ? '啟用' : '停用'}；權限：${granted.length ? granted.join('、') : '無'}）` : ''),
+          {
+            id, username,
+            before: u ? {
+              username: u.username, full_name: u.full_name || null, role: u.role, is_active: !!u.is_active,
+              menu_access: u.menu_access || {}, permissions: granted,
+            } : null,
+          });
         await fetchUsers();
       }
     }
   };
 
   const handleOpenPermissions = (user) => {
-    const rawAccess = user.menu_access || {};
-    // 相容舊格式 Key 並對齊目前列表模組
-    const access = {
-      ...rawAccess,
-      overview: rawAccess.overview ?? true,
-      inboundList: rawAccess.inboundList ?? rawAccess.inbound ?? false,
-      dnList: rawAccess.dnList ?? rawAccess.outbound ?? false,
-      lentList: rawAccess.lentList ?? rawAccess.outbound ?? false,
-      repairList: rawAccess.repairList ?? (rawAccess.outbound || rawAccess.assets) ?? false,
-      assetList: rawAccess.assetList ?? rawAccess.assets ?? false,
-      'nic-list': rawAccess['nic-list'] ?? rawAccess['nic-registration'] ?? false,
-      'consumable-list': rawAccess['consumable-list'] ?? rawAccess.consumableList ?? rawAccess.consumables ?? false,
-      procurementList: rawAccess.procurementList ?? rawAccess.purchasing ?? false,
-    };
-    if (user.role === 'ADMIN') {
-      MENU_OPTIONS.forEach(opt => {
-        access[opt.id] = true;
-      });
-    }
+    // 相容舊格式 Key 並對齊目前列表模組（見 normalizeMenuAccess）
     setEditingUser({
       ...user,
-      menu_access: access
+      menu_access: normalizeMenuAccess(user)
     });
     setShowPermissionModal(true);
   };
@@ -278,12 +321,19 @@ const Settings = () => {
 
     if (res.success) {
       const signRoles = SIGN_OPTIONS.filter((o) => updatedAccess[o.id]).map((o) => o.label);
+      // 變更前取清單裡原本那一筆（不是視窗裡編輯中的那份），同樣先對齊舊格式 Key 再比對
+      const original = users.find((u) => u.id === editingUser.id);
+      const beforeAccess = original ? normalizeMenuAccess(original) : {};
+      const changes = original ? diffFields(beforeAccess, updatedAccess, PERMISSION_FIELDS) : [];
       logUpdate('USER', editingUser.username, editingUser.full_name || editingUser.username, `修改使用者 [${editingUser.username}] 選單權限設定`
-        + `（設備攜出入單簽核：${signRoles.length ? signRoles.join('、') : '無'}；盤點調整：${updatedAccess[STOCK_ADJUST_OPTION.id] ? '可' : '否'}）`, {
+        + `（設備攜出入單簽核：${signRoles.length ? signRoles.join('、') : '無'}；盤點調整：${updatedAccess[STOCK_ADJUST_OPTION.id] ? '可' : '否'}）`
+        + (changes.length ? `：${describeChanges(changes)}` : ''), {
         username: editingUser.username,
         menu_access: updatedAccess,
         iso_sign_roles: signRoles,
         stock_adjust: !!updatedAccess[STOCK_ADJUST_OPTION.id],
+        before: { menu_access: original?.menu_access || {} },
+        changes,
       });
       alert('權限更新成功');
       
@@ -336,8 +386,14 @@ const Settings = () => {
   const savePolicy = async () => {
     setIsSavingPolicy(true);
     try {
-      await window.electronAPI.namedQuery('upsertSystemSetting', ['password_policy', passwordPolicy]);
-      logUpdate('SETTING', 'password_policy', '密碼原則設定', '更新系統密碼安全性原則', passwordPolicy);
+      const res = await window.electronAPI.namedQuery('upsertSystemSetting', ['password_policy', passwordPolicy]);
+      if (res && res.success === false) throw new Error(res.error || '儲存失敗');
+      // 逐項記「變更前 → 變更後」；變更前是上次讀到（或存進去）的那份
+      const changes = diffFields(savedPolicy, passwordPolicy, POLICY_FIELDS);
+      logUpdate('SETTING', 'password_policy', '密碼原則設定',
+        `更新系統密碼安全性原則${changes.length ? `：${describeChanges(changes)}` : ''}`,
+        { ...passwordPolicy, before: savedPolicy, after: passwordPolicy, changes });
+      setSavedPolicy(passwordPolicy);
       alert('密碼安全原則已儲存');
     } catch {
       alert('儲存失敗');

@@ -83,7 +83,7 @@ describe('線上簽核', () => {
     expect(within(dialog).getByRole('checkbox', { name: /存成我的簽名檔/ })).toBeChecked();
     signed = true;
     fireEvent.click(confirm);
-    await waitFor(() => expect(calls('PUT', 'me')).toEqual([['PUT', 'me', 'signature', undefined, { signature: PNG }]]));
+    await waitFor(() => expect(calls('PUT', 'me')).toEqual([['PUT', 'me', 'signature', undefined, { signature: PNG, signatureName: '手寫簽名' }]]));
     await waitFor(() => expect(window.electronAPI.isoSignature).toHaveBeenCalledWith('POST', 'S-408-02', expect.stringMatching(/^\d{4}-\d{2}$/), 'ROOM_ADMIN', { signature: PNG }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(await within(card).findByText('已簽核')).toBeInTheDocument();
@@ -214,7 +214,7 @@ describe('個人簽名檔', () => {
     expect(within(dialog).queryByRole('checkbox')).toBeNull();
     fireEvent.pointerDown(within(dialog).getByLabelText('簽名板'), { pointerId: 1, clientX: 5, clientY: 5 });
     fireEvent.click(within(dialog).getByRole('button', { name: '儲存簽名檔' }));
-    await waitFor(() => expect(calls('PUT', 'me')).toEqual([['PUT', 'me', 'signature', undefined, { signature: PNG }]]));
+    await waitFor(() => expect(calls('PUT', 'me')).toEqual([['PUT', 'me', 'signature', undefined, { signature: PNG, signatureName: '手寫簽名' }]]));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(calls('POST', 'S-408-02')).toHaveLength(0);
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Building, Plus, Edit3, Trash2, X, Check, Image as ImageIcon, Shield, Save, RotateCcw } from 'lucide-react';
-import { getCompanyPresets, loadCompanyPresets, saveCompanyPreset, deleteCompanyPreset, DEFAULT_BUILTIN_PRESETS, MAX_LOGO_BYTES } from '../utils/companyPresets';
-import { logCreate, logUpdate, logDelete } from '../utils/auditLogger';
+import { getCompanyPresets, loadCompanyPresets, saveCompanyPresetWithPrevious, deleteCompanyPreset, presetLogoName, MAX_LOGO_BYTES } from '../utils/companyPresets';
+import { logCreate, logUpdate, logDelete, diffFields, fileChange, describeChanges } from '../utils/auditLogger';
 import logoImg from '../assets/logo.png';
 import './CompanyPresetModal.css';
 
@@ -9,9 +9,33 @@ const emptyForm = {
   id: '',
   label: '',
   logo: logoImg,
+  // 上傳 LOGO 的原始檔名（事件紀錄記「舊檔名 → 新檔名」用）
+  logoName: '',
   headerRight: '',
   companySignName: ''
 };
+
+/** 範本的文字欄位（事件紀錄逐項記變更前 → 變更後，標籤與表單一致） */
+const PRESET_FIELDS = [
+  { key: 'label', label: '範本名稱' },
+  { key: 'headerRight', label: '頁首公司資訊' },
+  { key: 'companySignName', label: '單據簽名/受款公司全稱' },
+];
+
+/** LOGO 的變更：記檔名；檔名相同但換了一張圖也要記下來 */
+const logoChange = (before, after) => {
+  const from = presetLogoName(before);
+  const to = presetLogoName(after);
+  const change = fileChange('LOGO', from, to, 'logo');
+  if (change) return change;
+  if ((before?.logo || '') !== (after?.logo || '')) return { field: 'logo', label: 'LOGO', from, to: `${to}（重新上傳）`, kind: 'file' };
+  return null;
+};
+
+/** 範本內容的快照（事件紀錄的變更前／刪除前；不放圖片本身） */
+const presetSnapshot = (p) => ({
+  label: p?.label || '', headerRight: p?.headerRight || '', companySignName: p?.companySignName || '', logoName: presetLogoName(p),
+});
 
 const CompanyPresetModal = ({ isOpen, onClose, onPresetsUpdated }) => {
   const [presets, setPresets] = useState({});
@@ -50,6 +74,7 @@ const CompanyPresetModal = ({ isOpen, onClose, onPresetsUpdated }) => {
       id: preset.id || '',
       label: preset.label || '',
       logo: preset.logo || logoImg,
+      logoName: preset.logoName || '',
       headerRight: preset.headerRight || '',
       companySignName: preset.companySignName || ''
     });
@@ -67,7 +92,7 @@ const CompanyPresetModal = ({ isOpen, onClose, onPresetsUpdated }) => {
     if (file) {
       const reader = new FileReader();
       reader.onload = (event) => {
-        setFormData(prev => ({ ...prev, logo: event.target.result }));
+        setFormData(prev => ({ ...prev, logo: event.target.result, logoName: file.name }));
       };
       reader.readAsDataURL(file);
     }
@@ -83,11 +108,19 @@ const CompanyPresetModal = ({ isOpen, onClose, onPresetsUpdated }) => {
     setSaving(true);
     try {
       const isNew = !formData.id;
-      const saved = await saveCompanyPreset(formData);
-      // 範本是所有人共用的，改了什麼要留得下來
-      (isNew ? logCreate : logUpdate)('SETTING', saved.id, saved.label,
-        `${isNew ? '新增' : '修改'}公司範本 [${saved.label}]`,
-        { id: saved.id, label: saved.label, headerRight: saved.headerRight, companySignName: saved.companySignName });
+      const { saved, previous } = await saveCompanyPresetWithPrevious(formData);
+      // 範本是所有人共用的，改了什麼要留得下來：逐欄記變更前 → 變更後，LOGO 記檔名
+      const details = { id: saved.id, label: saved.label, headerRight: saved.headerRight, companySignName: saved.companySignName, logoName: presetLogoName(saved) };
+      if (isNew) {
+        logCreate('SETTING', saved.id, saved.label, `新增公司範本 [${saved.label}]`, details);
+      } else {
+        // 變更前：存之前伺服器上的那一份；讀不到才用畫面上的清單
+        const before = previous || presets[formData.id] || {};
+        const changes = [...diffFields(before, saved, PRESET_FIELDS), logoChange(before, saved)].filter(Boolean);
+        logUpdate('SETTING', saved.id, saved.label,
+          `修改公司範本 [${saved.label}]${changes.length ? `：${describeChanges(changes)}` : ''}`,
+          { ...details, before: presetSnapshot(before), changes });
+      }
       await loadPresets();
       setIsEditing(false);
       setFormData(emptyForm);
@@ -105,9 +138,11 @@ const CompanyPresetModal = ({ isOpen, onClose, onPresetsUpdated }) => {
   const handleDelete = async (presetId) => {
     if (window.confirm('確定要刪除此自訂公司範本嗎？\n\n範本是所有人共用的，刪除後其他人也看不到。')) {
       try {
-        const label = presets[presetId]?.label || presetId;
-        await deleteCompanyPreset(presetId);
-        logDelete('SETTING', presetId, label, `刪除公司範本 [${label}]`, { id: presetId, label });
+        const removed = (await deleteCompanyPreset(presetId)) || presets[presetId] || null;
+        const label = removed?.label || presetId;
+        // 刪除前的內容留在事件紀錄裡（含 LOGO 檔名）
+        logDelete('SETTING', presetId, label, `刪除公司範本 [${label}]`,
+          { id: presetId, label, before: removed ? presetSnapshot(removed) : null });
         await loadPresets();
         if (onPresetsUpdated) {
           onPresetsUpdated('PRESET_B');
@@ -253,7 +288,7 @@ const CompanyPresetModal = ({ isOpen, onClose, onPresetsUpdated }) => {
                     {formData.logo !== logoImg && (
                       <button
                         type="button"
-                        onClick={() => setFormData({ ...formData, logo: logoImg })}
+                        onClick={() => setFormData({ ...formData, logo: logoImg, logoName: '' })}
                         className="preset-btn preset-btn-secondary"
                       >
                         還原預設 LOGO

@@ -3,7 +3,8 @@ import {
   X, Send, PackageCheck, CheckCircle2, AlertCircle, Calendar, 
   FileText, Truck, Wrench, ShieldCheck, RefreshCw, ArrowRight, Info
 } from 'lucide-react';
-import { logUpdate } from '../utils/auditLogger';
+import { logUpdate, diffFields, describeChanges } from '../utils/auditLogger';
+import { toLocalYmd } from '../utils/lentReturnDate';
 import { performInPlaceReplacement, performOneToOneReplacement } from '../utils/rmaService';
 import { setRepairAssetStatus } from '../utils/repairAssetStatus';
 import { outstandingLoaners, activeLoaners, loanerLabel } from '../utils/repairLoaner';
@@ -49,6 +50,50 @@ const REMARK_LABEL = {
   IN_HOUSE_COMPLETE: { label: '出貨備註 (Remarks)', placeholder: '例如: 已於 9/24 送回客戶機房' },
   COMPLETE: { label: '出貨備註 (Remarks)', placeholder: '例如: 黑貓單號 123456789 / 客戶簽收人' },
 };
+
+// 事件紀錄裡的維修單狀態顯示文字
+const REPAIR_STATUS_TEXT = {
+  ON_SITE_HANDLING: '現場處理',
+  SENT_OEM: '送修原廠',
+  OEM_RETURNED: '原廠返還',
+  COMPLETED: '完工結案',
+};
+
+// 每一步會寫到維修單上的欄位，用來記「變更前 → 變更後」
+const ORDER_LOG_FIELDS = [
+  { key: 'status', label: '狀態', format: (v) => REPAIR_STATUS_TEXT[v] || v },
+  { key: 'send_oem_date', label: '送修日期', format: (v) => toLocalYmd(v) || '' },
+  { key: 'supplier_name', label: '送修供應商' },
+  { key: 'send_oem_remarks', label: '送修備註' },
+  { key: 'oem_return_date', label: '原廠返還日期', format: (v) => toLocalYmd(v) || '' },
+  { key: 'results', label: '維修與檢測結果' },
+  { key: 'completion_date', label: '完工日期', format: (v) => toLocalYmd(v) || '' },
+  { key: 'completion_remarks', label: '出貨備註' },
+];
+
+/**
+ * 這一步寫進維修單的內容（與各支 update 查詢寫入的欄位一致），
+ * 和單上原本的值比對，回傳有變的欄位
+ */
+function repairStageChanges(order, actionType, { date, results, remarks, supplierId, supplierName, isInternal }) {
+  const after = { ...order };
+  if (actionType === 'SEND_OEM') {
+    Object.assign(after, {
+      status: 'SENT_OEM', send_oem_date: date, send_oem_remarks: remarks || null,
+      supplier_id: supplierId ? Number(supplierId) : null, supplier_name: supplierName || null,
+    });
+  } else if (actionType === 'OEM_RETURN') {
+    Object.assign(after, {
+      status: isInternal ? 'COMPLETED' : 'OEM_RETURNED', oem_return_date: date, results,
+      ...(isInternal ? { completion_date: date } : {}),
+    });
+  } else if (actionType === 'IN_HOUSE_COMPLETE') {
+    Object.assign(after, { status: 'COMPLETED', completion_date: date, results, completion_remarks: remarks || null });
+  } else if (actionType === 'COMPLETE') {
+    Object.assign(after, { status: 'COMPLETED', completion_date: date, completion_remarks: remarks || null });
+  }
+  return diffFields(order, after, ORDER_LOG_FIELDS);
+}
 
 const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess }) => {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -190,6 +235,8 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
       setIsSubmitting(true);
 
       const items = repairOrder.items || [];
+      // 實際寫進維修單的維修結果（原廠返還時會附上 RMA 換號說明）
+      let savedResults = results.trim();
       // 設備歷程每一筆都帶單號，之後查得回是哪張維修單
       const logDetails = { repairNo: repairOrder.repair_no, action: actionType };
 
@@ -245,7 +292,9 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
               await performInPlaceReplacement(assetObj, newSn, {
                 date,
                 rmaNo,
-                remarks: `維修單 [${repairOrder.repair_no}] 原廠返還更換序號: ${results || ''}`
+                remarks: `維修單 [${repairOrder.repair_no}] 原廠返還更換序號: ${results || ''}`,
+                // 狀態由下面的 setRepairAssetStatus 以換號前的狀態記錄
+                callerLogsStatus: true,
               });
             } else {
               await performOneToOneReplacement(assetObj, newSn, {
@@ -267,6 +316,7 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
         if (rmaSummaryNotes.length > 0) {
           finalResults = `${finalResults} ${rmaSummaryNotes.join(' ')}`.trim();
         }
+        savedResults = finalResults;
 
         // 1. 寫入 OEM Return Date 與 Results，更新為 OEM_RETURNED
         // 這一步沒有備註欄，內容就是維修與檢測結果
@@ -337,9 +387,13 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
         }
       }
 
-      // 寫入一般異動日誌：先前只有一句「執行操作」，日期、結果、備註都沒留下
+      // 寫入一般異動日誌：先前只有一句「執行操作」，日期、結果、備註都沒留下。
+      // 敘述再列出這一步改到的欄位「變更前 → 變更後」（變更前取自維修單原本的值）
+      const changes = repairStageChanges(repairOrder, actionType, {
+        date, results: savedResults, remarks: remarks.trim(), supplierId, supplierName, isInternal,
+      });
       await logUpdate('REPAIR', repairOrder.repair_no, repairOrder.customer_name,
-        `執行操作 [${config.title}]，單號: ${repairOrder.repair_no}`,
+        `執行操作 [${config.title}]，單號: ${repairOrder.repair_no}${changes.length ? `：${describeChanges(changes)}` : ''}`,
         {
           ...logDetails,
           date,
@@ -347,6 +401,7 @@ const RepairActionModal = ({ isOpen, onClose, repairOrder, actionType, onSuccess
           remarks: remarks.trim() || null,
           ...(actionType === 'SEND_OEM' ? { supplier: supplierName } : {}),
           sns: items.map((it) => it.sn).filter(Boolean),
+          changes,
         });
 
       // 維修代用機：維修單已經完工，再逐張登記歸還；失敗的不影響已完成的完工，請使用者到借用列表處理

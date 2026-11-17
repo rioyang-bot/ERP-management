@@ -5,6 +5,9 @@ import { PenLine, X, Eraser, Check, Upload, Trash2, BadgeCheck } from 'lucide-re
 export const PAD_WIDTH = 600;
 export const PAD_HEIGHT = 200;
 
+/** 手寫的簽名在事件紀錄上的檔名（與 server/isoSignatureRoutes.js 的 HAND_DRAWN_NAME 相同） */
+export const HAND_DRAWN_NAME = '手寫簽名';
+
 /** 上傳的圖檔接受的格式 */
 const ACCEPT = 'image/png,image/jpeg';
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
@@ -48,7 +51,8 @@ const readImage = (file) => new Promise((resolve, reject) => {
  * 產生的是透明背景的 PNG（data: 網址）。
  *
  * @param {{ mode?: 'sign'|'manage', title: string, signerName: string, savedSignature?: string|null,
- *           onUseSaved?: () => Promise<void>|void, onConfirm: (png: string, opts: { saveAsMine: boolean }) => Promise<void>|void,
+ *           onUseSaved?: () => Promise<void>|void,
+ *           onConfirm: (png: string, opts: { saveAsMine: boolean, signatureName: string }) => Promise<void>|void,
  *           onDeleteSaved?: () => Promise<void>|void, onClose: () => void }} props
  */
 const SignaturePadModal = ({ mode = 'sign', title, signerName, savedSignature = null, onUseSaved, onConfirm, onDeleteSaved, onClose }) => {
@@ -59,6 +63,8 @@ const SignaturePadModal = ({ mode = 'sign', title, signerName, savedSignature = 
   const [saving, setSaving] = useState(false);
   const [saveAsMine, setSaveAsMine] = useState(!savedSignature);
   const [uploadError, setUploadError] = useState('');
+  // 簽名的來源檔名：上傳的記原始檔名，手寫的記「手寫簽名」（存成簽名檔時事件紀錄用）
+  const [sourceName, setSourceName] = useState(null);
 
   const ctx = () => canvasRef.current?.getContext?.('2d') || null;
 
@@ -116,6 +122,7 @@ const SignaturePadModal = ({ mode = 'sign', title, signerName, savedSignature = 
   const handleClear = () => {
     ctx()?.clearRect(0, 0, PAD_WIDTH, PAD_HEIGHT);
     setHasInk(false);
+    setSourceName(null);
   };
 
   const handleUpload = async (e) => {
@@ -130,6 +137,7 @@ const SignaturePadModal = ({ mode = 'sign', title, signerName, savedSignature = 
       const c = ctx();
       if (c) drawUploadedSignature(c, img);
       setHasInk(true);
+      setSourceName(file.name);
     } catch (err) {
       setUploadError(err.message);
     }
@@ -143,7 +151,11 @@ const SignaturePadModal = ({ mode = 'sign', title, signerName, savedSignature = 
 
   const handleConfirm = () => {
     if (!hasInk) return;
-    run(() => onConfirm(canvasRef.current.toDataURL('image/png'), { saveAsMine: mode === 'manage' || saveAsMine }));
+    // 上傳的圖檔記原始檔名（上傳後再補幾筆仍算那張圖）；只有手寫的記「手寫簽名」
+    run(() => onConfirm(canvasRef.current.toDataURL('image/png'), {
+      saveAsMine: mode === 'manage' || saveAsMine,
+      signatureName: sourceName || HAND_DRAWN_NAME,
+    }));
   };
 
   const btn = { display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '9px 16px', borderRadius: '8px', fontWeight: 700, fontSize: '13px', cursor: 'pointer' };

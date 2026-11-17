@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ArrowDownToLine, Search, Filter, Eye, RefreshCw, AlertCircle, Trash2, Calendar, Hash, FileText, Plus, Edit2, Save, X, Clock, FileCheck, CheckCircle, Paperclip, FileSpreadsheet } from 'lucide-react';
 import { buildInboundSheet, downloadSheet } from '../utils/detailExcel';
-import { logUpdate, logDelete, logSnChange, logStatusChange } from '../utils/auditLogger';
+import { logUpdate, logDelete, logSnChange, logStatusChange, logFieldChanges, diffFields, describeChanges } from '../utils/auditLogger';
 import { releaseUploads, removedAttachmentFiles } from '../utils/uploadRelease';
 import InboundRegistrationModal from '../components/InboundRegistrationModal';
 import { usePageSize } from '../utils/usePageSize';
@@ -18,6 +18,44 @@ import { matchingItems } from '../utils/itemSearch';
 import DetailModalHeader from '../components/detail/DetailModalHeader';
 import ItemFieldFixModal from '../components/ItemFieldFixModal';
 import { distinctFieldValues } from '../utils/itemFieldFix';
+
+/** 附件清單（陣列或 JSON 字串）轉成陣列 */
+const parseAttachmentList = (attachments) => {
+  let list = attachments;
+  if (typeof list === 'string') {
+    try { list = JSON.parse(list || '[]'); } catch { list = []; }
+  }
+  return Array.isArray(list) ? list.filter(Boolean) : [];
+};
+
+/**
+ * 附件變更：記原始檔名（變更前的清單 → 變更後的清單），另外列出新增與移除的檔案。
+ * 只記檔名，不放檔案內容。沒有增減回傳 change 為 null。
+ */
+const attachmentChanges = (before, after, label = '附件') => {
+  const b = parseAttachmentList(before);
+  const a = parseAttachmentList(after);
+  const key = (x) => x.fileName || x.originalName || '';
+  const brief = (x) => ({ originalName: x.originalName || x.fileName || '', fileName: x.fileName || null });
+  const afterKeys = new Set(a.map(key));
+  const beforeKeys = new Set(b.map(key));
+  const removedFiles = b.filter((x) => !afterKeys.has(key(x))).map(brief);
+  const addedFiles = a.filter((x) => !beforeKeys.has(key(x))).map(brief);
+  const names = (list) => list.map((x) => x.originalName || x.fileName).filter(Boolean).join('、');
+  const change = (addedFiles.length || removedFiles.length)
+    ? { field: 'attachments', label, from: names(b), to: names(a), kind: 'file' }
+    : null;
+  return { change, addedFiles, removedFiles };
+};
+
+/** 品項顯示名稱（廠牌 類型 型號 / 規格） */
+const itemLabel = (it) => {
+  const name = [it?.brand, it?.type, it?.model].filter(Boolean).join(' ') || '品項';
+  return it?.specification ? `${name} / ${it.specification}` : name;
+};
+
+/** 設備記在 DEVICE、硬體記在 HARDWARE；不知道類別的記在 DEVICE */
+const assetModuleOf = (categoryName) => (categoryName === '硬體' ? 'HARDWARE' : 'DEVICE');
 
 const InboundList = ({ isSplitMode = false }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -214,11 +252,34 @@ const InboundList = ({ isSplitMode = false }) => {
       if (!res.success) throw new Error(res.error || '未知錯誤');
       const changed = res.rows?.length || 0;
 
-      logUpdate(
+      // 每一支序號的訂單來源「變更前 → 變更後」：變更前取自開啟明細時讀到的那一份
+      const snKey = (s) => String(s || '').trim().toUpperCase();
+      const beforeBySn = new Map(orderItems.filter((it) => it.sn).map((it) => [snKey(it.sn), it]));
+      const perSn = (res.rows || []).map((r) => {
+        const orig = beforeBySn.get(snKey(r.sn)) || {};
+        const sn = String(r.sn || orig.sn || '').trim();
+        const [c] = diffFields({ order_source: orig.order_source }, { order_source: value },
+          [{ key: 'order_source', label: `訂單來源（${sn}）` }]);
+        return c ? { sn, categoryName: orig.category_name, brand: orig.brand, model: orig.model, change: c } : null;
+      }).filter(Boolean);
+      const changes = perSn.map((p) => p.change);
+
+      await logUpdate(
         'INBOUND', selectedOrder?.order_no, selectedOrder?.partner_name || '進貨單',
-        `統一填寫訂單來源「${value}」，共 ${changed} 筆`,
-        { orderNo: selectedOrder?.order_no, orderSource: value, changed, overwrite }
+        `統一填寫訂單來源「${value}」，共 ${changed} 筆${changes.length ? `：${describeChanges(changes)}` : ''}`,
+        { orderNo: selectedOrder?.order_no, orderSource: value, changed, overwrite, changes }
       );
+      // 已入庫的單改的是資產本身，每一支各記一筆，品項履歷才看得到
+      if (!isDraftOrder(selectedOrder)) {
+        for (const p of perSn) {
+          await logFieldChanges(
+            assetModuleOf(p.categoryName), p.sn, [p.brand, p.model].filter(Boolean).join(' ') || p.sn,
+            `訂單來源跟著進貨單 [${selectedOrder?.order_no || ''}] 統一填寫`,
+            [{ ...p.change, field: 'order_source', label: '訂單來源' }],
+            { sn: p.sn, orderNo: selectedOrder?.order_no }
+          );
+        }
+      }
 
       alert(changed > 0
         ? `已將 ${changed} 筆的訂單來源設為「${value}」。`
@@ -327,15 +388,22 @@ const InboundList = ({ isSplitMode = false }) => {
       + '\n\n要一併移除這些品項嗎？\n'
       + '（保留的話它們會繼續留在列表上，庫存 0）'
     )) {
+      // 只記真的刪掉的那幾個：刪除時條件不成立（例如剛好被別張單用到）的會留下
+      const deleted = [];
       for (const m of orphans) {
         const del = await window.electronAPI.namedQuery('deleteItemMasterIfOrphan', [m.id]);
-        if (del.success && del.rows?.length) removedMasters += 1;
+        if (del.success && del.rows?.length) deleted.push(m);
       }
+      removedMasters = deleted.length;
       if (removedMasters > 0) {
         await logDelete(
           'INBOUND', order.order_no, order.partner_name || '進貨單',
-          `刪除進貨單 [${order.order_no}] 後一併移除 ${removedMasters} 個未使用品項`,
-          { orderNo: order.order_no, removedMasters: orphans.map((m) => m.id) }
+          `刪除進貨單 [${order.order_no}] 後一併移除 ${removedMasters} 個未使用品項：${deleted.map(itemLabel).join('、')}`,
+          { orderNo: order.order_no, removedMasters: deleted.map((m) => m.id),
+            removedMasterDetails: deleted.map((m) => ({
+              id: m.id, category: m.category_name || null, brand: m.brand || null, type: m.type || null,
+              model: m.model || null, specification: m.specification || null,
+            })) }
         );
       }
     }
@@ -438,6 +506,37 @@ const InboundList = ({ isSplitMode = false }) => {
     }
   };
 
+  /**
+   * 刪除前的單據快照：單頭（供應商、發票、日期、附件檔名）與每一筆明細。
+   * 單據刪掉之後事件紀錄是唯一留得下來的內容，看得出刪掉的是什麼。
+   */
+  const buildDeleteSnapshot = (order, items) => {
+    const attachmentNames = parseAttachmentList(order.attachments)
+      .map((a) => a.originalName || a.fileName).filter(Boolean);
+    const header = {
+      orderNo: order.order_no,
+      supplier: order.partner_name || null,
+      invoiceNo: order.invoice_no || null,
+      orderDate: (order.effective_date || order.order_date || order.created_at || '').toString().slice(0, 10) || null,
+      status: order.status || null,
+      attachments: attachmentNames,
+    };
+    const lines = (items || []).map((it) => ({
+      itemMasterId: it.item_id ?? null, category: it.category_name || null,
+      brand: it.brand || null, type: it.type || null, model: it.model || null, specification: it.specification || null,
+      sn: it.sn || null, quantity: it.quantity ?? null, orderSource: it.order_source || null,
+      remarks: it.remarks || null, poOrderNo: it.po_order_no || null,
+    }));
+    const text = [
+      `供應商：${header.supplier || '（空白）'}`,
+      `發票號碼：${header.invoiceNo || '（空白）'}`,
+      `進貨日期：${header.orderDate || '（空白）'}`,
+      ...(attachmentNames.length ? [`附件：${attachmentNames.join('、')}`] : []),
+      `明細：${lines.length ? lines.map((l) => `${itemLabel(l)}${l.sn ? ` [${l.sn}]` : ''} ×${l.quantity}`).join('、') : '（無）'}`,
+    ].join('；');
+    return { snapshot: { header, items: lines }, text };
+  };
+
   const handleDeleteOrder = async (order) => {
     setDeleting(true);
     try {
@@ -458,10 +557,11 @@ const InboundList = ({ isSplitMode = false }) => {
           errorMessage: '這張進貨單已經不是待確認狀態（可能剛被確認進貨），請重新整理後再操作',
         }]);
         if (!res.success) throw new Error(res.error || '刪除失敗');
+        const { snapshot, text } = buildDeleteSnapshot(order, items);
         await logDelete(
           'INBOUND', order.order_no, order.partner_name || '進貨單',
-          `刪除待確認的進貨單 [${order.order_no}]（尚未入庫，庫存未變動）`,
-          { orderNo: order.order_no, items: items.length, draft: true }
+          `刪除待確認的進貨單 [${order.order_no}]（尚未入庫，庫存未變動）：${text}`,
+          { orderNo: order.order_no, items: items.length, draft: true, snapshot }
         );
         const removedMasters = await offerOrphanMasterCleanup(order, items);
         alert(`進貨單 [${order.order_no}] 已刪除。`
@@ -504,10 +604,11 @@ const InboundList = ({ isSplitMode = false }) => {
       );
       if (!res.success) throw new Error(res.error || '刪除失敗');
 
+      const { snapshot, text } = buildDeleteSnapshot(order, items);
       await logDelete(
         'INBOUND', order.order_no, order.partner_name || '進貨單',
-        `刪除進貨單 [${order.order_no}]（已扣回庫存、退回採購數量、刪除 ${assetSns.length} 筆資產）`,
-        { orderNo: order.order_no, items: items.length, assets: assetSns.length }
+        `刪除進貨單 [${order.order_no}]（已扣回庫存、退回採購數量、刪除 ${assetSns.length} 筆資產）：${text}`,
+        { orderNo: order.order_no, items: items.length, assets: assetSns.length, snapshot }
       );
 
       // 單號底下那一筆進不了任何一個品項的履歷。這張單扣回了誰的庫存，
@@ -634,13 +735,42 @@ const InboundList = ({ isSplitMode = false }) => {
           if (syncRes?.success) syncedAssets = syncRes.rows || [];
           else alert('進貨單已儲存，但設備／硬體的進貨日期沒有跟著更新：' + (syncRes?.error || '未知錯誤'));
         }
-        logUpdate(
+        // 單頭每個欄位的「變更前 → 變更後」：變更前取自開啟時的那一份（selectedOrder），
+        // 供應商記名稱而不是代號；附件記原始檔名與增減的檔案
+        const partnerNameOf = (id) => (id ? (partners.find(p => p.id.toString() === id.toString())?.name || '') : '');
+        const headerBefore = {
+          partner: selectedOrder.partner_name || partnerNameOf(selectedOrder.partner_id),
+          invoice_no: selectedOrder.invoice_no,
+          order_date: (selectedOrder.effective_date || selectedOrder.order_date || selectedOrder.created_at || '').toString().slice(0, 10),
+        };
+        const headerAfter = {
+          partner: editData.partner_id
+            ? (partnerNameOf(editData.partner_id)
+              || (String(editData.partner_id) === String(selectedOrder.partner_id ?? '') ? headerBefore.partner : String(editData.partner_id)))
+            : '',
+          invoice_no: editData.invoice_no,
+          order_date: editData.order_date || headerBefore.order_date,
+        };
+        const att = attachmentChanges(selectedOrder.attachments, editData.attachments);
+        const changes = [
+          ...diffFields(headerBefore, headerAfter, [
+            { key: 'partner', label: '供應商' },
+            { key: 'invoice_no', label: '發票號碼' },
+            { key: 'order_date', label: '進貨日期' },
+          ]),
+          ...(att.change ? [att.change] : []),
+        ];
+        const title = `修改進貨單 [${selectedOrder.order_no}]`;
+        await logUpdate(
           'INBOUND',
           selectedOrder.order_no,
           selectedOrder.partner_name || '進貨單',
-          `修改進貨單 [${selectedOrder.order_no}] 進貨日期/發票/供應商/附件${syncedAssets.length > 0 ? `；${syncedAssets.length} 筆設備／硬體的進貨日期跟著改為 ${editData.order_date}` : ''}`,
+          `${changes.length ? `${title}：${describeChanges(changes)}` : `${title} 進貨日期/發票/供應商/附件`}${syncedAssets.length > 0 ? `；${syncedAssets.length} 筆設備／硬體的進貨日期跟著改為 ${editData.order_date}` : ''}`,
           { orderNo: selectedOrder.order_no, orderDate: editData.order_date, partnerId: editData.partner_id, invoiceNo: editData.invoice_no, attachmentsCount: editData.attachments.length,
-            ...(syncedAssets.length > 0 ? { stockDateSyncedSns: syncedAssets.map(a => a.sn) } : {}) }
+            ...(syncedAssets.length > 0 ? { stockDateSyncedSns: syncedAssets.map(a => a.sn) } : {}),
+            changes,
+            ...(att.addedFiles.length ? { addedFiles: att.addedFiles } : {}),
+            ...(att.removedFiles.length ? { removedFiles: att.removedFiles } : {}) }
         );
         // 每一台的履歷也要看得出進貨日期是跟著進貨單改的
         for (const a of syncedAssets) {

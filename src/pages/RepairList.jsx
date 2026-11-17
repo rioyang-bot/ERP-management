@@ -13,11 +13,67 @@ import LendOrderRegistrationModal from '../components/LendOrderRegistrationModal
 import LentOrderPrintModal from '../components/LentOrderPrintModal';
 import { canProvideLoaner, activeLoaners, LOANER_STATUS_LABEL } from '../utils/repairLoaner';
 import { logDelete, logUpdate } from '../utils/auditLogger';
+import { toLocalYmd } from '../utils/lentReturnDate';
 import { logRepairAssetStatus } from '../utils/repairAssetStatus';
 import { getRepairScopeLabel, getRepairSubLabel, INTERNAL_LABEL } from '../utils/repairScope';
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 import { PERIODS, DEFAULT_PERIOD, periodRange, inPeriod, isClosed, periodLabel } from '../utils/repairPeriod';
+
+/**
+ * 刪除維修單時留下單頭與明細的快照
+ *
+ * 單據與明細刪掉後就查不回來了；事件紀錄裡要看得出刪掉的是哪個客戶、
+ * 哪幾台設備、當時走到哪個階段。order 是列表讀回來的原始資料（含明細）。
+ */
+function repairOrderSnapshot(order = {}) {
+  const ymd = (v) => toLocalYmd(v) || '';
+  const header = {
+    repairNo: order.repair_no || '',
+    customer: order.customer_name || '',
+    isInternal: !!order.is_internal,
+    supplier: order.supplier_name || '',
+    status: order.status || '',
+    statusLabel: STATUS_CONFIG[order.status]?.label || order.status || '',
+    contactPerson: order.contact_person || '',
+    contactPhone: order.contact_phone || '',
+    onSiteDate: ymd(order.on_site_date),
+    sendOemDate: ymd(order.send_oem_date),
+    oemReturnDate: ymd(order.oem_return_date),
+    completionDate: ymd(order.completion_date),
+    onSiteStatus: order.on_site_status || '',
+    sendOemRemarks: order.send_oem_remarks || '',
+    results: order.results || '',
+    completionRemarks: order.completion_remarks || '',
+    remarks: order.remarks || '',
+  };
+  const items = (Array.isArray(order.items) ? order.items : []).filter(Boolean).map((it) => ({
+    brand: it.brand || '',
+    type: it.type || '',
+    model: it.model || '',
+    specification: it.specification || '',
+    sn: it.sn || '',
+    replacementSn: it.replacement_sn || '',
+  }));
+  return { header, items };
+}
+
+/** 快照轉成敘述：「客戶：X；狀態：Y；明細：Dell R740 [SN1]、…」 */
+function describeRepairSnapshot({ header, items }) {
+  const parts = [];
+  if (header.customer) parts.push(`客戶：${header.customer}`);
+  if (header.supplier) parts.push(`供應商：${header.supplier}`);
+  if (header.statusLabel) parts.push(`狀態：${header.statusLabel}`);
+  const date = header.onSiteDate || header.sendOemDate;
+  if (date) parts.push(`開單日期：${date}`);
+  if (items.length) {
+    parts.push(`明細：${items.map((it) => {
+      const name = [it.brand, it.type, it.model].filter(Boolean).join(' ') || '（未命名品項）';
+      return it.sn ? `${name} [${it.sn}]` : name;
+    }).join('、')}`);
+  }
+  return parts.join('；');
+}
 
 // 維修時程欄位的四個階段，顏色沿用詳情頁的時間軸
 const TIMELINE_STEPS = [
@@ -143,10 +199,15 @@ const RepairList = () => {
           { repairNo: order.repair_no, action: 'DELETE' });
       }
 
+      // 刪除前先留下單頭與明細，事件紀錄才看得出刪掉的是什麼
+      const snapshot = repairOrderSnapshot(order);
       const res = await window.electronAPI.namedQuery('deleteRepairOrder', [order.id]);
       if (res.success) {
-        await logDelete('REPAIR', order.repair_no, order.customer_name, `刪除維修單 [${order.repair_no}]`,
-          { repairNo: order.repair_no, restoredSns: restoredRows.map((r) => r.sn) });
+        const snapshotText = describeRepairSnapshot(snapshot);
+        await logDelete('REPAIR', order.repair_no, order.customer_name,
+          `刪除維修單 [${order.repair_no}]${snapshotText ? `：${snapshotText}` : ''}`,
+          { repairNo: order.repair_no, restoredSns: restoredRows.map((r) => r.sn),
+            header: snapshot.header, items: snapshot.items });
         alert(restoredCount > 0
           ? `維修單 [${order.repair_no}] 已刪除，${restoredCount} 台設備已改回「在庫」。`
           : `維修單 [${order.repair_no}] 已刪除。`);
@@ -184,10 +245,14 @@ const RepairList = () => {
         alert('這張維修單已不在「現場處理」階段，無法變更送修方式。');
         return;
       }
+      // 敘述與 details 都帶「變更前 → 變更後」（否 → 是／是 → 否）
+      const change = { field: 'no_oem_required', label: '不需送回原廠',
+        from: turnOn ? '否' : '是', to: turnOn ? '是' : '否' };
       await logUpdate(
         'REPAIR', order.repair_no, order.customer_name,
-        turnOn ? `維修單 [${order.repair_no}] 標記為不需送回原廠（由 IT 自行處理）`
-               : `維修單 [${order.repair_no}] 取消不需送回原廠標記`
+        `${turnOn ? `維修單 [${order.repair_no}] 標記為不需送回原廠（由 IT 自行處理）`
+                  : `維修單 [${order.repair_no}] 取消不需送回原廠標記`}：${change.label}：${change.from} → ${change.to}`,
+        { repairNo: order.repair_no, changes: [change] }
       );
       fetchRecords();
     } catch (err) {

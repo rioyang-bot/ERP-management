@@ -7,7 +7,9 @@ import { buildDnSheet, downloadSheet } from '../utils/detailExcel';
 import { fixDnLocation } from '../utils/dnLocationFix';
 import { fixDnEndUser, serialItems } from '../utils/dnEndUserFix';
 import ExchangeOrderList from '../components/ExchangeOrderList';
-import { logStatusChange, logDelete, logUpdate } from '../utils/auditLogger';
+import { logStatusChange, logDelete, logUpdate, fileChange, describeChanges } from '../utils/auditLogger';
+import { signedDocName, dnHeaderSnapshot, dnLineSnapshot, dnDeleteSummaryTail } from '../utils/dnAuditSnapshot';
+import { snapshotAssets, logAssetFieldChanges } from '../utils/assetFieldSnapshot';
 import { releaseUploads } from '../utils/uploadRelease';
 import { createHwSyncTracker, createBackToStockTracker } from '../utils/mountedHwSync';
 import { toLocalYmd } from '../utils/lentReturnDate';
@@ -19,6 +21,11 @@ import PageSizeSelector from '../components/common/PageSizeSelector';
 import MatchedItemsHint from '../components/common/MatchedItemsHint';
 import { matchingItems } from '../utils/itemSearch';
 import DetailModalHeader from '../components/detail/DetailModalHeader';
+
+/** 單上的設備／硬體序號（掛載耗材那幾行不算） */
+const assetSnsOf = (items = []) => items
+  .filter((i) => !isMountedRow(i) && (i.category_name === '硬體' || i.category_name === '設備') && i.sn)
+  .map((i) => i.sn);
 
 const DNList = ({ isSplitMode = false }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -119,12 +126,17 @@ const DNList = ({ isSplitMode = false }) => {
       // 換掉的那份簽收單，伺服器上的檔案一併清掉
       if (dn.signed_doc_url && dn.signed_doc_url !== saveRes.fileName) releaseUploads([dn.signed_doc_url]);
 
+      // 換掉舊的那份時記「舊檔名 → 新檔名」
+      const docChange = fileChange('客戶簽收單據', signedDocName(dn), file.name, 'signed_doc');
       logUpdate(
         'OUTBOUND',
         dn.id,
         dn.request_no,
-        `上傳出貨單 [${dn.request_no}] 之客戶已簽收單據 [${file.name}]`,
-        { dnId: dn.id, dnNumber: dn.request_no, customer: dn.customer, fileName: saveRes.fileName, originalName: file.name }
+        `上傳出貨單 [${dn.request_no}] 之客戶已簽收單據 [${file.name}]`
+          + (replacing && docChange ? `：${describeChanges([docChange])}` : ''),
+        { dnId: dn.id, dnNumber: dn.request_no, customer: dn.customer, fileName: saveRes.fileName, originalName: file.name,
+          oldFileName: dn.signed_doc_url || null, oldOriginalName: dn.signed_doc_name || null,
+          changes: docChange ? [docChange] : [] }
       );
 
       alert(`客戶簽收單據 [${file.name}] 上傳成功！`);
@@ -157,8 +169,11 @@ const DNList = ({ isSplitMode = false }) => {
         'OUTBOUND',
         dn.id,
         dn.request_no,
-        `刪除出貨單 [${dn.request_no}] 之客戶已簽收單據 [${dn.signed_doc_name}]`,
-        { dnId: dn.id, dnNumber: dn.request_no, customer: dn.customer, deletedDoc: dn.signed_doc_name }
+        `刪除出貨單 [${dn.request_no}] 之客戶已簽收單據 [${signedDocName(dn)}]`
+          + (dn.signed_doc_url ? `（存檔名稱 ${dn.signed_doc_url}）` : ''),
+        { dnId: dn.id, dnNumber: dn.request_no, customer: dn.customer, deletedDoc: dn.signed_doc_name,
+          deletedFileName: dn.signed_doc_url || null,
+          changes: [fileChange('客戶簽收單據', signedDocName(dn), '', 'signed_doc')].filter(Boolean) }
       );
 
       alert('簽收單據已成功刪除！');
@@ -262,9 +277,16 @@ const DNList = ({ isSplitMode = false }) => {
     if (!window.confirm(`確定要刪除待出貨單據 [${dn.request_no}] 嗎？\n此動作將一併移除所有關聯明細。`)) return;
 
     try {
+      // 刪掉之後明細就讀不到了：先讀起來，事件紀錄留下單頭與每一行明細的快照
+      let items = [];
+      try {
+        const itemsRes = await window.electronAPI.namedQuery('fetchDNItems', [dn.id]);
+        if (itemsRes?.success) items = itemsRes.rows || [];
+      } catch { /* 讀不到明細仍照常刪除，只是紀錄少了明細 */ }
       const res = await window.electronAPI.namedQuery('deleteOutboundRequest', [dn.id]);
       if (res.success) {
-        logDelete('OUTBOUND', dn.request_no, dn.customer || '出貨單', `刪除待出貨單據 [${dn.request_no}]`, { dnId: dn.id, dnNumber: dn.request_no, customer: dn.customer });
+        logDelete('OUTBOUND', dn.request_no, dn.customer || '出貨單', `刪除待出貨單據 [${dn.request_no}]${dnDeleteSummaryTail(dn, items)}`,
+          { dnId: dn.id, dnNumber: dn.request_no, customer: dn.customer, header: dnHeaderSnapshot(dn), items: dnLineSnapshot(items) });
         alert('刪除成功');
         fetchRecords();
       } else {
@@ -319,6 +341,8 @@ const DNList = ({ isSplitMode = false }) => {
         errorMessage: '變更出貨單狀態失敗。',
       });
 
+      // 撤銷前的資產欄位先讀起來（含搭載的硬體），交易後比對寫「變更前 → 變更後」
+      const assetsBefore = await snapshotAssets(assetSnsOf(items));
       const txRes = await window.electronAPI.runTransaction(steps);
       if (!txRes.success) {
         throw new Error((txRes.error || '撤銷出貨失敗。') + '\n\n所有變更已全部退回，庫存與單據狀態維持原樣。');
@@ -326,6 +350,8 @@ const DNList = ({ isSplitMode = false }) => {
 
       await back.log(txRes.results, `撤銷出貨：出貨單 [${dn.request_no}] 退回待出貨，回到在庫`,
         { dnNumber: dn.request_no, revert: true });
+      await logAssetFieldChanges(assetsBefore, `撤銷出貨：出貨單 [${dn.request_no}] 退回待出貨`,
+        { dnId: dn.id, dnNumber: dn.request_no, revert: true });
 
       await logStatusChange(
         'OUTBOUND',
@@ -454,6 +480,8 @@ const DNList = ({ isSplitMode = false }) => {
         errorMessage: '變更出貨單主檔狀態時發生錯誤。',
       });
 
+      // 出貨會寫入客戶、地點、專案與日期：交易前先讀起來（含搭載的硬體），完成後逐台比對
+      const assetsBefore = await snapshotAssets(assetSnsOf(dnItems));
       const txRes = await window.electronAPI.runTransaction(steps);
       if (!txRes.success) {
         throw new Error((txRes.error || '確認出貨失敗。') + '\n\n所有變更已全部退回，庫存與單據狀態維持原樣。');
@@ -462,6 +490,8 @@ const DNList = ({ isSplitMode = false }) => {
       // 跟著設備變成已出貨的搭載硬體各記一筆；出貨單上自己列了的，履歷上已經有出貨那一筆
       await hwSync.log(txRes.results, `出貨單 [${selectedDN.request_no}] 確認出貨`,
         { dnNumber: selectedDN.request_no }, { skipSns: dnItems.map((i) => i.sn) });
+      await logAssetFieldChanges(assetsBefore, `出貨單 [${selectedDN.request_no}] 確認出貨`,
+        { dnId: selectedDN.id, dnNumber: selectedDN.request_no });
 
       logStatusChange(
         'OUTBOUND',

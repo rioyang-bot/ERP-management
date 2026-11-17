@@ -24,6 +24,7 @@ import { runTransaction } from './server/transaction.js';
 import { ensureMonthlyBalances } from './server/monthlyBalance.js';
 import { createUpload, MAX_UPLOAD_MB } from './server/upload.js';
 import { createJsonBodyParser } from './server/jsonBody.js';
+import { autoMergeDuplicateItemMasters, cleanupUnusedItemMasters } from './server/itemMasterMaintenance.js';
 
 const { Pool } = pg;
 const __filename = fileURLToPath(import.meta.url);
@@ -99,19 +100,13 @@ const pool = new Pool({
       ALTER TABLE outbound_requests ADD COLUMN IF NOT EXISTS project_name VARCHAR(100);
       ALTER TABLE outbound_requests ADD COLUMN IF NOT EXISTS signed_doc_url TEXT;
       ALTER TABLE outbound_requests ADD COLUMN IF NOT EXISTS signed_doc_name TEXT;
+    `);
 
-      -- 自動清理無任何資產與單據關聯之設備與硬體幽靈品項主檔 (當初匯入錯誤且資產已修改/刪除的殘留資料)
-      DELETE FROM item_master i
-      WHERE i.id IN (
-        SELECT im.id FROM item_master im
-        JOIN categories c ON im.category_id = c.id
-        WHERE c.name IN ('設備', '硬體')
-          AND NOT EXISTS (SELECT 1 FROM assets a WHERE a.item_master_id = im.id)
-          AND NOT EXISTS (SELECT 1 FROM inbound_items ii WHERE ii.item_id = im.id)
-          AND NOT EXISTS (SELECT 1 FROM outbound_items oi WHERE oi.item_id = im.id)
-          AND NOT EXISTS (SELECT 1 FROM item_lab_assignments la WHERE la.item_master_id = im.id)
-      );
+    // 自動清理無任何資產與單據關聯之設備與硬體幽靈品項主檔 (當初匯入錯誤且資產已修改/刪除的殘留資料)。
+    // 拆成獨立一支查詢，才拿得回刪掉了哪些主檔並寫進事件紀錄（見 server/itemMasterMaintenance.js）
+    await cleanupUnusedItemMasters(pool);
 
+    await pool.query(`
       -- 自動補齊 item_master 中的廠牌與類型至主檔表
       INSERT INTO item_brands (category_id, name)
       SELECT DISTINCT category_id, brand
@@ -147,89 +142,8 @@ const pool = new Pool({
   }
 })();
 
-// 大小寫與空白重複品項主檔安全整併核心函式
-async function autoMergeDuplicateItemMasters(clientPool) {
-  try {
-    const dupRes = await clientPool.query(`
-      SELECT 
-        c.name as cat_name,
-        LOWER(TRIM(i.brand)) as norm_brand,
-        LOWER(TRIM(i.type)) as norm_type,
-        LOWER(TRIM(i.model)) as norm_model,
-        LOWER(TRIM(COALESCE(i.specification, ''))) as norm_specification,
-        array_agg(i.id ORDER BY i.id ASC) as ids
-      FROM item_master i
-      JOIN categories c ON i.category_id = c.id
-      WHERE c.name IN ('設備', '硬體')
-      GROUP BY c.name, LOWER(TRIM(i.brand)), LOWER(TRIM(i.type)), LOWER(TRIM(i.model)), LOWER(TRIM(COALESCE(i.specification, '')))
-      HAVING COUNT(*) > 1
-    `);
-
-    if (dupRes.rows.length === 0) {
-      console.log('✅ Item Master check: No duplicate case-insensitive masters found.');
-      return { mergedGroups: 0, removedMasters: 0 };
-    }
-
-    console.log(`🔍 Found ${dupRes.rows.length} groups of case-insensitive duplicate item masters. Merging...`);
-    let totalRemoved = 0;
-
-    for (const group of dupRes.rows) {
-      const allIds = group.ids;
-      // 找出擁有最多資產關聯的主檔做為主要主檔 (primaryId)
-      const assetCounts = await clientPool.query(`
-        SELECT item_master_id, COUNT(*) as cnt
-        FROM assets
-        WHERE item_master_id = ANY($1)
-        GROUP BY item_master_id
-        ORDER BY cnt DESC, item_master_id ASC
-      `, [allIds]);
-
-      const primaryId = assetCounts.rows.length > 0 ? assetCounts.rows[0].item_master_id : allIds[0];
-      const secondaryIds = allIds.filter(id => id !== primaryId);
-
-      if (secondaryIds.length === 0) continue;
-
-      // 1. 轉移資產關聯 (assets)
-      await clientPool.query(`
-        UPDATE assets SET item_master_id = $1 WHERE item_master_id = ANY($2)
-      `, [primaryId, secondaryIds]);
-
-      // 2. 轉移進貨單項目 (inbound_items)
-      await clientPool.query(`
-        UPDATE inbound_items SET item_id = $1 WHERE item_id = ANY($2)
-      `, [primaryId, secondaryIds]);
-
-      // 3. 轉移出貨單項目 (outbound_items)
-      await clientPool.query(`
-        UPDATE outbound_items SET item_id = $1 WHERE item_id = ANY($2)
-      `, [primaryId, secondaryIds]);
-
-      // 4. 轉移 LAB 配置紀錄 (item_lab_assignments)
-      await clientPool.query(`
-        UPDATE item_lab_assignments SET item_master_id = $1 WHERE item_master_id = ANY($2)
-      `, [primaryId, secondaryIds]);
-
-      // 5. 轉移維修品項目 (repair_items)
-      await clientPool.query(`
-        UPDATE repair_items SET item_master_id = $1 WHERE item_master_id = ANY($2)
-      `, [primaryId, secondaryIds]);
-
-      // 6. 安全刪除次要重複主檔
-      await clientPool.query(`
-        DELETE FROM item_master WHERE id = ANY($1)
-      `, [secondaryIds]);
-
-      totalRemoved += secondaryIds.length;
-      console.log(`   ✨ Merged [${group.cat_name} ${group.norm_brand} ${group.norm_model}]: Kept ID ${primaryId}, merged ${secondaryIds.length} duplicate(s) (${secondaryIds.join(',')})`);
-    }
-
-    console.log(`✅ Item Master Auto-Merge finished: Merged ${dupRes.rows.length} groups, removed ${totalRemoved} duplicate masters.`);
-    return { mergedGroups: dupRes.rows.length, removedMasters: totalRemoved };
-  } catch (err) {
-    console.error('⚠️ Notice on auto-merging duplicate item masters:', err.message);
-    return { error: err.message };
-  }
-}
+// 大小寫與空白重複品項主檔安全整併核心函式：搬到 server/itemMasterMaintenance.js，
+// 每整併一組都寫一筆事件紀錄（保留哪個主檔、刪掉哪些、各資料表搬了幾筆）
 
 const uploadsDir = path.join(__dirname, 'uploads');
 // 上傳設定（中文檔名以 UTF-8 解讀、25 MB 上限）見 server/upload.js
@@ -389,7 +303,8 @@ app.get('/api/item-master/scan-duplicates', auth.requireAuth, async (req, res) =
 // 手動執行大小寫重複品項主檔整併 API
 app.post('/api/item-master/merge-duplicates', auth.requireAuth, auth.requireRole('ADMIN'), async (req, res) => {
   try {
-    const mergeResult = await autoMergeDuplicateItemMasters(pool);
+    // 傳入 req：事件紀錄記在按下整併的使用者名下（啟動時自動整併則記在「系統」名下）
+    const mergeResult = await autoMergeDuplicateItemMasters(pool, { req });
     if (mergeResult.error) {
       return res.status(500).json({ success: false, error: mergeResult.error });
     }

@@ -1,9 +1,48 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Plus, Edit2, Trash2, X, Upload, Download, FolderGit2 } from 'lucide-react';
-import { logCreate, logUpdate, logDelete } from '../utils/auditLogger';
+import { logCreate, logDelete, logFieldChanges, diffFields, fileChange, fileNameOf } from '../utils/auditLogger';
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 import './ProjectList.css'; // Basic CSS for specific elements if needed
+
+const STATUS_LABELS = { IN_PROGRESS: '進行中', CLOSED: '已結案' };
+// 日期欄位：資料庫讀回來可能是完整時間字串，與表單一樣只取日期部分比對
+const dateOnly = (v) => {
+  if (!v) return '';
+  if (v instanceof Date) return v.toISOString().split('T')[0];
+  return String(v).split('T')[0];
+};
+
+// 事件紀錄要比對的欄位：編輯記「變更前 → 變更後」，刪除記整筆刪掉前的內容
+const PROJECT_LOG_FIELDS = [
+  { key: 'customer_name', label: '客戶名稱' },
+  { key: 'customer_contact', label: '客戶聯絡人' },
+  { key: 'name', label: '專案名稱' },
+  { key: 'start_date', label: '開始日期', format: dateOnly },
+  { key: 'end_date', label: '結束日期', format: dateOnly },
+  { key: 'remarks', label: '備註' },
+  { key: 'status', label: '狀態', format: (v) => STATUS_LABELS[v] || v },
+];
+
+// 附件清單：資料庫的 JSONB 可能讀回字串，統一轉成陣列
+const docList = (documents) => {
+  if (Array.isArray(documents)) return documents;
+  if (typeof documents === 'string' && documents.trim()) {
+    try {
+      const parsed = JSON.parse(documents);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+};
+// 事件紀錄只記附件檔名，絕不把 base64 內容寫進紀錄
+const docName = (d) => (d && (d.name || d.originalName || fileNameOf(d.url))) || '';
+const docKey = (d) => (d && d.id != null ? `id:${d.id}` : `name:${docName(d)}`);
+const docNames = (documents) => docList(documents).map(docName).filter(Boolean);
+// 表單內容去掉附件內容，只留檔名（建立專案的紀錄用）
+const formForLog = (form) => ({ ...form, documents: docNames(form.documents) });
 
 const ProjectList = () => {
   const [projects, setProjects] = useState([]);
@@ -141,7 +180,9 @@ const ProjectList = () => {
     e.preventDefault();
     try {
       if (editingId) {
-        await window.electronAPI.namedQuery('updateProject', [
+        // 變更前取清單裡原本那筆（formData 是編輯中的內容，已經是改過的值）
+        const original = projects.find(p => p.id === editingId) || {};
+        const res = await window.electronAPI.namedQuery('updateProject', [
           formData.customer_name,
           formData.customer_contact,
           formData.name,
@@ -152,9 +193,23 @@ const ProjectList = () => {
           JSON.stringify(formData.documents),
           editingId
         ]);
-        logUpdate('PROJECT', formData.project_no || editingId, formData.name, `編輯專案 [${formData.project_no}] ${formData.name}`, formData);
+        if (res?.success) {
+          const changes = diffFields(original, formData, PROJECT_LOG_FIELDS);
+          // 附件：比對新增與移除的檔名（只記檔名，不記檔案內容）
+          const beforeDocs = docList(original.documents);
+          const afterDocs = docList(formData.documents);
+          const beforeKeys = new Set(beforeDocs.map(docKey));
+          const afterKeys = new Set(afterDocs.map(docKey));
+          const documentsAdded = afterDocs.filter(d => !beforeKeys.has(docKey(d))).map(docName).filter(Boolean);
+          const documentsRemoved = beforeDocs.filter(d => !afterKeys.has(docKey(d))).map(docName).filter(Boolean);
+          if (documentsAdded.length || documentsRemoved.length) {
+            changes.push(fileChange('附件文件', docNames(beforeDocs), docNames(afterDocs), 'documents'));
+          }
+          logFieldChanges('PROJECT', formData.project_no || editingId, formData.name, `編輯專案 [${formData.project_no}] ${formData.name}`,
+            changes, { ...formForLog(formData), documentsAdded, documentsRemoved });
+        }
       } else {
-        await window.electronAPI.namedQuery('createProject', [
+        const res = await window.electronAPI.namedQuery('createProject', [
           formData.project_no,
           formData.customer_name,
           formData.customer_contact,
@@ -164,7 +219,9 @@ const ProjectList = () => {
           formData.remarks,
           formData.status
         ]);
-        logCreate('PROJECT', formData.project_no, formData.name, `建立專案 [${formData.project_no}] ${formData.name} (客戶: ${formData.customer_name || '未指定'})`, formData);
+        if (res?.success) {
+          logCreate('PROJECT', formData.project_no, formData.name, `建立專案 [${formData.project_no}] ${formData.name} (客戶: ${formData.customer_name || '未指定'})`, formForLog(formData));
+        }
       }
       setShowModal(false);
       fetchProjects();
@@ -185,11 +242,33 @@ const ProjectList = () => {
       }
       
       if (window.confirm(confirmMsg)) {
+        let affectedAssetSns = [];
         if (count > 0) {
-          await window.electronAPI.namedQuery('clearProjectFromAssets', [projectName]);
+          // clearProjectFromAssets 回傳被清掉專案標籤的設備（id、序號），記進事件紀錄
+          const clearRes = await window.electronAPI.namedQuery('clearProjectFromAssets', [projectName]);
+          if (clearRes?.success) {
+            affectedAssetSns = (clearRes.rows || []).map(r => String(r.sn ?? '').trim()).filter(Boolean);
+          }
         }
-        await window.electronAPI.namedQuery('deleteProject', [id]);
-        logDelete('PROJECT', id, projectName, `刪除專案 [${projectName}] (已清空關聯 ${count} 台設備專案標籤)`, { id, projectName, affectedAssetsCount: count });
+        const delRes = await window.electronAPI.namedQuery('deleteProject', [id]);
+        if (delRes?.success) {
+          // 刪掉之後就查不到了：把刪除前的整筆內容記下來（變更後一律為空白）
+          const original = projects.find(p => p.id === id) || { name: projectName };
+          const removed = diffFields(original, {}, [{ key: 'project_no', label: '專案編號' }, ...PROJECT_LOG_FIELDS]);
+          const removedDocs = docNames(original.documents);
+          if (removedDocs.length) removed.push(fileChange('附件文件', removedDocs, '', 'documents'));
+          const snapshotText = removed.map(c => `${c.label}：${c.from}`).join('；');
+          logDelete('PROJECT', id, projectName,
+            `刪除專案 [${projectName}] (已清空關聯 ${count} 台設備專案標籤${affectedAssetSns.length ? `：${affectedAssetSns.join('、')}` : ''})${snapshotText ? `（${snapshotText}）` : ''}`,
+            {
+              id, projectName, affectedAssetsCount: count, affectedAssetSns,
+              snapshot: {
+                ...Object.fromEntries(['project_no', ...PROJECT_LOG_FIELDS.map(f => f.key)].map(k => [k, original[k] ?? null])),
+                documents: removedDocs
+              },
+              changes: removed
+            });
+        }
         fetchProjects();
       }
     } catch (error) {

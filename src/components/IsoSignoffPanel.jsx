@@ -65,8 +65,9 @@ const IsoSignoffPanel = ({ formCode, formLabel, period, roles, disabled = false,
     });
   }, []);
 
-  const saveMySignature = async (png) => {
-    const res = await window.electronAPI.isoSignature('PUT', 'me', 'signature', undefined, { signature: png });
+  // signatureName：上傳圖檔的原始檔名或「手寫簽名」，伺服器存下來，事件紀錄記「舊檔名 → 新檔名」
+  const saveMySignature = async (png, signatureName) => {
+    const res = await window.electronAPI.isoSignature('PUT', 'me', 'signature', undefined, { signature: png, signatureName });
     if (!res?.success) throw new Error(res?.error || '儲存簽名檔失敗');
     setMySignature(png);
   };
@@ -82,16 +83,16 @@ const IsoSignoffPanel = ({ formCode, formLabel, period, roles, disabled = false,
     await loadSignatures();
   };
 
-  const handleSign = async (png, { saveAsMine } = {}) => {
+  const handleSign = async (png, { saveAsMine, signatureName } = {}) => {
     if (saveAsMine) {
-      try { await saveMySignature(png); } catch (err) { alert(err.message); return; }
+      try { await saveMySignature(png, signatureName); } catch (err) { alert(err.message); return; }
     }
     await submitSign({ signature: png });
   };
 
-  const handleSaveMine = async (png) => {
+  const handleSaveMine = async (png, { signatureName } = {}) => {
     try {
-      await saveMySignature(png);
+      await saveMySignature(png, signatureName);
       setManagingMine(false);
     } catch (err) {
       alert(err.message);

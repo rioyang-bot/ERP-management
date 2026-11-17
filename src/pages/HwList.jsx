@@ -4,7 +4,7 @@ import { Search, Columns3, Edit2, X, Server, User, MapPin, MoreHorizontal, Trash
 import ItemLedgerModal from '../components/ItemLedgerModal';
 import HwRegistrationModal from '../components/HwRegistrationModal';
 import RmaReplacementModal from '../components/RmaReplacementModal';
-import { logUpdate, logDelete, logStatusChange, logSnChange, logMountChange } from '../utils/auditLogger';
+import { logUpdate, logDelete, logStatusChange, logSnChange, logMountChange, logFieldChanges, diffFields, describeChanges } from '../utils/auditLogger';
 import { actionMenuPosition, isScrollInsideMenu } from '../utils/actionMenuPosition';
 import { useCardColumns } from '../utils/useCardColumns';
 import { usePageSize } from '../utils/usePageSize';
@@ -39,6 +39,81 @@ const HW_COLUMNS = [
   { id: 'status', label: '狀態' },
   { id: 'actions', label: '功能', always: true },
 ];
+
+/** 資產歸屬代碼 → 畫面上的名稱 */
+const ownershipText = (v) => ((v || 'FOR_SALE') === 'COMPANY' ? '公司資產' : '一般銷售');
+
+/**
+ * 編輯視窗的欄位，事件紀錄比對「變更前 → 變更後」用（標籤與畫面一致）。
+ * 序號另由 logSnChange 記；對應伺服器另外也會記搭載硬體異動（logMountChange）。
+ */
+const HW_EDIT_FIELDS = [
+  { key: 'brand', label: '廠牌' },
+  { key: 'type', label: '類型' },
+  { key: 'model', label: '型號' },
+  { key: 'specification', label: '規格' },
+  { key: 'ownership', label: '資產歸屬', format: ownershipText },
+  { key: 'hostname', label: '主機名稱' },
+  { key: 'client', label: '客戶' },
+  { key: 'end_user', label: 'End-user' },
+  { key: 'location', label: '放置位置' },
+  { key: 'server_sn', label: '對應伺服器 SN' },
+  { key: 'remarks', label: '備註' },
+  { key: 'project_name', label: '專案名稱' },
+  { key: 'order_source', label: '訂單來源' },
+  { key: 'shipping_date', label: '出貨日期' },
+];
+
+/** 從編輯中的硬體取出要比對的欄位值（temp_* 是編輯視窗暫存的值，存檔時寫回 custom_attributes） */
+const hwEditFields = (e) => ({
+  brand: e.brand, type: e.type, model: e.model, specification: e.specification,
+  ownership: e.ownership || 'FOR_SALE',
+  hostname: e.hostname, client: e.client,
+  end_user: e.temp_end_user !== undefined ? e.temp_end_user : (e.end_user || e.custom_attributes?.end_user || ''),
+  location: e.location,
+  server_sn: e.temp_server_sn,
+  remarks: e.remarks,
+  project_name: e.temp_project_name,
+  order_source: e.temp_order_source,
+  shipping_date: e.shipping_date,
+});
+
+/** 品項主檔跟著廠牌／類型／型號／規格怎麼改的，寫成一句話 */
+const describeItemMasterChange = (c) => {
+  if (!c) return '';
+  if (c.action === 'RENAME') return `品項主檔 #${c.fromMasterId} 直接更名（只有這一件在用）`;
+  const target = c.action === 'REPOINT_EXISTING' ? `既有品項主檔 #${c.toMasterId}` : `新建品項主檔 #${c.toMasterId ?? '（建立失敗）'}`;
+  return `品項主檔改對應：#${c.fromMasterId ?? '—'} → ${target}${c.orphanDeleted ? `；原主檔 #${c.fromMasterId} 已無人使用而刪除` : ''}`;
+};
+
+/** 刪除硬體時留在事件紀錄裡的快照：刪掉之後資料庫就查不到了 */
+const hwDeleteSnapshot = (nic) => {
+  const attrs = (nic.custom_attributes && typeof nic.custom_attributes === 'object') ? nic.custom_attributes : {};
+  const dateText = (v) => {
+    if (!v) return '';
+    try { return new Date(v).toISOString().split('T')[0]; } catch { return String(v); }
+  };
+  return {
+    id: nic.id,
+    sn: nic.sn || '',
+    brand: nic.brand || '',
+    type: nic.type || '',
+    model: nic.model || '',
+    specification: nic.specification || '',
+    status: nic.status || '',
+    ownership: ownershipText(nic.ownership),
+    hostname: nic.hostname || '',
+    client: nic.client || '',
+    end_user: nic.end_user || attrs.end_user || '',
+    location: nic.location || '',
+    server_sn: nic.server_sn || attrs.server_sn || '',
+    project_name: attrs.project_name || '',
+    order_source: attrs.order_source !== undefined ? attrs.order_source : (attrs.order_date || ''),
+    shipping_date: dateText(nic.shipping_date),
+    remarks: nic.remarks || '',
+    ...pickWarrantyFields(nic),
+  };
+};
 
 const HwList = ({ isSplitMode = false }) => {
   // 卡片區一列幾張：依卡片區寬度決定，最多 6 張（見 utils/useCardColumns.js）
@@ -188,7 +263,7 @@ const HwList = ({ isSplitMode = false }) => {
     if (nic.shipping_date) {
       try { shipDateStr = new Date(nic.shipping_date).toISOString().split('T')[0]; } catch { shipDateStr = ''; }
     }
-    setEditItem({
+    const draft = {
       ...nic,
       _origSn: nic.sn || '',
       _origModel: nic.model || '',
@@ -204,16 +279,25 @@ const HwList = ({ isSplitMode = false }) => {
       temp_order_source: nic.custom_attributes?.order_source !== undefined ? nic.custom_attributes?.order_source : (nic.custom_attributes?.order_date || ''),
       temp_project_name: nic.custom_attributes?.project_name || '',
       temp_end_user: nic.end_user || nic.custom_attributes?.end_user || nic.server_end_user || ''
-    });
+    };
+    // 編輯前的各欄位（與編輯視窗帶入的值同一套換算），存檔時比對出「舊 → 新」寫進事件紀錄
+    draft._origFields = hwEditFields(draft);
+    setEditItem(draft);
     setShowEditModal(true);
     setActiveMenuId(null);
   };
 
   const handleUpdateOwnership = async (id, sn, newOwnership, label) => {
     if (!confirm(`確定要將硬體 [${sn || id}] 的資產歸屬變更為「${label}」嗎？`)) return;
+    // 變更前的歸屬取列表上這一筆（改之前讀回來的值）
+    const oldOwnership = nics.find(n => n.id === id)?.ownership || 'FOR_SALE';
     const res = await window.electronAPI.namedQuery('updateAssetOwnership', [newOwnership, id]);
     if (res.success) {
-      logUpdate('HARDWARE', sn || id, '硬體零組件', `變更硬體資產歸屬為「${label}」`, { id, sn, newOwnership, label });
+      const changes = diffFields({ ownership: oldOwnership }, { ownership: newOwnership },
+        [{ key: 'ownership', label: '資產歸屬', format: ownershipText }]);
+      logUpdate('HARDWARE', sn || id, '硬體零組件',
+        `變更硬體資產歸屬為「${label}」${changes.length ? `：${describeChanges(changes)}` : ''}`,
+        { id, sn, oldOwnership, newOwnership, label, changes });
       window.dispatchEvent(new CustomEvent('db-update'));
       setActiveMenuId(null);
     } else {
@@ -239,8 +323,11 @@ const HwList = ({ isSplitMode = false }) => {
       || (newSpec !== (editItem._origSpec || ''))
       || (newBrand !== (editItem._origBrand || ''))
       || (newType !== (editItem._origType || ''));
+    // 品項主檔怎麼跟著改的（直接更名／改對應到既有或新建的主檔／舊主檔沒人用而刪掉），寫進事件紀錄
+    let itemMasterChange = null;
     if (isIdentityChanged) {
       let targetMasterId = null;
+      const fromMasterId = editItem.item_master_id || null;
       const findRes = await window.electronAPI.namedQuery('findItemMaster', [
         newSpec,
         newType,
@@ -250,14 +337,16 @@ const HwList = ({ isSplitMode = false }) => {
 
       if (findRes.success && findRes.rows?.length > 0) {
         targetMasterId = findRes.rows[0].id;
+        itemMasterChange = { action: 'REPOINT_EXISTING', fromMasterId, toMasterId: targetMasterId };
       } else {
         const countRes = await window.electronAPI.namedQuery('countAssetsByMasterId', [editItem.item_master_id]);
         const refCount = (countRes.success && countRes.rows?.[0]) ? parseInt(countRes.rows[0].count, 10) : 99;
 
         if (refCount <= 1) {
           // 這張主檔只有這一筆資產在用，直接改名不影響別人
-          await window.electronAPI.namedQuery('updateItemMasterIdentity', [newSpec, newType, newBrand, newModel, editItem.item_master_id]);
+          const renameRes = await window.electronAPI.namedQuery('updateItemMasterIdentity', [newSpec, newType, newBrand, newModel, editItem.item_master_id]);
           targetMasterId = editItem.item_master_id;
+          itemMasterChange = { action: 'RENAME', fromMasterId, toMasterId: targetMasterId, success: !!renameRes?.success };
         } else {
           // 還有別的資產共用這張主檔，改名會連帶改到它們，因此另建一張
           const createRes = await window.electronAPI.namedQuery('insertItemMaster', [
@@ -271,13 +360,16 @@ const HwList = ({ isSplitMode = false }) => {
           if (createRes.success && createRes.rows?.length > 0) {
             targetMasterId = createRes.rows[0].id;
           }
+          itemMasterChange = { action: 'REPOINT_NEW', fromMasterId, toMasterId: targetMasterId, sharedCount: refCount };
         }
       }
 
       if (targetMasterId && targetMasterId !== editItem.item_master_id) {
-        await window.electronAPI.namedQuery('updateAssetMasterId', [targetMasterId, editItem.id]);
+        const repointRes = await window.electronAPI.namedQuery('updateAssetMasterId', [targetMasterId, editItem.id]);
+        if (itemMasterChange) itemMasterChange.success = !!repointRes?.success;
         if (editItem.item_master_id) {
-          await window.electronAPI.namedQuery('deleteItemMasterIfOrphan', [editItem.item_master_id]);
+          const orphanRes = await window.electronAPI.namedQuery('deleteItemMasterIfOrphan', [editItem.item_master_id]);
+          if (itemMasterChange) itemMasterChange.orphanDeleted = !!(orphanRes?.success && (orphanRes.rows || []).length > 0);
         }
       }
 
@@ -364,8 +456,11 @@ const HwList = ({ isSplitMode = false }) => {
         }
       }
 
+      // 出貨日期另外存；沒存成的話，事件紀錄不把它記成已改
+      let shippingSaved = false;
       try {
-        await window.electronAPI.namedQuery('updateAssetShippingDate', [editItem.shipping_date || null, parseInt(editItem.id, 10)]);
+        const shipRes = await window.electronAPI.namedQuery('updateAssetShippingDate', [editItem.shipping_date || null, parseInt(editItem.id, 10)]);
+        shippingSaved = !!shipRes?.success;
       } catch (err) {
         console.error('Failed to update hardware shipping_date:', err);
       }
@@ -390,30 +485,62 @@ const HwList = ({ isSplitMode = false }) => {
         project_name: editItem.temp_project_name,
         order_source: editItem.temp_order_source,
         shipping_date: editItem.shipping_date,
-        ...warranty,
+        // 保固資訊沒存成時不把沒存成的值記成已存
+        ...(warrantyRes?.success ? warranty : {}),
       };
       // 日期與保固有改才寫進敘述，事件紀錄與履歷上看得出保固年數是誰、何時改的
       const warrantyChanges = warrantyRes?.success ? diffWarrantyFields(editItem._origWarranty, warranty) : [];
       if (warrantyChanges.length > 0) auditDetails.warrantyChanges = warrantyChanges;
       const warrantyText = warrantyChanges.length > 0 ? describeWarrantyChanges(warrantyChanges) : '';
-      if (isSnChanged) {
-        await logSnChange('HARDWARE', origSn, newSn, auditName, `硬體編輯${warrantyText ? `；${warrantyText}` : ''}`, auditDetails);
+
+      // 其他每個改到的欄位：變更前取開啟編輯時的原值（_origFields），變更後取實際寫回的值
+      const after = hwEditFields({ ...editItem, brand: newBrand, type: newType, model: newModel, specification: newSpec });
+      const fieldChanges = diffFields(editItem._origFields || {}, after,
+        HW_EDIT_FIELDS.filter(f => f.key !== 'shipping_date' || shippingSaved));
+      // 序號：只要文字有變就記（第一次填、清空、只改大小寫也算）；
+      // isSnChanged 只決定要不要連動改其他單據上的序號，維持原本的判斷
+      const snTextChanged = origSn !== newSn;
+      const snChange = snTextChanged ? [{ field: 'sn', label: '序號', from: origSn, to: newSn }] : [];
+      const allChanges = [...fieldChanges, ...snChange, ...warrantyChanges];
+      if (allChanges.length > 0) auditDetails.changes = allChanges;
+      if (itemMasterChange) auditDetails.itemMasterChange = itemMasterChange;
+      // 敘述：欄位寫成「欄位：舊 → 新」；保固沿用原本的寫法接在後面
+      const changeText = [describeChanges(fieldChanges), warrantyText, describeItemMasterChange(itemMasterChange)]
+        .filter(Boolean).join('；');
+      if (snTextChanged) {
+        await logSnChange('HARDWARE', origSn, newSn, auditName,
+          `硬體編輯${!isSnChanged && origSn && newSn ? '（只改大小寫，其他單據上的序號未連動）' : ''}${changeText ? `；${changeText}` : ''}`, auditDetails);
       } else {
         await logUpdate('HARDWARE', editItem.sn || editItem.id, auditName,
-          `編輯硬體詳細資訊 [${editItem.sn || editItem.id}]${warrantyText ? `：${warrantyText}` : ''}`, auditDetails);
+          `編輯硬體詳細資訊 [${editItem.sn || editItem.id}]${changeText ? `：${changeText}` : ''}`, auditDetails);
       }
-      setShowEditModal(false); 
+      setShowEditModal(false);
       window.dispatchEvent(new CustomEvent('db-update'));
     }
-    else alert('儲存失敗：' + res.error);
+    else {
+      // 明細沒存成，但品項主檔已經先改了（改名或改對應），這部分仍要留紀錄
+      if (itemMasterChange) {
+        const origSnText = (editItem._origSn || '').trim();
+        const identityChanges = diffFields(editItem._origFields || {},
+          { brand: newBrand, type: newType, model: newModel, specification: newSpec },
+          HW_EDIT_FIELDS.filter(f => ['brand', 'type', 'model', 'specification'].includes(f.key)));
+        await logFieldChanges('HARDWARE', origSnText || editItem.id, `${newBrand} ${newModel}`,
+          `編輯硬體 [${origSnText || editItem.id}] 時品項主檔已變更（其餘欄位儲存失敗）；${describeItemMasterChange(itemMasterChange)}`,
+          identityChanges, { id: editItem.id, sn: origSnText, itemMasterChange, saveError: res.error || '' });
+      }
+      alert('儲存失敗：' + res.error);
+    }
   };
 
   const handleUpdateStatus = async (id, sn, newStatus, label) => {
     if (!confirm(`確定變更狀態為 [${label}] 嗎？`)) return;
     const res = await window.electronAPI.namedQuery('updateAssetStatus', [newStatus, id]);
-    // 原狀態以資料庫改之前的為準（先前寫的是字面上的「舊狀態」）
-    const oldStatus = res?.rows?.[0]?.old_status || 'UNKNOWN';
-    await logStatusChange('HARDWARE', sn || id, '硬體零組件', oldStatus, newStatus, `變更硬體 [${sn || id}] 狀態為「${label}」`, { id, sn, newStatus, label });
+    // 沒改成功就不記（先前不論成敗都寫一筆「變更狀態」）
+    if (res?.success) {
+      // 原狀態以資料庫改之前的為準（先前寫的是字面上的「舊狀態」）
+      const oldStatus = res?.rows?.[0]?.old_status || 'UNKNOWN';
+      await logStatusChange('HARDWARE', sn || id, '硬體零組件', oldStatus, newStatus, `變更硬體 [${sn || id}] 狀態為「${label}」`, { id, sn, newStatus, label });
+    }
     window.dispatchEvent(new CustomEvent('db-update'));
     setActiveMenuId(null);
   };
@@ -438,12 +565,23 @@ const HwList = ({ isSplitMode = false }) => {
 
     const res = await window.electronAPI.namedQuery('deleteAsset', [nic.id]);
     if (res && res.success) {
-      logDelete('HARDWARE', nic.sn || nic.id, `${nic.brand} ${nic.model}`, `刪除硬體紀錄 [${nic.sn || nic.id}]`, { 
-        id: nic.id, 
-        sn: nic.sn, 
-        brand: nic.brand, 
+      // 刪掉之後就查不到了：把這件硬體的主要欄位留一份在紀錄裡
+      const deleted = hwDeleteSnapshot(nic);
+      const keyText = [
+        `${deleted.brand} ${deleted.model}`.trim(),
+        deleted.specification ? `規格 ${deleted.specification}` : '',
+        deleted.client ? `客戶 ${deleted.client}` : '',
+        deleted.location ? `位置 ${deleted.location}` : '',
+        deleted.server_sn ? `對應伺服器 ${deleted.server_sn}` : '',
+        deleted.status ? `狀態 ${getStatusConfig(deleted.status).label || deleted.status}` : '',
+      ].filter(Boolean).join('，');
+      logDelete('HARDWARE', nic.sn || nic.id, `${nic.brand} ${nic.model}`, `刪除硬體紀錄 [${nic.sn || nic.id}]（${keyText}）`, {
+        id: nic.id,
+        sn: nic.sn,
+        brand: nic.brand,
         model: nic.model,
-        unmountedFromServer: isMounted ? nic.server_sn : null 
+        unmountedFromServer: isMounted ? nic.server_sn : null,
+        deleted,
       });
       window.dispatchEvent(new CustomEvent('db-update'));
       setActiveMenuId(null);

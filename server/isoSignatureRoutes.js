@@ -20,6 +20,7 @@
 import express from 'express';
 import crypto from 'crypto';
 import { writeAuditLog, clientIp } from './auditLog.js';
+import { diffFields, describeChanges, fileChange } from './fieldChanges.js';
 import { SIGN_CONTENT_SQL as ROOM_CHECK_SQL, roomCheckHash } from './isoRoomCheckRoutes.js';
 
 /** 簽核角色與需要的帳號權限；permission 是 null 的任何登入帳號都能簽 */
@@ -35,6 +36,27 @@ const ymd = (v) => {
     return `${v.getFullYear()}-${p(v.getMonth() + 1)}-${p(v.getDate())}`;
   }
   return String(v ?? '').slice(0, 10);
+};
+
+/** 時間戳 → 2026-10-31 17:00（伺服器當地時間；事件紀錄的變更前／變更後用） */
+export const stamp = (v) => {
+  if (v === null || v === undefined || v === '') return '';
+  const d = v instanceof Date ? v : new Date(v);
+  if (Number.isNaN(d.getTime())) return String(v);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
+/** 手寫的簽名在事件紀錄上的檔名（用戶端沒有檔名可送） */
+export const HAND_DRAWN_NAME = '手寫簽名';
+
+/**
+ * 簽名檔的檔名：上傳圖檔的原始檔名，手寫的是「手寫簽名」（由用戶端送來 signatureName）。
+ * 只留檔名本身、去掉控制字元、限制長度；沒送就存 NULL（舊版用戶端）。
+ */
+export const cleanSignatureName = (name) => {
+  const base = [...String(name ?? '').split(/[\\/]/).pop()].filter((ch) => ch.charCodeAt(0) >= 32).join('').trim();
+  return base.slice(0, 255) || null;
 };
 
 /** 設備攜出入單內容的雜湊：只看會印在表單上的欄位，順序照查詢結果 */
@@ -151,7 +173,7 @@ export const createIsoSignatureRoutes = (pool, auth, namedQueries) => {
 
   const validPng = (s) => PNG_RE.test(s) && s.length <= MAX_SIGNATURE_CHARS;
 
-  const userAudit = (req, actionType, summary) => writeAuditLog(pool, {
+  const userAudit = (req, actionType, summary, extraDetails = {}) => writeAuditLog(pool, {
     userId: req.user.id,
     userName: req.user.full_name || req.user.username,
     userRole: req.user.role,
@@ -161,16 +183,16 @@ export const createIsoSignatureRoutes = (pool, auth, namedQueries) => {
     targetId: req.user.username,
     targetName: req.user.full_name || req.user.username,
     summary,
-    details: { username: req.user.username },
+    details: { username: req.user.username, ...extraDetails },
     ipAddress: clientIp(req),
   });
 
   // 個人簽名檔：只能讀寫自己的（對象取自連線階段）。要寫在 /:form/:period 前面，否則 me 會被當成表單代號
   router.get('/me/signature', auth.requireAuth, async (req, res) => {
     try {
-      const r = await pool.query(`SELECT signature_png, updated_at FROM user_signatures WHERE user_id = $1`, [req.user.id]);
+      const r = await pool.query(`SELECT signature_png, signature_name, updated_at FROM user_signatures WHERE user_id = $1`, [req.user.id]);
       const s = r.rows[0];
-      res.json({ success: true, signaturePng: s?.signature_png || null, updatedAt: s?.updated_at || null });
+      res.json({ success: true, signaturePng: s?.signature_png || null, signatureName: s?.signature_name || null, updatedAt: s?.updated_at || null });
     } catch (error) {
       console.error('[IsoSignature] 讀取簽名檔失敗:', error.message);
       res.status(500).json({ success: false, error: '讀取簽名檔失敗。' });
@@ -180,15 +202,30 @@ export const createIsoSignatureRoutes = (pool, auth, namedQueries) => {
   router.put('/me/signature', auth.requireAuth, async (req, res) => {
     const signature = String(req.body?.signature || '');
     if (!validPng(signature)) return res.status(400).json({ success: false, error: '簽名圖檔格式不對或太大。' });
+    // 上傳圖檔的原始檔名，手寫的是「手寫簽名」；事件紀錄記「舊檔名 → 新檔名」
+    const signatureName = cleanSignatureName(req.body?.signatureName);
     try {
+      // 先讀原本那一份（變更前的檔名）；舊資料沒存檔名，第一次更換時變更前是空白
+      const old = (await pool.query(
+        `SELECT signature_png, signature_name FROM user_signatures WHERE user_id = $1`, [req.user.id],
+      )).rows[0];
       const r = await pool.query(
-        `INSERT INTO user_signatures (user_id, signature_png, updated_at) VALUES ($1, $2, CURRENT_TIMESTAMP)
-         ON CONFLICT (user_id) DO UPDATE SET signature_png = EXCLUDED.signature_png, updated_at = EXCLUDED.updated_at
+        `INSERT INTO user_signatures (user_id, signature_png, signature_name, updated_at) VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+         ON CONFLICT (user_id) DO UPDATE SET signature_png = EXCLUDED.signature_png, signature_name = EXCLUDED.signature_name,
+           updated_at = EXCLUDED.updated_at
          RETURNING (xmax <> 0) AS replaced`,
-        [req.user.id, signature]
+        [req.user.id, signature, signatureName]
       );
       const replaced = !!r.rows[0]?.replaced;
-      await userAudit(req, replaced ? 'UPDATE' : 'CREATE', `${replaced ? '更新' : '設定'}個人簽名檔 [${req.user.username}]`);
+      const from = old?.signature_name || '';
+      const to = signatureName || '';
+      // 檔名相同（例如兩次都是手寫）但圖換了，也要看得出換過
+      const change = fileChange('簽名檔', from, to, 'signature')
+        || (old && old.signature_png !== signature ? { field: 'signature', label: '簽名檔', from, to: `${to}（已更換）`, kind: 'file' } : null);
+      const changes = change ? [change] : [];
+      await userAudit(req, replaced ? 'UPDATE' : 'CREATE',
+        `${replaced ? '更新' : '設定'}個人簽名檔 [${req.user.username}]${changes.length ? `：${describeChanges(changes)}` : ''}`,
+        { signatureName: signatureName || null, before: old ? { signatureName: old.signature_name || null } : null, changes });
       res.json({ success: true });
     } catch (error) {
       console.error('[IsoSignature] 儲存簽名檔失敗:', error.message);
@@ -198,9 +235,14 @@ export const createIsoSignatureRoutes = (pool, auth, namedQueries) => {
 
   router.delete('/me/signature', auth.requireAuth, async (req, res) => {
     try {
-      const r = await pool.query(`DELETE FROM user_signatures WHERE user_id = $1 RETURNING user_id`, [req.user.id]);
+      const r = await pool.query(`DELETE FROM user_signatures WHERE user_id = $1 RETURNING user_id, signature_name`, [req.user.id]);
       if (r.rowCount === 0) return res.status(404).json({ success: false, error: '還沒有簽名檔。' });
-      await userAudit(req, 'DELETE', `刪除個人簽名檔 [${req.user.username}]`);
+      // 刪掉的是哪一個檔案（舊資料沒存檔名就只記刪除）
+      const removedName = r.rows[0]?.signature_name || '';
+      const changes = [fileChange('簽名檔', removedName, '', 'signature')].filter(Boolean);
+      await userAudit(req, 'DELETE',
+        `刪除個人簽名檔 [${req.user.username}]${changes.length ? `：${describeChanges(changes)}` : ''}`,
+        { before: { signatureName: removedName || null }, changes });
       res.json({ success: true });
     } catch (error) {
       console.error('[IsoSignature] 刪除簽名檔失敗:', error.message);
@@ -311,14 +353,17 @@ export const createIsoSignatureRoutes = (pool, auth, namedQueries) => {
       return res.status(400).json({ success: false, error: '簽名圖檔格式不對或太大。' });
     }
     try {
+      let savedName = null;
       if (useSaved) {
-        const saved = await pool.query(`SELECT signature_png FROM user_signatures WHERE user_id = $1`, [req.user.id]);
+        const saved = await pool.query(`SELECT signature_png, signature_name FROM user_signatures WHERE user_id = $1`, [req.user.id]);
         signature = saved.rows[0]?.signature_png || '';
+        savedName = saved.rows[0]?.signature_name || null;
         if (!signature) return res.status(400).json({ success: false, error: '這個帳號還沒有簽名檔，請先上傳或手寫。' });
       }
       const content = await currentContent(p.def, p.period);
+      // 原本的簽核（簽核後資料有異動時會被蓋過）：簽核人、簽核時間、當時的列數留在事件紀錄的變更前
       const existing = await pool.query(
-        `SELECT user_name, content_hash FROM iso_form_signatures WHERE form_code = $1 AND period = $2 AND signer_role = $3`,
+        `SELECT user_name, content_hash, row_count, signed_at FROM iso_form_signatures WHERE form_code = $1 AND period = $2 AND signer_role = $3`,
         [p.form, p.period, role]
       );
       const prev = existing.rows[0];
@@ -335,14 +380,26 @@ export const createIsoSignatureRoutes = (pool, auth, namedQueries) => {
          RETURNING signed_at`,
         [p.form, p.period, role, req.user.id, userName, signature, content.hash, content.rowCount]
       );
+      // 蓋過原本的簽核時，逐欄記變更前 → 變更後
+      const signedAt = r.rows[0]?.signed_at;
+      const before = prev ? { userName: prev.user_name, signedAt: stamp(prev.signed_at), rowCount: prev.row_count ?? '' } : null;
+      const after = { userName, signedAt: stamp(signedAt), rowCount: content.rowCount };
+      const changes = prev ? diffFields(before, after, [
+        { key: 'userName', label: '簽核人' },
+        { key: 'signedAt', label: '簽核時間' },
+        { key: 'rowCount', label: '列數' },
+      ]) : [];
       await writeAuditLog(pool, {
         ...auditBase(req, p.form, p.period, p.def),
         actionType: 'CREATE',
         summary: `${prev ? '重新簽核' : '簽核'}${p.def.label} [${rocLabel(p.period)}]：${roleDef.label} ${userName}（共 ${content.rowCount} 列）`
-          + (prev ? `，原簽核人 ${prev.user_name} 的簽名因資料異動失效` : ''),
+          + (prev ? `，原簽核人 ${prev.user_name} 的簽名因資料異動失效` : '')
+          + (changes.length ? `：${describeChanges(changes)}` : ''),
         details: {
           form: p.form, period: p.period, role, roleLabel: roleDef.label, rowCount: content.rowCount, source: useSaved ? '簽名檔' : '手寫／上傳',
+          ...(useSaved ? { signatureName: savedName } : {}),
           contentHash: content.hash, ...(prev ? { replaced: { userName: prev.user_name, reason: '簽核後資料有異動' } } : {}),
+          ...(prev ? { before, after, changes } : {}),
         },
       });
       res.json({ success: true, signedAt: r.rows[0]?.signed_at });

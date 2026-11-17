@@ -167,8 +167,19 @@ describe('威脅情資自我檢核表 API', () => {
     const logs = auditRows(calls);
     expect(logs).toHaveLength(1);
     expect([logs[0][1], logs[0][3]]).toEqual(['張倉管', 'UPDATE']);
-    expect(logs[0][8]).toBe(`替換威脅情資自我檢核表 [115年11月]：${FILE} → S-413-02_修正.docx（檢核日期 115/11/01，共 2 列；原檢核人 王小明 的簽核一併清除）`);
-    expect(JSON.parse(logs[0][9])).toMatchObject({ before: { fileName: FILE, uploadedByName: '楊資安', signedByName: '王小明' }, after: { fileName: 'S-413-02_修正.docx' } });
+    expect(logs[0][8]).toBe(`替換威脅情資自我檢核表 [115年11月]：檔名：${FILE} → S-413-02_修正.docx；列數：3 → 2；上傳者：楊資安 → 張倉管（檢核日期 115/11/01，共 2 列；原檢核人 王小明 的簽核一併清除）`);
+    const details = JSON.parse(logs[0][9]);
+    expect(details).toMatchObject({
+      before: { fileName: FILE, uploadedByName: '楊資安', signedByName: '王小明', checkDate: '2026-11-01', rowCount: 3 },
+      after: { fileName: 'S-413-02_修正.docx', uploadedByName: '張倉管', rowCount: 2, checkDate: '2026-11-01' },
+    });
+    expect(details.before.fileSize).toBeGreaterThan(0);
+    expect(details.after.fileSize).toBeGreaterThan(0);
+    expect(details.changes).toEqual([
+      { field: 'fileName', label: '檔名', from: FILE, to: 'S-413-02_修正.docx', kind: 'file' },
+      { field: 'rowCount', label: '列數', from: '3', to: '2' },
+      { field: 'uploadedByName', label: '上傳者', from: '楊資安', to: '張倉管' },
+    ]);
   });
 
   it('讀這個月：各列、檢核人、自己能不能刪除／撤銷；還沒上傳的月份回 null', async () => {

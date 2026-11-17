@@ -1193,9 +1193,9 @@ export const queries = {
   checkDuplicateConsumable: `SELECT id, brand, type, model, specification, stock_qty, lab_qty FROM item_master WHERE UPPER(TRIM(REGEXP_REPLACE(COALESCE(brand, ''), '[[:space:]]+', ' ', 'g'))) = UPPER(TRIM(REGEXP_REPLACE(COALESCE($1, ''), '[[:space:]]+', ' ', 'g'))) AND UPPER(TRIM(REGEXP_REPLACE(COALESCE(type, ''), '[[:space:]]+', ' ', 'g'))) = UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g'))) AND UPPER(TRIM(REGEXP_REPLACE(COALESCE(model, ''), '[[:space:]]+', ' ', 'g'))) = UPPER(TRIM(REGEXP_REPLACE(COALESCE($3, ''), '[[:space:]]+', ' ', 'g'))) AND category_id = (SELECT id FROM categories WHERE name = '耗材')`,
   findConsumableMaster: `SELECT id, stock_qty, lab_qty, safety_stock FROM item_master WHERE LOWER(brand) = LOWER($1) AND LOWER(type) = LOWER($2) AND LOWER(model) = LOWER($3) AND LOWER(specification) = LOWER($4) AND category_id = (SELECT id FROM categories WHERE name = '耗材')`,
   // 直接指定庫存值（覆蓋模式）。回傳 id 以便呼叫端確認確實更新到。
-  updateConsumableStockQtyOnImport: `UPDATE item_master SET stock_qty = $1 WHERE id = $2 RETURNING id`,
+  updateConsumableStockQtyOnImport: `UPDATE item_master SET stock_qty = $1 WHERE id = $2 RETURNING id, stock_qty`,
   // 累加模式改由資料庫自行加總，避免「先讀出再算好寫回」在同時匯入時互相覆蓋。
-  incrementConsumableStockQtyOnImport: `UPDATE item_master SET stock_qty = COALESCE(stock_qty, 0) + $1 WHERE id = $2 RETURNING id`,
+  incrementConsumableStockQtyOnImport: `UPDATE item_master SET stock_qty = COALESCE(stock_qty, 0) + $1 WHERE id = $2 RETURNING id, stock_qty`,
   fetchRecentConsumables: `SELECT i.* FROM item_master i LEFT JOIN categories c ON i.category_id = c.id WHERE c.name = '耗材' ORDER BY i.id DESC LIMIT 10`,
   // initial_stock_qty 與 stock_qty 同值，建立後不再變動，供品項履歷顯示初始庫存
   insertConsumableMaster: `INSERT INTO item_master (specification, type, brand, model, unit, safety_stock, stock_qty, initial_stock_qty, category_id, purchase_price) VALUES ($1, UPPER(TRIM(REGEXP_REPLACE(COALESCE($2, ''), '[[:space:]]+', ' ', 'g'))), UPPER(TRIM(REGEXP_REPLACE(COALESCE($3, ''), '[[:space:]]+', ' ', 'g'))), UPPER(TRIM(REGEXP_REPLACE(COALESCE($4, ''), '[[:space:]]+', ' ', 'g'))), $5, $6, $7, $7, (SELECT id FROM categories WHERE name = $8), 0) RETURNING id`,
@@ -1893,6 +1893,18 @@ export const queries = {
       updated_at = CURRENT_TIMESTAMP
     WHERE custom_attributes->>'server_sn' IS NOT NULL AND TRIM(custom_attributes->>'server_sn') = TRIM($2)
     RETURNING id, sn`,
+  // 出貨單／借用單存檔時會順手改寫資產的客戶、End-user、專案、地點：
+  // 寫入前先讀回這些序號（含搭載在它們底下的硬體）目前的值，事件紀錄才寫得出「變更前 → 變更後」
+  fetchAssetSideFieldsForOutbound: `
+    SELECT a.id, a.sn, c.name AS category_name, a.client, a.location,
+           COALESCE(NULLIF(TRIM(a.end_user), ''), a.custom_attributes->>'end_user') AS end_user,
+           a.custom_attributes->>'project_name' AS project_name,
+           a.custom_attributes->>'server_sn' AS server_sn
+    FROM assets a
+    LEFT JOIN item_master i ON a.item_master_id = i.id
+    LEFT JOIN categories c ON i.category_id = c.id
+    WHERE (a.sn IS NOT NULL AND TRIM(a.sn) = ANY($1::text[]))
+       OR (a.custom_attributes->>'server_sn' IS NOT NULL AND TRIM(a.custom_attributes->>'server_sn') = ANY($1::text[]))`,
   // 這位客戶用過的 End-user（資產上的與出貨單上的），新增出貨單時給建議
   fetchCustomerEndUsers: `
     SELECT DISTINCT eu AS end_user FROM (
@@ -2010,6 +2022,20 @@ export const queries = {
   `,
   checkItemStock: `SELECT stock_qty FROM item_master WHERE id = $1`,
   checkAssetActive: `SELECT status FROM assets WHERE sn = $1`,
+  // 單據作業順帶改寫的資產欄位（客戶、地點、End-user、專案、日期）：交易前後各讀一次比對，
+  // 事件紀錄寫「變更前 → 變更後」（見 utils/assetFieldSnapshot.js）。含搭載在這些序號上的硬體。
+  fetchAssetFieldSnapshotBySns: `
+    SELECT TRIM(a.sn) AS sn, a.client, a.location,
+           COALESCE(NULLIF(TRIM(a.end_user), ''), NULLIF(TRIM(a.custom_attributes->>'end_user'), '')) AS end_user,
+           a.custom_attributes->>'project_name' AS project_name,
+           a.installed_date, a.shipping_date, a.customer_warranty_expire,
+           c.name AS category_name
+    FROM assets a
+    LEFT JOIN item_master i ON i.id = a.item_master_id
+    LEFT JOIN categories c ON c.id = i.category_id
+    WHERE a.sn IS NOT NULL AND TRIM(a.sn) <> ''
+      AND (UPPER(TRIM(a.sn)) IN (SELECT UPPER(TRIM(x)) FROM unnest($1::text[]) AS x)
+        OR UPPER(TRIM(a.custom_attributes->>'server_sn')) IN (SELECT UPPER(TRIM(x)) FROM unnest($1::text[]) AS x))`,
   // 加上 RETURNING id：namedQuery 只回 { success, rows }，沒有 rowCount。
   // 沒有 RETURNING 的話，庫存不足被 WHERE 擋掉時仍會回報成功，等於默默沒扣到。
   updateStockQtyOnOutbound: `UPDATE item_master SET stock_qty = stock_qty - $1 WHERE id = $2 AND stock_qty >= $1 RETURNING id`,
@@ -2101,7 +2127,8 @@ export const queries = {
   createProject: `INSERT INTO projects (project_no, customer_name, customer_contact, name, start_date, end_date, remarks, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
   updateProject: `UPDATE projects SET customer_name = $1, customer_contact = $2, name = $3, start_date = $4, end_date = $5, remarks = $6, status = $7, documents = $8, updated_at = CURRENT_TIMESTAMP WHERE id = $9 RETURNING *`,
   deleteProject: `DELETE FROM projects WHERE id = $1`,
-  clearProjectFromAssets: `UPDATE assets SET custom_attributes = custom_attributes - 'project_name' WHERE custom_attributes->>'project_name' = $1`,
+  // 回傳被清掉專案標籤的設備，刪除專案的事件紀錄會列出這些序號
+  clearProjectFromAssets: `UPDATE assets SET custom_attributes = custom_attributes - 'project_name' WHERE custom_attributes->>'project_name' = $1 RETURNING id, sn`,
   countProjectAssets: `SELECT COUNT(*) FROM assets WHERE custom_attributes->>'project_name' = $1`,
 
   // --- PJ Report (專案進出報表) ---
@@ -2982,7 +3009,12 @@ export const queries = {
       updated_at = CURRENT_TIMESTAMP
     FROM assets prev
     WHERE prev.id = a.id AND a.id = $1::integer AND a.status = 'ACTIVE'
-    RETURNING a.id, a.sn, prev.status AS old_status`,
+    RETURNING a.id, a.sn, prev.status AS old_status,
+      -- 改之前與改之後的欄位，事件紀錄寫「變更前 → 變更後」（見 utils/customerExchange.js）
+      prev.client AS old_client, prev.location AS old_location,
+      prev.installed_date AS old_installed_date, prev.shipping_date AS old_shipping_date,
+      prev.customer_warranty_expire AS old_customer_warranty_expire,
+      a.client, a.location, a.installed_date, a.shipping_date, a.customer_warranty_expire`,
   // 換出設備上的搭載硬體一起帶入客戶、地點與日期（狀態由 syncMountedHardwareToDevice 跟上）
   exchangeShipMounted: `
     UPDATE assets h SET client = $2, location = $3, installed_date = $4::date, shipping_date = $4::date,
@@ -2998,7 +3030,12 @@ export const queries = {
       updated_at = CURRENT_TIMESTAMP
     FROM assets prev
     WHERE prev.id = a.id AND a.id = $1::integer AND a.status = 'SHIPPED'
-    RETURNING a.id, a.sn, prev.status AS old_status`,
+    RETURNING a.id, a.sn, prev.status AS old_status,
+      -- 被清空之前的值，事件紀錄寫「變更前 → 變更後」（見 utils/customerExchange.js）
+      prev.client AS old_client, prev.location AS old_location,
+      COALESCE(NULLIF(TRIM(prev.end_user), ''), NULLIF(TRIM(prev.custom_attributes->>'end_user'), '')) AS old_end_user,
+      prev.custom_attributes->>'project_name' AS old_project_name,
+      prev.shipping_date AS old_shipping_date`,
   // 換回的耗材：良品直接加回在庫
   exchangeReturnConsumable: `UPDATE item_master SET stock_qty = COALESCE(stock_qty, 0) + $1 WHERE id = $2 RETURNING id`,
 

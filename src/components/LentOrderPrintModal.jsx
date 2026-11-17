@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Printer, Download, X, Check, RefreshCw, Building, Image as ImageIcon, FileText, Loader2, Settings, Handshake, Save, RotateCcw } from 'lucide-react';
-import { logUpdate } from '../utils/auditLogger';
-import { toDraft, fromDraft, sameForm, changedFields, FIELD_LABELS } from '../utils/lentPrintDraft';
+import { logUpdate, describeChanges } from '../utils/auditLogger';
+import { toDraft, fromDraft, sameForm, changedFields, draftChanges } from '../utils/lentPrintDraft';
 import html2canvas from 'html2canvas';
 import { getCompanyPresets, loadCompanyPresets, DEFAULT_BUILTIN_PRESETS } from '../utils/companyPresets';
 import { PRESET_PREF_KEYS, readPresetPreference, savePresetPreference } from '../utils/presetPreference';
@@ -72,6 +72,7 @@ const buildDefaultForm = (dnData, items) => {
     // 頁首公司資訊照公司範本帶入（undefined 才會用範本的）
     headerRightText: undefined,
     customLogo: null,
+    customLogoName: null,
     // 經銷商區不屬於公司範本：沒選經銷商之前一律留空
     selectedDealerId: '', dealerName: '', dealerSales: '', dealerPhone: '', dealerAddress: '',
     applyCompany: companyName,
@@ -139,15 +140,23 @@ const LentOrderPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
   const [isSaving, setIsSaving] = useState(false);
   // 換過 LOGO 才把它存進去；照範本帶入的不用存
   const [logoCustom, setLogoCustom] = useState(false);
+  // 換過的 LOGO 的原始檔名：事件紀錄寫「舊檔名 → 新檔名」
+  const [logoName, setLogoName] = useState('');
 
   /** 畫面上目前的內容（要存的那些欄位） */
   const currentForm = {
     selectedPreset, headerLayout, headerRightText, customLogo: logoCustom ? currentLogo : null,
+    customLogoName: logoCustom ? (logoName || null) : null,
     selectedDealerId, dealerName, dealerSales, dealerPhone, dealerAddress,
     applyCompany, applyDate, custCompany, custPerson, custPhone, custAddress,
     tableRows, termsList, footerWarnings,
   };
   const isDirty = !!savedForm && !sameForm(currentForm, savedForm);
+  /** 事件紀錄裡把範本、經銷商的代碼轉成名稱 */
+  const labelLookups = {
+    presetLabel: (key) => presetsMap[key]?.label || key,
+    dealerLabel: (id) => dealers.find((d) => String(d.id) === String(id))?.name || id,
+  };
 
   /** 把一份內容套到畫面上 */
   const applyForm = (f, presets) => {
@@ -156,6 +165,7 @@ const LentOrderPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
     setHeaderLayout(f.headerLayout || 'STANDARD');
     setHeaderRightText(f.headerRightText ?? presets?.[presetKey]?.headerRight ?? '');
     setLogoCustom(!!f.customLogo);
+    setLogoName(f.customLogo ? (f.customLogoName || '') : '');
     setCurrentLogo(f.customLogo || presets?.[presetKey]?.logo || logoImg);
     setSelectedDealerId(f.selectedDealerId || '');
     setDealerName(f.dealerName || '');
@@ -213,7 +223,8 @@ const LentOrderPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
       const saved = fromDraft(draftRes?.success ? draftRes.rows?.[0]?.print_draft : null);
       const form = saved ? { ...defaults, ...saved } : defaults;
       applyForm(form, presets);
-      setSavedForm({ ...form, customLogo: form.customLogo || null });
+      // 舊的存檔沒有 LOGO 檔名：補成 null，才不會一打開就判定成有未儲存的修改
+      setSavedForm({ ...form, customLogo: form.customLogo || null, customLogoName: form.customLogo ? (form.customLogoName || null) : null });
       setHasSavedDraft(!!saved);
     })();
     return () => { cancelled = true; };
@@ -227,11 +238,15 @@ const LentOrderPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
       const draft = toDraft(currentForm);
       const res = await window.electronAPI.namedQuery('saveLentPrintDraft', [draft, dnData.id]);
       if (!res?.success || !res.rows?.length) throw new Error(res?.error || '找不到這張借用單');
+      // 實際存進去的內容（LOGO 太大沒存時，存的是範本的 LOGO）
+      const storedForm = { ...currentForm, customLogo: draft.form.customLogo || null, customLogoName: draft.form.customLogoName || null };
       const changed = changedFields(savedForm, currentForm);
+      // 每個改到的欄位記「變更前 → 變更後」；明細、注意事項逐列列出，LOGO 記檔名
+      const changes = draftChanges(savedForm, storedForm, labelLookups);
       await logUpdate('LENT', dnData.request_no, dnData.customer || '借用單',
-        `儲存借貨申請單 [${dnData.request_no}] 的修改：${changed.map((k) => FIELD_LABELS[k]).join('、') || '無變更'}`,
-        { dnId: dnData.id, dnNumber: dnData.request_no, changed, logoDropped: !!currentForm.customLogo && !draft.form.customLogo });
-      setSavedForm({ ...currentForm, customLogo: draft.form.customLogo || null });
+        `儲存借貨申請單 [${dnData.request_no}] 的修改：${describeChanges(changes) || '無變更'}`,
+        { dnId: dnData.id, dnNumber: dnData.request_no, changed, logoDropped: !!currentForm.customLogo && !draft.form.customLogo, changes });
+      setSavedForm(storedForm);
       setHasSavedDraft(true);
       setIsEditMode(false);
       if (currentForm.customLogo && !draft.form.customLogo) {
@@ -248,17 +263,20 @@ const LentOrderPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
   const handleResetDraft = async () => {
     if (!window.confirm('確定要還原成預設內容嗎？這張借貨申請單儲存過的修改都會清掉。')) return;
     try {
-      if (hasSavedDraft && dnData?.id) {
-        const res = await window.electronAPI.namedQuery('clearLentPrintDraft', [dnData.id]);
-        if (!res?.success) throw new Error(res?.error || '未知錯誤');
-        await logUpdate('LENT', dnData.request_no, dnData.customer || '借用單',
-          `借貨申請單 [${dnData.request_no}] 還原為預設內容`, { dnId: dnData.id, dnNumber: dnData.request_no });
-      }
       const presets = getCompanyPresets();
       // 還原成預設內容，範本則回到這位使用者上次選的
       const remembered = presets[rememberedPresetRef.current] ? rememberedPresetRef.current : 'PRESET_A';
       const base = { ...buildDefaultForm(dnData, items), selectedPreset: remembered };
       const form = { ...base, headerRightText: presets[remembered]?.headerRight || '' };
+      if (hasSavedDraft && dnData?.id) {
+        const res = await window.electronAPI.namedQuery('clearLentPrintDraft', [dnData.id]);
+        if (!res?.success) throw new Error(res?.error || '未知錯誤');
+        // 清掉了哪些存過的值：存過的 → 預設內容
+        const changes = draftChanges(savedForm, form, labelLookups);
+        await logUpdate('LENT', dnData.request_no, dnData.customer || '借用單',
+          `借貨申請單 [${dnData.request_no}] 還原為預設內容${changes.length ? `：${describeChanges(changes)}` : ''}`,
+          { dnId: dnData.id, dnNumber: dnData.request_no, changes });
+      }
       applyForm(form, presets);
       setSavedForm(form);
       setHasSavedDraft(false);
@@ -333,6 +351,8 @@ const LentOrderPrintModal = ({ isOpen, onClose, dnData, items = [] }) => {
       reader.onload = (uploadEvent) => {
         setLogoCustom(true);
         setCurrentLogo(uploadEvent.target.result);
+        // 記下原始檔名，事件紀錄才寫得出換成哪個檔案（圖片內容不進紀錄）
+        setLogoName(file.name || '');
       };
       reader.readAsDataURL(file);
     }

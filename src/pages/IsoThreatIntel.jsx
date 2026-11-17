@@ -204,15 +204,16 @@ const IsoThreatIntel = () => {
     await load();
   };
 
-  const saveMySignature = async (png) => {
-    const res = await window.electronAPI.isoSignature('PUT', 'me', 'signature', undefined, { signature: png });
+  // signatureName：上傳圖檔的原始檔名或「手寫簽名」，伺服器存下來，事件紀錄記「舊檔名 → 新檔名」
+  const saveMySignature = async (png, signatureName) => {
+    const res = await window.electronAPI.isoSignature('PUT', 'me', 'signature', undefined, { signature: png, signatureName });
     if (!res?.success) throw new Error(res?.error || '儲存簽名檔失敗');
     setMySignature(png);
   };
 
-  const handleSign = async (png, { saveAsMine } = {}) => {
+  const handleSign = async (png, { saveAsMine, signatureName } = {}) => {
     if (saveAsMine) {
-      try { await saveMySignature(png); } catch (err) { alert(err.message); return; }
+      try { await saveMySignature(png, signatureName); } catch (err) { alert(err.message); return; }
     }
     await submitSign({ signature: png });
   };
@@ -405,7 +406,7 @@ const IsoThreatIntel = () => {
           title="我的簽名檔"
           signerName={signerName}
           savedSignature={mySignature}
-          onConfirm={async (png) => { try { await saveMySignature(png); setManagingMine(false); } catch (err) { alert(err.message); } }}
+          onConfirm={async (png, { signatureName } = {}) => { try { await saveMySignature(png, signatureName); setManagingMine(false); } catch (err) { alert(err.message); } }}
           onDeleteSaved={handleDeleteMine}
           onClose={() => setManagingMine(false)}
         />

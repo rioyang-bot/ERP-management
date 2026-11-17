@@ -4,12 +4,12 @@ import {
   X, UploadCloud, FileSpreadsheet, CheckCircle2, AlertTriangle, 
   XCircle, Filter, Layers, Database, ArrowRight, RefreshCw, Info, Download
 } from 'lucide-react';
-import { logEvent, ACTION_TYPES, MODULE_MAP } from '../utils/auditLogger';
+import { logEvent, logFieldChanges, ACTION_TYPES, MODULE_MAP } from '../utils/auditLogger';
 import { parseSpreadsheetFile, fixMojibake, asText, excelSerialToDate } from '../utils/encoding';
 import { matchPartnerContact } from '../utils/partnerMatcher';
 import { findColumnValue } from '../utils/importColumnMatch';
 import { readImportWarranty, resolveImportExpiries, warrantyInsertTail, YEARS_COLUMN_KEYWORDS, WARRANTY_TEMPLATE_SAMPLE } from '../utils/importWarranty';
-import { buildFillPlan, buildFillParams, buildSnListParam, getKeptFieldLabels, indexAssetsBySn } from '../utils/assetFillImport';
+import { buildFillPlan, buildFillParams, buildSnListParam, getKeptFieldLabels, indexAssetsBySn, fillPlanChanges } from '../utils/assetFillImport';
 
 const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [] }) => {
   const [_file, setFile] = useState(null);
@@ -784,6 +784,9 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
 
       // 2b. 補齊既有資產的空白欄位。
       //     只補空白由 SQL 保證：預覽到實際寫入之間別人若剛好填了，也不會被蓋掉。
+      // 自訂欄位的顯示名稱，補齊的事件紀錄用（與預覽的 fillPlans 相同）
+      const fillAttributeLabels = {};
+      customFieldDefs.forEach(f => { if (f.id) fillAttributeLabels[f.id] = f.label || f.id; });
       for (const plan of fillList) {
         try {
           const params = buildFillParams(plan, {
@@ -794,6 +797,12 @@ const DeviceBatchImportModal = ({ isOpen, onClose, onSuccess, existingBrands = [
           const res = await window.electronAPI.namedQuery('fillEmptyAssetFieldsBySn', params);
           if (res.success && (res.rows || []).length > 0) {
             filledCount++;
+            // 每一支序號各記一筆補了哪些欄位（空白 → 檔案裡的值）。
+            // 整批那一筆只列得出序號，品項履歷上看不出這台被補了什麼。
+            await logFieldChanges('DEVICE', plan.sn, plan.sn,
+              `批次匯入 ${fileName} 補齊設備 [${plan.sn}] 的空白欄位`,
+              fillPlanChanges(plan, { attributeLabels: fillAttributeLabels }),
+              { sn: plan.sn, assetId: plan.assetId, fileName, filledByImport: true });
           } else {
             failCount++;
             errors.push(`序號 [${plan.sn}] 補齊失敗：${res.error || '找不到該筆資產'}`);

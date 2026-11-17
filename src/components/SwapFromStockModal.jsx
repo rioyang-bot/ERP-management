@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Repeat, AlertCircle, Info, ArrowRight } from 'lucide-react';
-import { logStatusChange, logCreate, logUpdate, logMountedHwStatusSync, getCurrentUser } from '../utils/auditLogger';
-import { rankSwapCandidates, MATCH_LABEL, validateSwap, swapResultsText, buildSwapSteps, swapHwSyncLogs, pickWarranty, warrantyText } from '../utils/repairSwap';
+import { logStatusChange, logCreate, logUpdate, logMountedHwStatusSync, logFieldChanges, describeChanges, diffFields, getCurrentUser } from '../utils/auditLogger';
+import { rankSwapCandidates, MATCH_LABEL, validateSwap, swapResultsText, buildSwapSteps, swapHwSyncLogs, pickWarranty, warrantyText, swapWarrantyChanges, swapRepairChanges } from '../utils/repairSwap';
+import { snapshotAssets, ASSET_SIDE_EFFECT_FIELDS } from '../utils/assetFieldSnapshot';
 import './detail/DetailModal.css';
 
 /**
@@ -17,6 +18,36 @@ const today = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
+
+const snKey = (s) => String(s ?? '').trim().toUpperCase();
+
+/**
+ * 換貨兩邊（與搭載硬體）被改寫的欄位，每台各記一筆「變更前 → 變更後」：
+ * 新設備帶入的客戶、End-user、地點、專案與保固資訊，換回來那台被清空的同一批欄位。
+ * before 是交易前的快照；交易成功後再讀一次比對，快照沒讀的保固欄位由 extraChanges 補上。
+ */
+async function logSwapAssetChanges(before, extraChanges, title, details) {
+  const after = before ? await snapshotAssets(before.sns) : null;
+  const done = new Set();
+  const log = async (sn, category, changes) => {
+    if (changes.length === 0) return;
+    await logFieldChanges(category === '硬體' ? 'HARDWARE' : 'DEVICE', sn, sn, title, changes,
+      { ...details, sn, assetSideEffect: true });
+  };
+  if (before && after) {
+    for (const [key, prev] of before.rows) {
+      const next = after.rows.get(key);
+      if (!next) continue;
+      done.add(key);
+      await log(String(next.sn ?? prev.sn).trim(), next.category_name || prev.category_name,
+        [...diffFields(prev, next, ASSET_SIDE_EFFECT_FIELDS), ...(extraChanges[key] || [])]);
+    }
+  }
+  // 快照讀不到的，至少把保固欄位記下來
+  for (const [key, changes] of Object.entries(extraChanges)) {
+    if (!done.has(key)) await log(key, before?.rows.get(key)?.category_name, changes);
+  }
+}
 
 const SwapFromStockModal = ({ isOpen, onClose, repairOrder, onSuccess }) => {
   const [candidates, setCandidates] = useState([]);
@@ -148,6 +179,25 @@ const SwapFromStockModal = ({ isOpen, onClose, repairOrder, onSuccess }) => {
       const dnNo = `${prefix}${(parseInt(countRes?.rows?.[0]?.count, 10) || 1).toString().padStart(2, '0')}`;
       const results = swapResultsText(reason, pairs, dnNo);
 
+      // 交易前讀兩邊（與搭載硬體）目前的欄位，換貨完成後逐台記「變更前 → 變更後」。
+      // 讀不到只是少記這一段，不擋換貨。
+      const assetsBefore = await snapshotAssets(pairs.flatMap((p) => [p.oldSn, p.newSn]));
+      const brokenBefore = {};
+      const newBefore = {};
+      for (const it of items) {
+        if (brokenAssets[it.id]) brokenBefore[snKey(it.sn)] = brokenAssets[it.id];
+      }
+      for (const p of pairs) {
+        try {
+          const r = await window.electronAPI.namedQuery('fetchAssetBySn', [p.newSn]);
+          if (r?.success && r.rows?.[0]) newBefore[snKey(p.newSn)] = r.rows[0];
+        } catch (readErr) {
+          console.warn('[SwapFromStock] 讀取新設備原本的資料失敗:', readErr);
+        }
+      }
+      const warrantyChanges = swapWarrantyChanges(pairs, { brokenBefore, newBefore });
+      const repairChanges = swapRepairChanges(repairOrder, { date, results, remarks, dnNo });
+
       const res = await window.electronAPI.runTransaction(buildSwapSteps({
         order: repairOrder, pairs, date, results, remarks, dnNo, userId: getCurrentUser()?.id, dn,
       }));
@@ -174,12 +224,17 @@ const SwapFromStockModal = ({ isOpen, onClose, repairOrder, onSuccess }) => {
         await logMountedHwStatusSync(deviceSn, rows, `維修單 [${repairOrder.repair_no}] 以庫存設備換貨`,
           { repairNo: repairOrder.repair_no, dnNo, swap: true });
       }
+      // 新設備帶入、換回那台被清空的客戶／地點／End-user／專案／保固，每台一筆
+      await logSwapAssetChanges(assetsBefore, warrantyChanges,
+        `維修單 [${repairOrder.repair_no}] 以庫存設備換貨（出貨單 ${dnNo}）`,
+        { repairNo: repairOrder.repair_no, dnNo, swap: true });
       await logCreate('OUTBOUND', dnNo, dn.customer,
         `維修單 [${repairOrder.repair_no}] 以庫存設備換貨，自動建立出貨單 [${dnNo}]（已出貨）`,
         { repairNo: repairOrder.repair_no, dnNo, sns: pairs.map((p) => p.newSn) });
       await logUpdate('REPAIR', repairOrder.repair_no, repairOrder.customer_name,
-        `維修單 [${repairOrder.repair_no}] 以庫存設備換貨結案：${pairs.map((p) => `${p.oldSn} → ${p.newSn}`).join('、')}`,
-        { repairNo: repairOrder.repair_no, dnNo, pairs: pairs.map(({ oldSn, newSn }) => ({ oldSn, newSn })) });
+        `維修單 [${repairOrder.repair_no}] 以庫存設備換貨結案：${pairs.map((p) => `${p.oldSn} → ${p.newSn}`).join('、')}`
+          + (repairChanges.length ? `；${describeChanges(repairChanges)}` : ''),
+        { repairNo: repairOrder.repair_no, dnNo, pairs: pairs.map(({ oldSn, newSn }) => ({ oldSn, newSn })), changes: repairChanges });
 
       alert(`✅ 換貨完成！\n\n維修單 [${repairOrder.repair_no}] 已結案，出貨單 [${dnNo}] 已建立（已出貨），`
         + '可到出貨單列表列印交貨簽收單。\n換回來的設備已回到「在庫」，要送原廠請另開一張內部維修單。');

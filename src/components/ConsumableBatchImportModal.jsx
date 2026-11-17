@@ -4,7 +4,7 @@ import {
   X, UploadCloud, FileSpreadsheet, CheckCircle2, AlertTriangle,
   XCircle, Filter, Layers, Database, ArrowRight, RefreshCw, Info, Download, Package, Plus, Check, Edit3
 } from 'lucide-react';
-import { logEvent, ACTION_TYPES, MODULE_MAP } from '../utils/auditLogger';
+import { logEvent, logFieldChanges, diffFields, ACTION_TYPES, MODULE_MAP } from '../utils/auditLogger';
 import { parseSpreadsheetFile, asText } from '../utils/encoding';
 
 // 常見廠牌關鍵字特徵表，用於智慧推導
@@ -421,6 +421,8 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, _existingTypes
     let createdCount = 0;
     let updatedCount = 0;
     const errors = [];
+    // 既有品項的庫存變更（品項 id、廠牌型號、變更前、變更後），一併寫進整批那一筆的 details
+    const stockChanges = [];
 
     try {
       // 廠牌／類型／型號不再另外補寫主檔表：下拉已改讀既有卡片，
@@ -452,6 +454,23 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, _existingTypes
             if (stockRes.success && stockRes.rows && stockRes.rows.length > 0) {
               updatedCount++;
               successCount++;
+              // 既有品項的庫存被覆蓋或累加：每一筆各記「Stock 庫存：舊 → 新」，
+              // 那個品項自己的履歷才看得到這次匯入改了它的庫存
+              const prevQty = Number(findRes.rows[0].stock_qty || 0);
+              const returnedQty = stockRes.rows[0].stock_qty;
+              const newQty = returnedQty !== undefined && returnedQty !== null
+                ? Number(returnedQty)
+                : (isAddMode ? prevQty + Number(item.quantity || 0) : Number(item.quantity || 0));
+              const itemLabel = `${item.brand || ''} ${item.model || ''}`.trim();
+              stockChanges.push({ id: existingId, label: itemLabel, from: prevQty, to: newQty });
+              await logFieldChanges(
+                MODULE_MAP.CONSUMABLE.key, existingId, itemLabel,
+                `批次匯入${isAddMode ? '累加' : '覆蓋'}庫存 [${itemLabel}]（${fileName}）`,
+                diffFields({ stock_qty: prevQty }, { stock_qty: newQty }, [{ key: 'stock_qty', label: 'Stock 庫存' }]),
+                { itemMasterId: existingId, brand: item.brand, type: item.type, model: item.model,
+                  specification: item.specification, fileName, duplicateMode, rowIndex: item.rowIndex,
+                  quantity: Number(item.quantity || 0) }
+              );
             } else {
               failCount++;
               errors.push(`[第 ${item.rowIndex} 行] ${item.specification} 庫存更新失敗: ${stockRes.error || '查無此品項'}`);
@@ -502,7 +521,8 @@ const ConsumableBatchImportModal = ({ isOpen, onClose, onSuccess, _existingTypes
           failCount,
           totalQuantity: stats.totalQuantity,
           duplicateMode,
-          errors
+          errors,
+          stockChanges
         }
       });
 

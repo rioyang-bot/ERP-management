@@ -15,7 +15,8 @@
  * 分類成「客戶換貨退回」；耗材帶 itemMasterId 接回品項，有序號的以序號接回資產）。
  */
 
-import { logCreate, logUpdate, logStatusChange } from './auditLogger';
+import { logCreate, logUpdate, logStatusChange, logFieldChanges, diffFields, describeChanges } from './auditLogger';
+import { toLocalYmd } from './lentReturnDate';
 import { createHwSyncTracker } from './mountedHwSync';
 
 /** 換貨明細的一行：耗材 { kind: 'CONSUMABLE', itemId, qty, stock? }；有序號的 { kind: 'ASSET', assetId, sn, itemId, categoryName } */
@@ -91,7 +92,7 @@ export function buildExchangeSteps({ exNo, dnNo, customer, location: rawLocation
   ];
 
   // 換出：出貨單只列這次真的交給客戶的
-  for (const l of outLines) {
+  outLines.forEach((l, i) => {
     if (l.kind === 'CONSUMABLE') {
       steps.push(
         {
@@ -106,6 +107,8 @@ export function buildExchangeSteps({ exNo, dnNo, customer, location: rawLocation
     } else {
       steps.push(
         {
+          // 具名：交易完成後拿改之前／之後的欄位寫事件紀錄
+          id: `out-${i}`,
           queryName: 'exchangeShipAsset',
           params: [l.assetId, customer, location, date, exNo],
           expectRows: 1,
@@ -119,7 +122,7 @@ export function buildExchangeSteps({ exNo, dnNo, customer, location: rawLocation
         { queryName: 'insertExchangeItem', params: [exRef, 'OUT', l.itemId, l.assetId, l.sn, 1] },
       );
     }
-  }
+  });
 
   // 換回：良品直接回在庫
   inLines.forEach((l, i) => {
@@ -166,7 +169,9 @@ export function buildExchangeSteps({ exNo, dnNo, customer, location: rawLocation
  *   - 換回的每一項各一筆（履歷上的「客戶換貨退回」）：耗材帶 itemMasterId 接回品項；
  *     有序號的記在序號底下（不帶 itemMasterId，否則同一筆會在履歷出現兩次）
  *   - 換回設備上跟著回來的硬體各一筆
- *   換出的不另外記：出貨單明細在履歷上就是那一筆「出貨發貨」
+ *   - 換回時清空的客戶、地點、End-user、專案、出貨日期，寫在換回那一筆（變更前 → 變更後）
+ *   換出的狀態不另外記：出貨單明細在履歷上就是那一筆「出貨發貨」；
+ *   只有帶入的客戶、地點與日期每台另記一筆「變更前 → 變更後」
  */
 export async function logExchange({ exNo, dnNo, customer, date, reason, inLines, outLines, results = {}, hwIn }) {
   const base = { exchangeNo: exNo, dnNumber: dnNo };
@@ -188,11 +193,47 @@ export async function logExchange({ exNo, dnNo, customer, date, reason, inLines,
         { ...base, exchange: 'IN', itemMasterId: l.itemId, quantity: l.qty });
     } else {
       const row = results[`in-${i}`]?.rows?.[0];
+      // 換回時清空的客戶、地點、End-user、專案與出貨日期：寫進同一筆的敘述與 details.changes
+      const changes = row ? diffFields(oldValues(row), {}, EXCHANGE_IN_FIELDS) : [];
       await logStatusChange(l.categoryName === '硬體' ? 'HARDWARE' : 'DEVICE', l.sn, l.sn,
         row?.old_status || 'SHIPPED', 'ACTIVE',
-        `換貨單 [${exNo}] 自客戶 [${customer}] 換回，回到在庫`,
-        { ...base, exchange: 'IN' });
+        `換貨單 [${exNo}] 自客戶 [${customer}] 換回，回到在庫`
+          + (changes.length ? `：${describeChanges(changes)}` : ''),
+        { ...base, exchange: 'IN', ...(changes.length ? { changes } : {}) });
     }
   }
   await hwIn?.log(results, `換貨單 [${exNo}] 跟著設備換回`, base);
+
+  // 換出的設備／硬體：帶入的客戶、地點與日期，每台記「變更前 → 變更後」
+  for (const [i, l] of outLines.entries()) {
+    if (l.kind !== 'ASSET') continue;
+    const row = results[`out-${i}`]?.rows?.[0];
+    if (!row) continue;
+    await logFieldChanges(l.categoryName === '硬體' ? 'HARDWARE' : 'DEVICE', l.sn, l.sn,
+      `換貨單 [${exNo}] 換出給客戶 [${customer}]（出貨單 ${dnNo}）`,
+      diffFields(oldValues(row), row, EXCHANGE_OUT_FIELDS),
+      { ...base, sn: l.sn, assetSideEffect: true });
+  }
 }
+
+const ymd = (v) => toLocalYmd(v) || '';
+/** exchangeShipAsset / exchangeReturnAsset 回傳的 old_xxx → { xxx } */
+const oldValues = (row) => Object.fromEntries(Object.entries(row || {})
+  .filter(([k]) => k.startsWith('old_') && k !== 'old_status')
+  .map(([k, v]) => [k.slice(4), v]));
+/** 換回時被清空的欄位 */
+const EXCHANGE_IN_FIELDS = [
+  { key: 'client', label: '客戶' },
+  { key: 'location', label: '放置位置' },
+  { key: 'end_user', label: 'End-user' },
+  { key: 'project_name', label: '專案名稱' },
+  { key: 'shipping_date', label: '出貨日期', format: ymd },
+];
+/** 換出時帶入的欄位 */
+const EXCHANGE_OUT_FIELDS = [
+  { key: 'client', label: '客戶' },
+  { key: 'location', label: '放置位置' },
+  { key: 'installed_date', label: '安裝日期', format: ymd },
+  { key: 'shipping_date', label: '出貨日期', format: ymd },
+  { key: 'customer_warranty_expire', label: '客戶保固到期', format: ymd },
+];

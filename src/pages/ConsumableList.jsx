@@ -8,7 +8,7 @@ import ConsumableRegistrationModal from '../components/ConsumableRegistrationMod
 import ConsumableBatchImportModal from '../components/ConsumableBatchImportModal';
 import ConsumableCustomTagsModal from '../components/ConsumableCustomTagsModal';
 import { useSearchTags } from '../hooks/useSearchTags';
-import { logUpdate, logDelete } from '../utils/auditLogger';
+import { logUpdate, logDelete, logFieldChanges, diffFields, describeChanges } from '../utils/auditLogger';
 import { actionMenuPosition, isScrollInsideMenu } from '../utils/actionMenuPosition';
 import { useCardColumns } from '../utils/useCardColumns';
 import { usePageSize } from '../utils/usePageSize';
@@ -24,6 +24,25 @@ const editLabelStyle = { display: 'block', fontWeight: 800, fontSize: '13px', ma
 const editInputStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--input-text)', outline: 'none', fontSize: '13px', boxSizing: 'border-box' };
 const modalOverlayStyle = { position: 'fixed', inset: 0, backgroundColor: 'var(--bg-modal-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)', padding: '20px' };
 const modalContentStyle = { backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-main)', width: '60vw', maxWidth: '95vw', padding: '32px', borderRadius: '16px', boxShadow: 'var(--modal-shadow)' };
+
+// 廠牌／類型／型號寫進資料庫時會轉大寫、去頭尾空白、連續空白併成一格
+// （見 updateConsumableMaster），事件紀錄的「變更後」照同樣規則記，才是實際存進去的值
+const normalizeMasterKey = (v) => String(v ?? '').replace(/\s+/g, ' ').trim().toUpperCase();
+
+// 事件紀錄要比對的欄位：編輯記「變更前 → 變更後」，刪除記整筆刪掉前的內容
+const CONSUMABLE_EDIT_FIELDS = [
+  { key: 'brand', label: '廠牌' },
+  { key: 'type', label: '類型' },
+  { key: 'model', label: '型號' },
+  { key: 'specification', label: '規格說明/備註' },
+  { key: 'unit', label: '單位' },
+  { key: 'safety_stock', label: '安全庫存' },
+];
+const CONSUMABLE_SNAPSHOT_FIELDS = [
+  ...CONSUMABLE_EDIT_FIELDS,
+  { key: 'stock_qty', label: 'Stock 庫存' },
+  { key: 'lab_qty', label: 'LAB 數量' },
+];
 
 const ConsumableList = ({ isSplitMode = false }) => {
   // 卡片區一列幾張：依卡片區寬度決定，最多 6 張（見 utils/useCardColumns.js）
@@ -161,8 +180,13 @@ const ConsumableList = ({ isSplitMode = false }) => {
     // 因此改由 SQL 端一併驗證庫存與關聯單據，避免歷史帳務被連鎖刪除
     const res = await window.electronAPI.namedQuery('deleteConsumableMasterIfSafe', [id]);
     if (res && res.success && res.rows && res.rows.length > 0) {
-      logDelete('CONSUMABLE', id, specification, `刪除耗材品項 [${specification}]`,
-        { itemMasterId: id, id, specification });
+      // 刪掉之後就查不到了：把刪除前的整筆內容記下來（變更後一律為空白）
+      const removed = diffFields(targetItem, {}, CONSUMABLE_SNAPSHOT_FIELDS);
+      const snapshotText = removed.map(c => `${c.label}：${c.from}`).join('；');
+      logDelete('CONSUMABLE', id, specification, `刪除耗材品項 [${specification}]${snapshotText ? `（${snapshotText}）` : ''}`,
+        { itemMasterId: id, id, specification,
+          snapshot: Object.fromEntries(CONSUMABLE_SNAPSHOT_FIELDS.map(f => [f.key, targetItem[f.key] ?? null])),
+          changes: removed });
       fetchConsumables();
     } else if (res && res.success) {
       alert(`⚠️ 無法刪除耗材品項 [${specification}]！\n\n該品項仍有庫存，或已存在進出庫、借測、資產等關聯紀錄。\n直接刪除會一併抹除這些歷史帳務；如需停用請改以庫存歸零保留紀錄。`);
@@ -184,7 +208,19 @@ const ConsumableList = ({ isSplitMode = false }) => {
         editItem.id
     ]);
     if (res.success) {
-      logUpdate('CONSUMABLE', editItem.id, `${editItem.brand} ${editItem.model}`, `編輯耗材型號/規格 [${editItem.brand} ${editItem.model}]`, {
+      // 變更前取清單裡原本那筆（editItem 是編輯中的複本，已經是改過的值）；
+      // 變更後照 updateConsumableMaster 實際寫入的規則整理
+      const original = items.find(i => i.id === editItem.id) || {};
+      const stored = {
+        brand: normalizeMasterKey(editItem.brand),
+        type: normalizeMasterKey(editItem.type),
+        model: normalizeMasterKey(editItem.model),
+        specification: (editItem.specification || '').trim(),
+        unit: editItem.unit || '個',
+        safety_stock: parseInt(editItem.safety_stock, 10) || 0
+      };
+      const changes = diffFields(original, stored, CONSUMABLE_EDIT_FIELDS);
+      logFieldChanges('CONSUMABLE', editItem.id, `${stored.brand} ${stored.model}`, `編輯耗材型號/規格 [${stored.brand} ${stored.model}]`, changes, {
         itemMasterId: editItem.id,
         brand: editItem.brand,
         type: editItem.type,
@@ -257,13 +293,34 @@ const ConsumableList = ({ isSplitMode = false }) => {
     const res = await window.electronAPI.runTransaction(steps);
     
     if (res.success) {
+      // 數量變更前 → 變更後：變更前取清單裡原本那筆，變更後依移動方向算出
+      // （交易內每一步都有防呆條件，成功就代表確實照這個數量移動）
+      const qty = Number(quantity) || 0;
+      const prevStock = Number(targetItem.stock_qty || 0);
+      const prevLab = Number(targetItem.lab_qty || 0);
+      const toLab = direction === 'TO_LAB';
+      const changes = [
+        { field: 'stock_qty', label: 'Stock 庫存', from: String(prevStock), to: String(toLab ? prevStock - qty : prevStock + qty) },
+        { field: 'lab_qty', label: 'LAB 數量', from: String(prevLab), to: String(toLab ? prevLab + qty : prevLab - qty) },
+      ];
+      if (currentDeviceSn) {
+        // 該設備上目前掛了幾個（開啟視窗時讀回的 fetchCurrentLabUsage；沒掛過就是 0）
+        const usage = currentLabUsage.find(u => (u.sn || '').trim() === currentDeviceSn);
+        const prevAssigned = Number(usage?.current_qty || 0);
+        changes.push({
+          field: 'lab_assignment_qty',
+          label: `設備 [${currentDeviceSn}] 掛載數量`,
+          from: String(prevAssigned),
+          to: String(toLab ? prevAssigned + qty : prevAssigned - qty)
+        });
+      }
       logUpdate(
         'CONSUMABLE',
         itemId,
         `${targetItem.brand} ${targetItem.model}`,
-        `耗材庫存調撥 [${targetItem.brand} ${targetItem.model}]: ${direction === 'TO_LAB' ? 'Stock ➔ LAB' : 'LAB ➔ Stock'} 數量 ${quantity}${currentDeviceSn ? ` (對應設備: ${currentDeviceSn})` : ''}`,
+        `耗材庫存調撥 [${targetItem.brand} ${targetItem.model}]: ${direction === 'TO_LAB' ? 'Stock ➔ LAB' : 'LAB ➔ Stock'} 數量 ${quantity}${currentDeviceSn ? ` (對應設備: ${currentDeviceSn})` : ''}：${describeChanges(changes)}`,
         { itemMasterId: itemId, direction, quantity, deviceSn: currentDeviceSn, note,
-          prevStock: targetItem.stock_qty, prevLab: targetItem.lab_qty }
+          prevStock: targetItem.stock_qty, prevLab: targetItem.lab_qty, changes }
       );
       setShowTransferModal(false);
       fetchConsumables();

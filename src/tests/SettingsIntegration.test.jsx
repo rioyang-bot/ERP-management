@@ -116,8 +116,9 @@ describe('Settings 頁面完整流程整合測試', () => {
     await waitFor(() => {
       const log = window.electronAPI.namedQuery.mock.calls.find(([q]) => q === 'insertAuditLog');
       expect(log[1][4]).toBe('USER');
-      expect(log[1][8]).toBe('修改使用者 [METECH] 選單權限設定（設備攜出入單簽核：權責主管；盤點調整：否）');
+      expect(log[1][8]).toBe('修改使用者 [METECH] 選單權限設定（設備攜出入單簽核：權責主管；盤點調整：否）：可簽（權責主管）：無權限 → 有權限');
       expect(log[1][9].iso_sign_roles).toEqual(['權責主管']);
+      expect(log[1][9].changes).toEqual([{ field: 'isoSignSupervisor', label: '可簽（權責主管）', from: '無權限', to: '有權限' }]);
     });
   });
 
@@ -147,7 +148,7 @@ describe('Settings 頁面完整流程整合測試', () => {
       expect(log[1][3]).toBe('UPDATE');
       expect(log[1][4]).toBe('USER');
       expect(log[1][6]).toBe('METECH');
-      expect(log[1][8]).toBe('修改使用者 [METECH] 選單權限設定（設備攜出入單簽核：無；盤點調整：可）');
+      expect(log[1][8]).toBe('修改使用者 [METECH] 選單權限設定（設備攜出入單簽核：無；盤點調整：可）：可盤點調整：無權限 → 有權限');
       expect(log[1][9].stock_adjust).toBe(true);
     });
   });

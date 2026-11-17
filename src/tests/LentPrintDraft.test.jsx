@@ -101,7 +101,7 @@ describe('借貨申請單預覽：儲存修改', () => {
     expect(screen.getByText('✏️ 進入即時編輯模式')).toBeInTheDocument();
 
     const log = auditLogs().find((l) => l.module === 'LENT');
-    expect(log).toMatchObject({ target: 'DN-20260829-01', summary: '儲存借貨申請單 [DN-20260829-01] 的修改：客戶聯絡人' });
+    expect(log).toMatchObject({ target: 'DN-20260829-01', summary: '儲存借貨申請單 [DN-20260829-01] 的修改：客戶聯絡人：David Chen → 王小明' });
     expect(log.details).toMatchObject({ dnId: 101, changed: ['custPerson'] });
 
     // 關閉再打開：照存過的顯示
@@ -152,7 +152,7 @@ describe('借貨申請單預覽：儲存修改', () => {
     await userEvent.click(screen.getByRole('button', { name: /還原預設/ }));
     await waitFor(() => expect(calls('clearLentPrintDraft')).toEqual([[101]]));
     expect(await screen.findByText('David Chen')).toBeInTheDocument();
-    expect(auditLogs().find((l) => l.module === 'LENT').summary).toBe('借貨申請單 [DN-20260829-01] 還原為預設內容');
+    expect(auditLogs().find((l) => l.module === 'LENT').summary).toBe('借貨申請單 [DN-20260829-01] 還原為預設內容：客戶聯絡人：王小明 → David Chen');
     const toolbar = screen.getByText('借貨申請單預覽').closest('.loan-toolbar-row');
     expect(within(toolbar).getByRole('button', { name: /還原預設/ })).toBeDisabled();
   });

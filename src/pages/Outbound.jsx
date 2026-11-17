@@ -2,7 +2,7 @@ import React, { useState, useEffect, useContext } from 'react';
 import { ClipboardList, Search, Plus, Trash2, Send, Calendar, MapPin, User, UserCheck, Package, Cpu, ChevronRight, AlertCircle, Loader2, Truck, FolderGit2, Sparkles, ListChecks } from 'lucide-react';
 import { RoleContext } from '../context/RoleContext';
 import { useNavigate } from 'react-router-dom';
-import { logCreate, logUpdate } from '../utils/auditLogger';
+import { logCreate, logUpdate, logFieldChanges, diffFields, describeChanges } from '../utils/auditLogger';
 import DeliveryReceiptPrintModal from '../components/DeliveryReceiptPrintModal';
 import { toReceiptItems } from '../utils/deliveryReceiptItems';
 import { mountedLabel } from '../utils/mountedConsumables';
@@ -21,7 +21,66 @@ import './Outbound.css';
  * toISOString() 是世界標準時間，台灣早上 8 點前會變成前一天。
  */
 const todayYmd = () => toLocalYmd(new Date());
-const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null, editingDn = null }) => {
+
+/* ---------------------------------------------------------------------------
+ * 事件紀錄：修改出貨單時記「變更前 → 變更後」
+ * ------------------------------------------------------------------------- */
+
+/** 單頭可編輯的欄位 */
+const HEADER_FIELDS = [
+  { key: 'customer', label: '客戶' },
+  { key: 'location', label: '出貨地點' },
+  { key: 'shipping_date', label: '出貨日期' },
+  { key: 'contact_info', label: '聯絡資訊' },
+  { key: 'project_name', label: '專案' },
+  { key: 'end_user', label: 'End-user' },
+];
+
+/** 明細每一列可改的欄位 */
+const LINE_FIELDS = [
+  { key: 'qty', label: '數量' },
+  { key: 'location', label: '地點' },
+];
+
+/** 存檔時會一併改寫到資產上的欄位 */
+const ASSET_SIDE_FIELDS = [
+  { key: 'client', label: '客戶' },
+  { key: 'end_user', label: 'End-user' },
+  { key: 'project_name', label: '專案' },
+];
+
+/** 明細列的比對鍵：有序號用序號，耗材用品項 */
+const lineKey = (l) => (l.sn ? `SN:${String(l.sn).trim()}` : `ITEM:${l.item_id || l.item_master_id}`);
+/** 明細列的顯示名稱：品牌 型號 (序號) */
+const lineDesc = (l) => `${[l.brand, l.model].filter(Boolean).join(' ') || '品項'}${l.sn ? ` (${l.sn})` : ''}`;
+
+/**
+ * 原本的明細 vs 存檔的明細：新增、移除、改了哪些欄位
+ * @returns {{ changes: object[], addedItems: object[], removedItems: object[], changedItems: object[] }}
+ */
+const diffLines = (before, after, fields) => {
+  const pick = (l) => ({ model: l.model, brand: l.brand, sn: l.sn || '', ...Object.fromEntries(fields.map(({ key }) => [key, l[key]])) });
+  const beforeMap = new Map(before.map((l) => [lineKey(l), l]));
+  const afterMap = new Map(after.map((l) => [lineKey(l), l]));
+  const added = after.filter((l) => !beforeMap.has(lineKey(l)));
+  const removed = before.filter((l) => !afterMap.has(lineKey(l)));
+  const changes = [];
+  const changedItems = [];
+  for (const l of after) {
+    const old = beforeMap.get(lineKey(l));
+    if (!old) continue;
+    const lineChanges = diffFields(old, l, fields).map((c) => ({ ...c, field: `items.${c.field}`, label: `明細 ${lineDesc(l)} ${c.label}`, sn: l.sn || '' }));
+    if (lineChanges.length) {
+      changes.push(...lineChanges);
+      changedItems.push({ ...pick(l), changes: lineChanges });
+    }
+  }
+  if (added.length) changes.push({ field: 'items.added', label: '新增明細', from: '', to: added.map(lineDesc).join('、') });
+  if (removed.length) changes.push({ field: 'items.removed', label: '移除明細', from: removed.map(lineDesc).join('、'), to: '' });
+  return { changes, addedItems: added.map(pick), removedItems: removed.map(pick), changedItems };
+};
+
+const Outbound =({ isSplitMode = false, isModalMode = false, onClose = null, editingDn = null }) => {
   const { authUser } = useContext(RoleContext) || {};
   const navigate = useNavigate();
   const isEditing = !!editingDn;
@@ -62,6 +121,8 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null, ed
   const [isSearching, setIsSearching] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [dnNo, setDnNo] = useState(editingDn?.request_no || '');
+  // 編輯模式：載入時的原始明細，存檔時比對出新增、移除與改過的列（事件紀錄用）
+  const [originalItems, setOriginalItems] = useState([]);
 
   // 下拉選單資料
   const [customers, setCustomers] = useState([]);
@@ -195,6 +256,7 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null, ed
         return { ...it, mountedConsumables: m.success ? (m.rows || []) : [] };
       }));
       if (cancelled) return;
+      setOriginalItems(mapped.map((it) => ({ ...it })));
       setOutboundItems(withMounted);
     })();
     return () => { cancelled = true; };
@@ -539,19 +601,88 @@ const Outbound = ({ isSplitMode = false, isModalMode = false, onClose = null, ed
         }
       }
 
+      // 資產上會被改寫的客戶、End-user、專案：寫入前先讀回目前的值，事件紀錄才有「變更前」
+      const directSns = new Set(outboundItems.map((i) => String(i.sn || '').trim()).filter(Boolean));
+      const compSns = new Set(outboundItems.flatMap((i) => (i.components || []).map((c) => String(c.sn || '').trim())).filter(Boolean));
+      let assetsBefore = [];
+      if ((endUser || cleanProject) && (directSns.size || compSns.size)) {
+        try {
+          const snapRes = await window.electronAPI.namedQuery('fetchAssetSideFieldsForOutbound', [[...new Set([...directSns, ...compSns])]]);
+          if (snapRes?.success) assetsBefore = snapRes.rows || [];
+        } catch (snapErr) {
+          console.error('Fetch asset snapshot error:', snapErr);
+        }
+      }
+
       const txRes = await window.electronAPI.runTransaction(steps);
 
       if (txRes.success) {
         const requestId = isEditing ? editingDn.id : txRes.results.request.rows[0].id;
 
+        // 每台被改寫的資產各記一筆「欄位：舊 → 新」，打開那台資產的履歷才看得到
+        const seenAssets = new Set();
+        for (const row of assetsBefore) {
+          const key = row.id ?? row.sn;
+          if (seenAssets.has(key)) continue;
+          seenAssets.add(key);
+          const sn = String(row.sn || '').trim();
+          const serverSn = String(row.server_sn || '').trim();
+          // 與上面交易裡的寫入條件一致：單上的序號、搭載在它們底下的硬體、明細裡的搭載硬體
+          const isDirect = directSns.has(sn);
+          const isMounted = !!serverSn && directSns.has(serverSn);
+          const isComp = compSns.has(sn);
+          const after = { ...row };
+          if (endUser && (isDirect || isMounted)) after.end_user = endUser;
+          if (cleanProject && (isDirect || isMounted || isComp)) {
+            after.project_name = cleanProject;
+            after.client = header.customer || row.client;
+          }
+          const assetChanges = diffFields(row, after, ASSET_SIDE_FIELDS);
+          logFieldChanges(
+            row.category_name === '硬體' ? 'HARDWARE' : 'DEVICE',
+            sn || `資產#${row.id}`,
+            sn || `資產#${row.id}`,
+            `出貨單 [${dnNumber}] ${isEditing ? '修改' : '建立'}時回寫資產 [${sn || row.id}]`,
+            assetChanges,
+            { dnNumber, requestId, sn, serverSn: serverSn || undefined, sideEffect: 'OUTBOUND' }
+          );
+        }
+
         const logMeta = { dnNumber, customer: header.customer, project_name: cleanProject, end_user: endUser || null, endUserSns: [...new Set(endUserSns)], location: header.location, request_type: 'SALE', itemsCount: outboundItems.length, items: outboundItems.map(i => ({ model: i.model, brand: i.brand, sn: i.sn, qty: i.qty })) };
         if (isEditing) {
+          // 變更前一律取原單（editingDn 與載入時的明細），不是畫面上改過的內容
+          const headerChanges = diffFields(
+            {
+              customer: editingDn.customer,
+              location: editingDn.location,
+              shipping_date: toLocalYmd(editingDn.shipping_date),
+              contact_info: editingDn.contact_info,
+              project_name: editingDn.project_name,
+              end_user: editingDn.end_user,
+            },
+            {
+              customer: header.customer,
+              location: header.location,
+              shipping_date: header.date,
+              contact_info: header.contact_info,
+              project_name: cleanProject,
+              end_user: endUser,
+            },
+            HEADER_FIELDS
+          );
+          const lineDiff = diffLines(
+            originalItems,
+            outboundItems.map((i) => ({ ...i, location: i.location || header.location })),
+            LINE_FIELDS
+          );
+          const changes = [...headerChanges, ...lineDiff.changes];
           logUpdate(
             'OUTBOUND',
             requestId,
             dnNumber,
-            `修改待出貨單據 [${dnNumber}] 對象: ${header.customer}${endUser ? ` (End-user: ${endUser})` : ''}${cleanProject ? ` (專案: ${cleanProject})` : ''} 共 ${outboundItems.length} 個品項`,
-            logMeta
+            `修改待出貨單據 [${dnNumber}] 對象: ${header.customer}${endUser ? ` (End-user: ${endUser})` : ''}${cleanProject ? ` (專案: ${cleanProject})` : ''} 共 ${outboundItems.length} 個品項`
+              + (changes.length ? `：${describeChanges(changes)}` : '：無欄位變更'),
+            { ...logMeta, changes, addedItems: lineDiff.addedItems, removedItems: lineDiff.removedItems, changedItems: lineDiff.changedItems }
           );
         } else {
           logCreate(

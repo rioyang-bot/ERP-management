@@ -138,6 +138,30 @@ export function buildFillPlan(existing, row, { attributeLabels = {} } = {}) {
 }
 
 /**
+ * 補齊的內容寫成事件紀錄用的欄位變更清單（變更前一律是空白，只補空白欄位）。
+ * 事件查詢與品項履歷看得出這次匯入替哪一台補了哪些欄位、補了什麼。
+ *
+ * @param {object} plan buildFillPlan 的結果
+ * @param {object} [options]
+ * @param {Record<string,string>} [options.attributeLabels] 自訂欄位 id 對應的顯示名稱
+ * @returns {{ field: string, label: string, from: string, to: string }[]}
+ */
+export function fillPlanChanges(plan, { attributeLabels = {} } = {}) {
+  if (!plan) return [];
+  const isDateKey = (k) => k.endsWith('_date') || k.endsWith('_expire');
+  const changes = FILLABLE_COLUMNS
+    .filter(({ key }) => Object.prototype.hasOwnProperty.call(plan.columns || {}, key))
+    .map(({ key, label }) => {
+      const v = plan.columns[key];
+      return { field: key, label, from: '', to: isDateKey(key) ? asDateText(v) : String(v ?? '').trim() };
+    });
+  Object.entries(plan.attributes || {}).forEach(([key, value]) => {
+    changes.push({ field: key, label: attributeLabels[key] || ATTR_LABELS[key] || key, from: '', to: String(value ?? '').trim() });
+  });
+  return changes;
+}
+
+/**
  * 既有資產中「已經有值、因此這次不會被動到」的欄位，用於告知使用者哪些沒被覆蓋。
  *
  * @returns {string[]} 欄位顯示名稱

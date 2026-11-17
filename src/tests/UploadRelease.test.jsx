@@ -97,7 +97,8 @@ describe('設備的主機照片：刪除', () => {
     await userEvent.click(within(card).getByTitle('刪除'));
     await waitFor(() => expect(window.electronAPI.releaseUploads).toHaveBeenCalledWith(['front-own-1790.jpg']));
     expect(called('deleteAssetPhoto')[0].params).toEqual([31]);
-    expect(auditLogs()[0]).toMatchObject({ module: 'DEVICE', summary: '設備 [SN-7] 刪除主機照片 [正面.jpg]' });
+    // 敘述含「照片：舊檔名 → （空白）」，履歷上看得出刪掉的是哪個檔
+    expect(auditLogs()[0]).toMatchObject({ module: 'DEVICE', summary: '設備 [SN-7] 刪除主機照片 [正面.jpg]：主機照片（其他照片）：正面.jpg → （空白）' });
   });
 
   it('刪除失敗：不清檔案', async () => {

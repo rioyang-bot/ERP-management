@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { UserPlus, Trash2, Edit2, Search, X, Save, UserCheck, Truck, Users, MapPin, Handshake } from 'lucide-react';
-import { logCreate, logUpdate, logDelete, logStatusChange } from '../utils/auditLogger';
+import { logCreate, logDelete, logStatusChange, logFieldChanges, diffFields } from '../utils/auditLogger';
 import { usePageSize } from '../utils/usePageSize';
 import PageSizeSelector from '../components/common/PageSizeSelector';
 
@@ -16,6 +16,16 @@ const PARTNER_TYPES = {
 const PARTNER_TYPE_LIST = Object.values(PARTNER_TYPES);
 const typeMeta = (type) => PARTNER_TYPES[type] || PARTNER_TYPES.CUSTOMER;
 const typeLabel = (type) => (PARTNER_TYPES[type] ? PARTNER_TYPES[type].label : type);
+
+// 事件紀錄要比對的欄位：編輯記「變更前 → 變更後」，刪除記整筆刪掉前的內容
+const PARTNER_LOG_FIELDS = [
+  { key: 'type', label: '類型', format: (v) => typeLabel(v) },
+  { key: 'name', label: '公司名稱' },
+  { key: 'contact', label: '聯絡人' },
+  { key: 'phone', label: '電話' },
+  { key: 'address', label: '公司地址' },
+  { key: 'project_info', label: '關聯資訊' },
+];
 
 const Partners = () => {
   const [partners, setPartners] = useState([]);
@@ -166,14 +176,18 @@ const Partners = () => {
       ]
     );
     if (res.success) {
-      logUpdate('PARTNER', editingItem.id, cleanName, `編輯夥伴資料 [${cleanName}] 聯絡人: [${cleanContact}] 專案: [${cleanProjectInfo}]`, {
+      // 變更前取清單裡原本那筆（editingItem 是編輯中的複本，已經是改過的值）
+      const original = partners.find(p => p.id === editingItem.id) || {};
+      const after = {
         type: editingItem.type,
         name: cleanName,
         contact: cleanContact,
         phone: cleanPhone,
         address: cleanAddress,
         project_info: cleanProjectInfo
-      });
+      };
+      logFieldChanges('PARTNER', editingItem.id, cleanName, `編輯夥伴資料 [${cleanName}]`,
+        diffFields(original, after, PARTNER_LOG_FIELDS), after);
       setShowEditModal(false);
       await fetchPartners();
     } else {
@@ -186,7 +200,15 @@ const Partners = () => {
     if (window.confirm(`確定要徹底刪除夥伴 [${targetDesc}] 嗎？`)) {
       const res = await window.electronAPI.namedQuery('deletePartner', [id]);
       if (res.success) {
-        logDelete('PARTNER', id, targetDesc, `刪除夥伴 [${targetDesc}]`, { id, name, contact });
+        // 刪掉之後就查不到了：把刪除前的整筆內容記下來（變更後一律為空白）
+        const original = partners.find(p => p.id === id) || { name, contact };
+        const removed = diffFields(original, {}, PARTNER_LOG_FIELDS);
+        const snapshotText = removed.map(c => `${c.label}：${c.from}`).join('；');
+        logDelete('PARTNER', id, targetDesc, `刪除夥伴 [${targetDesc}]${snapshotText ? `（${snapshotText}）` : ''}`, {
+          id, name, contact,
+          snapshot: Object.fromEntries(PARTNER_LOG_FIELDS.map(f => [f.key, original[f.key] ?? null])),
+          changes: removed
+        });
         await fetchPartners();
       } else {
         // 安全原則：不揭露資料庫關聯錯誤細節，但引導使用者解決問題

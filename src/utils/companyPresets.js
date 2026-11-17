@@ -53,6 +53,23 @@ let cachedDoc = null;
  */
 const storableLogo = (logo) => (typeof logo === 'string' && logo.startsWith('data:') ? logo : null);
 
+/** 預設 LOGO 在事件紀錄上的稱呼（它沒有使用者看得懂的檔名） */
+export const DEFAULT_LOGO_NAME = '預設 LOGO';
+
+/**
+ * 上傳 LOGO 的原始檔名（logoName）跟著 LOGO 一起存，事件紀錄才寫得出「舊檔名 → 新檔名」。
+ * 沒有上傳的 LOGO（用預設 LOGO）不存檔名。舊範本沒有檔名，第一次更換時變更前是空白。
+ */
+const storableLogoName = (presetData) => (
+  storableLogo(presetData.logo) ? (String(presetData.logoName || '').trim() || null) : null
+);
+
+/** 範本目前 LOGO 的名稱（事件紀錄用）：上傳的記原始檔名，預設 LOGO 記「預設 LOGO」 */
+export const presetLogoName = (preset) => {
+  if (!preset) return '';
+  return storableLogo(preset.logo) ? (preset.logoName || '') : DEFAULT_LOGO_NAME;
+};
+
 const normalizeDoc = (raw) => {
   const doc = emptyDoc();
   if (raw && typeof raw === 'object') {
@@ -137,29 +154,35 @@ export const loadCompanyPresets = async () => {
 export const getCompanyPresets = () => buildPresetsMap(cachedDoc || emptyDoc());
 
 /**
- * 儲存或更新範本（內建範本的修改與自訂範本）。
+ * 儲存或更新範本，並回傳存之前伺服器上的那一份（事件紀錄的「變更前」）。
  * 先讀伺服器上最新的一份再改，避免蓋掉別人剛存的其他範本。
+ * @returns {Promise<{ saved: object, previous: object|null }>} previous 是新增時為 null
  */
-export const saveCompanyPreset = async (presetData) => {
+export const saveCompanyPresetWithPrevious = async (presetData) => {
   const doc = (await fetchDoc()) || emptyDoc();
   const isBuiltin = Boolean(DEFAULT_BUILTIN_PRESETS[presetData.id]);
+  const previousMap = buildPresetsMap(doc);
 
   if (isBuiltin) {
+    const previous = previousMap[presetData.id] || null;
     doc.builtinOverrides[presetData.id] = {
       label: presetData.label,
       logo: storableLogo(presetData.logo),
+      logoName: storableLogoName(presetData),
       headerRight: presetData.headerRight || '',
       companySignName: presetData.companySignName || ''
     };
     await writeDoc(doc);
-    return buildPresetsMap(doc)[presetData.id];
+    return { saved: buildPresetsMap(doc)[presetData.id], previous };
   }
 
   const presetId = presetData.id || `CUSTOM_${Date.now()}`;
+  const previous = (presetData.id && previousMap[presetId]) || null;
   const newPreset = {
     id: presetId,
     label: presetData.label,
     logo: storableLogo(presetData.logo),
+    logoName: storableLogoName(presetData),
     headerRight: presetData.headerRight || '',
     companySignName: presetData.companySignName || ''
   };
@@ -167,17 +190,25 @@ export const saveCompanyPreset = async (presetData) => {
     ? doc.custom.map((p) => (p.id === presetId ? newPreset : p))
     : [...doc.custom, newPreset];
   await writeDoc(doc);
-  return buildPresetsMap(doc)[presetId];
+  return { saved: buildPresetsMap(doc)[presetId], previous };
 };
 
-/** 刪除自訂範本（內建範本不可刪除） */
+/** 儲存或更新範本（內建範本的修改與自訂範本），回傳存好的範本 */
+export const saveCompanyPreset = async (presetData) => (await saveCompanyPresetWithPrevious(presetData)).saved;
+
+/**
+ * 刪除自訂範本（內建範本不可刪除）。
+ * 回傳刪掉的那一份（伺服器上找不到時為 null），事件紀錄用來留下刪除前的內容。
+ */
 export const deleteCompanyPreset = async (presetId) => {
   if (DEFAULT_BUILTIN_PRESETS[presetId]) {
     throw new Error('系統內建範本不可刪除');
   }
   const doc = (await fetchDoc()) || emptyDoc();
+  const removed = buildPresetsMap(doc)[presetId] || null;
   doc.custom = doc.custom.filter((p) => p.id !== presetId);
   await writeDoc(doc);
+  return removed;
 };
 
 /** 測試用：清掉記憶中的範本 */

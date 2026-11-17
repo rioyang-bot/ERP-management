@@ -18,6 +18,9 @@
  * 取回之後要送原廠修，另開一張「內部維修」單即可。
  */
 
+import { diffFields } from '../../server/fieldChanges.js';
+import { toLocalYmd } from './lentReturnDate';
+
 const norm = (s) => String(s ?? '').trim().toUpperCase();
 
 /** 換貨時轉給新設備的保固資訊（P/S/W/C），順序與設備列表的「保固資訊」欄一致 */
@@ -185,6 +188,65 @@ export function buildSwapSteps({ order, pairs, date, results, remarks, dnNo, use
     errorMessage: '換貨出貨單狀態更新失敗',
   });
   return steps;
+}
+
+const ymd = (v) => toLocalYmd(v) || '';
+
+/**
+ * 換貨轉移的保固欄位裡，資產欄位快照（assetFieldSnapshot）沒有讀的那幾個：
+ * 系統日期、原廠保固到期與兩個保固年數（安裝日期、客戶保固到期快照已經有）
+ */
+export const SWAP_WARRANTY_LOG_FIELDS = [
+  { key: 'system_date', label: '系統日期', format: ymd },
+  { key: 'warranty_expire', label: '原廠保固到期', format: ymd },
+  { key: 'warranty_years', label: '原廠保固(年)' },
+  { key: 'customer_warranty_years', label: '客戶保固(年)' },
+];
+
+/**
+ * 換貨兩邊保固欄位的「變更前 → 變更後」（與 swapShipReplacementAsset / swapReturnBrokenAsset 寫入的一致）：
+ *   新設備：沿用故障那台的系統日期、原廠保固到期、客戶保固(年)，原廠保固(年) 清空
+ *   換回來的那台：全部清空
+ * @param {object[]} pairs
+ * @param {{ brokenBefore?: Record<string, object>, newBefore?: Record<string, object> }} before
+ *        交易前兩邊的資產資料，以序號（大寫）為 key
+ * @returns {Record<string, object[]>} 序號（大寫）→ 有變的欄位
+ */
+export function swapWarrantyChanges(pairs = [], { brokenBefore = {}, newBefore = {} } = {}) {
+  const out = {};
+  for (const p of pairs) {
+    const oldRow = brokenBefore[norm(p.oldSn)] || {};
+    const newRow = newBefore[norm(p.newSn)] || {};
+    out[norm(p.newSn)] = diffFields(newRow, {
+      system_date: oldRow.system_date,
+      warranty_expire: oldRow.warranty_expire,
+      warranty_years: null,
+      customer_warranty_years: oldRow.customer_warranty_years,
+    }, SWAP_WARRANTY_LOG_FIELDS);
+    out[norm(p.oldSn)] = diffFields(oldRow, {}, SWAP_WARRANTY_LOG_FIELDS);
+  }
+  return out;
+}
+
+/** 換貨結案寫進維修單的欄位（與 updateRepairSwapCompleted 一致），用來記「變更前 → 變更後」 */
+export const SWAP_REPAIR_LOG_FIELDS = [
+  { key: 'status', label: '狀態', format: (v) => ({ ON_SITE_HANDLING: '現場處理', SENT_OEM: '送修原廠', OEM_RETURNED: '原廠返還', COMPLETED: '完工結案' }[v] || v) },
+  { key: 'completion_date', label: '完工日期', format: ymd },
+  { key: 'results', label: '維修與檢測結果' },
+  { key: 'completion_remarks', label: '出貨備註' },
+  { key: 'swap_dn_no', label: '換貨出貨單' },
+];
+
+/** 維修單換貨結案的變更（變更前取自維修單原本的值） */
+export function swapRepairChanges(order = {}, { date, results, remarks, dnNo }) {
+  return diffFields(order, {
+    ...order,
+    status: 'COMPLETED',
+    completion_date: date,
+    results,
+    completion_remarks: String(remarks ?? '').trim() || null,
+    swap_dn_no: dnNo,
+  }, SWAP_REPAIR_LOG_FIELDS);
 }
 
 /**

@@ -3,8 +3,98 @@ import { Plus, Search, FileText, ShoppingCart, CheckCircle, Clock, AlertCircle, 
 import PurchaseItemSelectModal from '../components/PurchaseItemSelectModal';
 import { RoleContext } from '../context/RoleContext';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { logCreate, logUpdate } from '../utils/auditLogger';
+import { logCreate, logUpdate, diffFields, describeChanges } from '../utils/auditLogger';
 import { releaseUploads, removedAttachmentFiles } from '../utils/uploadRelease';
+
+/** 附件清單（陣列或 JSON 字串）轉成陣列 */
+const parseAttachmentList = (attachments) => {
+  let list = attachments;
+  if (typeof list === 'string') {
+    try { list = JSON.parse(list || '[]'); } catch { list = []; }
+  }
+  return Array.isArray(list) ? list.filter(Boolean) : [];
+};
+
+/** 採購明細顯示名稱（廠牌 類型 型號 / 規格） */
+const purchaseLineLabel = (r) => {
+  const name = [r?.brand, r?.item_type, r?.model].filter(Boolean).join(' ') || '未命名項目';
+  return r?.specification ? `${name} / ${r.specification}` : name;
+};
+
+/**
+ * 修改採購單的欄位變更清單（變更前 → 變更後）
+ *
+ * - 每一筆既有明細：供應商、類別、類型、廠牌、型號、規格、單位、數量
+ * - 移除的明細、新增的明細
+ * - 整張單的備註；附件記原始檔名，並列出新增與移除的檔案（不放檔案內容）
+ * 變更前一律取自資料庫讀回的原始明細，不是畫面上編輯中的內容。
+ */
+const buildPurchaseEditChanges = ({ existingRows = [], removedIds = [], items = [], remarks, attachments, partners = [], categories = [] }) => {
+  const partnerName = (id) => (id ? (partners.find(p => String(p.id) === String(id))?.name || String(id)) : '');
+  const categoryName = (id) => (id ? (categories.find(c => String(c.id) === String(id))?.name || String(id)) : '');
+  const existingById = new Map(existingRows.map(r => [r.id, r]));
+  const fields = [
+    { key: 'supplier', label: '供應商' },
+    { key: 'category', label: '類別' },
+    { key: 'item_type', label: '類型' },
+    { key: 'brand', label: '廠牌' },
+    { key: 'model', label: '型號' },
+    { key: 'specification', label: '規格' },
+    { key: 'unit', label: '單位' },
+    { key: 'quantity', label: '數量' },
+  ];
+  const changes = [];
+  const addedLines = [];
+
+  items.forEach((item) => {
+    const after = {
+      supplier: partnerName(item.partner_id), category: categoryName(item.category_id),
+      item_type: item.item_type, brand: item.brand, model: item.model,
+      specification: item.specification, unit: item.unit, quantity: item.quantity,
+    };
+    const orig = existingById.get(item.id);
+    if (!orig) {
+      addedLines.push(after);
+      changes.push({ field: 'items', label: '新增品項', from: '', to: `${purchaseLineLabel(item)} ×${item.quantity}` });
+      return;
+    }
+    const before = {
+      supplier: orig.partner_name || partnerName(orig.partner_id), category: orig.category_name || categoryName(orig.category_id),
+      item_type: orig.item_type, brand: orig.brand, model: orig.model,
+      specification: orig.specification, unit: orig.unit, quantity: orig.quantity,
+    };
+    const lineName = purchaseLineLabel(orig);
+    diffFields(before, after, fields).forEach((c) => {
+      changes.push({ ...c, label: `[${lineName}] ${c.label}`, lineId: orig.id });
+    });
+  });
+
+  const removedLines = removedIds.map((id) => existingById.get(id)).filter(Boolean).map((r) => ({
+    id: r.id, supplier: r.partner_name || null, category: r.category_name || null, item_type: r.item_type || null,
+    brand: r.brand || null, model: r.model || null, specification: r.specification || null, unit: r.unit || null, quantity: r.quantity,
+  }));
+  removedLines.forEach((r) => {
+    changes.push({ field: 'items', label: '移除品項', from: `${purchaseLineLabel(r)} ×${r.quantity}`, to: '' });
+  });
+
+  const first = existingRows[0] || {};
+  changes.push(...diffFields({ remarks: first.remarks }, { remarks }, [{ key: 'remarks', label: '備註' }]));
+
+  const b = parseAttachmentList(first.attachments);
+  const a = parseAttachmentList(attachments);
+  const key = (x) => x.fileName || x.originalName || '';
+  const brief = (x) => ({ originalName: x.originalName || x.fileName || '', fileName: x.fileName || null });
+  const afterKeys = new Set(a.map(key));
+  const beforeKeys = new Set(b.map(key));
+  const removedFiles = b.filter((x) => !afterKeys.has(key(x))).map(brief);
+  const addedFiles = a.filter((x) => !beforeKeys.has(key(x))).map(brief);
+  if (addedFiles.length || removedFiles.length) {
+    const names = (list) => list.map((x) => x.originalName || x.fileName).filter(Boolean).join('、');
+    changes.push({ field: 'attachments', label: '附件', from: names(b), to: names(a), kind: 'file' });
+  }
+
+  return { changes, removedLines, addedLines, addedFiles, removedFiles };
+};
 
 const ProcurementRegistration = ({ editMode = false, isModalMode = false, initOrderNo = null, onClose = null, isSplitMode = false }) => {
   const { authUser } = useContext(RoleContext);
@@ -358,12 +448,21 @@ const ProcurementRegistration = ({ editMode = false, isModalMode = false, initOr
              throw new Error('移除採購明細失敗：該明細已有到貨紀錄，請重新整理後再試。');
            }
          }
-         logUpdate(
+         // 每個欄位的「變更前 → 變更後」：變更前取自儲存前重新讀回的原始明細（existingById）
+         const { changes, removedLines, addedLines, addedFiles, removedFiles } = buildPurchaseEditChanges({
+           existingRows: existRes.rows, removedIds, items, remarks, attachments, partners, categories,
+         });
+         await logUpdate(
            'PURCHASE',
            initOrderNo,
            '採購單',
-           `修改採購單 [${initOrderNo}] 共 ${items.length} 個品項`,
-           { orderNo: initOrderNo, itemsCount: items.length, items: items.map(i => ({ model: i.model, brand: i.brand, qty: i.quantity })), remarks }
+           `修改採購單 [${initOrderNo}] 共 ${items.length} 個品項${changes.length ? `：${describeChanges(changes)}` : ''}`,
+           { orderNo: initOrderNo, itemsCount: items.length, items: items.map(i => ({ model: i.model, brand: i.brand, qty: i.quantity })), remarks,
+             changes,
+             ...(addedLines.length ? { addedLines } : {}),
+             ...(removedLines.length ? { removedLines } : {}),
+             ...(addedFiles.length ? { addedFiles } : {}),
+             ...(removedFiles.length ? { removedFiles } : {}) }
          );
          // 這次移除的附件，伺服器上的檔案一併清掉
          releaseUploads(removedAttachmentFiles(existRes.rows[0]?.attachments, attachments));

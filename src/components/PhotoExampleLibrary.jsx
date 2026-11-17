@@ -1,6 +1,12 @@
 import React, { useState } from 'react';
 import { BookImage, Plus, Pencil, Trash2, Check, X } from 'lucide-react';
-import { logCreate, logDelete, logUpdate } from '../utils/auditLogger';
+import { logCreate, logDelete, logUpdate, diffFields, describeChanges } from '../utils/auditLogger';
+
+/** 範例的欄位（事件紀錄逐項記變更前 → 變更後） */
+const EXAMPLE_FIELDS = [
+  { key: 'name', label: '名稱' },
+  { key: 'description', label: '拍攝說明' },
+];
 
 /**
  * 拍照項目範例
@@ -13,7 +19,7 @@ import { logCreate, logDelete, logUpdate } from '../utils/auditLogger';
  */
 const PhotoExampleLibrary = ({ examples = [], onChanged, card, inputStyle, iconBtn }) => {
   const [draft, setDraft] = useState({ name: '', description: '' });
-  const [editing, setEditing] = useState(null); // { id, name, description, _origName }
+  const [editing, setEditing] = useState(null); // { id, name, description, _origName, _origDescription }
 
   const textareaStyle = { ...inputStyle, minHeight: '64px', resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.6 };
 
@@ -38,8 +44,20 @@ const PhotoExampleLibrary = ({ examples = [], onChanged, card, inputStyle, iconB
     try {
       const res = await window.electronAPI.namedQuery('updateChecklistPhotoExample', [name, editing.description, editing.id]);
       if (!res.success || (res.rows || []).length === 0) throw new Error(res.error || '找不到這個範例');
-      logUpdate('SETTING', editing.id, name, `修改拍照項目範例 [${editing._origName}]${editing._origName !== name ? ` → [${name}]` : ''}`,
-        { name, description: (editing.description || '').trim() || null });
+      // 變更前是開始編輯時記下的原值
+      const description = (editing.description || '').trim();
+      const changes = diffFields(
+        { name: editing._origName || '', description: (editing._origDescription || '').trim() },
+        { name, description },
+        EXAMPLE_FIELDS,
+      );
+      logUpdate('SETTING', editing.id, name,
+        `修改拍照項目範例 [${editing._origName}]${editing._origName !== name ? ` → [${name}]` : ''}${changes.length ? `：${describeChanges(changes)}` : ''}`,
+        {
+          name, description: description || null,
+          before: { name: editing._origName || '', description: (editing._origDescription || '').trim() || null },
+          changes,
+        });
       setEditing(null);
       if (onChanged) await onChanged();
     } catch (err) {
@@ -52,7 +70,9 @@ const PhotoExampleLibrary = ({ examples = [], onChanged, card, inputStyle, iconB
     try {
       const res = await window.electronAPI.namedQuery('deleteChecklistPhotoExample', [ex.id]);
       if (!res.success) throw new Error(res.error || '刪除失敗');
-      logDelete('SETTING', ex.id, ex.name, `刪除拍照項目範例 [${ex.name}]`, { name: ex.name });
+      logDelete('SETTING', ex.id, ex.name,
+        `刪除拍照項目範例 [${ex.name}]${ex.description ? `（拍攝說明：${ex.description}）` : ''}`,
+        { name: ex.name, description: ex.description || null, before: { name: ex.name, description: ex.description || null } });
       if (onChanged) await onChanged();
     } catch (err) {
       alert(`刪除範例失敗：${err.message}`);
@@ -139,7 +159,7 @@ const PhotoExampleLibrary = ({ examples = [], onChanged, card, inputStyle, iconB
                   </div>
                   <button
                     type="button"
-                    onClick={() => setEditing({ id: ex.id, name: ex.name, description: ex.description || '', _origName: ex.name })}
+                    onClick={() => setEditing({ id: ex.id, name: ex.name, description: ex.description || '', _origName: ex.name, _origDescription: ex.description || '' })}
                     style={iconBtn('#f59e0b')}
                     title="修改範例"
                     aria-label={`修改範例 ${ex.name}`}

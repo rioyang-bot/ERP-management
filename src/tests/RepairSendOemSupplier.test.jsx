@@ -141,7 +141,7 @@ describe('維修單明細更正送修供應商', () => {
     expect(calledWith('updateRepairSupplier')).toEqual([[12, '華碩 ASUS', 3]]);
     const logs = auditLogs().filter((l) => l.module === 'REPAIR');
     expect(logs).toHaveLength(1);
-    expect(logs[0]).toMatchObject({ target: 'RMA-1', summary: '修改維修單 [RMA-1] 的送修供應商' });
+    expect(logs[0]).toMatchObject({ actionType: 'UPDATE', target: 'RMA-1', summary: '修改維修單 [RMA-1]：送修供應商：技嘉 Gigabyte → 華碩 ASUS' });
     expect(logs[0].details).toMatchObject({ before: '技嘉 Gigabyte', after: '華碩 ASUS' });
   });
 

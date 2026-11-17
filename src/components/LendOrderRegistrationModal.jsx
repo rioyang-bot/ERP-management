@@ -4,9 +4,61 @@ import {
   Package, Cpu, ChevronRight, AlertCircle, Loader2, X, Tag, ClipboardList
 } from 'lucide-react';
 import { RoleContext } from '../context/RoleContext';
-import { logCreate } from '../utils/auditLogger';
+import { logCreate, logUpdate, diffFields, describeChanges } from '../utils/auditLogger';
 import { mountedLabel } from '../utils/mountedConsumables';
 import '../pages/Outbound.css';
+
+/* ---------------------------------------------------------------------------
+ * 事件紀錄：修改借用單時記「變更前 → 變更後」
+ * ------------------------------------------------------------------------- */
+
+/** 單頭可編輯的欄位 */
+const HEADER_FIELDS = [
+  { key: 'customer', label: '借貸對象' },
+  { key: 'location', label: '借用地點' },
+  { key: 'shipping_date', label: '借出日期' },
+  { key: 'contact_info', label: '聯絡資訊' },
+  { key: 'expected_return_date', label: '預計歸還日' },
+  { key: 'project_name', label: '專案' },
+];
+
+/** 明細每一列可改的欄位 */
+const LINE_FIELDS = [
+  { key: 'qty', label: '數量' },
+  { key: 'location', label: '地點' },
+  { key: 'purpose', label: '用途' },
+];
+
+/** 日期只取 YYYY-MM-DD（與載入編輯畫面時的處理一致） */
+const ymd = (v) => (v ? String(v).split('T')[0] : '');
+
+/** 明細列的比對鍵：有序號用序號，耗材用品項 */
+const lineKey = (l) => (l.sn ? `SN:${String(l.sn).trim()}` : `ITEM:${l.item_id || l.item_master_id}`);
+/** 明細列的顯示名稱：品牌 型號 (序號) */
+const lineDesc = (l) => `${[l.brand, l.model].filter(Boolean).join(' ') || '品項'}${l.sn ? ` (${l.sn})` : ''}`;
+
+/** 原本的明細 vs 存檔的明細：新增、移除、改了哪些欄位 */
+const diffLines = (before, after, fields) => {
+  const pick = (l) => ({ model: l.model, brand: l.brand, sn: l.sn || '', ...Object.fromEntries(fields.map(({ key }) => [key, l[key]])) });
+  const beforeMap = new Map(before.map((l) => [lineKey(l), l]));
+  const afterMap = new Map(after.map((l) => [lineKey(l), l]));
+  const added = after.filter((l) => !beforeMap.has(lineKey(l)));
+  const removed = before.filter((l) => !afterMap.has(lineKey(l)));
+  const changes = [];
+  const changedItems = [];
+  for (const l of after) {
+    const old = beforeMap.get(lineKey(l));
+    if (!old) continue;
+    const lineChanges = diffFields(old, l, fields).map((c) => ({ ...c, field: `items.${c.field}`, label: `明細 ${lineDesc(l)} ${c.label}`, sn: l.sn || '' }));
+    if (lineChanges.length) {
+      changes.push(...lineChanges);
+      changedItems.push({ ...pick(l), changes: lineChanges });
+    }
+  }
+  if (added.length) changes.push({ field: 'items.added', label: '新增明細', from: '', to: added.map(lineDesc).join('、') });
+  if (removed.length) changes.push({ field: 'items.removed', label: '移除明細', from: removed.map(lineDesc).join('、'), to: '' });
+  return { changes, addedItems: added.map(pick), removedItems: removed.map(pick), changedItems };
+};
 
 /**
  * 借用單建檔／編輯
@@ -78,6 +130,8 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess, editingDn = nu
   const [csmFilterType, setCsmFilterType] = useState('');
   const [csmFilterModel, setCsmFilterModel] = useState('');
   const [lendNo, setLendNo] = useState('');
+  // 編輯模式：載入時的原始明細，存檔時比對出新增、移除與改過的列（事件紀錄用）
+  const [originalItems, setOriginalItems] = useState([]);
 
   // 取得下一個借用單號 (比照出貨單 DN-YYYYMMDD-01 規則)
   const fetchNextLendNo = async (targetDate) => {
@@ -162,6 +216,7 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess, editingDn = nu
         return { ...it, mountedConsumables: m.success ? (m.rows || []) : [] };
       }));
       if (cancelled) return;
+      setOriginalItems(mapped.map((it) => ({ ...it })));
       setOutboundItems(withMounted);
     })();
     return () => { cancelled = true; };
@@ -516,14 +571,46 @@ const LendOrderRegistrationModal = ({ isOpen, onClose, onSuccess, editingDn = nu
         throw new Error((txRes.error || `${isEditing ? '修改' : '建立'}借用單失敗。`) + '\n所有變更已全部退回，原本的內容維持不變。');
       }
 
-      logCreate(
-        'LENT',
-        dnNumber,
-        header.customer || '借用單',
-        `${isEditing ? '修改' : '建立'}借用單 [${dnNumber}] 對象: ${header.customer} 共 ${outboundItems.length} 個品項 (預計歸還日: ${header.expected_return_date || '未指定'})`
-          + (isRepairLoaner ? `，維修單 [${repairLink.repairNo}] 代用機` : ''),
-        { dnNumber, repairNo: isRepairLoaner ? repairLink.repairNo : undefined, customer: header.customer, location: header.location, request_type: 'LEND', expected_return_date: header.expected_return_date, itemsCount: outboundItems.length, items: outboundItems.map(i => ({ model: i.model, brand: i.brand, sn: i.sn, qty: i.qty, purpose: i.purpose || header.purpose || '運作測試' })) }
-      );
+      const logSummary = `${isEditing ? '修改' : '建立'}借用單 [${dnNumber}] 對象: ${header.customer} 共 ${outboundItems.length} 個品項 (預計歸還日: ${header.expected_return_date || '未指定'})`
+        + (isRepairLoaner ? `，維修單 [${repairLink.repairNo}] 代用機` : '');
+      const logMeta = { dnNumber, repairNo: isRepairLoaner ? repairLink.repairNo : undefined, customer: header.customer, location: header.location, request_type: 'LEND', expected_return_date: header.expected_return_date, itemsCount: outboundItems.length, items: outboundItems.map(i => ({ model: i.model, brand: i.brand, sn: i.sn, qty: i.qty, purpose: i.purpose || header.purpose || '運作測試' })) };
+      if (isEditing) {
+        // 修改既有的單是 UPDATE；變更前一律取原單（editingDn 與載入時的明細），不是畫面上改過的內容
+        const headerChanges = diffFields(
+          {
+            customer: editingDn.customer,
+            location: editingDn.location,
+            shipping_date: ymd(editingDn.shipping_date),
+            contact_info: editingDn.contact_info,
+            expected_return_date: ymd(editingDn.expected_return_date),
+            project_name: editingDn.project_name,
+          },
+          {
+            customer: header.customer,
+            location: header.location,
+            shipping_date: header.date,
+            contact_info: header.contact_info,
+            expected_return_date: header.expected_return_date,
+            project_name: header.project_name,
+          },
+          HEADER_FIELDS
+        );
+        const lineDiff = diffLines(
+          originalItems,
+          outboundItems.map((i) => ({ ...i, location: i.location || header.location, purpose: i.purpose || header.purpose || '運作測試' })),
+          LINE_FIELDS
+        );
+        const changes = [...headerChanges, ...lineDiff.changes];
+        logUpdate(
+          'LENT',
+          dnNumber,
+          header.customer || '借用單',
+          logSummary + (changes.length ? `：${describeChanges(changes)}` : '：無欄位變更'),
+          { ...logMeta, dnId: editingDn.id, changes, addedItems: lineDiff.addedItems, removedItems: lineDiff.removedItems, changedItems: lineDiff.changedItems }
+        );
+      } else {
+        logCreate('LENT', dnNumber, header.customer || '借用單', logSummary, logMeta);
+      }
 
       // 單頭 id 由交易的第一步產生
       const requestId = isEditing ? editingDn.id : txRes.results?.request?.rows?.[0]?.id;

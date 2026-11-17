@@ -3,7 +3,7 @@ import {
   ClipboardCheck, Plus, Trash2, Pencil, Check, X, Layers, ListChecks, Info, Tag, RefreshCw, GripVertical, Camera, BookmarkPlus, Copy, ImagePlus, ClipboardPaste,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { logCreate, logDelete, logUpdate, getCurrentUser } from '../utils/auditLogger';
+import { logCreate, logDelete, logUpdate, getCurrentUser, diffFields, fileChange, describeChanges } from '../utils/auditLogger';
 import { resolveMediaUrl, downloadMedia } from '../utils/media';
 import { screenPhotoFiles } from '../utils/assetPhotos';
 import { namePastedImage, imagesFromPasteEvent, readClipboardImages } from '../utils/clipboardImages';
@@ -63,6 +63,24 @@ const KIND_META = {
     descPlaceholder: '拍攝說明（選填），例如：\n關機狀態、正面平視，前面板與序號貼紙都要清楚入鏡',
   },
 };
+
+/** 主項目的欄位（事件紀錄逐項記變更前 → 變更後） */
+const GROUP_FIELDS = [
+  { key: 'name', label: '名稱' },
+  { key: 'brand', label: '廠牌' },
+  { key: 'model', label: '型號' },
+];
+
+/** 範本項目的快照（事件紀錄的刪除前內容；預設照片記原始檔名與存檔名） */
+const itemSnapshot = (i) => ({
+  id: i.id, kind: i.kind, name: i.name, description: i.description || null,
+  defaultPhoto: i.default_photo_name || null, defaultPhotoFile: i.default_photo_file || null,
+});
+
+/** 調整順序的事件敘述：「順序：A、B、C → B、A、C」 */
+const orderChange = (beforeList, afterList) => ({
+  field: 'order', label: '順序', from: beforeList.map((i) => i.name).join('、'), to: afterList.map((i) => i.name).join('、'),
+});
 
 const ChecklistTemplates = () => {
   const navigate = useNavigate();
@@ -188,7 +206,12 @@ const ChecklistTemplates = () => {
       const prev = row.prev_photo_name;
       await logUpdate('SETTING', item.id, item.name,
         `出機檢查表拍照項目 [${item.name}]（主項目 [${selectedGroup?.name || ''}]）${prev ? `更換預設照片：${prev} → ${file.name}` : `設定預設照片 [${file.name}]`}`,
-        { group: selectedGroup?.name || null, item: item.name, defaultPhoto: file.name, prevDefaultPhoto: prev || null });
+        {
+          group: selectedGroup?.name || null, item: item.name, defaultPhoto: file.name, prevDefaultPhoto: prev || null,
+          // 存檔名（伺服器上的檔案）也留著，之後查得到換掉的是哪一個檔案
+          defaultPhotoFile: saved.fileName, prevDefaultPhotoFile: row.prev_photo_file || null,
+          changes: [fileChange('預設照片', prev, file.name, 'defaultPhoto') || { field: 'defaultPhoto', label: '預設照片', from: prev || '', to: file.name, kind: 'file' }],
+        });
       // 換掉的那張：沒有其他主項目共用（複製主項目會共用同一個檔案）就清掉
       if (row.prev_photo_file && row.prev_photo_file !== saved.fileName) releaseUploads([row.prev_photo_file]);
       await reloadItems();
@@ -247,7 +270,11 @@ const ChecklistTemplates = () => {
       if (!row) throw new Error(res.error || '找不到這個拍照項目');
       await logUpdate('SETTING', item.id, item.name,
         `出機檢查表拍照項目 [${item.name}]（主項目 [${selectedGroup?.name || ''}]）移除預設照片 [${row.prev_photo_name || ''}]`,
-        { group: selectedGroup?.name || null, item: item.name, prevDefaultPhoto: row.prev_photo_name || null });
+        {
+          group: selectedGroup?.name || null, item: item.name, prevDefaultPhoto: row.prev_photo_name || null,
+          prevDefaultPhotoFile: row.prev_photo_file || null,
+          changes: [fileChange('預設照片', row.prev_photo_name, '', 'defaultPhoto')].filter(Boolean),
+        });
       if (row.prev_photo_file) releaseUploads([row.prev_photo_file]);
       await reloadItems();
     } catch (e) {
@@ -373,7 +400,17 @@ const ChecklistTemplates = () => {
       if (!res.success || (res.rows || []).length === 0) throw new Error(res.error || '找不到該主項目');
       // 設備端已套用的分組名稱跟著改，否則同步會把新名稱再補一份進去
       await window.electronAPI.namedQuery('renameAssetChecklistGroupBySource', [name, editingGroup.id]);
-      logUpdate('SETTING', editingGroup.id, name, `修改出機檢查表主項目 [${name}]（${groupScopeLabel({ brand: editingGroup.brand, model })}）`, { name, brand: editingGroup.brand || null, model });
+      // 變更前取清單裡原本那一筆，不是編輯中的那份
+      const original = groups.find((g) => g.id === editingGroup.id);
+      const after = { name, brand: editingGroup.brand || null, model };
+      const changes = original ? diffFields(original, after, GROUP_FIELDS) : [];
+      logUpdate('SETTING', editingGroup.id, name,
+        `修改出機檢查表主項目 [${name}]（${groupScopeLabel({ brand: editingGroup.brand, model })}）${changes.length ? `：${describeChanges(changes)}` : ''}`,
+        {
+          ...after,
+          before: original ? { name: original.name, brand: original.brand || null, model: original.model || null } : null,
+          changes,
+        });
       setEditingGroup(null);
       // 廠牌、型號可能被改掉，改完要重新套用到符合的設備
       await syncToDevices();
@@ -428,6 +465,8 @@ const ChecklistTemplates = () => {
       + `底下的 ${group.main_count} 個主要檢查功能、${group.detail_count} 個細項與 ${group.photo_count || 0} 個拍照項目會一併刪除。\n`
       + '設備上還沒勾選、填寫或拍照的同一批項目會一併移除；已經有紀錄的保留，可在設備上自行移除。';
     if (!window.confirm(msg)) return;
+    // 底下一併刪掉的項目（外鍵 CASCADE）：刪除前的內容留在事件紀錄裡
+    const cascaded = items.filter((i) => i.group_id === group.id).sort((a, b) => String(a.kind).localeCompare(String(b.kind)) || bySortOrder(a, b));
     try {
       // 先清設備上沒有紀錄的：範本一刪，設備列的來源就被設成 NULL，對不回來了
       const cleaned = await window.electronAPI.namedQuery('deleteUnusedAssetChecklistItemsByGroup', [group.id]);
@@ -435,9 +474,17 @@ const ChecklistTemplates = () => {
       const res = await window.electronAPI.namedQuery('deleteChecklistGroup', [group.id]);
       if (!res.success) throw new Error(res.error || '刪除失敗');
       const removed = (cleaned.rows || []).length;
+      const namesOf = (kind) => cascaded.filter((i) => i.kind === kind).map((i) => i.name);
+      const itemSummary = [KIND_MAIN, KIND_DETAIL, KIND_PHOTO]
+        .map((kind) => (namesOf(kind).length ? `${KIND_META[kind].title}：${namesOf(kind).join('、')}` : ''))
+        .filter(Boolean).join('；');
       logDelete('SETTING', group.id, group.name,
-        `刪除出機檢查表主項目 [${group.name}]${removed > 0 ? `，並從設備上移除 ${removed} 筆未使用的項目` : ''}`,
-        { name: group.name, brand: group.brand, removedFromDevices: removed });
+        `刪除出機檢查表主項目 [${group.name}]（${groupScopeLabel(group)}）${itemSummary ? `，一併刪除 ${itemSummary}` : ''}`
+          + `${removed > 0 ? `，並從設備上移除 ${removed} 筆未使用的項目` : ''}`,
+        {
+          name: group.name, brand: group.brand, model: group.model || null, removedFromDevices: removed,
+          items: cascaded.map(itemSnapshot),
+        });
       if (removed > 0) setSyncNotice(`已從設備上移除 ${removed} 筆還沒使用的項目`);
       await fetchAll();
     } catch (err) {
@@ -533,9 +580,11 @@ const ChecklistTemplates = () => {
       if (!res.success) throw new Error(res.error || '排序失敗');
       // 設備上已套用的項目跟著換順序，列印出來才與範本一致
       await window.electronAPI.namedQuery('syncAssetChecklistOrderBySource');
+      // 變更前的順序是拖曳前畫面上的順序（sameKind），變更後是 reordered
+      const change = orderChange(sameKind, reordered);
       logUpdate('SETTING', target.group_id, source.name,
-        `調整出機檢查項目順序：「${source.name}」移到「${target.name}」的位置`,
-        { moved: source.name, before: target.name, kind: target.kind, order: reordered.map((i) => i.name) });
+        `調整出機檢查項目順序：「${source.name}」移到「${target.name}」的位置；${describeChanges([change])}`,
+        { moved: source.name, before: target.name, kind: target.kind, order: reordered.map((i) => i.name), beforeOrder: sameKind.map((i) => i.name), changes: [change] });
     } catch (err) {
       alert(`調整順序失敗：${err.message}`);
       await fetchAll();
@@ -558,9 +607,21 @@ const ChecklistTemplates = () => {
         // 已套用到設備上的同一項，說明跟著更新
         await window.electronAPI.namedQuery('syncAssetChecklistDescriptionBySource', [description || null, editingItem.id]);
       }
+      // 名稱與說明都記變更前 → 變更後（變更前是開始編輯時記下的原值）
+      const descName = KIND_META[editingItem.kind]?.descName || '說明';
+      const changes = diffFields(
+        { name: editingItem._origName || '', description: (editingItem._origDescription || '').trim() },
+        { name, description },
+        [{ key: 'name', label: '名稱' }, { key: 'description', label: descName }],
+      );
       logUpdate('SETTING', editingItem.id, name,
-        `修改出機檢查項目${editingItem._origName !== name ? `名稱 [${editingItem._origName || ''}] → [${name}]` : ` [${name}]`}${descChanged ? `，並更新${KIND_META[editingItem.kind]?.descName || '說明'}` : ''}`,
-        { before: editingItem._origName || '', after: name, ...(descChanged ? { description: description || null } : {}) });
+        `修改出機檢查項目${editingItem._origName !== name ? `名稱 [${editingItem._origName || ''}] → [${name}]` : ` [${name}]`}${descChanged ? `，並更新${descName}` : ''}`
+          + (changes.length ? `：${describeChanges(changes)}` : ''),
+        {
+          before: editingItem._origName || '', after: name, ...(descChanged ? { description: description || null } : {}),
+          beforeDescription: (editingItem._origDescription || '').trim() || null,
+          changes,
+        });
       setEditingItem(null);
       await fetchAll();
     } catch (err) {
@@ -596,9 +657,15 @@ const ChecklistTemplates = () => {
       const res = await window.electronAPI.namedQuery('deleteChecklistItem', [item.id]);
       if (!res.success) throw new Error(res.error || '刪除失敗');
       const removed = (cleaned.rows || []).length;
+      // 刪除前的內容（說明、預設照片檔名）留在事件紀錄裡
+      const snap = itemSnapshot(item);
+      const extra = [
+        snap.description ? `${KIND_META[item.kind]?.descName || '說明'}：${snap.description}` : '',
+        snap.defaultPhoto ? `預設照片：${snap.defaultPhoto}` : '',
+      ].filter(Boolean).join('；');
       logDelete('SETTING', item.id, item.name,
-        `刪除出機檢查項目 [${item.name}]${removed > 0 ? `，並從 ${removed} 台設備上移除` : ''}`,
-        { name: item.name, kind: item.kind, removedFromDevices: removed });
+        `刪除出機檢查項目 [${item.name}]${extra ? `（${extra}）` : ''}${removed > 0 ? `，並從 ${removed} 台設備上移除` : ''}`,
+        { name: item.name, kind: item.kind, removedFromDevices: removed, group: selectedGroup?.name || null, before: snap });
       if (removed > 0) setSyncNotice(`「${item.name}」已從 ${removed} 台設備上移除`);
       await fetchAll();
     } catch (err) {

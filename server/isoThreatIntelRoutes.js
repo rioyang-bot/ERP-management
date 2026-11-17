@@ -18,6 +18,7 @@
 import express from 'express';
 import crypto from 'crypto';
 import { writeAuditLog, clientIp } from './auditLog.js';
+import { diffFields, describeChanges, fileChange } from './fieldChanges.js';
 import { parseChecklistDocx, signChecklistDocx, previewChecklistDocx, ChecklistFormatError } from './threatIntelDocx.js';
 
 export const FORM_CODE = 'S-413-02';
@@ -240,12 +241,28 @@ export const createIsoThreatIntelRoutes = (pool, auth, { now = () => new Date() 
         [existing.id, parsed.checkDate, fileName, buffer, buffer.length, fileHash, rowsJson, req.user.id, userName(req)],
       );
       const row = r.rows[0];
+      // 變更前取替換前那一筆（existing），逐欄記「欄位：舊 → 新」；檔名相同也要看得出換過檔
+      const before = {
+        fileName: existing.file_name, fileHash: existing.file_hash, fileSize: Number(existing.file_size),
+        checkDate: ymd(existing.check_date), rowCount: Array.isArray(existing.rows) ? existing.rows.length : 0,
+        uploadedByName: existing.uploaded_by_name, signedByName: existing.signed_by_name || null, signedAt: existing.signed_at || null,
+      };
+      const after = {
+        fileName, fileHash, fileSize: buffer.length, checkDate: parsed.checkDate, rowCount: parsed.rows.length,
+        uploadedByName: userName(req), rows: rowList,
+      };
+      const changes = [
+        fileChange('檔名', before.fileName, fileName, 'fileName')
+          || { field: 'fileName', label: '檔名', from: before.fileName, to: `${fileName}（重新上傳）`, kind: 'file' },
+        ...diffFields(before, after, [
+          { key: 'checkDate', label: '檢核日期', format: rocDate },
+          { key: 'rowCount', label: '列數' },
+          { key: 'uploadedByName', label: '上傳者' },
+        ]),
+      ];
       await audit(req, 'UPDATE', row,
-        `替換${FORM_LABEL} [${rocMonth(parsed.period)}]：${existing.file_name} → ${fileName}（檢核日期 ${rocDate(parsed.checkDate)}，共 ${parsed.rows.length} 列${signatureSummary(existing)}）`,
-        {
-          before: { fileName: existing.file_name, fileHash: existing.file_hash, uploadedByName: existing.uploaded_by_name, signedByName: existing.signed_by_name || null, signedAt: existing.signed_at || null },
-          after: { fileName, fileHash, checkDate: parsed.checkDate, rows: rowList },
-        });
+        `替換${FORM_LABEL} [${rocMonth(parsed.period)}]：${describeChanges(changes)}（檢核日期 ${rocDate(parsed.checkDate)}，共 ${parsed.rows.length} 列${signatureSummary(existing)}）`,
+        { before, after, changes });
       return res.json({ success: true, checklist: summaryOf(row), clearedSignature: !!existing.signed_by_name });
     } catch (err) {
       if (err.code === '23505') return res.status(409).json({ success: false, exists: true, period: parsed.period, error: `${rocMonth(parsed.period)}已經有檢核表，請重新整理後再試。` });
@@ -285,9 +302,11 @@ export const createIsoThreatIntelRoutes = (pool, auth, { now = () => new Date() 
       const row = await loadById(req, res);
       if (!row) return undefined;
       if (row.signed_by_name) return res.status(409).json({ success: false, error: `已由 ${row.signed_by_name} 簽核；要換人簽請先撤銷。` });
+      let savedName = null;
       if (useSaved) {
-        const saved = await pool.query(`SELECT signature_png FROM user_signatures WHERE user_id = $1`, [req.user.id]);
+        const saved = await pool.query(`SELECT signature_png, signature_name FROM user_signatures WHERE user_id = $1`, [req.user.id]);
         signature = saved.rows[0]?.signature_png || '';
+        savedName = saved.rows[0]?.signature_name || null;
         if (!signature) return res.status(400).json({ success: false, error: '這個帳號還沒有簽名檔，請先上傳或手寫。' });
       }
       const name = userName(req);
@@ -301,7 +320,7 @@ export const createIsoThreatIntelRoutes = (pool, auth, { now = () => new Date() 
       if (r.rowCount === 0) return res.status(409).json({ success: false, error: '剛剛已經有人簽核了，請重新整理。' });
       await audit(req, 'CREATE', row,
         `簽核${FORM_LABEL} [${rocMonth(String(row.period).trim())}]：檢核人 ${name}（${row.file_name}，共 ${Array.isArray(row.rows) ? row.rows.length : 0} 列）`,
-        { signer: name, fileName: row.file_name, fileHash: row.file_hash, source: useSaved ? '簽名檔' : '手寫／上傳' });
+        { signer: name, fileName: row.file_name, fileHash: row.file_hash, source: useSaved ? '簽名檔' : '手寫／上傳', ...(useSaved ? { signatureName: savedName } : {}) });
       return res.json({ success: true, signedAt: r.rows[0]?.signed_at });
     } catch (error) {
       console.error('[IsoThreatIntel] 簽核失敗:', error.message);

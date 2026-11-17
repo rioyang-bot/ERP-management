@@ -347,7 +347,7 @@ describe('進貨單改日期：設備／硬體的進貨日期跟著改', () => {
     await waitFor(() => expect(auditLogs().filter((l) => l.targetId === 'HW-IN-2')).toHaveLength(1));
     const logs = auditLogs();
     const inbound = logs.find((l) => l.module === 'INBOUND');
-    expect(inbound.summary).toBe('修改進貨單 [IN-20260715-01] 進貨日期/發票/供應商/附件；2 筆設備／硬體的進貨日期跟著改為 2026-08-01');
+    expect(inbound.summary).toBe('修改進貨單 [IN-20260715-01]：進貨日期：2026-07-15 → 2026-08-01；2 筆設備／硬體的進貨日期跟著改為 2026-08-01');
     expect(inbound.details.stockDateSyncedSns).toEqual(['DEV-IN-1', 'HW-IN-2']);
     expect(logs.find((l) => l.targetId === 'DEV-IN-1')).toMatchObject({
       module: 'DEVICE', summary: '進貨日期跟著進貨單 [IN-20260715-01] 改為 2026-08-01（原 2026-07-15）',
@@ -365,6 +365,6 @@ describe('進貨單改日期：設備／硬體的進貨日期跟著改', () => {
     await waitFor(() => expect(calls('updateInboundOrderHeader')).toHaveLength(1));
     await waitFor(() => expect(auditLogs().some((l) => l.module === 'INBOUND')).toBe(true));
     expect(calls('syncAssetStockDateByInboundOrder')).toHaveLength(0);
-    expect(auditLogs().find((l) => l.module === 'INBOUND').summary).toBe('修改進貨單 [IN-20260715-01] 進貨日期/發票/供應商/附件');
+    expect(auditLogs().find((l) => l.module === 'INBOUND').summary).toBe('修改進貨單 [IN-20260715-01]：發票號碼：INV-001 → INV-002');
   });
 });

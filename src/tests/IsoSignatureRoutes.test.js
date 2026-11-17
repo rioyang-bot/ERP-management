@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import fs from 'fs';
-import { createIsoSignatureRoutes, contentHash } from '../../server/isoSignatureRoutes.js';
+import { createIsoSignatureRoutes, contentHash, stamp } from '../../server/isoSignatureRoutes.js';
 import { MODULE_MAP } from '../utils/auditLogger';
 
 /**
@@ -138,14 +138,24 @@ describe('ISO 表單簽核 API', () => {
     expect(res1.statusCode).toBe(409);
     expect(blocked.calls.some((c) => /INSERT/.test(c.sql))).toBe(false);
 
-    const stale = makePool({ existing: { user_name: '王機房', content_hash: 'old' } });
+    const oldSignedAt = new Date(2026, 9, 20, 10, 5);
+    const stale = makePool({ existing: { user_name: '王機房', content_hash: 'old', row_count: 3, signed_at: oldSignedAt } });
     const res2 = makeRes();
     await handlerFor(createIsoSignatureRoutes(stale.pool, auth, namedQueries), 'post', '/:form/:period/:role')(
       makeReq(USERS.roomAdmin, { form: 'S-408-02', period: '2026-10', role: 'ROOM_ADMIN' }, { signature: PNG }), res2);
     expect(res2.statusCode).toBe(200);
     const [log] = auditRows(stale.calls);
-    expect(log[8]).toBe('重新簽核設備攜出入單 [115年10月]：機房管理員 王機房（共 1 列），原簽核人 王機房 的簽名因資料異動失效');
-    expect(JSON.parse(log[9]).replaced).toEqual({ userName: '王機房', reason: '簽核後資料有異動' });
+    // 蓋過原本的簽核：簽核時間與列數記變更前 → 變更後（簽核人相同就不列）
+    const newStamp = stamp('2026-10-31T09:00:00Z');
+    expect(log[8]).toBe('重新簽核設備攜出入單 [115年10月]：機房管理員 王機房（共 1 列），原簽核人 王機房 的簽名因資料異動失效'
+      + `：簽核時間：2026-10-20 10:05 → ${newStamp}；列數：3 → 1`);
+    const details = JSON.parse(log[9]);
+    expect(details.replaced).toEqual({ userName: '王機房', reason: '簽核後資料有異動' });
+    expect(details.before).toEqual({ userName: '王機房', signedAt: '2026-10-20 10:05', rowCount: 3 });
+    expect(details.changes).toEqual([
+      { field: 'signedAt', label: '簽核時間', from: '2026-10-20 10:05', to: newStamp },
+      { field: 'rowCount', label: '列數', from: '3', to: '1' },
+    ]);
   });
 
   it('讀取：內容沒變的是有效簽名，變了就標示 stale；回傳這個帳號能簽／能撤銷哪個角色', async () => {
@@ -218,7 +228,7 @@ describe('ISO 表單簽核 API', () => {
     const res1 = makeRes();
     await handlerFor(router(first), 'put', '/me/signature')(makeReq(USERS.roomAdmin, {}, { signature: PNG, userId: 99 }), res1);
     expect(res1.statusCode).toBe(200);
-    expect(first.calls.find((c) => /INSERT INTO user_signatures/.test(c.sql)).params).toEqual([7, PNG]);
+    expect(first.calls.find((c) => /INSERT INTO user_signatures/.test(c.sql)).params).toEqual([7, PNG, null]);
     let [log] = auditRows(first.calls);
     expect([log[0], log[3], log[4], log[6], log[8]]).toEqual([7, 'CREATE', 'USER', 'tom', '設定個人簽名檔 [tom]']);
     expect(log[9]).not.toContain('base64');

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Camera, Upload, Trash2, Download, Loader2, CheckCircle2, Circle, ClipboardPaste } from 'lucide-react';
-import { logUpdate, getCurrentUser } from '../utils/auditLogger';
+import { logUpdate, logFieldChanges, fileChange, fileNameOf, describeChanges, getCurrentUser } from '../utils/auditLogger';
 import { resolveMediaUrl, downloadMedia } from '../utils/media';
 import { screenPhotoFiles, formatFileSize } from '../utils/assetPhotos';
 import { namePastedImage, imagesFromPasteEvent, readClipboardImages } from '../utils/clipboardImages';
@@ -31,6 +31,9 @@ import PhotoPreviewModal from './common/PhotoPreviewModal';
  * @param {Function} onChanged  照片有增減時通知外層，讓檢查表的完成度跟著更新
  * @param {Function} canRemove / onRemoveItem 範本已刪除的拍照項目可以從這台設備移除
  */
+
+/** 事件紀錄裡照片欄位的名稱：屬於哪個拍照項目，沒有就是其他照片 */
+const photoLabelOf = (item) => (item ? `主機照片（${item.item_name}）` : '主機照片（其他照片）');
 
 const AssetPhotoSection = ({ device, card, photoItems = [], onChanged, canRemove, onRemoveItem }) => {
   const [photos, setPhotos] = useState([]);
@@ -135,6 +138,8 @@ const AssetPhotoSection = ({ device, card, photoItems = [], onChanged, canRemove
     setBusy(true);
     const user = getCurrentUser();
     const done = [];
+    // 伺服器上實際存的檔名（與 done 一一對應），日後找檔案、對照刪除紀錄用
+    const stored = [];
     try {
       for (const file of accepted) {
         const buffer = await file.arrayBuffer();
@@ -146,11 +151,15 @@ const AssetPhotoSection = ({ device, card, photoItems = [], onChanged, canRemove
         ]);
         if (!res.success || (res.rows || []).length === 0) throw new Error(res.error || '寫入照片紀錄失敗');
         done.push(file.name);
+        stored.push(fileNameOf(saved.fileName));
       }
 
-      await logUpdate('DEVICE', deviceSn || assetId, deviceSn,
+      // 每張照片一筆「（空白）→ 檔名」，事件查詢的變更表格列得出上傳了哪些檔案
+      const photoLabel = photoLabelOf(item);
+      await logFieldChanges('DEVICE', deviceSn || assetId, deviceSn,
         `設備 [${deviceSn || assetId}] 上傳主機照片 ${done.length} 張${item ? `（拍照項目：${item.item_name}）` : ''}`,
-        { sn: deviceSn, files: done, photoItem: item ? item.item_name : null });
+        done.map((name, i) => ({ ...fileChange(photoLabel, '', name, 'photo'), storedName: stored[i] })),
+        { sn: deviceSn, files: done, storedFiles: stored, photoItem: item ? item.item_name : null });
       await loadPhotos();
       if (onChanged) onChanged();
     } catch (e) {
@@ -224,9 +233,19 @@ const AssetPhotoSection = ({ device, card, photoItems = [], onChanged, canRemove
     try {
       const res = await window.electronAPI.namedQuery('deleteAssetPhoto', [photo.id]);
       if (!res.success || (res.rows || []).length === 0) throw new Error(res.error || '找不到這張照片');
+      // 記原始檔名與伺服器上存的檔名，以及它屬於哪一個拍照項目。
+      // 敘述先寫被刪的檔名，再接「照片：舊檔名 → （空白）」，歷程上看得出變更前後；
+      // 拍照項目與伺服器上的存檔名放在 details
+      const item = photoItems.find((i) => i.id === photo.checklist_item_id) || null;
+      const storedName = fileNameOf(photo.file_name);
+      const change = { ...fileChange(photoLabelOf(item), photo.original_name, '', 'photo'), storedName };
       await logUpdate('DEVICE', deviceSn || assetId, deviceSn,
-        `設備 [${deviceSn || assetId}] 刪除主機照片 [${photo.original_name}]`,
-        { sn: deviceSn, file: photo.original_name });
+        `設備 [${deviceSn || assetId}] 刪除主機照片 [${photo.original_name}]${item ? `（拍照項目：${item.item_name}）` : ''}：${describeChanges([change])}`,
+        {
+          sn: deviceSn, file: photo.original_name, storedFile: storedName, photoId: photo.id,
+          photoItem: item ? item.item_name : null,
+          changes: [change],
+        });
       // 紀錄刪了，伺服器上的檔案也一併清掉
       releaseUploads([photo.file_name]);
       setThumbs((prev) => { const n = { ...prev }; delete n[photo.id]; return n; });

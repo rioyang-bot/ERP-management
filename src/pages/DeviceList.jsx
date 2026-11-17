@@ -4,7 +4,7 @@ import { Search, Columns3, Edit2, X, Save, MoreHorizontal, MoreVertical, MapPin,
 import ItemLedgerModal from '../components/ItemLedgerModal';
 import DeviceRegistrationModal from '../components/DeviceRegistrationModal';
 import RmaReplacementModal from '../components/RmaReplacementModal';
-import { logUpdate, logDelete, logStatusChange, logSnChange, logMountChange, logMountedHwStatusSync } from '../utils/auditLogger';
+import { logUpdate, logDelete, logStatusChange, logSnChange, logMountChange, logMountedHwStatusSync, logFieldChanges, diffFields, describeChanges } from '../utils/auditLogger';
 import { actionMenuPosition, isScrollInsideMenu } from '../utils/actionMenuPosition';
 import { useCardColumns } from '../utils/useCardColumns';
 import { usePageSize } from '../utils/usePageSize';
@@ -44,6 +44,89 @@ const DEVICE_COLUMNS = [
   { id: 'checklist', label: '出機檢查' },
   { id: 'actions', label: '功能', always: true },
 ];
+
+/** 資產歸屬代碼 → 畫面上的名稱 */
+const ownershipText = (v) => ((v || 'FOR_SALE') === 'COMPANY' ? '公司資產' : '一般銷售');
+
+/**
+ * 編輯視窗的欄位，事件紀錄比對「變更前 → 變更後」用（標籤與畫面一致）。
+ * 序號另由 logSnChange 記、搭載硬體另由 logMountChange 記，不列在這裡。
+ */
+const DEVICE_EDIT_FIELDS = [
+  { key: 'brand', label: '廠牌' },
+  { key: 'type', label: '類型' },
+  { key: 'model', label: '型號' },
+  { key: 'specification', label: '規格' },
+  { key: 'ownership', label: '資產歸屬', format: ownershipText },
+  { key: 'asset_no', label: '資產序號' },
+  { key: 'project_name', label: '專案名稱' },
+  { key: 'hostname', label: '主機名稱' },
+  { key: 'client', label: '客戶' },
+  { key: 'end_user', label: 'End-user' },
+  { key: 'contact_person', label: '聯絡人' },
+  { key: 'contact_phone', label: '聯絡電話' },
+  { key: 'location', label: '放置位置' },
+  { key: 'system_date', label: '系統日期' },
+  { key: 'remarks', label: '備註' },
+];
+
+/**
+ * 從編輯中的設備取出要比對的欄位值。
+ * 資產序號只有公司資產才會存（updateAssetDetails 改回一般銷售會清掉），比對也照這個規則。
+ */
+const deviceEditFields = (f) => {
+  const attrs = (f.custom_attributes && typeof f.custom_attributes === 'object') ? f.custom_attributes : {};
+  const ownership = f.ownership || 'FOR_SALE';
+  return {
+    brand: f.brand, type: f.type, model: f.model, specification: f.specification,
+    ownership,
+    asset_no: ownership === 'COMPANY' ? f.asset_no : '',
+    project_name: attrs.project_name,
+    hostname: f.hostname, client: f.client, end_user: f.end_user,
+    contact_person: f.contact_person, contact_phone: f.contact_phone,
+    location: f.location, system_date: f.system_date, remarks: f.remarks,
+  };
+};
+
+/** 品項主檔跟著廠牌／類型／型號／規格怎麼改的，寫成一句話 */
+const describeItemMasterChange = (c) => {
+  if (!c) return '';
+  if (c.action === 'RENAME') return `品項主檔 #${c.fromMasterId} 直接更名（只有這一台在用）`;
+  const target = c.action === 'REPOINT_EXISTING' ? `既有品項主檔 #${c.toMasterId}` : `新建品項主檔 #${c.toMasterId ?? '（建立失敗）'}`;
+  return `品項主檔改對應：#${c.fromMasterId ?? '—'} → ${target}${c.orphanDeleted ? `；原主檔 #${c.fromMasterId} 已無人使用而刪除` : ''}`;
+};
+
+/** 刪除設備時留在事件紀錄裡的快照：刪掉之後資料庫就查不到了 */
+const deviceDeleteSnapshot = (item) => {
+  let attrs = {};
+  try { attrs = typeof item.custom_attributes === 'string' ? JSON.parse(item.custom_attributes) : (item.custom_attributes || {}); } catch { attrs = {}; }
+  const dateText = (v) => {
+    if (!v) return '';
+    try { return new Date(v).toISOString().split('T')[0]; } catch { return String(v); }
+  };
+  return {
+    id: item.id,
+    sn: item.sn || '',
+    brand: item.brand || '',
+    type: item.type || '',
+    model: item.model || '',
+    specification: item.specification || '',
+    status: item.status || '',
+    ownership: ownershipText(item.ownership),
+    asset_no: item.asset_no || '',
+    hostname: item.hostname || '',
+    client: item.client || '',
+    end_user: item.end_user || attrs.end_user || '',
+    contact_person: attrs.contact_person || item.partner_contact || '',
+    contact_phone: attrs.contact_phone || item.partner_phone || '',
+    location: item.location || '',
+    project_name: attrs.project_name || '',
+    mounted_hw_sns: attrs.mounted_hw_sns || '',
+    system_date: dateText(item.system_date),
+    remarks: item.remarks || '',
+    ...pickWarrantyFields(item),
+  };
+};
 
 const DeviceList = ({ isSplitMode = false }) => {
   // 卡片區一列幾張：依卡片區寬度決定，最多 6 張（見 utils/useCardColumns.js）
@@ -243,6 +326,8 @@ const DeviceList = ({ isSplitMode = false }) => {
     f.end_user = f.end_user || attrs.end_user || '';
     f.contact_person = attrs.contact_person || f.partner_contact || '';
     f.contact_phone = attrs.contact_phone || f.partner_phone || '';
+    // 編輯前的各欄位（與編輯視窗帶入的值同一套換算），存檔時比對出「舊 → 新」寫進事件紀錄
+    f._origFields = deviceEditFields(f);
     setEditItem(f);
     setShowEditModal(true);
     setShowHwDropdown(false);
@@ -260,9 +345,15 @@ const DeviceList = ({ isSplitMode = false }) => {
 
   const handleUpdateOwnership = async (id, sn, newOwnership, label) => {
     if (!window.confirm(`確定要將設備 [${sn || id}] 的資產歸屬變更為「${label}」嗎？`)) return;
+    // 變更前的歸屬取列表上這一筆（改之前讀回來的值）
+    const oldOwnership = items.find(i => i.id === id)?.ownership || 'FOR_SALE';
     const res = await window.electronAPI.namedQuery('updateAssetOwnership', [newOwnership, id]);
     if (res.success) {
-      logUpdate('DEVICE', sn || id, '設備', `變更設備資產歸屬為「${label}」`, { id, sn, newOwnership, label });
+      const changes = diffFields({ ownership: oldOwnership }, { ownership: newOwnership },
+        [{ key: 'ownership', label: '資產歸屬', format: ownershipText }]);
+      logUpdate('DEVICE', sn || id, '設備',
+        `變更設備資產歸屬為「${label}」${changes.length ? `：${describeChanges(changes)}` : ''}`,
+        { id, sn, oldOwnership, newOwnership, label, changes });
       window.dispatchEvent(new CustomEvent('db-update'));
       setActiveMenuId(null);
       fetchAssets();
@@ -317,7 +408,18 @@ const DeviceList = ({ isSplitMode = false }) => {
 
     const res = await window.electronAPI.namedQuery('deleteAsset', [id]);
     if (res && res.success) {
-      logDelete('DEVICE', sn || id, '設備', `刪除設備紀錄 [${displayName}]`, { id, sn, unmountedHardwares: mountedSns });
+      // 刪掉之後就查不到了：把這台設備的主要欄位留一份在紀錄裡
+      const deleted = targetItem ? deviceDeleteSnapshot(targetItem) : { id, sn };
+      const keyText = [
+        `${deleted.brand || ''} ${deleted.model || ''}`.trim(),
+        deleted.specification ? `規格 ${deleted.specification}` : '',
+        `序號 ${deleted.sn || '無'}`,
+        deleted.client ? `客戶 ${deleted.client}` : '',
+        deleted.location ? `位置 ${deleted.location}` : '',
+        deleted.status ? `狀態 ${statusConfig[deleted.status]?.label || deleted.status}` : '',
+      ].filter(Boolean).join('，');
+      logDelete('DEVICE', sn || id, '設備', `刪除設備紀錄 [${displayName}]（${keyText}）`,
+        { id, sn, unmountedHardwares: mountedSns, deleted });
       setActiveMenuId(null);
       fetchAssets();
     } else {
@@ -435,8 +537,11 @@ const DeviceList = ({ isSplitMode = false }) => {
       || (newSpec !== (editItem._origSpec || ''))
       || (newBrand !== (editItem._origBrand || ''))
       || (newType !== (editItem._origType || ''));
+    // 品項主檔怎麼跟著改的（直接更名／改對應到既有或新建的主檔／舊主檔沒人用而刪掉），寫進事件紀錄
+    let itemMasterChange = null;
     if (isIdentityChanged) {
       let targetMasterId = null;
+      const fromMasterId = editItem.item_master_id || null;
       const findRes = await window.electronAPI.namedQuery('findItemMaster', [
         newSpec,
         newType,
@@ -446,14 +551,16 @@ const DeviceList = ({ isSplitMode = false }) => {
 
       if (findRes.success && findRes.rows?.length > 0) {
         targetMasterId = findRes.rows[0].id;
+        itemMasterChange = { action: 'REPOINT_EXISTING', fromMasterId, toMasterId: targetMasterId };
       } else {
         const countRes = await window.electronAPI.namedQuery('countAssetsByMasterId', [editItem.item_master_id]);
         const refCount = (countRes.success && countRes.rows?.[0]) ? parseInt(countRes.rows[0].count, 10) : 99;
 
         if (refCount <= 1) {
           // 這張主檔只有這一筆資產在用，直接改名不影響別人
-          await window.electronAPI.namedQuery('updateItemMasterIdentity', [newSpec, newType, newBrand, newModel, editItem.item_master_id]);
+          const renameRes = await window.electronAPI.namedQuery('updateItemMasterIdentity', [newSpec, newType, newBrand, newModel, editItem.item_master_id]);
           targetMasterId = editItem.item_master_id;
+          itemMasterChange = { action: 'RENAME', fromMasterId, toMasterId: targetMasterId, success: !!renameRes?.success };
         } else {
           // 還有別的資產共用這張主檔，改名會連帶改到它們，因此另建一張
           const createRes = await window.electronAPI.namedQuery('insertItemMaster', [
@@ -467,13 +574,16 @@ const DeviceList = ({ isSplitMode = false }) => {
           if (createRes.success && createRes.rows?.length > 0) {
             targetMasterId = createRes.rows[0].id;
           }
+          itemMasterChange = { action: 'REPOINT_NEW', fromMasterId, toMasterId: targetMasterId, sharedCount: refCount };
         }
       }
 
       if (targetMasterId && targetMasterId !== editItem.item_master_id) {
-        await window.electronAPI.namedQuery('updateAssetMasterId', [targetMasterId, editItem.id]);
+        const repointRes = await window.electronAPI.namedQuery('updateAssetMasterId', [targetMasterId, editItem.id]);
+        if (itemMasterChange) itemMasterChange.success = !!repointRes?.success;
         if (editItem.item_master_id) {
-          await window.electronAPI.namedQuery('deleteItemMasterIfOrphan', [editItem.item_master_id]);
+          const orphanRes = await window.electronAPI.namedQuery('deleteItemMasterIfOrphan', [editItem.item_master_id]);
+          if (itemMasterChange) itemMasterChange.orphanDeleted = !!(orphanRes?.success && (orphanRes.rows || []).length > 0);
         }
       }
 
@@ -579,24 +689,53 @@ const DeviceList = ({ isSplitMode = false }) => {
         ownership: editItem.ownership,
         os: editItem.os,
         nic: editItem.nic,
-        ...warranty,
+        // 保固資訊沒存成時，只留 updateAssetDetails 一併寫進去的那三個日期，不把沒存成的值記成已存
+        ...(warrantyRes?.success ? warranty : {
+          installed_date: warranty.installed_date,
+          customer_warranty_expire: warranty.customer_warranty_expire,
+          warranty_expire: warranty.warranty_expire,
+        }),
       };
       // 日期與保固有改才寫進敘述，事件紀錄與履歷上看得出保固年數是誰、何時改的
       const warrantyChanges = warrantyRes?.success ? diffWarrantyFields(editItem._origWarranty, warranty) : [];
       if (warrantyChanges.length > 0) auditDetails.warrantyChanges = warrantyChanges;
       const warrantyText = warrantyChanges.length > 0 ? describeWarrantyChanges(warrantyChanges) : '';
 
+      // 其他每個改到的欄位：變更前取開啟編輯時的原值（_origFields），變更後取實際寫回的值
+      const fieldChanges = diffFields(
+        editItem._origFields || {},
+        deviceEditFields({ ...editItem, brand: newBrand, type: newType, model: newModel, specification: newSpec, custom_attributes: updatedCustomAttributes }),
+        DEVICE_EDIT_FIELDS,
+      );
+      const snChange = isSnChanged ? [{ field: 'sn', label: '序號', from: origSn, to: newSn }] : [];
+      // 一份完整的變更清單（欄位 + 序號 + 保固），事件查詢以表格列出變更前／變更後
+      const allChanges = [...fieldChanges, ...snChange, ...warrantyChanges];
+      if (allChanges.length > 0) auditDetails.changes = allChanges;
+      if (itemMasterChange) auditDetails.itemMasterChange = itemMasterChange;
+      // 敘述：欄位寫成「欄位：舊 → 新」；保固沿用原本的寫法接在後面
+      const changeText = [describeChanges(fieldChanges), warrantyText, describeItemMasterChange(itemMasterChange)]
+        .filter(Boolean).join('；');
+
       if (isSnChanged) {
         await logSnChange('DEVICE', origSn, newSn, auditName,
-          `設備編輯；已同步連動 ${mountedComponents.length} 件掛載硬體${warrantyText ? `；${warrantyText}` : ''}`, auditDetails);
+          `設備編輯；已同步連動 ${mountedComponents.length} 件掛載硬體${changeText ? `；${changeText}` : ''}`, auditDetails);
       } else {
         await logUpdate('DEVICE', newSn || editItem.id, auditName,
-          `編輯設備詳細資訊 [${newSn || editItem.id}]${warrantyText ? `：${warrantyText}` : ''}`, auditDetails);
+          `編輯設備詳細資訊 [${newSn || editItem.id}]${changeText ? `：${changeText}` : ''}`, auditDetails);
       }
       setShowEditModal(false);
       window.dispatchEvent(new CustomEvent('db-update'));
       fetchAssets();
     } else {
+      // 明細沒存成，但品項主檔已經先改了（改名或改對應），這部分仍要留紀錄
+      if (itemMasterChange) {
+        const identityChanges = diffFields(editItem._origFields || {},
+          { brand: newBrand, type: newType, model: newModel, specification: newSpec },
+          DEVICE_EDIT_FIELDS.filter(f => ['brand', 'type', 'model', 'specification'].includes(f.key)));
+        await logFieldChanges('DEVICE', origSn || editItem.id, `${newBrand} ${newModel}`,
+          `編輯設備 [${origSn || editItem.id}] 時品項主檔已變更（其餘欄位儲存失敗）；${describeItemMasterChange(itemMasterChange)}`,
+          identityChanges, { id: editItem.id, sn: origSn, itemMasterChange, saveError: res.error || '' });
+      }
       alert('儲存失敗：' + (res.error || '未知錯誤'));
     }
   };

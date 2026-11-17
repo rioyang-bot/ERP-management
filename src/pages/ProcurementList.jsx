@@ -72,7 +72,32 @@ const ProcurementList = ({ isSplitMode = false }) => {
       );
       
       if (res && res.success && res.rows && res.rows.length > 0) {
-        logDelete('PURCHASE', orderNo, '採購單', `刪除整筆採購單 [${orderNo}]`, { orderNo });
+        // 刪除前的快照：每一筆明細與附件檔名。單據刪掉後，事件紀錄是唯一看得出刪了什麼的地方
+        const lines = (targetOrder?.items || []).map((r) => ({
+          id: r.id, supplier: r.partner_name || null, category: r.category_name || null,
+          item_type: r.item_type || null, brand: r.brand || null, model: r.model || null,
+          specification: r.specification || null, unit: r.unit || null,
+          quantity: r.quantity, receivedQuantity: r.received_quantity || 0, status: r.status || null,
+        }));
+        let attachmentList = targetOrder?.items?.[0]?.attachments;
+        if (typeof attachmentList === 'string') {
+          try { attachmentList = JSON.parse(attachmentList || '[]'); } catch { attachmentList = []; }
+        }
+        const attachmentFiles = (Array.isArray(attachmentList) ? attachmentList : []).filter(Boolean)
+          .map((a) => ({ originalName: a.originalName || a.fileName || '', fileName: a.fileName || null }));
+        const remarks = targetOrder?.items?.[0]?.remarks || null;
+        const lineText = lines.map((l) => {
+          const name = [l.brand, l.item_type, l.model].filter(Boolean).join(' ') || '未命名項目';
+          return `${name}${l.specification ? ` / ${l.specification}` : ''} ×${l.quantity}${l.supplier ? `（${l.supplier}）` : ''}`;
+        }).join('、');
+        const summaryParts = [
+          lines.length ? `明細：${lineText}` : '',
+          attachmentFiles.length ? `附件：${attachmentFiles.map((f) => f.originalName).join('、')}` : '',
+          remarks ? `備註：${remarks}` : '',
+        ].filter(Boolean);
+        logDelete('PURCHASE', orderNo, '採購單',
+          `刪除整筆採購單 [${orderNo}]${summaryParts.length ? `：${summaryParts.join('；')}` : ''}`,
+          { orderNo, snapshot: { orderNo, purchaser: targetOrder?.purchaser_name || null, remarks, items: lines, attachments: attachmentFiles } });
         alert('刪除成功');
         fetchRecords();
       } else if (res && res.success) {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Package, Plus, Undo2 } from 'lucide-react';
-import { logUpdate } from '../utils/auditLogger';
+import { logUpdate, diffFields, describeChanges } from '../utils/auditLogger';
 import { mountedLabel } from '../utils/mountedConsumables';
 
 /**
@@ -45,14 +45,27 @@ const MountedConsumablesSection = ({ device, onChanged, labelStyle, inputStyle }
 
   const picked = consumables.find((c) => String(c.id) === String(pick.itemId));
 
-  const run = async (steps, logText, details) => {
+  /**
+   * 掛載／卸載前後的數量：這台設備上掛了幾個、耗材的庫存與 LAB 各剩多少。
+   * 變更前取畫面上讀到的那一筆（picked／row），變更後依這次移動的數量算出。
+   */
+  const qtyChanges = (before, after) => diffFields(before, after, [
+    { key: 'mounted', label: '本設備掛載數量' },
+    { key: 'stock_qty', label: '庫存數量' },
+    { key: 'lab_qty', label: 'LAB 數量' },
+  ]);
+
+  const run = async (steps, logText, details, changes = []) => {
     setBusy(true);
     try {
       const res = await window.electronAPI.runTransaction(steps);
       if (!res.success) throw new Error(res.error || '處理失敗');
-      // 耗材的履歷靠 itemMasterId 接回品項，設備的履歷靠序號接回設備，兩邊各記一筆
-      await logUpdate('CONSUMABLE', details.itemMasterId, details.label, logText, details);
-      await logUpdate('DEVICE', sn || assetId, sn, logText, details);
+      // 耗材的履歷靠 itemMasterId 接回品項，設備的履歷靠序號接回設備，兩邊各記一筆。
+      // 敘述後面接上「欄位：舊 → 新」，履歷上看得出數量從多少變成多少
+      const summary = changes.length > 0 ? `${logText}：${describeChanges(changes)}` : logText;
+      const fullDetails = changes.length > 0 ? { ...details, changes } : details;
+      await logUpdate('CONSUMABLE', details.itemMasterId, details.label, summary, fullDetails);
+      await logUpdate('DEVICE', sn || assetId, sn, summary, fullDetails);
       await load();
       if (onChanged) onChanged();
     } catch (e) {
@@ -73,7 +86,17 @@ const MountedConsumablesSection = ({ device, onChanged, labelStyle, inputStyle }
       { queryName: 'mountConsumableStock', params: [qty, picked.id], expectRows: 1, errorMessage: `${label} 庫存不足，無法掛載。` },
       { queryName: 'insertLabAssignment', params: [picked.id, assetId, qty, `掛載到設備 ${sn}`], expectRows: 1, errorMessage: '記錄掛載失敗。' },
     ], `設備 [${sn}] 掛載耗材 ${label} × ${qty}（Stock ➔ LAB）`,
-    { itemMasterId: picked.id, label, quantity: qty, sn, direction: 'MOUNT' });
+    { itemMasterId: picked.id, label, quantity: qty, sn, direction: 'MOUNT' },
+    (() => {
+      const before = {
+        mounted: Number(mounted.find((m) => String(m.item_master_id) === String(picked.id))?.quantity || 0),
+        stock_qty: Number(picked.stock_qty || 0),
+        lab_qty: Number(picked.lab_qty || 0),
+      };
+      return qtyChanges(before, {
+        mounted: before.mounted + qty, stock_qty: before.stock_qty - qty, lab_qty: before.lab_qty + qty,
+      });
+    })());
     setPick({ itemId: '', qty: 1 });
   };
 
@@ -86,7 +109,21 @@ const MountedConsumablesSection = ({ device, onChanged, labelStyle, inputStyle }
       { queryName: 'unmountConsumableStock', params: [qty, row.item_master_id], expectRows: 1, errorMessage: `${label} 的 LAB 數量不足，無法卸載。` },
       { queryName: 'deductLabAssignment', params: [row.item_master_id, assetId, qty, `從設備 ${sn} 卸載`], expectRows: 1, errorMessage: `設備上掛載的 ${label} 不足 ${qty}。` },
     ], `設備 [${sn}] 卸載耗材 ${label} × ${qty}（LAB ➔ Stock）`,
-    { itemMasterId: row.item_master_id, label, quantity: qty, sn, direction: 'UNMOUNT' });
+    { itemMasterId: row.item_master_id, label, quantity: qty, sn, direction: 'UNMOUNT' },
+    (() => {
+      // 掛載清單那一筆沒有 LAB 數量，從耗材清單補；庫存兩邊都有，以耗材清單為準
+      const master = consumables.find((c) => String(c.id) === String(row.item_master_id));
+      const before = {
+        mounted: Number(row.quantity || 0),
+        stock_qty: Number((master ? master.stock_qty : row.stock_qty) || 0),
+        lab_qty: master ? Number(master.lab_qty || 0) : null,
+      };
+      return qtyChanges(before, {
+        mounted: before.mounted - qty,
+        stock_qty: before.stock_qty + qty,
+        lab_qty: before.lab_qty === null ? null : before.lab_qty - qty,
+      });
+    })());
     setUnmountQty((prev) => { const n = { ...prev }; delete n[row.item_master_id]; return n; });
   };
 

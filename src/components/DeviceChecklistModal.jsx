@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   X, ClipboardCheck, Plus, Trash2, Printer, RefreshCw, Info, ListChecks, Tag, CheckCircle2, Server,
 } from 'lucide-react';
-import { logUpdate } from '../utils/auditLogger';
+import { logUpdate, logFieldChanges, fileNameOf } from '../utils/auditLogger';
 import DeviceChecklistPrintModal from './DeviceChecklistPrintModal';
 import ChecklistWordButton from './ChecklistWordButton';
 import AssetPhotoSection from './AssetPhotoSection';
@@ -66,6 +66,13 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged, onAssetUpdat
    */
   const [pendingChecks, setPendingChecks] = useState({});
   const [pendingContents, setPendingContents] = useState({});
+  /**
+   * 第一次改動某一列時，那一列在資料庫裡原本的勾選與內容。
+   * 事件紀錄要寫「舊 → 新」，而畫面上的 applied 已經是改過的值；
+   * 改來改去又回到原值的，也靠這份認出來、不算變更。
+   * { [rowId]: { is_checked: boolean, content: string } }
+   */
+  const [pendingOrig, setPendingOrig] = useState({});
   const [savingChanges, setSavingChanges] = useState(false);
   // 主機名稱與放置位置：savedInfo 是資料庫裡的值，infoDraft 是畫面上正在改的，
   // 與勾選一樣按「儲存變更」才寫回
@@ -192,6 +199,13 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged, onAssetUpdat
    * 細項的內容。輸入中先記在本地，離開欄位（或按 Enter）才寫回資料庫 ——
    * 每打一個字就送一次請求既沒必要，網路慢時還會把游標弄丟。
    */
+  /** 記下這一列在資料庫裡原本的值（只在第一次改動時記），回傳原值 */
+  const rememberOrig = (row) => {
+    const orig = pendingOrig[row.id] || { is_checked: !!row.is_checked, content: (row.content || '').trim() };
+    if (!pendingOrig[row.id]) setPendingOrig((prev) => (prev[row.id] ? prev : { ...prev, [row.id]: orig }));
+    return orig;
+  };
+
   const handleContentChange = (id, value) => {
     setContentDraft((prev) => ({ ...prev, [id]: value }));
   };
@@ -204,14 +218,26 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged, onAssetUpdat
     if (next === (row.content || '')) return;
 
     // 只更新畫面並記成待儲存，資料庫等按下「儲存變更」才動
+    const orig = rememberOrig(row);
     setApplied((prev) => prev.map((r) => (r.id === row.id ? { ...r, content: next || null } : r)));
-    setPendingContents((prev) => ({ ...prev, [row.id]: next }));
+    setPendingContents((prev) => {
+      const n = { ...prev };
+      // 改回原本的內容就不算變更
+      if (next === orig.content) delete n[row.id]; else n[row.id] = next;
+      return n;
+    });
   };
 
   const handleToggleChecked = (row) => {
     const next = !row.is_checked;
+    const orig = rememberOrig(row);
     setApplied((prev) => prev.map((r) => (r.id === row.id ? { ...r, is_checked: next } : r)));
-    setPendingChecks((prev) => ({ ...prev, [row.id]: next }));
+    setPendingChecks((prev) => {
+      const n = { ...prev };
+      // 勾了又取消（回到原狀）就不算變更
+      if (next === orig.is_checked) delete n[row.id]; else n[row.id] = next;
+      return n;
+    });
   };
 
   /** 主機名稱／放置位置有改動的欄位 */
@@ -224,6 +250,7 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged, onAssetUpdat
   /** @param {object} [infoToRestore] 主機名稱／放置位置要回到的值（預設為目前資料庫裡的值） */
   const discardChanges = async (infoToRestore = savedInfo) => {
     setPendingChecks({});
+    setPendingOrig({});
     setPendingContents({});
     setContentDraft({});
     setInfoDraft(infoToRestore);
@@ -269,22 +296,31 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged, onAssetUpdat
         if (!res.success || (res.rows || []).length === 0) throw new Error(res.error || '找不到該項目');
       }
 
-      const named = (rowId) => applied.find((r) => String(r.id) === String(rowId))?.item_name || rowId;
-      const parts = [];
-      if (checks.length) {
-        parts.push('勾選：' + checks.map(([id, v]) => `${named(id)}${v ? '✓' : '✗'}`).join('、'));
-      }
-      if (contents.length) {
-        parts.push('內容：' + contents.map(([id, v]) => `${named(id)}=${v || '（清空）'}`).join('、'));
-      }
-      // 出機檢查的結果是出貨憑據的一部分，改過什麼要留得下來
-      if (parts.length) {
-        await logUpdate('DEVICE', device.sn || device.id, device.sn,
-          `設備 [${device.sn || device.id}] 出機檢查表更新 ${checks.length + contents.length} 項 —— ${parts.join('；')}`,
-          { sn: device.sn, checked: Object.fromEntries(checks), contents: Object.fromEntries(contents) });
-      }
+      // 出機檢查的結果是出貨憑據的一部分，改過什麼要留得下來：
+      // 每一項寫成「項目名稱（主項目）：舊 → 新」，舊值取第一次改動前資料庫裡的值
+      const rowOf = (rowId) => applied.find((r) => String(r.id) === String(rowId));
+      const changeOf = (rowId, kind, from, to) => {
+        const row = rowOf(rowId);
+        const name = row?.item_name || String(rowId);
+        const group = row?.group_name || '';
+        return {
+          field: `checklist.${rowId}.${kind}`,
+          label: group ? `${name}（${group}）` : name,
+          from, to, group, item: name, kind,
+        };
+      };
+      const checkText = (v) => (v ? '已勾選' : '未勾選');
+      const itemChanges = [
+        ...checks.map(([id, v]) => changeOf(id, 'check', checkText(pendingOrig[id] ? pendingOrig[id].is_checked : !v), checkText(v))),
+        ...contents.map(([id, v]) => changeOf(id, 'content', pendingOrig[id] ? pendingOrig[id].content : '', v || '')),
+      ];
+      await logFieldChanges('DEVICE', device.sn || device.id, device.sn,
+        `設備 [${device.sn || device.id}] 出機檢查表更新 ${checks.length + contents.length} 項`,
+        itemChanges,
+        { sn: device.sn, checked: Object.fromEntries(checks), contents: Object.fromEntries(contents) });
 
       setPendingChecks({});
+      setPendingOrig({});
       setPendingContents({});
       await loadAll();
       if (onChanged) onChanged();
@@ -301,6 +337,7 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged, onAssetUpdat
     if (pendingCount > 0
       && !window.confirm(`還有 ${pendingCount} 項變更沒有儲存，關閉後就會消失。\n\n確定要關閉嗎？`)) return;
     setPendingChecks({});
+    setPendingOrig({});
     setPendingContents({});
     setContentDraft({});
     setInfoDraft(savedInfo);
@@ -321,14 +358,62 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged, onAssetUpdat
    */
   const canRemove = (row) => !row.source_item_id || !autoAppliedSourceIds.has(row.source_item_id);
 
+  /**
+   * 被移除的項目留一份快照：名稱、種類、勾選狀態與內容（取資料庫裡的值，不是畫面上還沒存的）。
+   * 拍照項目底下的照片不會被刪，會變成「其他照片」，一併記下是哪幾張。
+   */
+  const removedSnapshot = (row, photosByItem) => {
+    const orig = pendingOrig[row.id];
+    const snap = {
+      id: row.id,
+      group: row.group_name || '',
+      item: row.item_name,
+      kind: row.kind,
+      is_checked: orig ? orig.is_checked : !!row.is_checked,
+      content: orig ? orig.content : (row.content || ''),
+    };
+    if (row.kind === KIND_PHOTO) snap.photosMovedToOther = photosByItem.get(row.id) || [];
+    return snap;
+  };
+
+  /** 敘述用：BIOS 設定（已勾選）、OS（內容：RH9.6）、正面（3 張照片移到其他照片：a.jpg、b.jpg） */
+  const describeRemoved = (s) => {
+    if (s.kind === KIND_MAIN) return `${s.item}（${s.is_checked ? '已勾選' : '未勾選'}）`;
+    if (s.kind === KIND_DETAIL) return `${s.item}（內容：${s.content || '（空白）'}）`;
+    if (s.kind === KIND_PHOTO && s.photosMovedToOther.length > 0) {
+      return `${s.item}（${s.photosMovedToOther.length} 張照片移到其他照片：${s.photosMovedToOther.join('、')}）`;
+    }
+    return s.item;
+  };
+
+  /** 要移除的拍照項目若有照片，先讀出檔名（移除後照片會變成其他照片） */
+  const loadPhotoNames = async (rows) => {
+    const map = new Map();
+    if (!rows.some((r) => r.kind === KIND_PHOTO && Number(r.photo_count || 0) > 0)) return map;
+    try {
+      const res = await window.electronAPI.namedQuery('fetchAssetPhotos', [device.id]);
+      (res?.success ? res.rows || [] : []).forEach((p) => {
+        if (!p.checklist_item_id) return;
+        if (!map.has(p.checklist_item_id)) map.set(p.checklist_item_id, []);
+        map.get(p.checklist_item_id).push(p.original_name || fileNameOf(p.file_name));
+      });
+    } catch (e) {
+      // 讀不到檔名不影響移除，紀錄裡就只少了檔名
+      console.error('讀取拍照項目的照片失敗:', e);
+    }
+    return map;
+  };
+
   const handleRemoveItem = async (row) => {
     if (!window.confirm(`確定要從這台設備的檢查表移除 [${row.item_name}] 嗎？`)) return;
     try {
+      const photosByItem = await loadPhotoNames([row]);
       const res = await window.electronAPI.namedQuery('deleteAssetChecklistItem', [row.id]);
       if (!res.success) throw new Error(res.error || '移除失敗');
+      const removed = removedSnapshot(row, photosByItem);
       await logUpdate('DEVICE', device.sn || device.id, device.sn,
-        `設備 [${device.sn || device.id}] 的出機檢查表移除項目 [${row.item_name}]`,
-        { sn: device.sn, group: row.group_name, item: row.item_name, kind: row.kind });
+        `設備 [${device.sn || device.id}] 的出機檢查表移除項目 [${row.item_name}]：${describeRemoved(removed)}`,
+        { sn: device.sn, group: row.group_name, item: row.item_name, kind: row.kind, removed: [removed] });
       await loadAll();
       if (onChanged) onChanged();
     } catch (e) {
@@ -339,11 +424,16 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged, onAssetUpdat
   const handleRemoveGroup = async (groupName) => {
     if (!window.confirm(`確定要移除整組 [${groupName}] 嗎？該組底下的勾選紀錄會一併刪除。`)) return;
     try {
+      // 與 deleteAssetChecklistGroup 相同的比對方式（忽略大小寫與前後空白）
+      const key = (s) => (s || '').trim().toUpperCase();
+      const groupRows = applied.filter((r) => key(r.group_name) === key(groupName));
+      const photosByItem = await loadPhotoNames(groupRows);
       const res = await window.electronAPI.namedQuery('deleteAssetChecklistGroup', [device.id, groupName]);
       if (!res.success) throw new Error(res.error || '移除失敗');
+      const removed = groupRows.map((r) => removedSnapshot(r, photosByItem));
       await logUpdate('DEVICE', device.sn || device.id, device.sn,
-        `設備 [${device.sn || device.id}] 的出機檢查表移除整組 [${groupName}]`,
-        { sn: device.sn, group: groupName });
+        `設備 [${device.sn || device.id}] 的出機檢查表移除整組 [${groupName}]${removed.length ? `：${removed.map(describeRemoved).join('、')}` : ''}`,
+        { sn: device.sn, group: groupName, removed });
       await loadAll();
       if (onChanged) onChanged();
     } catch (e) {

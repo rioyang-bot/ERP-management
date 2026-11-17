@@ -6,9 +6,11 @@
  *   - 耗材：借出時扣掉的數量加回庫存
  *   - 設備／硬體：改回在庫，掛在設備上的硬體跟著（見 utils/mountedHwSync.js）
  *   - 單據改成已歸還並寫入歸還日
- * 交易完成後，設備／硬體與跟著回來的硬體各記一筆，借用單本身也記一筆。
+ * 交易完成後，設備／硬體與跟著回來的硬體各記一筆，借用單本身也記一筆；
+ * 歸還順帶改到的資產欄位（例如放置位置被清空）另外每台記「變更前 → 變更後」。
  */
 import { logStatusChange } from './auditLogger';
+import { snapshotAssets, logAssetFieldChanges } from './assetFieldSnapshot';
 import { createBackToStockTracker } from './mountedHwSync';
 import { isMountedRow, lendReturnMountedSteps } from './mountedConsumables';
 
@@ -49,6 +51,11 @@ export async function returnLendOrder(dn, date, { note = '' } = {}) {
     errorMessage: '變更借用單狀態失敗。',
   });
 
+  // 歸還前的資產欄位先讀起來（含搭載的硬體），交易後比對
+  const assetsBefore = await snapshotAssets(items
+    .filter((it) => !isMountedRow(it) && (it.category_name === '硬體' || it.category_name === '設備'))
+    .map((it) => it.sn));
+
   const txRes = await window.electronAPI.runTransaction(steps);
   if (!txRes.success) {
     throw new Error((txRes.error || '登記歸還失敗。') + '\n\n所有變更已全部退回，庫存與單據狀態維持原樣。');
@@ -57,6 +64,8 @@ export async function returnLendOrder(dn, date, { note = '' } = {}) {
   const suffix = note ? `（${note}）` : '';
   await back.log(txRes.results, `借用單 [${dn.request_no}] 歸還入庫（歸還日 ${date}）${suffix}`,
     { dnNumber: dn.request_no, returnDate: date });
+  await logAssetFieldChanges(assetsBefore, `借用單 [${dn.request_no}] 歸還入庫${suffix}`,
+    { dnId: dn.id, dnNumber: dn.request_no, returnDate: date });
   await logStatusChange(
     'LENT', dn.request_no, dn.customer || '借用單', 'SHIPPED', 'RETURNED',
     `登記借用單 [${dn.request_no}] 歸還入庫 (歸還日: ${date}, 共 ${items.length} 項品項)${suffix}`,

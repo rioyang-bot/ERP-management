@@ -5,7 +5,17 @@
  * 2. 模式二：RMA 一換一更換 (1-to-1 Replacement / 舊品報廢換出 + 新品入庫承接)
  */
 
-import { logUpdate, logStatusChange } from './auditLogger';
+import { logUpdate, logStatusChange, logSnChange } from './auditLogger';
+
+// 事件紀錄裡的資產狀態顯示文字
+const ASSET_STATUS_TEXT = {
+  ACTIVE: '在庫',
+  REPAIRING: '維修中',
+  SHIPPED: '已出貨',
+  LENT: '借出',
+  SCRAPPED: '報廢',
+};
+const statusText = (s) => ASSET_STATUS_TEXT[s] || s || '';
 
 /**
  * 檢核新序號是否重複且合法
@@ -136,14 +146,31 @@ export async function performInPlaceReplacement(asset, newSn, rmaDetails = {}) {
     }
   }
 
-  // 5. 寫入稽核日誌
-  await logUpdate(
+  // 5. 寫入稽核日誌：序號變更走共用的 logSnChange（記在新序號名下、details.snChanged），
+  //    RMA 單號等資訊照舊留在 details；狀態一併改成在庫，也列出「變更前 → 變更後」
+  const targetName = `${asset.brand || ''} ${asset.model || ''}`;
+  const prevStatus = asset.status || '';
+  const changes = [{ field: 'sn', label: '序號', from: oldSn || '無序號', to: cleanNewSn }];
+  if (prevStatus && prevStatus !== 'ACTIVE') {
+    changes.push({ field: 'status', label: '狀態', from: statusText(prevStatus), to: statusText('ACTIVE') });
+  }
+  await logSnChange(
     moduleName,
+    oldSn,
     cleanNewSn,
-    `${asset.brand || ''} ${asset.model || ''}`,
-    `原廠 RMA 換新序號：[${oldSn || '無序號'}] → [${cleanNewSn}]（直接換號，承接歷史），RMA單號: ${rmaNo || '無'}`,
-    { oldSn, newSn: cleanNewSn, rmaNo, replaceDate, remarks, mode: 'IN_PLACE' }
+    targetName,
+    `原廠 RMA 直接換號，承接歷史，RMA單號: ${rmaNo || '無'}`
+      + (changes.length > 1 ? `；狀態：${changes[1].from} → ${changes[1].to}` : ''),
+    { rmaNo, replaceDate, remarks, mode: 'IN_PLACE', changes }
   );
+  // 狀態另記一筆狀態流轉，履歷上才看得出這台被改回在庫。
+  // 維修單原廠返還時，呼叫端隨即會把狀態改成最後的值並以換號前的狀態記錄，
+  // 傳入 callerLogsStatus 就不再多記這一筆中間狀態。
+  if (prevStatus && prevStatus !== 'ACTIVE' && !rmaDetails.callerLogsStatus) {
+    await logStatusChange(moduleName, cleanNewSn, targetName, prevStatus, 'ACTIVE',
+      `原廠 RMA 直接換號後改為在庫：狀態：${statusText(prevStatus)} → ${statusText('ACTIVE')}`,
+      { rmaNo, oldSn, newSn: cleanNewSn, mode: 'IN_PLACE', changes: [changes[1]] });
+  }
 
   window.dispatchEvent(new CustomEvent('db-update'));
 

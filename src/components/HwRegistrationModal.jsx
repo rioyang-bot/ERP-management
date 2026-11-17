@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { getMatchingSpecs } from '../utils/matchingSpecs';
 import { Plus, Save, Trash2, Cpu, Settings2, X, Server, FileSpreadsheet, Check, Layers } from 'lucide-react';
-import { logBulkCreate } from '../utils/auditLogger';
+import { logBulkCreate, logMountChange } from '../utils/auditLogger';
 import CardPickerModal from './CardPickerModal';
 import HwBatchImportModal from './HwBatchImportModal';
 import { normalizeMasterName } from '../utils/normalizeMasterData';
@@ -298,6 +298,8 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
       let failCount = 0;
       // 有選保固年數的，到期日依進貨日期／安裝日期算好
       const warranty = finalizeWarrantyFields(formData);
+      // 新硬體掛上既有設備：設備的搭載硬體清單（mounted_hw_sns）因此改變，要留下紀錄
+      const mountedOnDevice = [];
 
       for (const sn of snList) {
         const custom_attributes = {
@@ -319,7 +321,11 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
           successCount++;
           if (safeServerSn && sn) {
             try {
-              await window.electronAPI.namedQuery('appendMountedHwSnToDevice', [safeServerSn, sn]);
+              const mountRes = await window.electronAPI.namedQuery('appendMountedHwSnToDevice', [safeServerSn, sn]);
+              // 真的掛到那台設備上（找得到設備）才算，稍後在設備端記一筆搭載硬體異動
+              if (mountRes?.success && (mountRes.rows || []).length > 0) {
+                mountedOnDevice.push({ deviceSn: (mountRes.rows[0].sn || safeServerSn).trim(), hwSn: sn });
+              }
             } catch (err) {
               console.error('appendMountedHwSnToDevice error:', err);
             }
@@ -343,6 +349,11 @@ const HwRegistrationModal = ({ isOpen, onClose, onSuccess }) => {
             details: { brand: safeBrand, type: safeType, model: safeModel, count: successCount, sns: snList, ...filledWarrantyFields(warranty) },
           }
         );
+        // 設備那一側：搭載硬體清單加了哪些（與設備編輯加掛硬體同一種紀錄）
+        if (mountedOnDevice.length > 0) {
+          await logMountChange(mountedOnDevice[0].deviceSn, mountedOnDevice[0].deviceSn,
+            { added: mountedOnDevice.map((m) => m.hwSn) });
+        }
 
         alert(`成功建檔 ${successCount} 筆硬體資料！${failCount > 0 ? ` (失敗 ${failCount} 筆)` : ''}`);
         if (onSuccess) onSuccess();

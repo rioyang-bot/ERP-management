@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { getRepairScopeLabel } from '../utils/repairScope';
-import { logUpdate } from '../utils/auditLogger';
+import { logFieldChanges } from '../utils/auditLogger';
 import {
   X, FileText, Building2, Calendar, CheckCircle2, Clock,
   Truck, Wrench, PackageCheck, Printer, ShieldAlert, Cpu, Edit2, Save, Repeat, Laptop
@@ -78,9 +78,11 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
       if (!res.success) throw new Error(res.error || '未知錯誤');
       if (!res.rows || res.rows.length === 0) throw new Error('找不到這張維修單，可能已被刪除');
 
-      await logUpdate(
+      // 敘述寫成「欄位：舊 → 新」；before / after 照舊保留給既有的查詢
+      await logFieldChanges(
         'REPAIR', repairOrder.repair_no, repairOrder.customer_name,
-        `修改維修單 [${repairOrder.repair_no}] 的${name}`,
+        `修改維修單 [${repairOrder.repair_no}]`,
+        [{ field, label: name, from: before, to: next }],
         { orderNo: repairOrder.repair_no, before, after: next }
       );
       setEdit(null);
@@ -207,9 +209,10 @@ const RepairOrderDetailModal = ({ isOpen, onClose, repairOrder, onOpenAction, on
       if (!res.success) throw new Error(res.error || '未知錯誤');
       if (!res.rows || res.rows.length === 0) throw new Error('找不到這張維修單，可能已被刪除');
 
-      await logUpdate(
+      await logFieldChanges(
         'REPAIR', repairOrder.repair_no, repairOrder.customer_name,
-        `修改維修單 [${repairOrder.repair_no}] 的送修供應商`,
+        `修改維修單 [${repairOrder.repair_no}]`,
+        [{ field: 'supplier_name', label: '送修供應商', from: before, to: nextName || '' }],
         { orderNo: repairOrder.repair_no, before, after: nextName || '' }
       );
       setEdit(null);
