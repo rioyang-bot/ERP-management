@@ -898,6 +898,33 @@ const EventLogs = () => {
                 </div>
               </div>
 
+              {/* 欄位變更：變更前 → 變更後（照片、附件為檔名） */}
+              {Array.isArray(selectedLog.details?.changes) && selectedLog.details.changes.length > 0 && (
+                <div style={{ marginBottom: '20px' }} data-testid="event-log-changes">
+                  <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-main)', display: 'block', marginBottom: '6px' }}>欄位變更</span>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem', border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
+                    <thead>
+                      <tr style={{ backgroundColor: 'var(--bg-surface-subtle)', color: 'var(--text-muted)' }}>
+                        <th style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 700, width: '24%' }}>欄位</th>
+                        <th style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 700 }}>變更前</th>
+                        <th style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 700 }}>變更後</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedLog.details.changes.map((c, i) => (
+                        <tr key={`${c.field || c.label}-${i}`} style={{ borderTop: '1px solid var(--border-color)' }}>
+                          <td style={{ padding: '8px 10px', fontWeight: 700, color: 'var(--text-main)' }}>
+                            {c.label || c.field}{c.kind === 'file' ? '（檔名）' : ''}
+                          </td>
+                          <td style={{ padding: '8px 10px', color: '#dc2626', wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>{c.from || '（空白）'}</td>
+                          <td style={{ padding: '8px 10px', color: '#059669', wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>{c.to || '（空白）'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
               {/* 結構化 Payload / Details */}
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>

@@ -2,6 +2,11 @@
  * 全系統操作異動稽核日誌工具 (Audit Logger Utility)
  * 用於記錄所有模組之新增 (CREATE)、變更 (UPDATE)、移除 (DELETE) 與狀態流轉 (STATUS_CHANGE)
  */
+import {
+  normalizeValue, diffFields, fileChange, fileNameOf, describeChanges,
+} from '../../server/fieldChanges.js';
+
+export { normalizeValue, diffFields, fileChange, fileNameOf, describeChanges };
 
 export const MODULE_MAP = {
   DEVICE: { key: 'DEVICE', label: '設備管理' },
@@ -244,6 +249,21 @@ export async function logMountedHwStatusSync(deviceSn, rows = [], note = '', det
   }
 }
 
+/* -------------------------------------------------------------------------
+ * 欄位變更紀錄：每個改到的欄位都記「變更前 → 變更後」，照片與附件記檔名。
+ * 比對與敘述的純函式放在 server/fieldChanges.js，伺服器路由也用同一份。
+ * ---------------------------------------------------------------------- */
+
+/**
+ * 記一筆「欄位變更」(UPDATE)；沒有任何欄位有變就不記
+ * @param {string} title 敘述開頭，例如「設備 [SN001] 編輯詳細資訊」
+ */
+export async function logFieldChanges(module, targetId, targetName, title, changes = [], details = {}) {
+  const list = (changes || []).filter(Boolean);
+  if (list.length === 0) return null;
+  return logUpdate(module, targetId, targetName, `${title}：${describeChanges(list)}`, { ...details, changes: list });
+}
+
 /**
  * 移除動作便捷函式 (DELETE)
  */
@@ -284,5 +304,11 @@ export default {
   logMountChange,
   logMountedHwStatusSync,
   logStatusChange,
+  logFieldChanges,
+  diffFields,
+  describeChanges,
+  fileChange,
+  fileNameOf,
+  normalizeValue,
   getCurrentUser
 };
