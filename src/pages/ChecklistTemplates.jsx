@@ -69,6 +69,7 @@ const GROUP_FIELDS = [
   { key: 'name', label: '名稱' },
   { key: 'brand', label: '廠牌' },
   { key: 'model', label: '型號' },
+  { key: 'mac_table', label: '需要 MAC 表', format: (v) => Boolean(v) },
 ];
 
 /** 範本項目的快照（事件紀錄的刪除前內容；預設照片記原始檔名與存檔名） */
@@ -396,19 +397,22 @@ const ChecklistTemplates = () => {
     if (!name) return alert('請輸入主項目名稱');
     try {
       const model = editingGroup.brand ? (editingGroup.model || null) : null;
-      const res = await window.electronAPI.namedQuery('updateChecklistGroup', [name, editingGroup.brand || null, editingGroup.id, model]);
+      const macTable = Boolean(editingGroup.mac_table);
+      const res = await window.electronAPI.namedQuery('updateChecklistGroup', [name, editingGroup.brand || null, editingGroup.id, model, macTable]);
       if (!res.success || (res.rows || []).length === 0) throw new Error(res.error || '找不到該主項目');
       // 設備端已套用的分組名稱跟著改，否則同步會把新名稱再補一份進去
       await window.electronAPI.namedQuery('renameAssetChecklistGroupBySource', [name, editingGroup.id]);
       // 變更前取清單裡原本那一筆，不是編輯中的那份
       const original = groups.find((g) => g.id === editingGroup.id);
-      const after = { name, brand: editingGroup.brand || null, model };
+      const after = { name, brand: editingGroup.brand || null, model, mac_table: macTable };
       const changes = original ? diffFields(original, after, GROUP_FIELDS) : [];
       logUpdate('SETTING', editingGroup.id, name,
         `修改出機檢查表主項目 [${name}]（${groupScopeLabel({ brand: editingGroup.brand, model })}）${changes.length ? `：${describeChanges(changes)}` : ''}`,
         {
           ...after,
-          before: original ? { name: original.name, brand: original.brand || null, model: original.model || null } : null,
+          before: original ? {
+            name: original.name, brand: original.brand || null, model: original.model || null, mac_table: Boolean(original.mac_table),
+          } : null,
           changes,
         });
       setEditingGroup(null);
@@ -1108,6 +1112,18 @@ const ChecklistTemplates = () => {
                           {brands.map((b) => (<option key={b.id || b.name} value={b.name}>{b.name}</option>))}
                         </select>
                         {renderModelSelect(editingGroup.brand, editingGroup.model, (model) => setEditingGroup({ ...editingGroup, model }), '修改適用型號')}
+                        <label
+                          style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 800, color: 'var(--text-main)', cursor: 'pointer' }}
+                          title="符合這個主項目的設備，出機檢查表會多一個 MAC Address Information 區塊（輸入 P1 自動算出其他埠）"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={Boolean(editingGroup.mac_table)}
+                            onChange={(e) => setEditingGroup({ ...editingGroup, mac_table: e.target.checked })}
+                            aria-label="需要 MAC 表"
+                          />
+                          需要 MAC 表（MAC Address Information）
+                        </label>
                         <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
                           <button type="button" onClick={handleSaveGroup} style={iconBtn('#10b981')} title="儲存" aria-label="儲存主項目"><Check size={14} /></button>
                           <button type="button" onClick={() => setEditingGroup(null)} style={iconBtn('var(--text-muted)')} title="取消" aria-label="取消修改主項目"><X size={14} /></button>
@@ -1131,11 +1147,19 @@ const ChecklistTemplates = () => {
                             <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700 }}>
                               主要 {g.main_count} · 細項 {g.detail_count}{Number(g.photo_count) > 0 ? ` · 拍照 ${g.photo_count}` : ''}
                             </span>
+                            {g.mac_table && (
+                              <span
+                                title="符合的設備需要 MAC Address Information 表"
+                                style={{ fontSize: '11px', fontWeight: 800, padding: '1px 8px', borderRadius: '10px', backgroundColor: 'rgba(106, 153, 66, 0.16)', color: '#4d7a2a', border: '1px solid var(--border-color)' }}
+                              >
+                                MAC 表
+                              </span>
+                            )}
                           </div>
                         </div>
                         <button
                           type="button"
-                          onClick={(e) => { e.stopPropagation(); setEditingGroup({ id: g.id, name: g.name, brand: g.brand || '', model: g.model || '' }); }}
+                          onClick={(e) => { e.stopPropagation(); setEditingGroup({ id: g.id, name: g.name, brand: g.brand || '', model: g.model || '', mac_table: Boolean(g.mac_table) }); }}
                           style={iconBtn('#f59e0b')}
                           title="修改主項目"
                           aria-label={`修改主項目 ${g.name}`}

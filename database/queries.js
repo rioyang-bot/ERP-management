@@ -593,12 +593,14 @@ export const queries = {
            ELSE NULLIF(TRIM(COALESCE($4, '')), '') END
     )
     RETURNING id, name, brand, model`,
+  // $5：是否需要 MAC 表（見 migration_asset_mac_info.sql）；沒傳（NULL）就維持原本的設定
   updateChecklistGroup: `
     UPDATE checklist_groups
     SET name = TRIM($1),
         brand = NULLIF(TRIM(COALESCE($2, '')), ''),
         model = CASE WHEN NULLIF(TRIM(COALESCE($2, '')), '') IS NULL THEN NULL
                      ELSE NULLIF(TRIM(COALESCE($4, '')), '') END,
+        mac_table = COALESCE($5::boolean, mac_table),
         updated_at = CURRENT_TIMESTAMP
     WHERE id = $3
     RETURNING id`,
@@ -618,6 +620,22 @@ export const queries = {
   // 主項目刪除會連帶刪掉底下的項目（外鍵 CASCADE），
   // 但設備已經套用出去的內容是快照，不受影響。
   deleteChecklistGroup: `DELETE FROM checklist_groups WHERE id = $1 RETURNING id`,
+
+  // --- 設備的 MAC Address Information（見 migration_asset_mac_info.sql、utils/macAddress.js）---
+  fetchAssetMacInfo: `SELECT asset_id, base_mac, mgt_lan_mac, mgt_ipmi_mac, updated_by, updated_at FROM asset_mac_info WHERE asset_id = $1::integer`,
+  // 回傳原本的三個值，事件紀錄寫「變更前 → 變更後」
+  upsertAssetMacInfo: `
+    WITH old AS (SELECT base_mac, mgt_lan_mac, mgt_ipmi_mac FROM asset_mac_info WHERE asset_id = $1::integer)
+    INSERT INTO asset_mac_info (asset_id, base_mac, mgt_lan_mac, mgt_ipmi_mac, updated_by, updated_at)
+    VALUES ($1::integer, NULLIF(TRIM(COALESCE($2, '')), ''), NULLIF(TRIM(COALESCE($3, '')), ''),
+            NULLIF(TRIM(COALESCE($4, '')), ''), $5, CURRENT_TIMESTAMP)
+    ON CONFLICT (asset_id) DO UPDATE SET
+      base_mac = EXCLUDED.base_mac, mgt_lan_mac = EXCLUDED.mgt_lan_mac, mgt_ipmi_mac = EXCLUDED.mgt_ipmi_mac,
+      updated_by = EXCLUDED.updated_by, updated_at = CURRENT_TIMESTAMP
+    RETURNING asset_mac_info.asset_id, asset_mac_info.base_mac, asset_mac_info.mgt_lan_mac, asset_mac_info.mgt_ipmi_mac,
+      (SELECT base_mac FROM old) AS prev_base_mac,
+      (SELECT mgt_lan_mac FROM old) AS prev_mgt_lan_mac,
+      (SELECT mgt_ipmi_mac FROM old) AS prev_mgt_ipmi_mac`,
 
   // --- 範本：項目（MAIN 主要檢查功能 / DETAIL 細項）---
   fetchChecklistItems: `

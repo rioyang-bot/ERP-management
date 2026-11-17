@@ -4,8 +4,9 @@ import { FileText } from 'lucide-react';
 /**
  * 出機檢查表「匯出 Word」（連照片，見 utils/checklistDocx.js）
  * 出機檢查表視窗與列印預覽共用。
+ * mac：需要 MAC 表的設備傳入 { sn, baseMac, mgtLan, mgtIpmi }，最後接一頁 MAC Address Information。
  */
-const ChecklistWordButton = ({ device, items = [], disabled = false }) => {
+const ChecklistWordButton = ({ device, items = [], disabled = false, mac = null }) => {
   const [busy, setBusy] = useState(false);
   const off = disabled || busy || !device;
 
@@ -14,7 +15,7 @@ const ChecklistWordButton = ({ device, items = [], disabled = false }) => {
     try {
       // Word 產生器（docx）只在按下時才載入，平常開列表不必多下載一包
       const { exportChecklistDocx } = await import('../utils/checklistDocx');
-      const { failed } = await exportChecklistDocx(device, items);
+      const { failed } = await exportChecklistDocx(device, items, mac ? { mac } : undefined);
       if (failed.length > 0) {
         alert(`已匯出 Word，但有 ${failed.length} 張照片讀取失敗、沒有放進去：\n${failed.join('\n')}`);
       }

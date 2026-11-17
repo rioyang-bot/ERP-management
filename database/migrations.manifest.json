@@ -288,6 +288,11 @@
       "file": "migration_user_signature_name.sql",
       "type": "schema",
       "note": "個人簽名檔記下檔名（上傳的原始檔名或「手寫簽名」），事件紀錄才寫得出「簽名檔：舊檔名 → 新檔名」"
+    },
+    {
+      "file": "migration_asset_mac_info.sql",
+      "type": "schema",
+      "note": "出機檢查表 MAC Address Information：主項目可勾「需要 MAC 表」（先勾 LDA · FIREWALL），每台設備存 P1 與 MGT LAN／IPMI 的 MAC"
     }
   ]
 }

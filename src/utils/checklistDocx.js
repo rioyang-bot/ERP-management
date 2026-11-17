@@ -76,7 +76,7 @@ const imageParagraph = (img) => {
  * @param {(photo) => Promise<{ data: Uint8Array, width: number, height: number, type?: string }>} loadImage
  * @returns {Promise<{ doc: Document, failed: string[] }>} failed：讀不到的照片檔名
  */
-export async function createChecklistDocument(device, items = [], photos = [], { loadImage } = {}) {
+export async function createChecklistDocument(device, items = [], photos = [], { loadImage, extraSections = [] } = {}) {
   const all = Array.isArray(items) ? items : [];
   const children = [];
 
@@ -223,7 +223,7 @@ export async function createChecklistDocument(device, items = [], photos = [], {
         },
       },
       children,
-    }],
+    }, ...extraSections],
   });
   return { doc, failed };
 }
@@ -263,11 +263,13 @@ const safeName = (s) => String(s || '').replace(/[\\/:*?"<>|]/g, '_').trim();
  * 匯出並下載：讀這台設備的照片、組文件、存成「出機檢查表_序號.docx」。
  * @returns {Promise<{ photos: number, failed: string[] }>}
  */
-export async function exportChecklistDocx(device, items, { loadImage = loadPhotoForDocx } = {}) {
+export async function exportChecklistDocx(device, items, { loadImage = loadPhotoForDocx, mac = null } = {}) {
   const res = await window.electronAPI.namedQuery('fetchAssetPhotos', [device.id]);
   if (!res?.success) throw new Error(res?.error || '讀取照片失敗');
   const photos = res.rows || [];
-  const { doc, failed } = await createChecklistDocument(device, items, photos, { loadImage });
+  // 需要 MAC 表的設備，最後接一頁橫式的 MAC Address Information
+  const extraSections = mac ? [(await import('./macDocx')).macDocxSection(mac)] : [];
+  const { doc, failed } = await createChecklistDocument(device, items, photos, { loadImage, extraSections });
   const blob = await Packer.toBlob(doc);
 
   const url = URL.createObjectURL(blob);

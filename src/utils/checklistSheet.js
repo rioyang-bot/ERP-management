@@ -94,10 +94,12 @@ const fieldValue = (device, key) => {
 /**
  * 產生預覽與列印用的內容。
  *
+ * @param {{ appendix?: { body: string, styles: string } }} [opts]
+ *        appendix：接在檢查表後面另起一頁的內容，例如 MAC Address Information（utils/macSheet.js）
  * @returns {{ body: string, html: string, title: string }}
  *          body 是表單本身，html 是含列印樣式的完整文件
  */
-export function buildChecklistSheet(device, items = []) {
+export function buildChecklistSheet(device, items = [], { appendix = null } = {}) {
   const sn = device?.sn || '';
   const title = `出機檢查表 ${sn}`.trim();
 
@@ -291,9 +293,9 @@ ${photoHtml}
 <head>
   <meta charset="utf-8" />
   <title>${escapeHtml(title)}</title>
-  <style>${styles}</style>
+  <style>${styles}${appendix?.styles || ''}</style>
 </head>
-<body>${body}</body>
+<body>${body}${appendix?.body || ''}</body>
 </html>`;
 
   return { body, html, title };

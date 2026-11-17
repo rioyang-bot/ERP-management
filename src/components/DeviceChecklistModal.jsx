@@ -2,12 +2,14 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   X, ClipboardCheck, Plus, Trash2, Printer, RefreshCw, Info, ListChecks, Tag, CheckCircle2, Server,
 } from 'lucide-react';
-import { logUpdate, logFieldChanges, fileNameOf } from '../utils/auditLogger';
+import { logUpdate, logFieldChanges, fileNameOf, diffFields, getCurrentUser } from '../utils/auditLogger';
 import DeviceChecklistPrintModal from './DeviceChecklistPrintModal';
 import ChecklistWordButton from './ChecklistWordButton';
 import AssetPhotoSection from './AssetPhotoSection';
 import { isPhotoItemDone } from '../utils/checklistDefaultPhoto';
 import { groupMatchLevel, pickDefaultGroup } from '../utils/checklistGroupScope';
+import { normalizeMac, needsMacTable, MAC_FIELDS, macFieldError } from '../utils/macAddress';
+import MacAddressSection from './MacAddressSection';
 
 /**
  * 單一設備的出機檢查表
@@ -39,6 +41,12 @@ const INFO_FIELDS = [
   { key: 'location', label: '放置位置 (Location)', logLabel: '放置位置' },
 ];
 const infoOf = (d) => ({ hostname: (d?.hostname || '').trim(), location: (d?.location || '').trim() });
+
+/** MAC 表：資料庫那一筆 → 畫面欄位 */
+const EMPTY_MAC = { baseMac: '', mgtLan: '', mgtIpmi: '' };
+const macOf = (row) => ({ baseMac: row?.base_mac || '', mgtLan: row?.mgt_lan_mac || '', mgtIpmi: row?.mgt_ipmi_mac || '' });
+/** 比對用：格式正確就整理成小寫冒號，格式錯的照原樣（才看得出「改過了」） */
+const macKey = (v) => { const n = normalizeMac(v); return n === null ? String(v ?? '').trim() : n; };
 
 /**
  * @param {object}   props
@@ -78,6 +86,10 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged, onAssetUpdat
   // 與勾選一樣按「儲存變更」才寫回
   const [savedInfo, setSavedInfo] = useState(() => infoOf(device));
   const [infoDraft, setInfoDraft] = useState(() => infoOf(device));
+  // MAC Address Information（主項目勾了「需要 MAC 表」的設備才有）：macSaved 是資料庫裡的值
+  const [macSaved, setMacSaved] = useState(EMPTY_MAC);
+  const [macDraft, setMacDraft] = useState(EMPTY_MAC);
+  const [showMacPrint, setShowMacPrint] = useState(false);
 
   const loadAll = useCallback(async () => {
     if (!device?.id) return;
@@ -101,11 +113,22 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged, onAssetUpdat
       setApplied(aRes.rows || []);
       if (gRes.success) setGroups(gRes.rows || []);
       if (iRes.success) setTemplateItems(iRes.rows || []);
+
+      // 需要 MAC 表的設備才去讀 MAC
+      if (gRes.success && needsMacTable(gRes.rows, device, groupMatchLevel)) {
+        const mRes = await window.electronAPI.namedQuery('fetchAssetMacInfo', [device.id]);
+        if (!mRes?.success) throw new Error(mRes?.error || '讀取 MAC 表失敗');
+        const saved = macOf(mRes.rows?.[0]);
+        setMacSaved(saved);
+        setMacDraft(saved);
+      }
     } catch (e) {
       setError(e.message || '讀取失敗');
     } finally {
       setLoading(false);
     }
+    // device 的廠牌、型號決定要不要 MAC 表，換設備時 id 一定會變
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [device?.id]);
 
   /**
@@ -146,6 +169,8 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged, onAssetUpdat
     const info = infoOf(device);
     setSavedInfo(info);
     setInfoDraft(info);
+    setMacSaved(EMPTY_MAC);
+    setMacDraft(EMPTY_MAC);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, device?.id]);
 
@@ -243,9 +268,14 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged, onAssetUpdat
   /** 主機名稱／放置位置有改動的欄位 */
   const changedInfoFields = INFO_FIELDS.filter((f) => infoDraft[f.key].trim() !== savedInfo[f.key]);
 
+  /** 這台設備是否需要 MAC 表（符合的主項目有勾「需要 MAC 表」） */
+  const needMac = needsMacTable(groups, device, groupMatchLevel);
+  /** MAC 表有改動的欄位 */
+  const changedMacFields = needMac ? MAC_FIELDS.filter((f) => macKey(macDraft[f.key]) !== macKey(macSaved[f.key])) : [];
+
   /** 尚未寫回資料庫的變更筆數 */
   const pendingCount = Object.keys(pendingChecks).length + Object.keys(pendingContents).length
-    + changedInfoFields.length;
+    + changedInfoFields.length + changedMacFields.length;
 
   /** @param {object} [infoToRestore] 主機名稱／放置位置要回到的值（預設為目前資料庫裡的值） */
   const discardChanges = async (infoToRestore = savedInfo) => {
@@ -254,6 +284,7 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged, onAssetUpdat
     setPendingContents({});
     setContentDraft({});
     setInfoDraft(infoToRestore);
+    setMacDraft(macSaved);
     await loadAll();
   };
 
@@ -262,6 +293,12 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged, onAssetUpdat
     const checks = Object.entries(pendingChecks);
     const contents = Object.entries(pendingContents);
     const infoChanges = changedInfoFields.map((f) => ({ ...f, from: savedInfo[f.key], to: infoDraft[f.key].trim() }));
+    // MAC 格式不對就不存，先讓人改正
+    const macErrors = changedMacFields.map((f) => [f, macFieldError(f.key, macDraft[f.key])]).filter(([, err]) => err);
+    if (macErrors.length) {
+      alert(`MAC 表有欄位格式不正確，請先修正：\n${macErrors.map(([f, err]) => `${f.label}：${err}`).join('\n')}`);
+      return;
+    }
     if (!window.confirm(`確定要儲存這 ${pendingCount} 項變更嗎？`)) return;
 
     setSavingChanges(true);
@@ -285,6 +322,24 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged, onAssetUpdat
             mountedHwLocationUpdated: row.mounted_hw_updated || 0,
           });
         if (onAssetUpdated) onAssetUpdated();
+      }
+
+      // MAC 表：三個欄位一起寫回（都整理成小寫、冒號分隔），事件紀錄寫「舊 → 新」
+      if (changedMacFields.length) {
+        const next = Object.fromEntries(MAC_FIELDS.map((f) => [f.key, normalizeMac(macDraft[f.key]) || '']));
+        const res = await window.electronAPI.namedQuery('upsertAssetMacInfo', [
+          device.id, next.baseMac, next.mgtLan, next.mgtIpmi, getCurrentUser().name || null,
+        ]);
+        if (!res.success || (res.rows || []).length === 0) throw new Error(res.error || 'MAC 表寫入失敗');
+        const row = res.rows[0];
+        const prev = { baseMac: row.prev_base_mac || '', mgtLan: row.prev_mgt_lan_mac || '', mgtIpmi: row.prev_mgt_ipmi_mac || '' };
+        const stored = macOf(row);
+        setMacSaved(stored);
+        setMacDraft(stored);
+        await logFieldChanges('DEVICE', device.sn || device.id, device.sn,
+          `設備 [${device.sn || device.id}] 於出機檢查表更新 MAC Address Information`,
+          diffFields(prev, stored, MAC_FIELDS.map((f) => ({ key: f.key, label: f.logLabel }))),
+          { sn: device.sn, mac: stored });
       }
 
       for (const [rowId, checked] of checks) {
@@ -314,7 +369,7 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged, onAssetUpdat
         ...checks.map(([id, v]) => changeOf(id, 'check', checkText(pendingOrig[id] ? pendingOrig[id].is_checked : !v), checkText(v))),
         ...contents.map(([id, v]) => changeOf(id, 'content', pendingOrig[id] ? pendingOrig[id].content : '', v || '')),
       ];
-      await logFieldChanges('DEVICE', device.sn || device.id, device.sn,
+      if (checks.length + contents.length > 0) await logFieldChanges('DEVICE', device.sn || device.id, device.sn,
         `設備 [${device.sn || device.id}] 出機檢查表更新 ${checks.length + contents.length} 項`,
         itemChanges,
         { sn: device.sn, checked: Object.fromEntries(checks), contents: Object.fromEntries(contents) });
@@ -341,6 +396,7 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged, onAssetUpdat
     setPendingContents({});
     setContentDraft({});
     setInfoDraft(savedInfo);
+    setMacDraft(macSaved);
     onClose();
   };
 
@@ -480,6 +536,8 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged, onAssetUpdat
   };
   // 列印與匯出 Word 用畫面上看到的主機名稱／放置位置，與勾選的處理方式一致
   const shownDevice = { ...device, hostname: infoDraft.hostname.trim(), location: infoDraft.location.trim() };
+  // MAC 表也用畫面上看到的值；不需要 MAC 表的設備不附這一頁
+  const shownMac = needMac ? { sn: device.sn || '', ...macDraft } : null;
 
   return (
     <>
@@ -523,7 +581,7 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged, onAssetUpdat
                 <Printer size={15} /> 列印
               </button>
               {/* 匯出 Word，連照片一起（見 utils/checklistDocx.js） */}
-              <ChecklistWordButton device={shownDevice} items={applied} disabled={applied.length === 0} />
+              <ChecklistWordButton device={shownDevice} items={applied} mac={shownMac} disabled={applied.length === 0} />
               <button
                 onClick={handleClose}
                 aria-label="關閉"
@@ -592,6 +650,20 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged, onAssetUpdat
                     {groups.length === 0 && <span> 目前還沒有任何範本，請先到該頁面建立主項目。</span>}
                   </div>
                 </section>
+
+                {/* MAC Address Information：主項目勾了「需要 MAC 表」的設備才有 */}
+                {needMac && (
+                  <MacAddressSection
+                    sn={device.sn || ''}
+                    draft={macDraft}
+                    changedKeys={changedMacFields.map((f) => f.key)}
+                    onChange={(key, value) => setMacDraft((prev) => ({ ...prev, [key]: value }))}
+                    onPrint={() => setShowMacPrint(true)}
+                    disabled={savingChanges}
+                    card={card}
+                    inputStyle={inputStyle}
+                  />
+                )}
 
                 {/* 主機照片：這一台自己的外觀與機況，日後開立驗收單會用到 */}
                 <AssetPhotoSection
@@ -823,6 +895,16 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged, onAssetUpdat
           onClose={() => setShowPrint(false)}
           device={shownDevice}
           items={applied}
+          mac={shownMac}
+        />
+      )}
+      {showMacPrint && shownMac && (
+        <DeviceChecklistPrintModal
+          isOpen={showMacPrint}
+          onClose={() => setShowMacPrint(false)}
+          device={shownDevice}
+          mac={shownMac}
+          macOnly
         />
       )}
     </>

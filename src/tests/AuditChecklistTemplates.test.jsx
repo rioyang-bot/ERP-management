@@ -68,7 +68,19 @@ describe('出機檢查表範本', () => {
       { field: 'name', label: '名稱', from: 'BlackCore 出機檢查', to: 'BlackCore 出機檢查 v2' },
       { field: 'model', label: '型號', from: '', to: 'NEOTAP' },
     ]);
-    expect(log.details.before).toEqual({ name: 'BlackCore 出機檢查', brand: 'BLACKCORE', model: null });
+    expect(log.details.before).toEqual({ name: 'BlackCore 出機檢查', brand: 'BLACKCORE', model: null, mac_table: false });
+  });
+
+  it('修改主項目：勾「需要 MAC 表」寫回並記 否 → 是', async () => {
+    await renderPage();
+    await userEvent.click(screen.getByRole('button', { name: `修改主項目 ${GROUP.name}` }));
+    await userEvent.click(screen.getByRole('checkbox', { name: '需要 MAC 表' }));
+    await userEvent.click(screen.getByRole('button', { name: '儲存主項目' }));
+
+    await waitFor(() => expect(auditLogs()).toHaveLength(1));
+    const update = calls.find((c) => c.query === 'updateChecklistGroup');
+    expect(update.params).toEqual([GROUP.name, 'BLACKCORE', GROUP.id, null, true]);
+    expect(auditLogs()[0].summary).toContain('需要 MAC 表：否 → 是');
   });
 
   it('刪除主項目：留下型號與一併刪掉的項目（名稱、說明、預設照片檔名）', async () => {
