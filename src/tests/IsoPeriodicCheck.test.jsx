@@ -356,6 +356,24 @@ describe('營運總覽：兩張表的最後日期', () => {
     expect(await screen.findByTestId('where')).toHaveTextContent('/iso-backup-check');
   });
 
+  it('一列兩項：備份檢查與日誌審查排在最前面，固定同一列（機房檢查、威脅情資在下一列）', async () => {
+    // 四張都有資料時
+    window.electronAPI.isoRoomCheck = vi.fn(async () => ({ success: true, lastDate: '2026-11-10', lastTime: '10:15', userName: '李主管' }));
+    window.electronAPI.isoThreatIntel = vi.fn(async () => ({ success: true, latest: null }));
+    show();
+    const room = await screen.findByTestId('overview-iso-check-S-408-03');
+    await screen.findByTestId('overview-iso-check-S-413-02');
+    const section = room.closest('.overview-iso-checks');
+    const order = [...section.children].map((el) => el.getAttribute('data-testid'));
+    // 兩欄排列：第 1、2 項一列，第 3、4 項一列
+    expect(order).toEqual([
+      'overview-iso-check-S-409-01', 'overview-iso-check-S-409-02',
+      'overview-iso-check-S-408-03', 'overview-iso-check-S-413-02',
+    ]);
+    delete window.electronAPI.isoRoomCheck;
+    delete window.electronAPI.isoThreatIntel;
+  });
+
   it('從沒做過：也提醒', async () => {
     store['S-409-01'] = [];
     show();

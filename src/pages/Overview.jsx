@@ -377,11 +377,8 @@ const Overview = () => {
       {(isoChecks || roomCheck || threatIntel) && (
         <section className="overview-iso-checks" aria-label="ISO 定期檢查">
           {[
-            ...(roomCheck ? [{
-              code: ROOM_CHECK_CODE, docName: ROOM_CHECK_META.docName, verb: '檢查', path: ROOM_CHECK_PATH, Icon: Server,
-              interval: ROOM_CHECK_INTERVAL, st: roomCheckStatus(roomCheck.lastDate || null),
-              when: roomCheck.lastTime, who: roomCheck.userName,
-            }] : []),
+            // 一列兩項：備份檢查與日誌審查排最前面、固定同一列。兩張是同一次讀回來的（一起有或一起沒有），
+            // 放前面不會因為機房檢查或威脅情資讀不到而被錯開到兩列
             ...(isoChecks ? ISO_CHECK_FORM_CODES.map((code) => {
               const def = ISO_CHECK_FORMS[code];
               const info = isoChecks[code] || {};
@@ -390,6 +387,11 @@ const Overview = () => {
                 interval: REVIEW_INTERVAL_DAYS, st: reviewStatus(info.lastDate || null), when: null, who: info.reviewerName,
               };
             }) : []),
+            ...(roomCheck ? [{
+              code: ROOM_CHECK_CODE, docName: ROOM_CHECK_META.docName, verb: '檢查', path: ROOM_CHECK_PATH, Icon: Server,
+              interval: ROOM_CHECK_INTERVAL, st: roomCheckStatus(roomCheck.lastDate || null),
+              when: roomCheck.lastTime, who: roomCheck.userName,
+            }] : []),
             // 威脅情資自我檢核表：2 日起本月還沒上傳＝紅色、已上傳沒簽＝黃色、有人簽＝當月結案
             ...(threatIntel ? [(() => {
               const l = threatIntel.latest;

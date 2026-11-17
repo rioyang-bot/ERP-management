@@ -515,11 +515,16 @@
 .overview-iso-role-stale { background: rgba(245, 158, 11, 0.18); color: #b45309; }
 
 /* ISO 定期檢查（S-409-01 備份檢查、S-409-02 日誌審查）：平常是細的狀態列，超過兩週未做變成醒目的紅色提醒 */
+/* 一列兩項（每一項的內容不長，整列一項右邊會空一大片）；同一列的兩項等高 */
 .overview-iso-checks {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
   margin-bottom: 20px;
+}
+/* 視窗窄時改回一列一項，避免標題與日期擠成好幾行 */
+@media (max-width: 900px) {
+  .overview-iso-checks { grid-template-columns: minmax(0, 1fr); }
 }
 .overview-iso-check {
   display: flex;
