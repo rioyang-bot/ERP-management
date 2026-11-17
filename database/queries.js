@@ -223,6 +223,25 @@ export const queries = {
     WHERE prev.id = a.id AND a.id = $2
     RETURNING a.id, a.sn, prev.status AS old_status`,
   updateAssetOwnership: `UPDATE assets SET ownership = $1 WHERE id = $2`,
+  // 出機檢查表上直接改主機名稱與放置位置：與「編輯詳細資訊」寫同一個欄位。
+  // 搭載硬體的位置跟著設備，比照編輯詳細資訊（bindHardwareToServerSn 的 COALESCE：
+  // 位置清空時不動硬體）。$1 主機名稱、$2 放置位置、$3 資產 id。
+  updateAssetHostLocation: `
+    WITH dev AS (
+      UPDATE assets SET hostname = NULLIF(TRIM($1), ''), location = NULLIF(TRIM($2), '')
+      WHERE id = $3
+      RETURNING id, sn, hostname, location
+    ), hw AS (
+      UPDATE assets h SET location = dev.location
+      FROM dev
+      WHERE dev.location IS NOT NULL
+        AND NULLIF(TRIM(dev.sn), '') IS NOT NULL
+        AND h.id <> dev.id
+        AND TRIM(LOWER(h.custom_attributes->>'server_sn')) = TRIM(LOWER(dev.sn))
+      RETURNING h.id
+    )
+    SELECT dev.id, dev.hostname, dev.location, (SELECT COUNT(*) FROM hw)::int AS mounted_hw_updated
+    FROM dev`,
   updateMountedHardwareStatus: `UPDATE assets SET status = $1 WHERE custom_attributes->>'server_sn' = $2`,
   // 搭載硬體的狀態跟著設備走：設備出貨、借出、維修、回到在庫時，掛在上面的硬體一起變。
   // 先前只有設備列表手動改狀態會連動，確認出貨、借出歸還、維修、換貨、

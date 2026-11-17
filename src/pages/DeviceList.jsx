@@ -1520,6 +1520,7 @@ const DeviceList = ({ isSplitMode = false }) => {
           device={checklistDevice}
           onClose={() => setChecklistDevice(null)}
           onChanged={loadChecklistSummary}
+          onAssetUpdated={fetchAssets}
         />
 
         {/* 設備卡片聚合規則說明（三個列表共用同一份說明） */}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
-  X, ClipboardCheck, Plus, Trash2, Printer, RefreshCw, Info, ListChecks, Tag, CheckCircle2,
+  X, ClipboardCheck, Plus, Trash2, Printer, RefreshCw, Info, ListChecks, Tag, CheckCircle2, Server,
 } from 'lucide-react';
 import { logUpdate } from '../utils/auditLogger';
 import DeviceChecklistPrintModal from './DeviceChecklistPrintModal';
@@ -30,7 +30,21 @@ const KIND_DETAIL = 'DETAIL';
 const KIND_PHOTO = 'PHOTO';
 const CUSTOM_GROUP = '自訂細項';
 
-const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
+/**
+ * 設備資訊：主機名稱與放置位置。
+ * 與「編輯詳細資訊」是同一個欄位（assets.hostname / assets.location），任一邊改了另一邊就看得到。
+ */
+const INFO_FIELDS = [
+  { key: 'hostname', label: '主機名稱 (HostName)', logLabel: '主機名稱' },
+  { key: 'location', label: '放置位置 (Location)', logLabel: '放置位置' },
+];
+const infoOf = (d) => ({ hostname: (d?.hostname || '').trim(), location: (d?.location || '').trim() });
+
+/**
+ * @param {object}   props
+ * @param {Function} [props.onAssetUpdated] 主機名稱／放置位置寫回後呼叫，讓列表重新讀取設備資料
+ */
+const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged, onAssetUpdated }) => {
   const [groups, setGroups] = useState([]);
   const [templateItems, setTemplateItems] = useState([]);
   const [applied, setApplied] = useState([]);
@@ -53,6 +67,10 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
   const [pendingChecks, setPendingChecks] = useState({});
   const [pendingContents, setPendingContents] = useState({});
   const [savingChanges, setSavingChanges] = useState(false);
+  // 主機名稱與放置位置：savedInfo 是資料庫裡的值，infoDraft 是畫面上正在改的，
+  // 與勾選一樣按「儲存變更」才寫回
+  const [savedInfo, setSavedInfo] = useState(() => infoOf(device));
+  const [infoDraft, setInfoDraft] = useState(() => infoOf(device));
 
   const loadAll = useCallback(async () => {
     if (!device?.id) return;
@@ -114,6 +132,15 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
     setContentDraft({});
     loadAll();
   }, [isOpen, loadAll]);
+
+  // 換一台設備（或重新打開）時，主機名稱與放置位置從設備資料重新帶入
+  useEffect(() => {
+    if (!isOpen) return;
+    const info = infoOf(device);
+    setSavedInfo(info);
+    setInfoDraft(info);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, device?.id]);
 
   // 自行新增的細項歸在這台設備自己的主項目（型號 > 廠牌 > 通用）底下，沒有就歸「自訂細項」
   const ownGroup = pickDefaultGroup(groups, device);
@@ -187,13 +214,19 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
     setPendingChecks((prev) => ({ ...prev, [row.id]: next }));
   };
 
-  /** 尚未寫回資料庫的變更筆數 */
-  const pendingCount = Object.keys(pendingChecks).length + Object.keys(pendingContents).length;
+  /** 主機名稱／放置位置有改動的欄位 */
+  const changedInfoFields = INFO_FIELDS.filter((f) => infoDraft[f.key].trim() !== savedInfo[f.key]);
 
-  const discardChanges = async () => {
+  /** 尚未寫回資料庫的變更筆數 */
+  const pendingCount = Object.keys(pendingChecks).length + Object.keys(pendingContents).length
+    + changedInfoFields.length;
+
+  /** @param {object} [infoToRestore] 主機名稱／放置位置要回到的值（預設為目前資料庫裡的值） */
+  const discardChanges = async (infoToRestore = savedInfo) => {
     setPendingChecks({});
     setPendingContents({});
     setContentDraft({});
+    setInfoDraft(infoToRestore);
     await loadAll();
   };
 
@@ -201,10 +234,32 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
     if (pendingCount === 0) return;
     const checks = Object.entries(pendingChecks);
     const contents = Object.entries(pendingContents);
+    const infoChanges = changedInfoFields.map((f) => ({ ...f, from: savedInfo[f.key], to: infoDraft[f.key].trim() }));
     if (!window.confirm(`確定要儲存這 ${pendingCount} 項變更嗎？`)) return;
 
     setSavingChanges(true);
+    // 已寫進資料庫的主機名稱／放置位置；後面的勾選若失敗，畫面要回到這份而不是舊值
+    let storedInfo = savedInfo;
     try {
+      // 主機名稱與放置位置寫回設備本身（與「編輯詳細資訊」同一個欄位）
+      if (infoChanges.length) {
+        const next = { hostname: infoDraft.hostname.trim(), location: infoDraft.location.trim() };
+        const res = await window.electronAPI.namedQuery('updateAssetHostLocation', [next.hostname, next.location, device.id]);
+        if (!res.success || (res.rows || []).length === 0) throw new Error(res.error || '找不到這台設備');
+        const row = res.rows[0];
+        storedInfo = { hostname: (row.hostname || '').trim(), location: (row.location || '').trim() };
+        setSavedInfo(storedInfo);
+        setInfoDraft(storedInfo);
+        await logUpdate('DEVICE', device.sn || device.id, device.sn,
+          `設備 [${device.sn || device.id}] 於出機檢查表更新 ${infoChanges.map((c) => `${c.logLabel}：${c.from || '（空白）'} → ${c.to || '（空白）'}`).join('、')}`,
+          {
+            sn: device.sn,
+            changes: Object.fromEntries(infoChanges.map((c) => [c.key, { from: c.from, to: c.to }])),
+            mountedHwLocationUpdated: row.mounted_hw_updated || 0,
+          });
+        if (onAssetUpdated) onAssetUpdated();
+      }
+
       for (const [rowId, checked] of checks) {
         const res = await window.electronAPI.namedQuery('setAssetChecklistItemChecked', [checked, Number(rowId)]);
         if (!res.success || (res.rows || []).length === 0) throw new Error(res.error || '找不到該項目');
@@ -223,9 +278,11 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
         parts.push('內容：' + contents.map(([id, v]) => `${named(id)}=${v || '（清空）'}`).join('、'));
       }
       // 出機檢查的結果是出貨憑據的一部分，改過什麼要留得下來
-      await logUpdate('DEVICE', device.sn || device.id, device.sn,
-        `設備 [${device.sn || device.id}] 出機檢查表更新 ${pendingCount} 項 —— ${parts.join('；')}`,
-        { sn: device.sn, checked: Object.fromEntries(checks), contents: Object.fromEntries(contents) });
+      if (parts.length) {
+        await logUpdate('DEVICE', device.sn || device.id, device.sn,
+          `設備 [${device.sn || device.id}] 出機檢查表更新 ${checks.length + contents.length} 項 —— ${parts.join('；')}`,
+          { sn: device.sn, checked: Object.fromEntries(checks), contents: Object.fromEntries(contents) });
+      }
 
       setPendingChecks({});
       setPendingContents({});
@@ -233,7 +290,7 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
       if (onChanged) onChanged();
     } catch (e) {
       alert(`儲存失敗：${e.message}\n\n畫面會重新讀取，請確認後再試一次。`);
-      await discardChanges();
+      await discardChanges(storedInfo);
     } finally {
       setSavingChanges(false);
     }
@@ -246,6 +303,7 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
     setPendingChecks({});
     setPendingContents({});
     setContentDraft({});
+    setInfoDraft(savedInfo);
     onClose();
   };
 
@@ -330,6 +388,8 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
     border: '1px solid var(--input-border)', backgroundColor: 'var(--input-bg)',
     color: 'var(--input-text)', fontSize: '13px', outline: 'none', minWidth: 0,
   };
+  // 列印與匯出 Word 用畫面上看到的主機名稱／放置位置，與勾選的處理方式一致
+  const shownDevice = { ...device, hostname: infoDraft.hostname.trim(), location: infoDraft.location.trim() };
 
   return (
     <>
@@ -373,7 +433,7 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
                 <Printer size={15} /> 列印
               </button>
               {/* 匯出 Word，連照片一起（見 utils/checklistDocx.js） */}
-              <ChecklistWordButton device={device} items={applied} disabled={applied.length === 0} />
+              <ChecklistWordButton device={shownDevice} items={applied} disabled={applied.length === 0} />
               <button
                 onClick={handleClose}
                 aria-label="關閉"
@@ -391,6 +451,38 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
                 {error}
               </div>
             )}
+
+            {/* 設備資訊：與「編輯詳細資訊」的主機名稱、放置位置是同一個欄位 */}
+            <section style={{ ...card, padding: '14px 16px' }} data-testid="checklist-device-info">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', flexWrap: 'wrap' }}>
+                <Server size={17} color="#0891b2" />
+                <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 900, color: 'var(--text-main)' }}>設備資訊</h3>
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 700 }}>
+                  （與「編輯詳細資訊」同步）
+                </span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
+                {INFO_FIELDS.map((f) => {
+                  const changed = changedInfoFields.some((c) => c.key === f.key);
+                  return (
+                    <label key={f.key} style={{ display: 'flex', flexDirection: 'column', gap: '5px', fontSize: '12px', fontWeight: 800, color: 'var(--text-muted)' }}>
+                      <span>
+                        {f.label}
+                        {changed && <span style={{ marginLeft: '6px', color: '#f59e0b' }}>· 未儲存</span>}
+                      </span>
+                      <input
+                        type="text"
+                        value={infoDraft[f.key]}
+                        onChange={(e) => setInfoDraft((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                        disabled={savingChanges}
+                        aria-label={f.label}
+                        style={{ ...inputStyle, flex: 'none', borderColor: changed ? '#f59e0b' : 'var(--input-border)' }}
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+            </section>
 
             {loading ? (
               <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>讀取中...</div>
@@ -615,7 +707,7 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button
                   type="button"
-                  onClick={discardChanges}
+                  onClick={() => discardChanges()}
                   disabled={savingChanges}
                   style={{ padding: '8px 14px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-main)', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}
                 >
@@ -639,7 +731,7 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged }) => {
         <DeviceChecklistPrintModal
           isOpen={showPrint}
           onClose={() => setShowPrint(false)}
-          device={device}
+          device={shownDevice}
           items={applied}
         />
       )}
