@@ -251,10 +251,15 @@ describe('備份檢查紀錄表頁面 (S-409-01)', () => {
     expect(paths.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('日誌審查紀錄表 (S-409-02) 沒有檢查路徑', async () => {
+  it('日誌審查紀錄表 (S-409-02) 在最後審查日期上方列出自己的檢查路徑', async () => {
     renderPage('S-409-02');
-    await screen.findByTestId('iso-check-status');
-    expect(screen.queryByTestId('iso-check-paths')).not.toBeInTheDocument();
+    const status = await screen.findByTestId('iso-check-status');
+    const paths = screen.getByTestId('iso-check-paths');
+    expect(paths).toHaveTextContent('檢查路徑：');
+    expect(within(paths).getByText('/var/log/network/fortigate/')).toBeInTheDocument();
+    expect(within(paths).getByText('/var/log/network/cisco')).toBeInTheDocument();
+    expect(within(paths).queryByText('/home/fortibackup/')).not.toBeInTheDocument();
+    expect(paths.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('超過兩週：醒目提醒；列表帶最後備份日', async () => {

@@ -168,7 +168,7 @@ const IsoPeriodicCheck = ({ formCode }) => {
         <div data-testid="iso-check-paths"
           style={{ padding: '12px 16px', marginBottom: '10px', borderRadius: '12px', fontSize: '13px', fontWeight: 700, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-main)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-            <FolderOpen size={17} color="#0f766e" /> {def.verb}路徑：
+            <FolderOpen size={17} color="#0f766e" /> 檢查路徑：
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingLeft: '25px' }}>
             {def.checkPaths.map((p) => (
