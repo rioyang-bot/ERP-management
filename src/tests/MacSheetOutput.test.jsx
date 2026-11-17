@@ -32,7 +32,9 @@ describe('MAC 表：列印版', () => {
     expect(html).toContain('P37,P38');
     expect(html).toContain('a0:19:b2:c0:c5:ba');
     expect(html).toContain('MGT<span class="red">(LAN,IPMI)</span>');
-    expect(html).toContain('size: A4 landscape');
+    // 頁面邊界 0：瀏覽器不印頁首頁尾（列印時間、網址／伺服器 IP、頁碼）
+    expect(html).toContain('@page { size: A4 landscape; margin: 0; }');
+    expect(html).toContain('@page mac-page { size: A4 landscape; margin: 0; }');
     expect(MAC_LOGO).toMatch(/^data:image\/png;base64,/);
     expect(html).toContain(`class="mac-logo" src="${MAC_LOGO}"`);
     expect(html).not.toContain('P3,P4');
@@ -48,7 +50,7 @@ describe('MAC 表：列印版', () => {
     const withMac = buildChecklistSheet(device, [], { appendix: buildMacSheetParts(MAC, { appended: true }) });
     expect(plain.html).not.toContain('mac-page');
     expect(withMac.html).toContain('class="mac-page appended"');
-    expect(withMac.html).toContain('@page mac-page { size: A4 landscape');
+    expect(withMac.html).toContain('@page mac-page { size: A4 landscape; margin: 0; }');
     expect(withMac.html.indexOf('出機檢查表</h1>')).toBeLessThan(withMac.html.indexOf('MAC Address Information</h1>'));
   });
 });

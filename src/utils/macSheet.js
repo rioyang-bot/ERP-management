@@ -57,8 +57,11 @@ export function buildMacSheetParts(mac = {}, { appended = false } = {}) {
     </section>`;
 
   const styles = `
-    @page mac-page { size: A4 landscape; margin: 12mm; }
-    .mac-page { page: mac-page; position: relative; height: 185mm; color: #000;
+    /* 頁面邊界設 0：瀏覽器就不會在頁首頁尾印上列印時間、網址（伺服器 IP）與頁碼；
+       留白改由 .mac-page 自己的 padding 負責 */
+    @page mac-page { size: A4 landscape; margin: 0; }
+    .mac-page { page: mac-page; position: relative; box-sizing: border-box; height: 208mm; padding: 12mm;
+                overflow: hidden; color: #000;
                 font-family: Arial, "Microsoft JhengHei", sans-serif; }
     .mac-page.appended { break-before: page; page-break-before: always; }
     .mac-title { margin: 0; text-align: center; color: #${c.title}; font-family: "Times New Roman", serif;
@@ -74,7 +77,7 @@ export function buildMacSheetParts(mac = {}, { appended = false } = {}) {
     .mac-table tr.band-light td { background: #${c.bandLight}; }
     .mac-table .red { color: #${c.red}; }
     .mac-table td.small { font-size: 17px; vertical-align: top; padding-top: 4px; }
-    .mac-logo { position: absolute; right: 0; bottom: 0; width: 22mm; }
+    .mac-logo { position: absolute; right: 12mm; bottom: 12mm; width: 22mm; }
   `;
   return { body, styles };
 }
@@ -89,7 +92,7 @@ export function buildMacSheet(mac = {}) {
   <meta charset="utf-8" />
   <title>${escapeHtml(title)}</title>
   <style>
-    @page { size: A4 landscape; margin: 12mm; }
+    @page { size: A4 landscape; margin: 0; }
     * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
     body { margin: 0; padding: 0; background: #fff; }
     @media screen { body { padding: 24px; } }
