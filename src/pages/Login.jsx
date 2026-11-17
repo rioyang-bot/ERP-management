@@ -28,7 +28,8 @@ const Login = ({ setAuthUser }) => {
 
       if (res.success && res.user) {
         setAuthUser(res.user);
-        navigate('/device-list');
+        // 所有使用者登入後一律從營運總覽開始（連線階段 12 小時到期，每天重新登入都會回到這裡）
+        navigate('/overview', { replace: true });
       } else {
         setError(res.error || '帳號或密碼錯誤');
       }
