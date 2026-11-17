@@ -51,6 +51,9 @@ describe('MAC 表：列印版', () => {
     expect(plain.html).not.toContain('mac-page');
     expect(withMac.html).toContain('class="mac-page appended"');
     expect(withMac.html).toContain('@page mac-page { size: A4 landscape; margin: 0; }');
+    // 檢查表本身也不印瀏覽器頁首頁尾；每一頁的留白由 .checklist-sheet 負責
+    expect(withMac.html).toContain('@page { size: A4 portrait; margin: 0; }');
+    expect(withMac.html).toContain('box-decoration-break: clone');
     expect(withMac.html.indexOf('出機檢查表</h1>')).toBeLessThan(withMac.html.indexOf('MAC Address Information</h1>'));
   });
 });
@@ -80,6 +83,9 @@ describe('MAC 表：Word 版', () => {
     expect(media[0]).toBeGreaterThan(10000);
     // Exchange Port 紅字
     expect(xml).toContain('w:color w:val="FF0000"');
+    // 標誌錨在第一段（表格之前），不會被擠到第二頁；列高固定
+    expect(xml.indexOf('<w:drawing>')).toBeLessThan(xml.indexOf('<w:tbl>'));
+    expect(xml).toContain('w:hRule="exact"');
   });
 
   it('單獨匯出存成「MAC_Address_序號.docx」', async () => {

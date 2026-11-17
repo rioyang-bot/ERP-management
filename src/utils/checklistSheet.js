@@ -249,7 +249,13 @@ ${photoHtml}
     </div>`;
 
   const styles = `
-    @page { size: A4 portrait; margin: 14mm; }
+    /* 頁面邊界設 0：瀏覽器就不會在頁首頁尾印上列印時間、網址（伺服器 IP）與頁碼。
+       14mm 的留白改由 .checklist-sheet 的 padding 負責，box-decoration-break: clone
+       讓每一頁的上下都留白，不只第一頁的上緣與最後一頁的下緣 */
+    @page { size: A4 portrait; margin: 0; }
+    @media print {
+      .checklist-sheet { padding: 14mm; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+    }
     * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
     body { margin: 0; padding: 0; background: #fff; color: #000;
            font-family: "PingFang TC", "Microsoft JhengHei", "Heiti TC", sans-serif; font-size: 12px; }
@@ -284,7 +290,7 @@ ${photoHtml}
     thead { display: table-header-group; }
     tr { page-break-inside: avoid; }
 
-    /* 預覽是在畫面上看，留點邊界才像一張紙；列印的邊界由 @page 決定 */
+    /* 預覽是在畫面上看，留點邊界才像一張紙；列印的邊界由上面的 .checklist-sheet padding 決定 */
     @media screen { body { padding: 24px; } }
   `;
 

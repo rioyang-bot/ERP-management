@@ -34,16 +34,23 @@ export function dataUrlToBytes(dataUrl) {
   return bytes;
 }
 
-const run = (text, { size = 40, bold = false, color, font } = {}) =>
-  new TextRun({ text, size, bold, color, font: font ? { ascii: font, hAnsi: font } : undefined });
+// 字型寫死在每一段：附在出機檢查表後面時，不會套到那份文件的預設字型（Calibri）
+const run = (text, { size = 40, bold = false, color, font = 'Arial' } = {}) =>
+  new TextRun({ text, size, bold, color, font: { ascii: font, hAnsi: font } });
+
+// 段落一律單行間距、前後不留白：中文字型（微軟正黑體）預設行高很大，Word 會把表格撐高
+const TIGHT = { before: 0, after: 0, line: 240 };
+// 列高固定（exact）：字再大也不會把表格撐到第二頁
+const ROW_HEIGHT = 560;
+const HEADER_HEIGHT = 600;
 
 const macCell = (runs, fill) => new TableCell({
   width: { size: COL, type: WidthType.DXA },
   borders: BORDERS,
   verticalAlign: VerticalAlign.CENTER,
   shading: { type: ShadingType.CLEAR, color: 'auto', fill },
-  margins: { top: 40, bottom: 40, left: 160, right: 120 },
-  children: [new Paragraph({ children: runs, spacing: { before: 0, after: 0 } })],
+  margins: { top: 20, bottom: 20, left: 160, right: 120 },
+  children: [new Paragraph({ children: runs, spacing: TIGHT })],
 });
 
 /**
@@ -57,16 +64,17 @@ export function macDocxSection(mac = {}) {
 
   const header = new TableRow({
     tableHeader: true,
-    children: ['Pair', 'Server Port', 'Exchange Port'].map((t) => macCell([run(t, { size: 44, bold: true, color: 'FFFFFF' })], c.header)),
+    height: { value: HEADER_HEIGHT, rule: 'exact' },
+    children: ['Pair', 'Server Port', 'Exchange Port'].map((t) => macCell([run(t, { size: 42, bold: true, color: 'FFFFFF' })], c.header)),
   });
   const body = rows.map((r, i) => {
     const fill = i % 2 === 0 ? c.bandDark : c.bandLight;
     const pair = r.mgt
-      ? [run('MGT', { size: 42 }), run('(LAN,IPMI)', { size: 42, color: c.red })]
-      : [run(r.pair, { size: 42 })];
-    const valueSize = r.mgt ? 30 : 42;
+      ? [run('MGT', { size: 40 }), run('(LAN,IPMI)', { size: 40, color: c.red })]
+      : [run(r.pair, { size: 40 })];
+    const valueSize = r.mgt ? 28 : 40;
     return new TableRow({
-      height: { value: 580, rule: 'atLeast' },
+      height: { value: ROW_HEIGHT, rule: 'exact' },
       children: [
         macCell(pair, fill),
         macCell([run(r.server, { size: valueSize, color: r.mgt ? c.red : undefined })], fill),
@@ -75,18 +83,18 @@ export function macDocxSection(mac = {}) {
     });
   });
 
-  const logo = new Paragraph({
-    children: [new ImageRun({
-      type: 'png',
-      data: dataUrlToBytes(MAC_LOGO),
-      transformation: LOGO_SIZE,
-      floating: {
-        horizontalPosition: { relative: HorizontalPositionRelativeFrom.MARGIN, align: HorizontalPositionAlign.RIGHT },
-        verticalPosition: { relative: VerticalPositionRelativeFrom.MARGIN, align: VerticalPositionAlign.BOTTOM },
-        wrap: { type: TextWrappingType.NONE },
-        allowOverlap: true,
-      },
-    })],
+  // 標誌是浮動圖片，固定在版面右下角；錨點放在標題那一段（第一段）。
+  // 先前錨在表格後面的空白段落，頁面一滿那一段被擠到下一頁，標誌就跟著跑到第二頁。
+  const logo = new ImageRun({
+    type: 'png',
+    data: dataUrlToBytes(MAC_LOGO),
+    transformation: LOGO_SIZE,
+    floating: {
+      horizontalPosition: { relative: HorizontalPositionRelativeFrom.MARGIN, align: HorizontalPositionAlign.RIGHT },
+      verticalPosition: { relative: VerticalPositionRelativeFrom.MARGIN, align: VerticalPositionAlign.BOTTOM },
+      wrap: { type: TextWrappingType.NONE },
+      allowOverlap: true,
+    },
   });
 
   return {
@@ -97,16 +105,17 @@ export function macDocxSection(mac = {}) {
       },
     },
     children: [
-      new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 0 }, children: [run(MAC_TITLE, { size: 80, bold: true, color: c.title, font: serif })] }),
-      new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 240 }, children: [run(`SN:  ${mac.sn || ''}`, { size: 48, bold: true, color: c.title, font: serif })] }),
-      new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 80 }, children: [run(`OUI: ${OUI_VENDOR} : ${oui}`, { size: 38, bold: true })] }),
+      new Paragraph({ alignment: AlignmentType.CENTER, spacing: TIGHT, children: [run(MAC_TITLE, { size: 72, bold: true, color: c.title, font: serif }), logo] }),
+      new Paragraph({ alignment: AlignmentType.CENTER, spacing: { ...TIGHT, after: 200 }, children: [run(`SN:  ${mac.sn || ''}`, { size: 44, bold: true, color: c.title, font: serif })] }),
+      new Paragraph({ alignment: AlignmentType.CENTER, spacing: { ...TIGHT, after: 80 }, children: [run(`OUI: ${OUI_VENDOR} : ${oui}`, { size: 36, bold: true })] }),
       new Table({
         width: { size: COL * 3, type: WidthType.DXA },
         columnWidths: [COL, COL, COL],
         alignment: AlignmentType.CENTER,
         rows: [header, ...body],
       }),
-      logo,
+      // Word 規定表格後面要有一段；縮到最小，不佔版面
+      new Paragraph({ spacing: TIGHT, children: [run('', { size: 2 })] }),
     ],
   };
 }
