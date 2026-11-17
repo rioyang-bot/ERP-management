@@ -29,6 +29,7 @@ const COMMON_META = { publishDate: '115/06/01', version: 'v1.0', confidentiality
  * items：label 是畫面上的名稱，sheetLabel 是表單上印的（照範本），detail 是內容說明
  * columns：表單的欄位，w 是範本的欄寬（twips）；key 決定那一格放什麼（見 IsoPeriodicCheckSheet）
  * lastBackup：勾正常時要填最後備份日
+ * checkPaths：要去檢查的路徑，顯示在頁面上「最後檢查日期」的上方（只在網頁上，表單不印）
  */
 export const ISO_CHECK_FORMS = {
   'S-409-01': {
@@ -39,6 +40,7 @@ export const ISO_CHECK_FORMS = {
     verb: '檢查',
     path: '/iso-backup-check',
     lastBackup: true,
+    checkPaths: ['/home/fortibackup/', '/home/ciscobackup/'],
     perPage: 4,
     rowHeight: 56,
     summary: '防火牆、Core Switch 組態檔案備份',

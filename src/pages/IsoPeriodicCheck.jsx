@@ -1,6 +1,6 @@
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import html2canvas from 'html2canvas';
-import { Download, ScrollText, DatabaseBackup, ArrowLeft, Plus, Pencil, Trash2, AlertCircle, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Download, ScrollText, DatabaseBackup, ArrowLeft, Plus, Pencil, Trash2, AlertCircle, AlertTriangle, CheckCircle2, FolderOpen } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { RoleContext } from '../context/RoleContext';
 import IsoPeriodicCheckModal from '../components/IsoPeriodicCheckModal';
@@ -162,6 +162,21 @@ const IsoPeriodicCheck = ({ formCode }) => {
           <ArrowLeft size={15} /> 報表中心
         </button>
       </div>
+
+      {/* 要去檢查的路徑（例如備份檔放在哪裡），放在最後檢查日期上方 */}
+      {def.checkPaths?.length > 0 && (
+        <div data-testid="iso-check-paths"
+          style={{ padding: '12px 16px', marginBottom: '10px', borderRadius: '12px', fontSize: '13px', fontWeight: 700, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-main)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+            <FolderOpen size={17} color="#0f766e" /> {def.verb}路徑：
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingLeft: '25px' }}>
+            {def.checkPaths.map((p) => (
+              <code key={p} style={{ fontFamily: 'Consolas, "Courier New", monospace', fontSize: '13px', fontWeight: 700, userSelect: 'all' }}>{p}</code>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* 狀態：超過兩週沒做就醒目提醒（營運總覽也有） */}
       {!loading && !error && (
