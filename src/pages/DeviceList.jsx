@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Search, Columns3, Edit2, X, Save, MoreHorizontal, MoreVertical, MapPin, User, Trash2, CheckCircle, ShoppingBag, Wrench, ShieldAlert, Cpu, Archive, RotateCcw, Server, Send, History, Building2, RefreshCw, Plus, ClipboardCheck, Package } from 'lucide-react';
+import { Search, Columns3, Edit2, X, Save, MoreHorizontal, MoreVertical, MapPin, User, Trash2, CheckCircle, ShoppingBag, Wrench, ShieldAlert, Cpu, Archive, RotateCcw, Server, Send, History, Building2, RefreshCw, Plus, ClipboardCheck, Package, AlertTriangle } from 'lucide-react';
 import ItemLedgerModal from '../components/ItemLedgerModal';
 import DeviceRegistrationModal from '../components/DeviceRegistrationModal';
 import RmaReplacementModal from '../components/RmaReplacementModal';
@@ -167,6 +167,9 @@ const DeviceList = ({ isSplitMode = false }) => {
         photoTotal: Number(r.photo_total) || 0,
         photoDone: Number(r.photo_done) || 0,
         photoCount: Number(r.photo_count) || 0,
+        // 需要 MAC 表的設備（LDA FIREWALL 等）P1 有沒有填
+        macRequired: Boolean(r.mac_required),
+        macFilled: Boolean(r.mac_filled),
       }));
       setChecklistSummary(map);
     } catch {
@@ -1470,7 +1473,7 @@ const DeviceList = ({ isSplitMode = false }) => {
                               <td style={{ ...tdStyle, width: '96px', ...hideCol('checklist') }}>
                                 {(() => {
                                   const cl = checklistSummary.get(item.id);
-                                  if (!cl || (cl.total === 0 && cl.photoTotal === 0 && cl.photoCount === 0)) {
+                                  if (!cl || (cl.total === 0 && cl.photoTotal === 0 && cl.photoCount === 0 && !cl.macRequired)) {
                                     return <span style={{ fontSize: '11px', color: 'var(--text-subtle)' }}>—</span>;
                                   }
                                   const open = (e) => { e.stopPropagation(); setChecklistDevice(item); };
@@ -1518,6 +1521,28 @@ const DeviceList = ({ isSplitMode = false }) => {
                                           {photo.text}
                                         </button>
                                       )}
+                                      {/* MAC 表：需要卻還沒填 P1 時用紅底白字明顯提示，填了就是綠色 */}
+                                      {cl.macRequired && (cl.macFilled ? (
+                                        <button
+                                          type="button"
+                                          onClick={open}
+                                          title="MAC Address Information 已填寫（點擊開啟）"
+                                          style={badge(GREEN)}
+                                          data-testid={`mac-badge-${item.id}`}
+                                        >
+                                          MAC 已填
+                                        </button>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={open}
+                                          title="這台設備需要 MAC Address Information 表，P1 的 MAC 還沒填（點擊開啟出機檢查表填寫）"
+                                          style={{ ...badge({ border: '#dc2626', bg: '#dc2626', fg: '#fff' }), display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                                          data-testid={`mac-badge-${item.id}`}
+                                        >
+                                          <AlertTriangle size={11} /> MAC 未填
+                                        </button>
+                                      ))}
                                     </div>
                                   );
                                 })()}

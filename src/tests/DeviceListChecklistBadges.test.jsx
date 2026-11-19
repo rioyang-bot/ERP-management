@@ -110,7 +110,8 @@ describe('彙總查詢', () => {
     expect(sql).toContain("(c.kind = 'DETAIL' AND NULLIF(TRIM(COALESCE(c.content, '')), '') IS NOT NULL)");
   });
 
-  it('沒有檢查項目、只有照片的設備也列得出來', () => {
-    expect(sql).toContain('FULL JOIN photos p ON p.asset_id = i.asset_id');
+  it('沒有檢查項目、只有照片（或只需要 MAC 表）的設備也列得出來', () => {
+    expect(sql).toContain('SELECT asset_id FROM items UNION SELECT asset_id FROM photos UNION SELECT asset_id FROM mac');
+    expect(sql).toContain('LEFT JOIN photos p ON p.asset_id = ids.asset_id');
   });
 });

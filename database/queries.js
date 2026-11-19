@@ -773,15 +773,43 @@ export const queries = {
     ),
     photos AS (
       SELECT asset_id, COUNT(*)::int AS photo_count FROM asset_photos GROUP BY asset_id
+    ),
+    -- 需要 MAC 表的設備（符合的主項目勾了「需要 MAC 表」，比對規則同 CHECKLIST_TARGETS_SQL）
+    -- 與 P1 有沒有填；設備列表在 P1 沒填時顯示警示
+    mac AS (
+      SELECT DISTINCT a.id AS asset_id,
+             EXISTS (SELECT 1 FROM asset_mac_info mi
+                     WHERE mi.asset_id = a.id AND NULLIF(TRIM(COALESCE(mi.base_mac, '')), '') IS NOT NULL) AS mac_filled
+      FROM checklist_groups g
+      JOIN item_master m ON m.category_id = (SELECT id FROM categories WHERE name = '設備' LIMIT 1)
+                        AND (
+                          COALESCE(NULLIF(TRIM(g.brand), ''), '') = ''
+                          OR (
+                            UPPER(TRIM(COALESCE(m.brand, ''))) = UPPER(TRIM(g.brand))
+                            AND (
+                              COALESCE(NULLIF(TRIM(g.model), ''), '') = ''
+                              OR UPPER(TRIM(COALESCE(m.model, ''))) = UPPER(TRIM(g.model))
+                            )
+                          )
+                        )
+      JOIN assets a ON a.item_master_id = m.id
+      WHERE g.mac_table
+    ),
+    ids AS (
+      SELECT asset_id FROM items UNION SELECT asset_id FROM photos UNION SELECT asset_id FROM mac
     )
-    SELECT COALESCE(i.asset_id, p.asset_id) AS asset_id,
+    SELECT ids.asset_id,
            COALESCE(i.total, 0) AS total,
            COALESCE(i.done, 0) AS done,
            COALESCE(i.photo_total, 0) AS photo_total,
            COALESCE(i.photo_done, 0) AS photo_done,
-           COALESCE(p.photo_count, 0) AS photo_count
-    FROM items i
-    FULL JOIN photos p ON p.asset_id = i.asset_id
+           COALESCE(p.photo_count, 0) AS photo_count,
+           (mc.asset_id IS NOT NULL) AS mac_required,
+           COALESCE(mc.mac_filled, FALSE) AS mac_filled
+    FROM ids
+    LEFT JOIN items i ON i.asset_id = ids.asset_id
+    LEFT JOIN photos p ON p.asset_id = ids.asset_id
+    LEFT JOIN mac mc ON mc.asset_id = ids.asset_id
   `,
   // 重複套用同一個項目時不重寫，避免把已經勾好的狀態洗掉
   insertAssetChecklistItem: `
