@@ -293,6 +293,11 @@
       "file": "migration_asset_mac_info.sql",
       "type": "schema",
       "note": "出機檢查表 MAC Address Information：主項目可勾「需要 MAC 表」（先勾 LDA · FIREWALL），每台設備存 P1 與 MGT LAN／IPMI 的 MAC"
+    },
+    {
+      "file": "migration_fix_rspeed_model_swap.sql",
+      "type": "data",
+      "note": "METECH RSPEED 型號對調更正：規格 X8 由 MERSP-S 改為 MERSP-A、規格 X2 由 MERSP-A 改為 MERSP-S（設備、進貨單、出貨單跟著品項主檔一起更正）；出機檢查表主項目與設備列表卡片排列一併對調，另寫事件紀錄"
     }
   ]
 }
