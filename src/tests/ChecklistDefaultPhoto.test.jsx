@@ -131,10 +131,13 @@ describe('列印與匯出', () => {
   it('Word：沒照片的項目印預設照片，圖說與自己拍的一樣、不加註「預設照片」', async () => {
     const PNG = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='), (ch) => ch.charCodeAt(0));
     const loadImage = vi.fn(async () => ({ data: PNG, width: 800, height: 400, type: 'png' }));
-    const { doc } = await createChecklistDocument(DEVICE, PHOTO_ITEMS, [OWN_PHOTO], { loadImage });
+    const { doc, photoCount } = await createChecklistDocument(DEVICE, PHOTO_ITEMS, [OWN_PHOTO], { loadImage });
     expect(loadImage.mock.calls.map(([p]) => p.file_name)).toEqual(['front-own.jpg', 'rear-default.jpg']);
     const xml = await (await JSZip.loadAsync(await Packer.toBuffer(doc))).file('word/document.xml').async('string');
     const text = xml.replace(/<\/w:p>/g, '\n').replace(/<[^>]+>/g, '');
+    // 張數把預設照片算進去：自己拍 1 張 + 預設 1 張
+    expect(photoCount).toBe(2);
+    expect(text).toContain('照片（共 2 張）');
     expect(text).toContain('背板標示');
     expect(text).not.toContain('預設照片');
     expect(text).toContain('機櫃內配線');

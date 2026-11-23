@@ -181,6 +181,8 @@ export async function createChecklistDocument(device, items = [], photos = [], {
     { caption: '其他照片', photos: photos.filter((p) => !p.checklist_item_id || !itemIds.has(p.checklist_item_id)) },
   ].filter((g) => g.photos.length > 0 || g.caption !== '其他照片');
 
+  // 張數算實際放進文件的照片（含預設照片）
+  const photoCount = groups.reduce((n, g) => n + g.photos.length, 0);
   const failed = [];
   if (show.photos && groups.length > 0) {
     const photoRows = [];
@@ -200,7 +202,7 @@ export async function createChecklistDocument(device, items = [], photos = [], {
         photoRows.push(new TableRow({ cantSplit: true, children: [cell(content, { width: CONTENT })] }));
       }
     }
-    children.push(sectionTitle(`照片（共 ${photos.length} 張）`));
+    children.push(sectionTitle(`照片（共 ${photoCount} 張）`));
     children.push(table(photoRows, [CONTENT]));
   }
 
@@ -225,7 +227,7 @@ export async function createChecklistDocument(device, items = [], photos = [], {
       children,
     }, ...extraSections],
   });
-  return { doc, failed };
+  return { doc, failed, photoCount: show.photos ? photoCount : 0 };
 }
 
 /**
@@ -274,7 +276,7 @@ export async function exportChecklistDocx(device, items, { loadImage = loadPhoto
   }
   // 需要 MAC 表的設備，最後接一頁橫式的 MAC Address Information
   const extraSections = mac ? [(await import('./macDocx')).macDocxSection(mac)] : [];
-  const { doc, failed } = await createChecklistDocument(device, items, photos, { loadImage, extraSections, sections: show });
+  const { doc, failed, photoCount } = await createChecklistDocument(device, items, photos, { loadImage, extraSections, sections: show });
   const blob = await Packer.toBlob(doc);
 
   const url = URL.createObjectURL(blob);
@@ -285,5 +287,5 @@ export async function exportChecklistDocx(device, items, { loadImage = loadPhoto
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10000);
-  return { photos: photos.length, failed };
+  return { photos: photoCount, failed };
 }
