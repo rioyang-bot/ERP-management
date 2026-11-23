@@ -14,7 +14,9 @@
  *   細項紀錄：項目與內容兩欄，沒有勾選欄
  */
 
-import { isPhotoItemDone, usesDefaultPhoto, DEFAULT_PHOTO_LABEL } from './checklistDefaultPhoto';
+// 用範本預設照片的項目，列印時與自己拍的一樣顯示（不標「預設照片」，交給客戶的文件不需要這個區別）；
+// 畫面上的出機檢查表仍會標示，看得出不是這台自己拍的
+import { isPhotoItemDone, usesDefaultPhoto } from './checklistDefaultPhoto';
 
 /** 表頭固定要出現的欄位，順序即是印出來的順序（由左至右、由上而下） */
 export const SHEET_FIELDS = [
@@ -194,7 +196,7 @@ export function buildChecklistSheet(device, items = [], { appendix = null } = {}
           <tr>
             <td class="col-seq">${idx + 1}</td>
             <td class="col-name">${escapeHtml(row.item_name)}${row.description ? `<div class="photo-desc">${escapeHtml(row.description)}</div>` : ''}</td>
-            <td>${Number(row.photo_count) > 0 ? `☑ 已上傳 ${Number(row.photo_count)} 張` : (usesDefaultPhoto(row) ? `☑ 使用${DEFAULT_PHOTO_LABEL}` : '☐ 尚未上傳')}</td>
+            <td>${Number(row.photo_count) > 0 ? `☑ 已上傳 ${Number(row.photo_count)} 張` : (usesDefaultPhoto(row) ? '☑ 已上傳 1 張' : '☐ 尚未上傳')}</td>
           </tr>`).join('')}
         </tbody>
       </table>`;

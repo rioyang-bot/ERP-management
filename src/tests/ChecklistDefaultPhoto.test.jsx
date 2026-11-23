@@ -17,7 +17,7 @@ import { queries } from '../../database/queries';
  *
  * 同一種設備拍出來都一樣的項目，在範本上傳一張預設照片。
  * 設備上這一項還沒上傳自己的照片時：顯示預設照片（標明「預設照片」）、算已完成、
- * 匯出 Word 印預設照片並加註。上傳了自己的照片就改用自己的。
+ * 列印與匯出 Word 印預設照片，但不加註「預設照片」。上傳了自己的照片就改用自己的。
  */
 const DEVICE = { id: 7, sn: 'DFE322328070001', brand: 'SECRETHFT', model: '3122-SM' };
 
@@ -120,22 +120,23 @@ describe('設備的主機照片區', () => {
 });
 
 describe('列印與匯出', () => {
-  it('列印版：用預設照片的項目標示「使用預設照片」，算進已上傳', () => {
+  it('列印版：用預設照片的項目算進已上傳，但不印「預設照片」字樣', () => {
     const { body: html } = buildChecklistSheet(DEVICE, PHOTO_ITEMS);
     expect(html).toContain('拍照項目（共 3 項，已上傳 2 項）');
-    expect(html).toContain('☑ 使用預設照片');
+    expect(html).not.toContain('預設照片');
+    expect(html.match(/☑ 已上傳/g)).toHaveLength(2);
     expect(html).toContain('☐ 尚未上傳');
   });
 
-  it('Word：沒照片的項目印預設照片，圖說加註「預設照片」', async () => {
+  it('Word：沒照片的項目印預設照片，圖說與自己拍的一樣、不加註「預設照片」', async () => {
     const PNG = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='), (ch) => ch.charCodeAt(0));
     const loadImage = vi.fn(async () => ({ data: PNG, width: 800, height: 400, type: 'png' }));
     const { doc } = await createChecklistDocument(DEVICE, PHOTO_ITEMS, [OWN_PHOTO], { loadImage });
     expect(loadImage.mock.calls.map(([p]) => p.file_name)).toEqual(['front-own.jpg', 'rear-default.jpg']);
     const xml = await (await JSZip.loadAsync(await Packer.toBuffer(doc))).file('word/document.xml').async('string');
     const text = xml.replace(/<\/w:p>/g, '\n').replace(/<[^>]+>/g, '');
-    expect(text).toContain('背板標示（預設照片）');
-    expect(text).not.toContain('正面（預設照片）');
+    expect(text).toContain('背板標示');
+    expect(text).not.toContain('預設照片');
     expect(text).toContain('機櫃內配線');
     expect(text).toContain('（尚未上傳照片）');
   });

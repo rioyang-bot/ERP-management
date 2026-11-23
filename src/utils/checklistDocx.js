@@ -13,7 +13,7 @@ import {
 } from 'docx';
 import { SHEET_FIELDS, getContactName, formatMountedHardware, groupChecklistItems, pairFields } from './checklistSheet';
 import { resolveMediaUrl } from './media';
-import { usesDefaultPhoto, defaultPhotoOf, DEFAULT_PHOTO_LABEL } from './checklistDefaultPhoto';
+import { usesDefaultPhoto, defaultPhotoOf } from './checklistDefaultPhoto';
 
 // A4，左右上下邊界 14mm（與列印版一致）；長度單位 twip（1/1440 吋）
 const PAGE = { width: 11906, height: 16838, margin: 794 };
@@ -159,14 +159,14 @@ export async function createChecklistDocument(device, items = [], photos = [], {
   // 照片：每個拍照項目一列「項目：說明」，下面每張照片一列，撐滿表格寬度
   const photoItems = all.filter((r) => r.kind === 'PHOTO');
   const itemIds = new Set(photoItems.map((r) => r.id));
-  // 這台沒有照片、範本有預設照片的項目印預設照片，圖說加註「預設照片」
+  // 這台沒有照片、範本有預設照片的項目印預設照片；圖說與自己拍的一樣，不加註「預設照片」
+  // （交給客戶的文件不需要這個區別，畫面上的出機檢查表仍會標示）
   const groups = [
     ...photoItems.map((it) => {
       const own = photos.filter((p) => p.checklist_item_id === it.id);
       const useDefault = usesDefaultPhoto(it, own.length);
-      const caption = it.description ? `${it.item_name}：${it.description}` : it.item_name;
       return {
-        caption: useDefault ? `${caption}（${DEFAULT_PHOTO_LABEL}）` : caption,
+        caption: it.description ? `${it.item_name}：${it.description}` : it.item_name,
         photos: useDefault ? [defaultPhotoOf(it)] : own,
       };
     }),
