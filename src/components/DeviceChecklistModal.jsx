@@ -10,6 +10,9 @@ import { isPhotoItemDone } from '../utils/checklistDefaultPhoto';
 import { groupMatchLevel, pickDefaultGroup } from '../utils/checklistGroupScope';
 import { normalizeMac, needsMacTable, MAC_FIELDS, macFieldError } from '../utils/macAddress';
 import MacAddressSection from './MacAddressSection';
+import ChecklistSectionPicker from './ChecklistSectionPicker';
+import { useColumnPreferences } from '../hooks/useColumnPreferences';
+import { EXPORT_SECTIONS, EXPORT_SECTIONS_PREF_KEY, sectionsFrom, hasSheetSection } from '../utils/checklistSections';
 
 /**
  * 單一設備的出機檢查表
@@ -90,6 +93,9 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged, onAssetUpdat
   const [macSaved, setMacSaved] = useState(EMPTY_MAC);
   const [macDraft, setMacDraft] = useState(EMPTY_MAC);
   const [showMacPrint, setShowMacPrint] = useState(false);
+  // 列印與匯出 Word 要包含哪些區塊：每個人各自記住（存在個人偏好設定，沒設定過就是全部）
+  const { isVisible: isSectionSelected, toggle: toggleSection } = useColumnPreferences(EXPORT_SECTIONS_PREF_KEY, EXPORT_SECTIONS);
+  const exportSections = sectionsFrom(isSectionSelected);
 
   const loadAll = useCallback(async () => {
     if (!device?.id) return;
@@ -538,6 +544,10 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged, onAssetUpdat
   const shownDevice = { ...device, hostname: infoDraft.hostname.trim(), location: infoDraft.location.trim() };
   // MAC 表也用畫面上看到的值；不需要 MAC 表的設備不附這一頁
   const shownMac = needMac ? { sn: device.sn || '', ...macDraft } : null;
+  // 整份輸出（列印、匯出 Word）：MAC 表要有勾才附上
+  const exportMac = exportSections.mac ? shownMac : null;
+  const nothingToExport = !hasSheetSection(exportSections) && !exportMac;
+  const printOff = applied.length === 0 || nothingToExport;
 
   return (
     <>
@@ -574,14 +584,14 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged, onAssetUpdat
               <button
                 type="button"
                 onClick={() => setShowPrint(true)}
-                disabled={applied.length === 0}
-                title={applied.length === 0 ? '尚未有任何檢查項目' : '列印這台設備的出機檢查表'}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', borderRadius: '8px', border: 'none', backgroundColor: applied.length === 0 ? 'var(--border-color)' : '#0891b2', color: '#fff', fontWeight: 800, fontSize: '13px', cursor: applied.length === 0 ? 'not-allowed' : 'pointer' }}
+                disabled={printOff}
+                title={applied.length === 0 ? '尚未有任何檢查項目' : nothingToExport ? '請先勾選要輸出的內容' : '列印這台設備的出機檢查表'}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', borderRadius: '8px', border: 'none', backgroundColor: printOff ? 'var(--border-color)' : '#0891b2', color: '#fff', fontWeight: 800, fontSize: '13px', cursor: printOff ? 'not-allowed' : 'pointer' }}
               >
                 <Printer size={15} /> 列印
               </button>
               {/* 匯出 Word，連照片一起（見 utils/checklistDocx.js） */}
-              <ChecklistWordButton device={shownDevice} items={applied} mac={shownMac} disabled={applied.length === 0} />
+              <ChecklistWordButton device={shownDevice} items={applied} mac={exportMac} sections={exportSections} disabled={applied.length === 0} />
               <button
                 onClick={handleClose}
                 aria-label="關閉"
@@ -590,6 +600,11 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged, onAssetUpdat
                 <X size={18} />
               </button>
             </div>
+          </div>
+
+          {/* 列印與匯出 Word 要包含哪些區塊 */}
+          <div style={{ padding: '8px 24px', borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-subtle)' }}>
+            <ChecklistSectionPicker sections={exportSections} onToggle={toggleSection} showMac={needMac} />
           </div>
 
           {/* 內容 */}
@@ -895,7 +910,10 @@ const DeviceChecklistModal = ({ isOpen, onClose, device, onChanged, onAssetUpdat
           onClose={() => setShowPrint(false)}
           device={shownDevice}
           items={applied}
-          mac={shownMac}
+          mac={exportMac}
+          sections={exportSections}
+          onToggleSection={toggleSection}
+          showMacOption={needMac}
         />
       )}
       {showMacPrint && shownMac && (

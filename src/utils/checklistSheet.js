@@ -17,6 +17,7 @@
 // 用範本預設照片的項目，列印時與自己拍的一樣顯示（不標「預設照片」，交給客戶的文件不需要這個區別）；
 // 畫面上的出機檢查表仍會標示，看得出不是這台自己拍的
 import { isPhotoItemDone, usesDefaultPhoto } from './checklistDefaultPhoto';
+import { ALL_SECTIONS } from './checklistSections';
 
 /** 表頭固定要出現的欄位，順序即是印出來的順序（由左至右、由上而下） */
 export const SHEET_FIELDS = [
@@ -96,12 +97,14 @@ const fieldValue = (device, key) => {
 /**
  * 產生預覽與列印用的內容。
  *
- * @param {{ appendix?: { body: string, styles: string } }} [opts]
+ * @param {{ appendix?: { body: string, styles: string }, sections?: object }} [opts]
  *        appendix：接在檢查表後面另起一頁的內容，例如 MAC Address Information（utils/macSheet.js）
+ *        sections：要印哪些區塊（utils/checklistSections.js），沒給就全部都印
  * @returns {{ body: string, html: string, title: string }}
  *          body 是表單本身，html 是含列印樣式的完整文件
  */
-export function buildChecklistSheet(device, items = [], { appendix = null } = {}) {
+export function buildChecklistSheet(device, items = [], { appendix = null, sections = ALL_SECTIONS } = {}) {
+  const show = { ...ALL_SECTIONS, ...sections };
   const sn = device?.sn || '';
   const title = `出機檢查表 ${sn}`.trim();
 
@@ -157,7 +160,7 @@ export function buildChecklistSheet(device, items = [], { appendix = null } = {}
 
   // 細項紀錄：這台設備個別的內容，獨立一區，沒有勾選欄
   const detailRows = all.filter((r) => r.kind === 'DETAIL');
-  const detailHtml = detailRows.length === 0 ? '' : `
+  const detailHtml = detailRows.length === 0 || !show.details ? '' : `
       <div class="section-title">細項紀錄</div>
 
       <table class="detail-table">
@@ -180,7 +183,7 @@ export function buildChecklistSheet(device, items = [], { appendix = null } = {}
 
   // 拍照項目：列出該拍的照片與已上傳張數，照片本身不印
   const photoRows = all.filter((r) => r.kind === 'PHOTO');
-  const photoHtml = photoRows.length === 0 ? '' : `
+  const photoHtml = photoRows.length === 0 || !show.photos ? '' : `
       <div class="section-title">拍照項目（共 ${photoRows.length} 項，已上傳 ${photoRows.filter((r) => isPhotoItemDone(r)).length} 項）</div>
 
       <table class="detail-table">
@@ -201,23 +204,19 @@ export function buildChecklistSheet(device, items = [], { appendix = null } = {}
         </tbody>
       </table>`;
 
-  const body = `
-    <div class="checklist-sheet">
-      <div class="sheet-head">
-        <h1>出機檢查表</h1>
-        <div class="sheet-sub">Pre-delivery Checklist</div>
-      </div>
-
+  // 設備資訊與搭載硬體同一張表，各自可以不印；兩個都沒勾就整張不印
+  const infoHtml = !show.info && !show.hardware ? '' : `
       <table class="info-table">
         <tbody>
-          ${infoRows}
-          <tr>
+          ${show.info ? infoRows : ''}
+          ${show.hardware ? `<tr>
             <th>搭載硬體</th>
             <td colspan="3">${hardwareHtml}</td>
-          </tr>
+          </tr>` : ''}
         </tbody>
-      </table>
+      </table>`;
 
+  const checksHtml = !show.checks ? '' : `
       <div class="section-title">檢查項目（共 ${total} 項，已完成 ${done} 項）</div>
 
       <table class="check-table">
@@ -232,22 +231,19 @@ export function buildChecklistSheet(device, items = [], { appendix = null } = {}
         <tbody>
           ${checklistHtml}
         </tbody>
-      </table>
+      </table>`;
+
+  const body = `
+    <div class="checklist-sheet">
+      <div class="sheet-head">
+        <h1>出機檢查表</h1>
+        <div class="sheet-sub">Pre-delivery Checklist</div>
+      </div>
+
+${infoHtml}
+${checksHtml}
 ${detailHtml}
 ${photoHtml}
-
-      <table class="sign-table">
-        <tbody>
-          <tr>
-            <th>檢查人員</th><td></td>
-            <th>檢查日期</th><td></td>
-          </tr>
-          <tr>
-            <th>覆核</th><td></td>
-            <th>日期</th><td></td>
-          </tr>
-        </tbody>
-      </table>
     </div>`;
 
   const styles = `
@@ -279,15 +275,14 @@ ${photoHtml}
     .check-table thead th, .detail-table thead th { background: #f1f5f9; font-weight: 700; text-align: center; white-space: nowrap; }
     .check-table .col-seq, .detail-table .col-seq { width: 40px; text-align: center; }
     .check-table .col-result { width: 62px; text-align: center; font-size: 15px; }
+    /* 勾選框放大，表頭「檢查結果」維持與其他表頭一樣大，不會超出欄寬 */
+    .check-table thead th.col-result { width: 72px; font-size: 12px; }
     .check-table .col-note { width: 160px; }
     .check-table .group-row td { background: #e2e8f0; font-weight: 800; text-align: left; }
     .check-table .empty { text-align: center; color: #666; padding: 20px; }
     .detail-table .col-name { width: 180px; font-weight: 700; }
     .photo-desc { font-weight: 400; font-size: 11px; color: #444; white-space: pre-wrap; margin-top: 2px; }
 
-    .sign-table { margin-top: 20px; }
-    .sign-table th { width: 78px; background: #f1f5f9; font-weight: 700; white-space: nowrap; }
-    .sign-table td { height: 34px; }
 
     thead { display: table-header-group; }
     tr { page-break-inside: avoid; }

@@ -87,9 +87,11 @@ describe('列印內容一定要有的欄位', () => {
     expect(body).toContain('已完成 1 項');
   });
 
-  it('留下檢查人員與日期的簽核欄位', () => {
-    expect(body).toContain('檢查人員');
-    expect(body).toContain('檢查日期');
+  it('最下方不印簽核欄（檢查人員、檢查日期、覆核、日期）', () => {
+    expect(body).not.toContain('檢查人員');
+    expect(body).not.toContain('檢查日期');
+    expect(body).not.toContain('覆核');
+    expect(body).not.toContain('sign-table');
   });
 
   it('欄位定義與實際印出的順序一致', () => {

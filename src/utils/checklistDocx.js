@@ -1,7 +1,8 @@
 /**
  * 出機檢查表匯出 Word（.docx），連照片一起
  *
- * 內容與列印版（utils/checklistSheet.js）相同：設備資訊、檢查項目、細項紀錄、簽核欄，
+ * 內容與列印版（utils/checklistSheet.js）相同：設備資訊、搭載硬體、檢查項目、細項紀錄（不放簽核欄），
+ * 各區塊可以勾選要不要輸出（utils/checklistSections.js），
  * 最後是照片 —— 整頁寬的一欄表格，每個拍照項目先一列「項目：說明」（例如「CPU：lscpu」），
  * 下一列放照片撐滿表格寬度；同一項有幾張就往下排幾列。不屬於任何拍照項目的列在「其他照片」。
  *
@@ -14,6 +15,7 @@ import {
 import { SHEET_FIELDS, getContactName, formatMountedHardware, groupChecklistItems, pairFields } from './checklistSheet';
 import { resolveMediaUrl } from './media';
 import { usesDefaultPhoto, defaultPhotoOf } from './checklistDefaultPhoto';
+import { ALL_SECTIONS } from './checklistSections';
 
 // A4，左右上下邊界 14mm（與列印版一致）；長度單位 twip（1/1440 吋）
 const PAGE = { width: 11906, height: 16838, margin: 794 };
@@ -76,9 +78,11 @@ const imageParagraph = (img) => {
  * @param {(photo) => Promise<{ data: Uint8Array, width: number, height: number, type?: string }>} loadImage
  * @returns {Promise<{ doc: Document, failed: string[] }>} failed：讀不到的照片檔名
  */
-export async function createChecklistDocument(device, items = [], photos = [], { loadImage, extraSections = [] } = {}) {
+export async function createChecklistDocument(device, items = [], photos = [], { loadImage, extraSections = [], sections = ALL_SECTIONS } = {}) {
   const all = Array.isArray(items) ? items : [];
   const children = [];
+  // 要放哪些區塊（utils/checklistSections.js），沒給就全部都放
+  const show = { ...ALL_SECTIONS, ...sections };
 
   // 標題
   children.push(
@@ -89,7 +93,7 @@ export async function createChecklistDocument(device, items = [], photos = [], {
 
   // 設備資訊：一列兩組「標題｜內容」
   const infoWidths = [1300, (CONTENT - 2600) / 2, 1300, (CONTENT - 2600) / 2];
-  const infoRows = pairFields(SHEET_FIELDS).map(([l, r]) => new TableRow({
+  const infoRows = !show.info ? [] : pairFields(SHEET_FIELDS).map(([l, r]) => new TableRow({
     children: [
       cell(l.label, { width: infoWidths[0], fill: LABEL_FILL, bold: true }),
       cell(String(fieldValue(device, l.key) || '—'), { width: infoWidths[1] }),
@@ -99,13 +103,15 @@ export async function createChecklistDocument(device, items = [], photos = [], {
     ],
   }));
   const hardware = formatMountedHardware(device);
-  infoRows.push(new TableRow({
-    children: [
-      cell('搭載硬體', { width: infoWidths[0], fill: LABEL_FILL, bold: true }),
-      cell(hardware.length ? hardware.join('\n') : '—', { span: 3 }),
-    ],
-  }));
-  children.push(table(infoRows, infoWidths));
+  if (show.hardware) {
+    infoRows.push(new TableRow({
+      children: [
+        cell('搭載硬體', { width: infoWidths[0], fill: LABEL_FILL, bold: true }),
+        cell(hardware.length ? hardware.join('\n') : '—', { span: 3 }),
+      ],
+    }));
+  }
+  if (infoRows.length > 0) children.push(table(infoRows, infoWidths));
 
   // 檢查項目：主要檢查功能，依主項目分段
   const isCheckRow = (r) => r.kind !== 'DETAIL' && r.kind !== 'PHOTO';
@@ -134,14 +140,16 @@ export async function createChecklistDocument(device, items = [], photos = [], {
         });
       }),
     ]);
-  children.push(sectionTitle(`檢查項目（共 ${mainRows.length} 項，已完成 ${mainRows.filter((r) => r.is_checked).length} 項）`));
-  children.push(table(checkBody.length
-    ? [checkHead, ...checkBody]
-    : [checkHead, new TableRow({ children: [cell('尚未套用任何檢查項目', { span: 4, align: AlignmentType.CENTER })] })], checkWidths));
+  if (show.checks) {
+    children.push(sectionTitle(`檢查項目（共 ${mainRows.length} 項，已完成 ${mainRows.filter((r) => r.is_checked).length} 項）`));
+    children.push(table(checkBody.length
+      ? [checkHead, ...checkBody]
+      : [checkHead, new TableRow({ children: [cell('尚未套用任何檢查項目', { span: 4, align: AlignmentType.CENTER })] })], checkWidths));
+  }
 
   // 細項紀錄
   const detailRows = all.filter((r) => r.kind === 'DETAIL');
-  if (detailRows.length > 0) {
+  if (show.details && detailRows.length > 0) {
     const w = [700, 3000, CONTENT - 3700];
     children.push(sectionTitle('細項紀錄'));
     children.push(table([
@@ -174,7 +182,7 @@ export async function createChecklistDocument(device, items = [], photos = [], {
   ].filter((g) => g.photos.length > 0 || g.caption !== '其他照片');
 
   const failed = [];
-  if (groups.length > 0) {
+  if (show.photos && groups.length > 0) {
     const photoRows = [];
     for (const g of groups) {
       photoRows.push(new TableRow({ cantSplit: true, children: [cell(g.caption, { width: CONTENT })] }));
@@ -196,16 +204,8 @@ export async function createChecklistDocument(device, items = [], photos = [], {
     children.push(table(photoRows, [CONTENT]));
   }
 
-  // 簽核
-  const signWidths = [1300, (CONTENT - 2600) / 2, 1300, (CONTENT - 2600) / 2];
+  // 最後不放簽核欄（檢查人員、檢查日期、覆核、日期）；Word 規定表格後面要有一段
   children.push(new Paragraph({ children: [] }));
-  children.push(table([['檢查人員', '檢查日期'], ['覆核', '日期']].map(([a, b]) => new TableRow({
-    height: { value: 560, rule: 'atLeast' },
-    children: [
-      cell(a, { width: signWidths[0], fill: LABEL_FILL, bold: true }), cell('', { width: signWidths[1] }),
-      cell(b, { width: signWidths[2], fill: LABEL_FILL, bold: true }), cell('', { width: signWidths[3] }),
-    ],
-  })), signWidths));
 
   const doc = new Document({
     creator: 'ERP',
@@ -263,13 +263,18 @@ const safeName = (s) => String(s || '').replace(/[\\/:*?"<>|]/g, '_').trim();
  * 匯出並下載：讀這台設備的照片、組文件、存成「出機檢查表_序號.docx」。
  * @returns {Promise<{ photos: number, failed: string[] }>}
  */
-export async function exportChecklistDocx(device, items, { loadImage = loadPhotoForDocx, mac = null } = {}) {
-  const res = await window.electronAPI.namedQuery('fetchAssetPhotos', [device.id]);
-  if (!res?.success) throw new Error(res?.error || '讀取照片失敗');
-  const photos = res.rows || [];
+export async function exportChecklistDocx(device, items, { loadImage = loadPhotoForDocx, mac = null, sections = ALL_SECTIONS } = {}) {
+  const show = { ...ALL_SECTIONS, ...sections };
+  // 沒勾主機照片就不必讀照片
+  let photos = [];
+  if (show.photos) {
+    const res = await window.electronAPI.namedQuery('fetchAssetPhotos', [device.id]);
+    if (!res?.success) throw new Error(res?.error || '讀取照片失敗');
+    photos = res.rows || [];
+  }
   // 需要 MAC 表的設備，最後接一頁橫式的 MAC Address Information
   const extraSections = mac ? [(await import('./macDocx')).macDocxSection(mac)] : [];
-  const { doc, failed } = await createChecklistDocument(device, items, photos, { loadImage, extraSections });
+  const { doc, failed } = await createChecklistDocument(device, items, photos, { loadImage, extraSections, sections: show });
   const blob = await Packer.toBlob(doc);
 
   const url = URL.createObjectURL(blob);

@@ -38,13 +38,14 @@ const unpack = async (doc) => {
 };
 
 describe('createChecklistDocument', () => {
-  it('設備資訊、檢查項目（勾選）、細項紀錄、簽核欄都在', async () => {
+  it('設備資訊、檢查項目（勾選）、細項紀錄都在；最下方不放簽核欄', async () => {
     const { doc } = await createChecklistDocument(DEVICE, ITEMS, [], { loadImage: fakeImage() });
     const { text } = await unpack(doc);
     for (const s of ['出機檢查表', 'STG10041Y26', 'SECRETHFT-ARL', 'KGI', 'INTEL X710（SN: NIC-1）',
-      '檢查項目（共 2 項，已完成 1 項）', 'BIOS FW Update', '☑', '☐', '細項紀錄', 'RH9.6', '檢查人員', '覆核']) {
+      '檢查項目（共 2 項，已完成 1 項）', 'BIOS FW Update', '☑', '☐', '細項紀錄', 'RH9.6']) {
       expect(text).toContain(s);
     }
+    for (const s of ['檢查人員', '檢查日期', '覆核']) expect(text).not.toContain(s);
   });
 
   it('照片：每個拍照項目一列「項目：說明」，下面每張照片一列；不屬於項目的列在其他照片', async () => {
