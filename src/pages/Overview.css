@@ -583,3 +583,63 @@
 @media (prefers-reduced-motion: reduce) {
   .overview-iso-check-alert { animation: none; }
 }
+
+/* ---------- 最下方：備份狀態（本機、Google Drive）---------- */
+.overview-backup-status {
+  margin-top: 20px;
+}
+.overview-backup-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--text-main);
+}
+.overview-backup-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (max-width: 900px) {
+  .overview-backup-grid { grid-template-columns: minmax(0, 1fr); }
+}
+.overview-backup-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 14px 18px;
+  border-radius: 14px;
+  border: 1px solid var(--border-color, rgba(148, 163, 184, 0.35));
+  background: var(--card-bg, rgba(148, 163, 184, 0.06));
+  font-size: 0.85rem;
+}
+.overview-backup-green { border-color: rgba(16, 185, 129, 0.45); background: rgba(16, 185, 129, 0.07); }
+.overview-backup-red {
+  border: 2px solid #dc2626;
+  background: rgba(220, 38, 38, 0.1);
+  box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.12);
+}
+/* 燈號：綠燈、紅燈帶光暈，灰燈表示沒有紀錄或未啟用 */
+.overview-backup-light {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  border-radius: 50%;
+}
+.overview-backup-light-green { background: #10b981; box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.2), 0 0 10px rgba(16, 185, 129, 0.7); }
+.overview-backup-light-red { background: #dc2626; box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.2), 0 0 10px rgba(220, 38, 38, 0.7); animation: overview-iso-check-pulse 1.6s ease-in-out infinite; }
+.overview-backup-light-gray { background: #94a3b8; }
+.overview-backup-body { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.overview-backup-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-weight: 800; color: var(--text-main); }
+.overview-backup-state { font-size: 0.8rem; padding: 1px 10px; border-radius: 999px; color: #fff; background: #94a3b8; }
+.overview-backup-green .overview-backup-state { background: #10b981; }
+.overview-backup-red .overview-backup-state { background: #dc2626; }
+.overview-backup-when { color: var(--text-main); font-weight: 600; }
+.overview-backup-message { color: var(--text-muted); overflow-wrap: anywhere; }
+.overview-backup-alert { color: #dc2626; font-weight: 800; }
+@media (prefers-reduced-motion: reduce) {
+  .overview-backup-light-red { animation: none; }
+}

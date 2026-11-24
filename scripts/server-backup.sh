@@ -52,8 +52,22 @@ LOCK_FILE="${ERP_LOCK_FILE:-/var/lock/erp-backup.lock}"
 MARKER="erp-daily-backup"
 SELF="$(readlink -f "$0")"
 
+# 最後一次備份的結果（營運總覽的備份燈號讀這兩個檔，見 server/backupStatusRoutes.js）
+STATUS_LOCAL="$BACKUP_DIR/last-backup-local.json"
+STATUS_CLOUD="$BACKUP_DIR/last-backup-cloud.json"
+
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+}
+
+# 記下這次備份的結果：$1 檔案、$2 ok｜failed｜skipped、$3 說明
+# 先寫暫存檔再換名，伺服器不會讀到寫一半的內容；寫不進去不影響備份本身
+write_status() {
+    local msg="$3"
+    msg="${msg//\\/\\\\}"
+    msg="${msg//\"/\\\"}"
+    { printf '{"state":"%s","time":"%s","message":"%s"}\n' "$2" "$(date -Iseconds)" "$msg" > "$1.tmp" \
+        && mv -f "$1.tmp" "$1"; } 2>/dev/null || log "無法寫入備份狀態檔 $1" >&2
 }
 
 # rclone 有安裝、也設定好加密遠端 erp-backup: 才算啟用雲端備份
@@ -119,12 +133,19 @@ purge_dated_dirs() {
 }
 
 # 把資料庫備份、uploads 與設定檔傳到 Google Drive；任何一步失敗都繼續做完其他步，最後回報
+# 略過時 CLOUD_SKIP_REASON 寫原因；失敗的步驟記在 CLOUD_ERRORS（給備份狀態檔用）
+CLOUD_SKIP_REASON=""
+CLOUD_ERRORS=()
 cloud_upload() {
+    CLOUD_SKIP_REASON=""
+    CLOUD_ERRORS=()
     if ! command -v rclone > /dev/null 2>&1; then
+        CLOUD_SKIP_REASON="伺服器沒有安裝 rclone，雲端備份尚未啟用"
         log "雲端備份：伺服器沒有安裝 rclone，略過（設定方式見 BACKUP_GOOGLE_DRIVE.md）"
         return 0
     fi
     if ! cloud_configured; then
+        CLOUD_SKIP_REASON="還沒設定 $CLOUD_REMOTE，雲端備份尚未啟用"
         log "雲端備份：還沒設定 $CLOUD_REMOTE，略過（設定方式見 BACKUP_GOOGLE_DRIVE.md）"
         return 0
     fi
@@ -143,6 +164,7 @@ cloud_upload() {
         rclone delete "${CLOUD_REMOTE}db" --include "${DB_NAME}-monthly-*.backup" --min-age "${KEEP_MONTHLY_DAYS}d" 2>&1 | tail -3 || failed=1
     else
         log "雲端備份：資料庫備份上傳失敗" >&2
+        CLOUD_ERRORS+=("資料庫備份上傳失敗")
         failed=1
     fi
 
@@ -151,6 +173,7 @@ cloud_upload() {
         # 伺服器上已經刪掉的不直接從雲端刪除，先移到 uploads-removed/日期/
         if ! rclone sync "$UPLOADS_DIR" "${CLOUD_REMOTE}uploads" --exclude "/_deleted/**"                 --backup-dir "${CLOUD_REMOTE}uploads-removed/$stamp" "${opts[@]}" 2>&1 | tail -3; then
             log "雲端備份：uploads 同步失敗" >&2
+            CLOUD_ERRORS+=("uploads 同步失敗")
             failed=1
         fi
         purge_dated_dirs uploads-removed "$KEEP_CLOUD_REMOVED_DAYS" || failed=1
@@ -167,12 +190,14 @@ cloud_upload() {
         if ! rclone sync "$staging" "${CLOUD_REMOTE}config" \
                 --backup-dir "${CLOUD_REMOTE}config-history/$stamp" "${opts[@]}" 2>&1 | tail -3; then
             log "雲端備份：設定檔同步失敗" >&2
+            CLOUD_ERRORS+=("設定檔同步失敗")
             failed=1
         fi
         purge_dated_dirs config-history "$KEEP_CLOUD_CONFIG_DAYS" || failed=1
     else
         # 一個都沒有時不同步，免得把雲端上的設定檔當成已刪除
         log "雲端備份：找不到 .env 與 SSL 憑證，設定檔略過" >&2
+        CLOUD_ERRORS+=("找不到 .env 與 SSL 憑證")
         failed=1
     fi
     rm -rf "$staging"
@@ -182,6 +207,24 @@ cloud_upload() {
         return 1
     fi
     log "雲端備份完成"
+}
+
+# 傳雲端並記下結果；失敗回傳 1
+run_cloud_upload() {
+    if cloud_upload; then
+        if [ -n "$CLOUD_SKIP_REASON" ]; then
+            write_status "$STATUS_CLOUD" skipped "$CLOUD_SKIP_REASON"
+        else
+            write_status "$STATUS_CLOUD" ok "資料庫備份、uploads 與設定檔已傳到 Google Drive"
+        fi
+        return 0
+    fi
+    local detail="有步驟失敗"
+    if [ "${#CLOUD_ERRORS[@]}" -gt 0 ]; then
+        detail="$(IFS='、'; echo "${CLOUD_ERRORS[*]}")"
+    fi
+    write_status "$STATUS_CLOUD" failed "雲端備份失敗：$detail（詳情見 backup.log）"
+    return 1
 }
 
 # --- 安裝排程 ---------------------------------------------------------------
@@ -259,7 +302,7 @@ fi
 
 # --- 只傳雲端 ---------------------------------------------------------------
 if [ "${1:-}" = "--cloud-only" ]; then
-    cloud_upload
+    run_cloud_upload
     exit $?
 fi
 
@@ -284,6 +327,17 @@ fi
 
 log "開始備份 $DB_NAME"
 
+# pg_dump 失敗時 set -e 會直接結束，靠這裡記下本機備份失敗
+LOCAL_DONE=0
+on_exit() {
+    local rc=$?
+    if [ "$LOCAL_DONE" -eq 0 ] && [ "$rc" -ne 0 ]; then
+        log "資料庫備份失敗（結束代碼 $rc）" >&2
+        write_status "$STATUS_LOCAL" failed "資料庫備份失敗（pg_dump 結束代碼 $rc，詳情見 backup.log）"
+    fi
+}
+trap on_exit EXIT
+
 # pg_dump 以 postgres 身分執行，但 backups/ 由 root 建立、postgres 無權寫入該目錄，
 # 因此輸出到標準輸出再由本腳本（root）轉寫成檔案。
 # 上方 set -euo pipefail 已開啟 pipefail，pg_dump 失敗不會留下假檔案。
@@ -293,10 +347,14 @@ sudo -u postgres pg_dump -F c -d "$DB_NAME" > "$BACKUP_FILE"
 if ! sudo -u postgres pg_restore --list "$BACKUP_FILE" > /dev/null 2>&1; then
     log "備份檔驗證失敗，已刪除：$BACKUP_FILE" >&2
     rm -f "$BACKUP_FILE"
+    write_status "$STATUS_LOCAL" failed "備份檔驗證失敗，已刪除 $(basename "$BACKUP_FILE")"
+    LOCAL_DONE=1
     exit 1
 fi
 
 log "備份完成：$BACKUP_FILE ($(du -h "$BACKUP_FILE" | cut -f1))"
+write_status "$STATUS_LOCAL" ok "$(basename "$BACKUP_FILE")（$(du -h "$BACKUP_FILE" | cut -f1)）"
+LOCAL_DONE=1
 
 # --- 清理過期備份 -----------------------------------------------------------
 # 每日備份（含部署前與手動備份）超過保留天數即刪除；monthly- 開頭的不會被這條比對到
@@ -308,4 +366,4 @@ log "目前共 $(find "$BACKUP_DIR" -maxdepth 1 -type f -name "${DB_NAME}-*.back
 
 # --- 傳到 Google Drive --------------------------------------------------------
 # 本機備份已經完成；雲端失敗只讓這次執行回報失敗，不動本機的備份
-cloud_upload
+run_cloud_upload

@@ -17,6 +17,7 @@ import { createIsoPeriodicCheckRoutes } from './server/isoPeriodicCheckRoutes.js
 import { createIsoRoomCheckRoutes } from './server/isoRoomCheckRoutes.js';
 import { createIsoThreatIntelRoutes } from './server/isoThreatIntelRoutes.js';
 import { createStockAdjustRoutes } from './server/stockAdjustRoutes.js';
+import { createBackupStatusRoutes } from './server/backupStatusRoutes.js';
 import { createUploadRoutes } from './server/uploadRoutes.js';
 import { purgeTrash, TRASH_DIR_NAME } from './server/uploadCleanup.js';
 import { prepareQueryParams } from './server/queryParams.js';
@@ -261,6 +262,9 @@ app.use('/api/iso-threat-intel', createIsoThreatIntelRoutes(pool, auth));
 
 // 耗材盤點調整（只調整 Stock）：要有「可盤點調整」權限，伺服器自己檢查，見 server/stockAdjustRoutes.js
 app.use('/api/stock-adjustments', createStockAdjustRoutes(pool, auth));
+
+// 營運總覽的備份燈號：最後一次本機備份與 Google Drive 備份的結果（scripts/server-backup.sh 寫的），見 server/backupStatusRoutes.js
+app.use('/api/backup-status', createBackupStatusRoutes(auth, path.join(__dirname, 'backups')));
 
 // 上傳檔案的釋放與清理（刪掉照片、換掉簽收單後清掉舊檔；系統管理的清理工具），見 server/uploadRoutes.js
 app.use('/api/uploads', createUploadRoutes(pool, auth, uploadsDir));

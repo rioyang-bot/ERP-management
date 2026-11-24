@@ -152,6 +152,17 @@ if (!window.electronAPI) {
     // ISO 27001 S-408-03 機房檢查表：填寫人由伺服器取自登入帳號，見 server/isoRoomCheckRoutes.js
     //   isoRoomCheck('GET', 'latest') 最後一次、isoRoomCheck('GET', 'YYYY-MM') 這個月、
     //   isoRoomCheck('POST', null, body)、isoRoomCheck('PUT', id, body)、isoRoomCheck('DELETE', id)
+    // 營運總覽的備份燈號：最後一次本機備份與 Google Drive 備份的結果；{ success, local, cloud }
+    backupStatus: async () => {
+      try {
+        const response = await authFetch(`${API_BASE}/api/backup-status`);
+        const data = await response.json();
+        return response.ok ? data : { success: false, error: data.error || `HTTP ${response.status}` };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+
     isoRoomCheck: async (method, target, body) => {
       try {
         const url = [`${API_BASE}/api/iso-room-checks`, target].filter((s) => s !== undefined && s !== null && s !== '').map((s, i) => (i ? encodeURIComponent(s) : s)).join('/');

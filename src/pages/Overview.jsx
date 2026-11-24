@@ -28,6 +28,7 @@ import {
   Radar
 } from 'lucide-react';
 import './Overview.css';
+import BackupStatusPanel from '../components/BackupStatusPanel';
 import { ISO_CHECK_FORMS, ISO_CHECK_FORM_CODES, reviewStatus, formatRocDate, daysAgoText, REVIEW_INTERVAL_DAYS } from '../utils/isoPeriodicCheck';
 import { FORM_META as ROOM_CHECK_META, FORM_CODE as ROOM_CHECK_CODE, PATH as ROOM_CHECK_PATH, CHECK_INTERVAL_DAYS as ROOM_CHECK_INTERVAL, roomCheckStatus } from '../utils/isoRoomCheck';
 import { FORM_META as THREAT_META, FORM_CODE as THREAT_CODE, PATH as THREAT_PATH, monthStatus as threatMonthStatus, rocMonthLabel as threatMonthLabel, formatRocDateTime } from '../utils/isoThreatIntel';
@@ -75,6 +76,8 @@ const Overview = () => {
   const [roomCheck, setRoomCheck] = useState(null);
   // 威脅情資自我檢核表 (S-413-02) 最新一份：{ latest: { period, uploadedAt, uploadedByName, myPendingRows, ... } | null }；讀不到是 null（不顯示）
   const [threatIntel, setThreatIntel] = useState(null);
+  // 備份燈號（頁面最下方）：{ local, cloud }；讀不到是 null（不顯示）
+  const [backupStatus, setBackupStatus] = useState(null);
 
   // 篩選與搜尋
   const [docTab, setDocTab] = useState('ALL'); // 'ALL' | 'PO' | 'INBOUND' | 'OUTBOUND' | 'LENT' | 'REPAIR'
@@ -99,6 +102,7 @@ const Overview = () => {
         isoChecksRes,
         roomCheckRes,
         threatIntelRes,
+        backupStatusRes,
         ...isoPendingRes
       ] = await Promise.all([
         window.electronAPI.namedQuery('fetchOverviewStats'),
@@ -112,6 +116,7 @@ const Overview = () => {
         Promise.resolve(window.electronAPI.isoCheck?.('GET', 'latest')).catch(() => null),
         Promise.resolve(window.electronAPI.isoRoomCheck?.('GET', 'latest')).catch(() => null),
         Promise.resolve(window.electronAPI.isoThreatIntel?.('GET', 'latest')).catch(() => null),
+        Promise.resolve(window.electronAPI.backupStatus?.()).catch(() => null),
         ...ISO_SIGN_FORMS.map((f) => Promise.resolve(window.electronAPI.isoSignature?.('GET', f.code, 'pending')).catch(() => null))
       ]);
 
@@ -131,6 +136,7 @@ const Overview = () => {
       setIsoChecks(isoChecksRes?.success && isoChecksRes.forms ? isoChecksRes.forms : null);
       setRoomCheck(roomCheckRes?.success ? roomCheckRes : null);
       setThreatIntel(threatIntelRes?.success ? threatIntelRes : null);
+      setBackupStatus(backupStatusRes?.success ? { local: backupStatusRes.local ?? null, cloud: backupStatusRes.cloud ?? null } : null);
 
       setLastUpdated(new Date());
     } catch (err) {
@@ -919,6 +925,9 @@ const Overview = () => {
           </div>
         </section>
       </div>
+
+      {/* 最下方：本機備份與 Google Drive 備份最後一次的結果（成功綠燈、失敗紅燈） */}
+      {backupStatus && <BackupStatusPanel status={backupStatus} />}
     </div>
   );
 };
